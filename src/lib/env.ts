@@ -14,6 +14,13 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   DATABASE_URL_DIRECT: z.string().url(),
 
+  // Clerk (consumer app + admin session auth). The admin dashboard uses a
+  // separate Clerk application (ADMIN_* vars), added once Phase 1 builds
+  // the admin shell.
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string(),
+  CLERK_SECRET_KEY: z.string(),
+  CLERK_WEBHOOK_SIGNING_SECRET: z.string(),
+
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),

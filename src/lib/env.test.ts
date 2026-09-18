@@ -4,6 +4,9 @@ const validEnv = {
   APP_URL: "http://localhost:3000",
   DATABASE_URL: "postgresql://user:pass@host:6543/postgres",
   DATABASE_URL_DIRECT: "postgresql://user:pass@host:5432/postgres",
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_xxx",
+  CLERK_SECRET_KEY: "sk_test_xxx",
+  CLERK_WEBHOOK_SIGNING_SECRET: "whsec_xxx",
 };
 
 describe("env", () => {
