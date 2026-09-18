@@ -16,7 +16,9 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] Deploy preview on Vercel
 
 ## Phase 1 — Identity, roles, activity log
-- [ ] Clerk middleware; `requireUser()` for app tokens (Bearer), session auth for admin
+- [x] Clerk middleware; `requireUser()` for app tokens (Bearer), session auth for admin
+      (admin session auth deferred to the admin-shell item — needs a second Clerk app, see
+      docs/ARCHITECTURE.md decisions)
 - [ ] Clerk webhook → `users` table (created/updated/deleted)
 - [ ] `roles`, `permissions`, `role_permissions`, `staff_members`; seed roles
       (super_admin, user_manager, content_uploader, content_publisher, quiz_maker)
