@@ -15,7 +15,7 @@ const shell = process.platform === "win32";
 const status = spawnSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8", shell });
 if (status.status !== 0 || !/\.(ts|tsx)\s*$/m.test(status.stdout)) process.exit(0);
 
-const tc = spawnSync("pnpm", ["-s", "typecheck"], { cwd: root, encoding: "utf8", shell });
+const tc = spawnSync("pnpm", ["--silent", "typecheck"], { cwd: root, encoding: "utf8", shell });
 if (tc.status !== 0) {
   process.stderr.write(
     "TypeScript errors found. Fix them before finishing:\n" + ((tc.stdout || "") + (tc.stderr || "")).slice(0, 6000)
