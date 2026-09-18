@@ -9,10 +9,10 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] Drizzle + Supabase Postgres connection; first empty migration
 - [ ] Sentry, PostHog server client (deferred - see Pre-launch checklist; env vars are
       already optional in `src/lib/env.ts` so the app runs without them)
-- [ ] Error model, `ok()/fail()` helpers, OpenAPI registry, Scalar docs at `/api/docs`
-- [ ] `scripts/generate-openapi.ts`, `pnpm contract` script, `GET /api/openapi.json` route,
+- [x] Error model, `ok()/fail()` helpers, OpenAPI registry, Scalar docs at `/api/docs`
+- [x] `scripts/generate-openapi.ts`, `pnpm contract` script, `GET /api/openapi.json` route,
       first `docs/API_ENDPOINTS.md` generated (health endpoint only)
-- [ ] Health endpoint `GET /api/v1/health`
+- [x] Health endpoint `GET /api/v1/health`
 - [ ] Deploy preview on Vercel
 
 ## Phase 1 — Identity, roles, activity log
