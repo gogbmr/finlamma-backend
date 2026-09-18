@@ -1,0 +1,20 @@
+.next
+node_modules
+pnpm-lock.yaml
+openapi/openapi.json
+docs/API_ENDPOINTS.md
+
+# Vendored Clerk skill bundle - not our code, never reformat
+.agents/
+
+# Claude Code tooling config/hooks - leave as authored
+.claude/
+.mcp.json
+
+# Prose docs - hand-authored, not reformatted as code
+CLAUDE.md
+README.md
+docs/*.md
+
+# Provided script - do not rewrite (see CLAUDE.md folder structure notes)
+scripts/openapi-to-markdown.mjs
