@@ -19,7 +19,9 @@ const envSchema = z.object({
   // the admin shell.
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string(),
   CLERK_SECRET_KEY: z.string(),
-  CLERK_WEBHOOK_SIGNING_SECRET: z.string(),
+  // Optional until the Clerk webhook endpoint exists and has a signing
+  // secret to put here - it needs the deployed route URL first.
+  CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
 
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),
