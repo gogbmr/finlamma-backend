@@ -20,5 +20,9 @@ export const users = pgTable("users", {
   phone: text("phone").unique(),
   language: languageEnum("language").default("hx").notNull(),
   theme: themeEnum("theme").default("dark").notNull(),
+  // Clerk's own updated_at for the last change we applied, so the Clerk
+  // webhook can ignore an out-of-order/stale redelivery instead of
+  // overwriting newer data with older data.
+  clerkUpdatedAt: timestamp("clerk_updated_at", { withTimezone: true }).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }).enableRLS();

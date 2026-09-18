@@ -6,9 +6,12 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
 **Identity & staff**
 - `users` — clerk_user_id (unique), first_name, last_initial (nullable until onboarding),
   email, phone (both nullable/unique - Clerk allows email, phone, Google, Apple or username
-  sign-in, so a user may have either, both, or briefly neither), language, theme, deleted_at.
-  `level`, `total_xp`, `current_world_id` are added in Phase 3 (progress economy) once
-  `worlds` exists.
+  sign-in, so a user may have either, both, or briefly neither), language, theme,
+  clerk_updated_at (Clerk's own updated_at for the last change we applied, so the webhook can
+  ignore stale/out-of-order redeliveries), deleted_at. On `user.deleted` from Clerk, the row is
+  soft-deleted and anonymized in place (personal fields cleared) rather than removed, so ledger/
+  trading/leaderboard history stays intact. `level`, `total_xp`, `current_world_id` are added in
+  Phase 3 (progress economy) once `worlds` exists.
 - `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
   `users` - staff never has a row in `users`), role_id, active
 - `roles`, `permissions` (key like `quiz.create`), `role_permissions`

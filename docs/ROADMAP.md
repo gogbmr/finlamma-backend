@@ -19,11 +19,12 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] Clerk middleware; `requireUser()` for app tokens (Bearer), session auth for admin
       (admin session auth deferred to the admin-shell item — needs a second Clerk app, see
       docs/ARCHITECTURE.md decisions)
+- [x] `activity_logs` (append-only, RLS enabled) + `logActivity()` (moved up: the webhook
+      below needs it) — no update/delete path exists for this table anywhere in the codebase
 - [ ] Clerk webhook → `users` table (created/updated/deleted)
 - [ ] `roles`, `permissions`, `role_permissions`, `staff_members`; seed roles
       (super_admin, user_manager, content_uploader, content_publisher, quiz_maker)
 - [ ] `requireStaff(permission)` helper
-- [ ] `activity_logs` (append-only) + `logActivity()` used everywhere
 - [ ] Admin shell: layout, sign-in, staff management page, activity log viewer
 - [ ] `GET/PATCH /me`, account deletion (DB + Clerk)
 
