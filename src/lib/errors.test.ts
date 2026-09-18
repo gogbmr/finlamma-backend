@@ -7,6 +7,7 @@ describe("AppError", () => {
     expect(new AppError("VALIDATION_FAILED", "bad input").status).toBe(400);
     expect(new AppError("CONFLICT", "dup").status).toBe(409);
     expect(new AppError("IDEMPOTENCY_REPLAY", "dup key").status).toBe(409);
+    expect(new AppError("SERVICE_UNAVAILABLE", "down").status).toBe(503);
   });
 
   it("carries the message and optional details", () => {

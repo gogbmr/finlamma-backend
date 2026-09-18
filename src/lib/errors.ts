@@ -11,6 +11,7 @@ export const ErrorCode = {
   IDEMPOTENCY_REPLAY: "IDEMPOTENCY_REPLAY",
   RATE_LIMITED: "RATE_LIMITED",
   INTERNAL: "INTERNAL",
+  SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -24,6 +25,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   IDEMPOTENCY_REPLAY: 409,
   RATE_LIMITED: 429,
   INTERNAL: 500,
+  SERVICE_UNAVAILABLE: 503,
 };
 
 export class AppError extends Error {
