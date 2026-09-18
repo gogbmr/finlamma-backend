@@ -9,6 +9,7 @@ import { registry } from "../src/lib/openapi";
 // Import every route file that registers a path as a side effect. Add one
 // import per resource as new routes get built.
 import "../src/app/api/v1/health/route";
+import "../src/app/api/webhooks/clerk/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

@@ -21,7 +21,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
       docs/ARCHITECTURE.md decisions)
 - [x] `activity_logs` (append-only, RLS enabled) + `logActivity()` (moved up: the webhook
       below needs it) — no update/delete path exists for this table anywhere in the codebase
-- [ ] Clerk webhook → `users` table (created/updated/deleted)
+- [x] Clerk webhook → `users` table (created/updated/deleted)
 - [ ] `roles`, `permissions`, `role_permissions`, `staff_members`; seed roles
       (super_admin, user_manager, content_uploader, content_publisher, quiz_maker)
 - [ ] `requireStaff(permission)` helper

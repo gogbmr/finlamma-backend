@@ -1,0 +1,96 @@
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { db } from "@/db/client";
+import { users } from "@/db/schema";
+import { AppError } from "@/lib/errors";
+
+const POSTGRES_UNIQUE_VIOLATION = "23505";
+
+function hasCode(value: unknown, code: string): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    value.code === code
+  );
+}
+
+// drizzle-orm wraps the driver's PostgresError in a DrizzleQueryError, so
+// the Postgres error code lives on `.cause`, not on the thrown error itself.
+function isUniqueViolation(err: unknown): boolean {
+  if (hasCode(err, POSTGRES_UNIQUE_VIOLATION)) return true;
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "cause" in err &&
+    hasCode(err.cause, POSTGRES_UNIQUE_VIOLATION)
+  );
+}
+
+export type ClerkUserSync = {
+  clerkUserId: string;
+  firstName: string | null;
+  lastInitial: string | null;
+  email: string | null;
+  phone: string | null;
+  clerkUpdatedAt: Date;
+};
+
+// Upsert driven by Clerk's user.created/user.updated. The setWhere clause
+// makes this safe against Clerk's at-least-once webhook delivery: a
+// redelivered or out-of-order event (older clerkUpdatedAt than what we
+// already have) is silently ignored rather than overwriting newer data,
+// and a soft-deleted row is never touched (deletedAt IS NULL guard) so a
+// late user.updated can't resurrect personal data after a user.deleted.
+export async function upsertUserFromClerk(input: ClerkUserSync) {
+  const excludedClerkUpdatedAt = sql.raw(
+    `excluded.${users.clerkUpdatedAt.name}`,
+  );
+
+  try {
+    await db
+      .insert(users)
+      .values(input)
+      .onConflictDoUpdate({
+        target: users.clerkUserId,
+        set: {
+          firstName: input.firstName,
+          lastInitial: input.lastInitial,
+          email: input.email,
+          phone: input.phone,
+          clerkUpdatedAt: input.clerkUpdatedAt,
+        },
+        setWhere: sql`${users.deletedAt} is null and ${users.clerkUpdatedAt} < ${excludedClerkUpdatedAt}`,
+      });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      // Never let the raw driver error reach a generic console.error/Sentry
+      // call - its message embeds the conflicting email/phone verbatim.
+      throw new AppError(
+        "CONFLICT",
+        "Clerk sent an email or phone already in use by another account",
+        { clerkUserId: input.clerkUserId },
+      );
+    }
+    throw err;
+  }
+}
+
+// Driven by Clerk's user.deleted. Unconditional and idempotent: it always
+// wins over any concurrent update (no clerkUpdatedAt comparison - deletion
+// in Clerk is terminal), and re-applying it to an already-deleted row is a
+// harmless no-op restricted by the deletedAt IS NULL guard.
+export async function anonymizeUserFromClerk(clerkUserId: string) {
+  await db
+    .update(users)
+    .set({
+      deletedAt: new Date(),
+      email: null,
+      phone: null,
+      // Deliberately a placeholder, not null: firstName is what any future
+      // UI renders as the display name, and "Deleted user" reads better
+      // there than a blank. It carries no personal data.
+      firstName: "Deleted user",
+      lastInitial: null,
+    })
+    .where(and(eq(users.clerkUserId, clerkUserId), isNull(users.deletedAt)));
+}
