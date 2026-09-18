@@ -4,9 +4,9 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 (`pnpm contract`) at the end of each phase.
 
 ## Phase 0 — Project setup
-- [ ] Next.js (App Router, TS strict, Tailwind, ESLint) with pnpm; Prettier; Vitest
+- [x] Next.js (App Router, TS strict, Tailwind, ESLint) with pnpm; Prettier; Vitest
 - [x] `src/lib/env.ts` with Zod-validated env; `.env.example`
-- [ ] Drizzle + Supabase Postgres connection; first empty migration
+- [x] Drizzle + Supabase Postgres connection; first empty migration
 - [ ] Sentry, PostHog server client (deferred - see Pre-launch checklist; env vars are
       already optional in `src/lib/env.ts` so the app runs without them)
 - [ ] Error model, `ok()/fail()` helpers, OpenAPI registry, Scalar docs at `/api/docs`
