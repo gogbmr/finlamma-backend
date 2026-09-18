@@ -4,9 +4,13 @@ All tables: `id` (uuid v7 or bigserial), `created_at`, `updated_at` (timestamptz
 Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi, hx }`.
 
 **Identity & staff**
-- `users` — clerk_user_id (unique), first_name, last_initial, email, phone, language, theme,
-  level, total_xp, current_world_id, deleted_at
-- `staff_members` — user_id, role_id, active
+- `users` — clerk_user_id (unique), first_name, last_initial (nullable until onboarding),
+  email, phone (both nullable/unique - Clerk allows email, phone, Google, Apple or username
+  sign-in, so a user may have either, both, or briefly neither), language, theme, deleted_at.
+  `level`, `total_xp`, `current_world_id` are added in Phase 3 (progress economy) once
+  `worlds` exists.
+- `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
+  `users` - staff never has a row in `users`), role_id, active
 - `roles`, `permissions` (key like `quiz.create`), `role_permissions`
 - `activity_logs` — actor_type (user|staff|system), actor_id, action, target_type, target_id,
   metadata jsonb, ip, user_agent, created_at. Append-only; partition by month later.
