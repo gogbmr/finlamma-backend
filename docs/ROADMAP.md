@@ -5,9 +5,10 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 
 ## Phase 0 — Project setup
 - [ ] Next.js (App Router, TS strict, Tailwind, ESLint) with pnpm; Prettier; Vitest
-- [ ] `src/lib/env.ts` with Zod-validated env; `.env.example`
+- [x] `src/lib/env.ts` with Zod-validated env; `.env.example`
 - [ ] Drizzle + Supabase Postgres connection; first empty migration
-- [ ] Sentry, PostHog server client
+- [ ] Sentry, PostHog server client (deferred - see Pre-launch checklist; env vars are
+      already optional in `src/lib/env.ts` so the app runs without them)
 - [ ] Error model, `ok()/fail()` helpers, OpenAPI registry, Scalar docs at `/api/docs`
 - [ ] `scripts/generate-openapi.ts`, `pnpm contract` script, `GET /api/openapi.json` route,
       first `docs/API_ENDPOINTS.md` generated (health endpoint only)
@@ -67,3 +68,9 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 ## Phase 9 — Analytics & homepage
 - [ ] Admin analytics dashboards (users, retention, lessons, trading, news, revenue)
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
+
+## Pre-launch checklist
+- [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
+      `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
+- [ ] Create PostHog project, add `NEXT_PUBLIC_POSTHOG_KEY`/`NEXT_PUBLIC_POSTHOG_HOST`, wire up
+      the `posthog-node` server client - deferred from Phase 0
