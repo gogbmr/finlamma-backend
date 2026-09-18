@@ -23,6 +23,13 @@ describe("env", () => {
     expect(env.SENTRY_DSN).toBeUndefined();
   });
 
+  it("treats an empty-string optional var as unset, not invalid", async () => {
+    for (const [key, value] of Object.entries(validEnv)) vi.stubEnv(key, value);
+    vi.stubEnv("SENTRY_DSN", "");
+    const { env } = await import("./env");
+    expect(env.SENTRY_DSN).toBeUndefined();
+  });
+
   it("throws when a required var is missing", async () => {
     for (const [key, value] of Object.entries(validEnv)) {
       if (key === "DATABASE_URL_DIRECT") continue;

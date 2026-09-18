@@ -21,7 +21,16 @@ const envSchema = z.object({
 });
 
 function loadEnv() {
-  const parsed = envSchema.safeParse(process.env);
+  // .env.example ships empty placeholders for vars we haven't set up yet
+  // (e.g. SENTRY_DSN=). Treat "present but empty" the same as "unset" so
+  // optional fields don't fail validation just because the placeholder exists.
+  const withoutEmptyStrings = Object.fromEntries(
+    Object.entries(process.env).map(([key, value]) => [
+      key,
+      value === "" ? undefined : value,
+    ]),
+  );
+  const parsed = envSchema.safeParse(withoutEmptyStrings);
   if (!parsed.success) {
     console.error(
       "Invalid environment variables:",
