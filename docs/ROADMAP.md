@@ -13,7 +13,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] `scripts/generate-openapi.ts`, `pnpm contract` script, `GET /api/openapi.json` route,
       first `docs/API_ENDPOINTS.md` generated (health endpoint only)
 - [x] Health endpoint `GET /api/v1/health`
-- [ ] Deploy preview on Vercel
+- [x] Deploy preview on Vercel
 
 ## Phase 1 — Identity, roles, activity log
 - [ ] Clerk middleware; `requireUser()` for app tokens (Bearer), session auth for admin
