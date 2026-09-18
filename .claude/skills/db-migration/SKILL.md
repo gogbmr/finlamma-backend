@@ -7,7 +7,10 @@ paths: "src/db/**, drizzle/**"
 1. Edit the Drizzle schema in `src/db/schema/<domain>.ts`. Conventions: snake_case table and
    column names, `timestamptz` with `defaultNow()`, money as `bigint({ mode: "number" })`,
    translatable text as `jsonb` `{ en, hi, hx }`, explicit indexes for foreign keys and
-   frequent filters, `onDelete` behaviour stated explicitly.
+   frequent filters, `onDelete` behaviour stated explicitly, and `.enableRLS()` on every new
+   table (no policies — defense in depth against the Supabase Data API, not app authorization;
+   our server bypasses it as the table-owning role). Never use the Data API or `supabase-js`
+   for data access.
 2. Run `pnpm db:generate`. Never hand-edit an existing file in `drizzle/`.
 3. Open the generated SQL and review it. Flag to the user in plain English anything that:
    drops or renames a column/table, rewrites a large table, adds NOT NULL without a default,

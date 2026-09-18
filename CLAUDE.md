@@ -100,7 +100,11 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
    `roles/permissions/role_permissions`. Check permissions on the server, never only in the UI.
 5. **Activity logs are append-only.** No update or delete paths, for anyone.
 6. **Portability**: no Supabase-only features in core logic (no RLS-as-authorization, no Edge
-   Functions, no supabase-js for data). Storage only through `src/lib/s3.ts`.
+   Functions, no supabase-js for data). Storage only through `src/lib/s3.ts`. Every table has
+   Row Level Security **enabled with no policies** (`.enableRLS()` in the Drizzle schema) as
+   defense in depth — our server connects as the table-owning `postgres` role, which bypasses
+   RLS, so this has no effect on the app; it only blocks Supabase's Data API/anon key path,
+   which is disabled in the dashboard and must never be re-enabled or used from this codebase.
 7. **Time**: store UTC `timestamptz`; compute streak days and market hours in `Asia/Kolkata`.
 8. **Schema changes**: edit `src/db/schema`, run `pnpm db:generate`, review the SQL, then ask
    the user before `pnpm db:migrate`. Use the `db-migration` skill.

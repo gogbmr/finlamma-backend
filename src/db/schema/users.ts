@@ -21,4 +21,4 @@ export const users = pgTable("users", {
   language: languageEnum("language").default("hx").notNull(),
   theme: themeEnum("theme").default("dark").notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
-});
+}).enableRLS();
