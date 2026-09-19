@@ -6,24 +6,44 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
 **Identity & staff**
 - `users` — clerk_user_id (unique), first_name, last_initial (nullable until onboarding),
   email, phone (both nullable/unique - Clerk allows email, phone, Google, Apple or username
-  sign-in, so a user may have either, both, or briefly neither), language, theme, bio (text,
-  nullable), preferences jsonb (sound, haptics, data_saver — small booleans, same jsonb pattern
-  as translatable text), clerk_updated_at (Clerk's own updated_at for the last change we applied,
-  so the webhook can ignore stale/out-of-order redeliveries), deleted_at. On `user.deleted` from
-  Clerk, the row is soft-deleted and anonymized in place (personal fields cleared) rather than
-  removed, so ledger/trading/leaderboard history stays intact. `level`, `total_xp`,
-  `current_world_id` are added in Phase 3 (progress economy) once `worlds` exists.
+  sign-in, so a user may have either, both, or briefly neither), date_of_birth (collected at
+  onboarding, drives the parental-consent gate below), state (nullable, optional, shown with an
+  explanation at collection time, used only for the Arena state leaderboard scope, never exposed
+  on any public profile), language, theme, bio (text, nullable), preferences jsonb (sound,
+  haptics, data_saver — small booleans, same jsonb pattern as translatable text),
+  clerk_updated_at (Clerk's own updated_at for the last change we applied, so the webhook can
+  ignore stale/out-of-order redeliveries), deleted_at. On `user.deleted` from Clerk, the row is
+  soft-deleted and anonymized in place (personal fields cleared) rather than removed, so ledger/
+  trading/leaderboard history stays intact. `level`, `total_xp`, `current_world_id` are added in
+  Phase 3 (progress economy) once `worlds` exists.
 - `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
   `users` - staff never has a row in `users`), role_id, active
 - `roles`, `permissions` (key like `quiz.create`), `role_permissions`
 - `activity_logs` — actor_type (user|staff|system), actor_id, action, target_type, target_id,
   metadata jsonb, ip, user_agent, created_at. Append-only; partition by month later.
 
+**Compliance (parental consent & legal documents) — real, v1 scope, see PRODUCT_SPEC.md §7**
+- `parent_contacts` (user_id, name, email/phone, verified_at)
+- `consent_records` (user_id, parent_contact_id, method otp|email, status pending|verified,
+  legal_document_version, verified_at) — a minor (under 18 by `users.date_of_birth`) has limited
+  app access until a `verified` row exists here
+- `legal_documents` (type terms|privacy|risk_disclosure, version, content jsonb {en,hi,hx},
+  status draft|published, published_by staff_id, published_at) — only `super_admin` publishes
+- `legal_acceptances` (user_id, legal_document_id, accepted_by self|parent, accepted_at) — a new
+  published version prompts re-acceptance from anyone who hasn't accepted it yet
+
 **Learning**
-- `worlds` (order, title, unlock_xp, theme), `lessons` (world_id, order, kind, content jsonb, status)
+- `worlds` (order, title, theme, display_xp_target — cosmetic progress indicator only; the real
+  unlock rule is sequential (see `lesson_progress`: the previous world's Boss Quiz is complete),
+  not an XP/level gate), `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
+  Role Play are `lessons.kind` values, not separate tables or engines — both render through the
+  same lesson-flow content shape as a Quiz step, with different settings.
 - `quizzes` (lesson_id or news_edition_id, settings), `questions` (quiz_id, format, payload jsonb, answer jsonb)
 - `lesson_progress`, `quiz_attempts`, `question_answers`
-- `certificates` (user_id, world_id, code, file_key)
+- `certificates` (user_id, world_id, code, file_key) — PDFs are rendered server-side with a
+  browser-free library (e.g. `@react-pdf/renderer`, not a headless browser — Vercel-compatible)
+  and stored via `src/lib/s3.ts`; sharing is a signed URL the student sends themselves, never a
+  message sent on their behalf
 
 **Economy**
 - `xp_events` (user_id, source, amount, ref)
@@ -36,11 +56,16 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   default. See `docs/ECONOMY.md` for the seeded starting values and the simulation behind them.
 - `streaks` (user_id, scope `learning`|`pulse_check` — two independent habit loops, same shape,
   current, longest, last_active_date_ist, freezes_left, freezes_reset_on)
-- `badges`, `user_badges`, `rewards`, `reward_claims`
+- `badges`, `user_badges`
+- `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
+  badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,
+  never computed from the viewing user's own balance), `reward_claims`
 - `mentors` (order, name, bio jsonb {en,hi,hx}, world_range, art_key) — admin-editable content
   type (not hardcoded in the app)
-- `settings_kv` (e.g. `vm_issuance_multiplier` default 1.0, `trade_unlock_world_order` default 4 —
-  see Trading below)
+- `settings_kv` (e.g. `vm_issuance_multiplier` default 1.0, `trade_unlock_world_order` default 4
+  — see Trading below; scoring constants `speed_bonus_threshold_pct` = 45,
+  `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
+  `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values)
 
 **Reporting**
 - `report_snapshots` (user_id, week_start_date IST, efficiency_score 0-100, sub_metrics jsonb
@@ -62,8 +87,9 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   candle history for chart timeframes beyond what the relay's Redis cache retains; today's/live
   candle still comes from Redis per ARCHITECTURE.md. NIFTY 50 / BANK NIFTY / SENSEX indices reuse
   the same Twelve Data source and caching, no separate table.
-- `market_holidays` (date, name), `market_controls` (feed_mode, global_halt, volatility — meaning
-  still open, see FEATURE_MAP.md "Needs your decision")
+- `market_holidays` (date, name), `market_controls` (feed_mode, global_halt) — **no volatility
+  control.** When the market is closed, every screen shows the last real close; nothing ever
+  simulates price movement near a real trade.
 - `orders` (user_id, instrument_id, side, type, qty, limit_price_paise, status, fill_price_paise,
   reject_reason, idempotency_key, filled_at)
 - `holdings` (user_id, instrument_id, qty, avg_price_paise)
@@ -88,9 +114,13 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   attribution `by`, status) — staff-curated highlights shown separately from the algorithmic feed
 
 **Social & notifications**
-- `leaderboard_snapshots` (week, scope, rankings jsonb), `leagues`, `league_members`, `cheers`
+- `leaderboard_snapshots` (week, scope, rankings jsonb), `leagues`, `league_members`
+- `cheers` (sender_id, receiver_id, created_at, unique on (sender_id, receiver_id, date) — one
+  cheer per recipient per sender per day; XP awarded is also capped per receiver per day via
+  `settings_kv.cheer_daily_xp_cap`; un-cheer/re-cheer never re-awards XP)
 - `push_tokens`, `notification_prefs`, `notifications`
-- `doubt_threads`, `doubt_messages`
+- `doubt_threads`, `doubt_messages` — Phase 7's live AI mentor; the in-lesson "Doubt Zone" node in
+  Phase 2 is scripted content (`lessons.content`), not these tables (see PRODUCT_SPEC.md §1)
 
 **Monetisation**
 - `entitlements` (user_id, entitlement, source revenuecat|razorpay, expires_at, raw)

@@ -20,16 +20,27 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
 ## 1. World Home & Lessons
 - 7 worlds in order: Money World → Savings Valley → Budget Bazaar → Market Maidan →
   Risk Ridge → Economy Empire → Elite Summit.
-- World 1 is unlocked. Each world ends in a **Boss quiz**; clearing it unlocks the next world.
-  Locked worlds show a level/XP target, never a paywall.
+- **World unlock is sequential only**: World 1 is unlocked; clearing a world's **Boss quiz**
+  unlocks the next one. There is no separate XP or level gate — a locked world's card shows the
+  user's XP/level as a **progress indicator only**, never as the actual unlock condition, and
+  never a paywall. Trading's own unlock (§4) follows this same rule: it opens once World 3's
+  Boss Quiz is cleared and World 4 (Market Maidan) is reached.
 - A world is a trail of lesson nodes. Six node kinds: **Video, Story, Quiz, Boss Quiz,
-  Role Play, Doubt Zone**.
+  Role Play, Doubt Zone**. Boss Quiz and Role Play don't need their own screens — both reuse the
+  same lesson-flow engine as a normal Quiz step, Boss Quiz with higher-stakes settings (longer
+  timer, bigger reward, chapter-final framing) and Role Play as a dialogue/scenario-framed
+  practice step ("you play the decision-maker and live with the result").
 - Video lessons (~48 s) have timed in-video pop quizzes (e.g. 6-second "lightning" tap,
   ordering, matching, slider). Captions on/off, playback speed.
-- Scoring: base per correct answer + speed bonus (answered within half the time) +
-  combo bonus + all-correct bonus; "fever" mode on long combos. The result screen shows
-  a breakdown.
-- **Doubt Zone**: "Ask Lamma AI" — an AI mentor that answers in the user's language.
+- Scoring: base per correct answer + speed bonus (answered within **45%** of the allotted time)
+  + combo bonus + fever mode (2× on base+speed once combo reaches 3) on top of that. The result
+  screen shows a breakdown. These constants (speed-bonus %, fever threshold, fever multiplier,
+  combo-bonus-per-step) are admin-editable config, not hardcoded — same mechanism as
+  `reward_rules` (see §2).
+- **Doubt Zone** ("AI Chat" node): in **v1 (Phase 2) this is scripted** — a fixed Q&A written by
+  the content team per lesson, no live AI call. The **real "Ask Lamma AI" live AI mentor ships in
+  Phase 7**, with the safety and rate-limit rules a minors-facing AI feature needs; it then
+  becomes what this node kind (and the standalone Doubt Zone entry point) actually calls.
 - **Mentor evolution**: the user's mentor changes as they progress through worlds (e.g. Baby →
   Father → Grandpa Lamma), each stage covering a fixed range of worlds with its own bio and
   dialogue. Mentors are an **admin-editable content type** (name, bio, world range, art, per
@@ -58,24 +69,33 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
 - Push notifications: streak about to break, boss battle, market news, session goal.
 
 ## 3. Arena (social)
-- Weekly leaderboards (reset weekly). Scopes: class, school, state, India, world teams.
-- Leagues with promote (top ~25%) / demote (bottom ~25%) / safe band.
+- Weekly leaderboards (reset weekly). Scopes: class, school, state, India, world teams. The
+  **state** scope is **optional** — collected at onboarding with a plain-language explanation of
+  why it's asked, used only to place the user in the state leaderboard, and **never shown on
+  any public profile**.
+- Leagues with promote (top ~25%) / demote (bottom ~25%) / safe band — a flat pool per scope, not
+  named tiers. Promote/safe/demote reward amounts (V Money, crest) are admin-editable via the
+  same `reward_rules`-style mechanism as lesson rewards.
 - Worlds table: XP per world and XP-per-member so small worlds can compete.
-- **Cheers**: send a cheer to any player; the receiver gets +5 XP and a notification.
+- **Cheers**: send a cheer to any player; the receiver gets +5 XP and a notification. **Limits**:
+  one cheer per recipient per sender per day; a daily cap on total XP a user can receive from
+  cheers; un-cheering and re-cheering the same person never re-awards the XP.
 - **Kid-safe**: public name is first name + last initial only. No profile photos, no chat.
 - **Monthly Competition**: a single-stock trading contest with its own isolated virtual capital,
   ranked by ROI%. **Prizes are never real money** — V Money, exclusive badges/titles, and optional
   brand coupons from the Rewards catalog only, with prize amounts admin-configurable per
-  competition. (Sponsored non-cash prizes, e.g. real-world merchandise, are a possible future
-  addition, but only after legal review — not in v1 scope.)
+  competition (same mechanism as promote/safe/demote rewards above). (Sponsored non-cash prizes,
+  e.g. real-world merchandise, are a possible future addition, but only after legal review — not
+  in v1 scope.)
 
 ## 4. Trade (paper trading)
 - **Explore mode from day one**: live prices, charts, watchlist and stock info are visible to
-  every user regardless of progress. The **order pad** (placing real BUY/SELL orders) is locked
-  until the learner reaches **Market Maidan (World 4)** by default — an admin-configurable unlock
-  world in the Ops console — shown with a progress message ("Reach Market Maidan to start trading
-  — N worlds to go"). No grant on unlock: trading capital is whatever V Money the learner has
-  already earned (see §2), carried over automatically.
+  every user regardless of progress. The **order pad** (placing real BUY/SELL orders) unlocks
+  when the learner clears World 3's Boss Quiz and reaches **Market Maidan (World 4)** — following
+  the same sequential world-unlock rule as §1, not a separate XP/level threshold — shown with a
+  progress message ("Reach Market Maidan to start trading — N worlds to go"). No grant on unlock:
+  trading capital is whatever V Money the learner has already earned (see §2), carried over
+  automatically.
 - 12 NSE large caps: RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, SBIN, ITC, TATAMOTORS,
   BHARTIARTL, HINDUNILVR, LT, ASIANPAINT (list is admin-editable).
 - Stock detail: candlestick chart (timeframes), sector, about text, market cap, P/E, volume.
@@ -91,9 +111,10 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
   V Money a typical learner has by World 4, and whether it's enough to trade comfortably).
 
 ### Ops console (admin)
-Feed mode LIVE / 15-min delayed / paused, volatility setting for simulations, per-symbol
-halts, global halt (order pad rejects on the phone), XP→V Money issuance rate, user
-ledger with risk flags, audit log.
+Feed mode LIVE / 15-min delayed / paused, per-symbol halts, global halt (order pad rejects on the
+phone), V Money issuance multiplier, user ledger with risk flags, audit log. **No volatility
+control and no synthetic prices, ever** — when the market is closed, every screen simply shows
+the last real close; nothing simulates price movement near a real trade.
 
 ## 5. News & Pulse Check
 - Daily finance news rewritten for students: 3-line explainers, one jargon term explained
@@ -113,7 +134,15 @@ Overview → Stats → Badges → Rewards. Weekly report card: module table (don
 accuracy, grade), 8-week speed vs accuracy trend, coach notes (strength / gap /
 opportunity / habit), coin ledger.
 Badges e.g. Pehla Kadam, Paper Trader, News Nerd, Streak Star, Speed Reader, Arena King.
-Certificates: view, share, download PDF.
+Certificates: view, share, download PDF (server-rendered, no headless browser — see
+`docs/DATA_MODEL.md`). Sharing a certificate or the weekly report is the student generating and
+sending the file themselves via the device share sheet — v1 never contacts anyone on the
+student's behalf (see the parental-consent note in §7 for why that boundary matters).
+
+**Rewards**: at launch, **Finlamma-only** — badges, titles, cosmetic themes — each with a
+**fixed, admin-set V Money price**. No brand coupons and no fictional partner brands at launch.
+Real brand-partner rewards are a later addition once partnerships exist, added the same way
+(admin CRUD, fixed price) without a schema change.
 
 ### Weekly report card — in scope for v1
 Computed by a weekly Inngest job (Monday, IST) that writes a per-user weekly snapshot; the
@@ -152,6 +181,21 @@ as news/quiz drafts), but v1 ships template-only.
 How-to-use walkthrough, language, appearance, notifications, sound & haptics, data saver,
 account (name, email, login), contact, rate app, terms/privacy/risk disclosure, about, log out,
 delete account.
+
+## Onboarding & parental consent (real, v1 scope)
+- Onboarding collects **date of birth**. Users under 18 require **verifiable parental consent**
+  before full app access: a parent/guardian is contacted (email or phone) and verifies via
+  OTP/email link. Every consent is recorded — who gave it, when, by what method, and which
+  version of the legal documents they accepted. **Until consent completes, the account has
+  limited features** (exact limits: TBD at Phase 2 kickoff — propose a plan then).
+- **School/institution accounts are out of scope for v1** (moved to a future v2) — the legal text
+  no longer references them.
+- **Legal documents** (Terms, Privacy, Risk disclosure) are **staff-editable with versioning**.
+  Only **super_admin** can publish a new version. Every acceptance (by a user or, for a minor, by
+  their consenting parent) records which document version was accepted. Publishing a new version
+  prompts re-acceptance from everyone who hasn't accepted it yet.
+- **Before launch**: the consent flow and the terms/privacy/risk-disclosure text need an outside
+  legal review — not something this codebase can self-certify (tracked in `docs/ROADMAP.md`).
 
 ## Monetisation
 - Ads start after the user completes World 3; hidden for ad-free subscribers.

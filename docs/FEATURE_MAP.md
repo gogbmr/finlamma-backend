@@ -11,16 +11,16 @@ inline). **Phase** is a best guess at which `docs/ROADMAP.md` phase should own t
 the founder has answered the Gaps & Questions section below (see step 4 of the audit this file was
 built for).
 
-**250 rows** across 7 screens: World Home (28), Arena (24), Trade + Ops console (57), News +
-Pulse Check + News Desk (47), Profile + report card + certificates (38), Settings (20), Lesson
-Flow + quizzes (36).
+**254 rows** across 7 screens + onboarding: World Home (28), Arena (24), Trade + Ops console (57),
+News + Pulse Check + News Desk (47), Profile + report card + certificates (38), Settings +
+Onboarding (24), Lesson Flow + quizzes (36).
 
-**Resolved this round** (see `docs/ECONOMY.md` and the updated PRODUCT_SPEC/DATA_MODEL/ROADMAP):
-Arena Competition prizes are virtual-only; mentors are an admin-editable content type; the weekly
-report card is in scope for v1 with rule-based (no-AI) coach notes; XP and V Money are earned
-independently via an admin-editable `reward_rules` table, trading capital has no starting grant,
-the order pad locks until an admin-configurable world (default Market Maidan), orders are
-whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other).
+**Every gap and question in this document is now DECIDED**, across two founder-review rounds: the
+economy round (XP/VM model, mentors, Competitions, report card scope) and the full remaining-gaps
+round (world unlock rule, parental consent, legal-document versioning, reward pricing, cheer
+limits, removing the volatility control, Boss Quiz/Role Play architecture, and the rest). See
+`docs/ECONOMY.md` for the trading-capital simulation, and the Gaps & Questions section below for
+the reasoning behind each decision.
 
 ---
 
@@ -35,7 +35,7 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 | WH-05 | World Home | Tapping a stat tile expands an inline card with 3 quick breakdown numbers + a coach-style note | same as above, plus templated/generated note text | MISSING: note text needs a template or AI-generated copy rule | (covered by WH-01..04 endpoints) | none | TBD | Not built |
 | WH-06 | World Home | "Resume" banner (continue current lesson) | user's current world + lesson-in-progress pointer | `lesson_progress`, `worlds`, `lessons` | `GET /api/v1/me/current-lesson` | none | 2 | Not built |
 | WH-07 | World Home | World map: 7 world cards (title, tagline, art, lock state, progress %, mentor chip) | worlds list + per-user progress per world | `worlds`, `lesson_progress` (aggregated) | `GET /api/v1/worlds` (with per-user progress merged) | World/lesson content editor (create/edit/reorder worlds) | 2 | Not built |
-| WH-08 | World Home | World unlock rule: locked worlds show a level/XP threshold, never a paywall (prototype uses level thresholds LVL 32/40/50 for worlds 5/6/7, inconsistent with a flat `unlock_xp` field) | world unlock rule (level vs XP) | `worlds.unlock_xp` (DATA_MODEL) vs. observed level-based thresholds | n/a | World content editor: set unlock threshold | 2 | Not built |
+| WH-08 | World Home | **Decided: sequential unlock only** — clearing a world's Boss Quiz unlocks the next; a locked world's level/XP pill is a progress indicator, never a paywall or the actual gate | previous world's Boss Quiz completion | `lesson_progress`, `worlds.display_xp_target` (cosmetic only) | n/a | none | 2 | Not built |
 | WH-09 | World Home | Mentor evolution panel: 3 mentors (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, with active/locked visual state | mentor definitions + which one is "active" for the user's current world | `mentors` (decided: admin-editable content type — see PRODUCT_SPEC §1) | `GET /api/v1/mentors` | Mentor content editor (name, bio, world range, art) | 3 | Not built |
 | WH-10 | World Home | Tapping a mentor opens an intro modal: bio, typed-dialogue animation (3 lines), and the list of worlds that mentor teaches | mentor bio + dialogue lines (per language) + world list | `mentors` (see WH-09) | `GET /api/v1/mentors/{key}` | Mentor content editor | 3 | Not built |
 | WH-11 | World Home – Onboarding | First-open onboarding: same mentor-intro modal, triggered automatically for a new user instead of by tap | "has user completed onboarding" flag | `users` (needs an `onboarding_completed_at`-style column — not currently in DATA_MODEL) | `PATCH /api/v1/me` (set onboarding flag) | none | 2 | Not built |
@@ -67,13 +67,13 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 | AR-04 | Arena – Worlds | World-battle strip: ranked world cards with 7-day XP sparkline, member count, weekly XP, delta % | per-world weekly XP total, member count, 7-day XP history | MISSING: `worlds` has no weekly-aggregate/member-count/history; needs `world_xp_snapshots` (world_id, day, xp) or Redis rollup | `GET /api/v1/arena/worlds` | none (derived) | 6 | Not built |
 | AR-05 | Arena – Worlds | Full world leaderboard table (rank, name, weekly XP, XP-per-member, delta) | same as AR-04 + `xp / member_count` | same as AR-04 | `GET /api/v1/arena/worlds` | none | 6 | Not built |
 | AR-06 | Arena – Worlds | Expand a world row → its top-10 players by weekly XP (rank, name, streak, time played, XP) + the current user's row/rank even if outside top 10 | per-world leaderboard ranking, per-user streak/time-today | MISSING: `leaderboard_snapshots` (DATA_MODEL) stores `rankings jsonb` — needs to be scoped by world; needs "time played today" which isn't modeled anywhere | `GET /api/v1/arena/worlds/{worldId}/leaderboard` | none | 6 | Not built |
-| AR-07 | Arena – Players | Scope chips: My World / My State / India / Global | user's state (not in `users` table today) | `users` (needs `state` field — MISSING), `leaderboard_snapshots` | `GET /api/v1/arena/leaderboard?scope=` | none | 6 | Not built |
+| AR-07 | Arena – Players | Scope chips: My World / My State / India / Global. **Decided: `users.state` is optional**, collected with an explanation, never shown on public profiles | user's state (optional) | `users.state`, `leaderboard_snapshots` | `GET /api/v1/arena/leaderboard?scope=` | none | 6 | Not built |
 | AR-08 | Arena – Players | Promote/demote zone banner: "TOP N PROMOTE · BOTTOM N DEMOTE", N = round(pool size / 4) | pool size per scope | `leagues`, `league_members` | `GET /api/v1/arena/leaderboard?scope=` (include zone info) | none | 6 | Not built |
 | AR-09 | Arena – Players | Top-3 podium (crown, avatar, name, XP, streak, weekly move ▲▼—) | rank, xp, streak, move-vs-last-week | `leaderboard_snapshots` (needs last week's rank stored for delta) | `GET /api/v1/arena/leaderboard?scope=` | none | 6 | Not built |
 | AR-10 | Arena – Players | Full player ladder list, expandable per row → Lessons count, Quiz accuracy %, Sim P&L, a contextual note | lessons completed, quiz accuracy, trading P&L per user (aggregate) | MISSING: no per-user aggregate stats table; needs `user_stats` view/materialized rollup | `GET /api/v1/arena/leaderboard?scope=&expand=stats` | none | 6 | Not built |
 | AR-11 | Arena – Players | "LIVE" tag on players currently active in-session | live/online presence | MISSING: no presence tracking (Redis TTL key per user) | n/a (websocket or short-poll) | none | 6 | Not built |
-| AR-12 | Arena – Players | Cheer button per player → sends +5 XP to receiver + notification; disabled/relabelled "TUM" for the user's own row | cheer action, cooldown/limit (none specified) | `cheers` (DATA_MODEL has this table) | `POST /api/v1/arena/cheers` | Cheer abuse/audit view (optional) | 6 | Not built |
-| AR-13 | Arena – Players | Season Rewards card: Promote → "next league promote + 500 V Money + gold crest"; Safe → "150 V Money"; Demote → "one league down · streak shield stays" | reward payout rules per zone | `settings_kv` (reward amounts, admin-editable) + `vmoney_ledger` (payout) | `POST /api/v1/arena/season/settle` (Inngest job, not user-facing) | Arena rewards config | 6 | Not built |
+| AR-12 | Arena – Players | Cheer button per player → sends +5 XP to receiver + notification; disabled/relabelled "TUM" for the user's own row. **Decided: one cheer per recipient per sender per day, a daily per-receiver XP cap, uncheer/re-cheer never re-awards XP** | cheer action, dedup + daily cap | `cheers` (unique on sender/receiver/date), `settings_kv.cheer_daily_xp_cap` | `POST /api/v1/arena/cheers` | Cheer abuse/audit view (optional) | 6 | Not built |
+| AR-13 | Arena – Players | Season Rewards card: Promote → "next league promote + 500 V Money + gold crest"; Safe → "150 V Money"; Demote → "one league down · streak shield stays". **Decided: admin-editable via `reward_rules`** | reward payout rules per zone | `reward_rules`/`settings_kv` (admin-editable) + `vmoney_ledger` (payout) | `POST /api/v1/arena/season/settle` (Inngest job, not user-facing) | Arena rewards config | 6 | Not built |
 | AR-14 | Arena – Contest | Monthly single-stock trading Competition hero: sponsor logo, stock, sector, LTP, % change this month, players count, virtual capital (₹1L), prize pool, date window, days left, progress bar | competition metadata | `competitions` (decided — see PRODUCT_SPEC §3) | `GET /api/v1/arena/competitions/current` | Competition manager (create/edit competition) | 6 | Not built |
 | AR-15 | Arena – Contest | "You" rank card: user's rank (#N), trades made, ROI %, push line ("Top 10 needs +X% more ROI") | user's competition rank/ROI/trade count | `competition_entries` | `GET /api/v1/arena/competitions/current/me` | none | 6 | Not built |
 | AR-16 | Arena – Contest | Top-3 ROI podium + full ranked board (expand → best trade, win rate, avg hold time, note) | per-contestant ROI, trade count, avg price, best trade, win rate, avg hold | `competition_entries`/`competition_trades` — isolated from the main paper-trading portfolio | `GET /api/v1/arena/competitions/current/leaderboard` | Competition leaderboard view | 6 | Not built |
@@ -136,7 +136,7 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 | TR-44 | Trade – Ops console | Panel tab switch: OPS CONSOLE / DESIGN NOTES | — | — | — | Ops console | 4 | Not built |
 | TR-45 | Trade – Ops console | KPI tiles: Active traders, Orders today, V Money in play, Risk flags count | aggregate stats (currently hardcoded fake numbers in prototype, not computed) | `orders`, `vmoney_ledger`, risk-flag source (see gap) | `GET /api/v1/admin/trade/ops/summary` | Ops console | 4 | Not built |
 | TR-46 | Trade – Ops console | Price Feed Control: mode buttons LIVE / DELAYED / PAUSED | `market_controls.feed_mode` | `market_controls` | `PATCH /api/v1/admin/trade/ops/feed-mode` | Ops console | 4 | Not built |
-| TR-47 | Trade – Ops console | Volatility slider 0–3× for simulated price feed | `market_controls`(-like) volatility setting | MISSING: DATA_MODEL's `market_controls` only has `feed_mode`/`global_halt`; no volatility field — and once real Twelve Data prices are wired in, it's unclear what "volatility" would control (see gap question) | `PATCH /api/v1/admin/trade/ops/volatility` (proposed, pending answer) | Ops console | 4 | Not built |
+| TR-47 | Trade – Ops console | **Decided: removed from v1 scope.** The prototype's 0–3× volatility slider (simulated price feed only) has no place once real Twelve Data prices are wired in — no synthetic prices, ever, near a real trade. Closed market shows the last real close instead. | — | — | — | — | — | Cut (decided) |
 | TR-48 | Trade – Ops console | Global trading halt toggle | `market_controls.global_halt` | `market_controls` | `PATCH /api/v1/admin/trade/ops/halt` | Ops console | 4 | Not built |
 | TR-49 | Trade – Ops console | Symbol Master table: per-symbol LTP, sector, change %, LIVE/HALT flag toggle | `instruments.halted` | `instruments` | `GET /api/v1/admin/trade/instruments`, `PATCH /api/v1/admin/trade/instruments/{symbol}/halt` | Ops console | 4 | Not built |
 | TR-50 | Trade – Ops console | Live "TICK {n}s" age indicator for symbol feed | last tick timestamp | Redis price cache (per ARCHITECTURE.md `px:<SYMBOL>:NSE`) | `GET /api/v1/admin/trade/ops/summary` (reuses TR-45) | Ops console | 4 | Not built |
@@ -225,8 +225,8 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 | PR-19 | Profile – Badges | Picked-badge detail card: description, progress, VM reward, "X rank away" lock note | badge detail + user progress | `badges`, `user_badges` | (same) | Badge manager | 3 | Not built |
 | PR-20 | Profile – Badges | "Next 3 badges" nearly-there list | badges sorted by % complete, top 3 not-yet-earned | `badges`, `user_badges` | (same) | none | 3 | Not built |
 | PR-21 | Profile – Rewards | Wallet balance (VM), "earned this month", earn-source breakdown (lectures/quiz/news/streak %) | vmoney_ledger grouped by reason, monthly window | `vmoney_ledger` | `GET /me/wallet` | none | 3 | Not built |
-| PR-22 | Profile – Rewards | Coupons list: brand, offer, "how earned", reveal/copy code, READY/USED/COPIED states | reward catalog + per-user claim state | `rewards`, `reward_claims` | `GET /me/rewards`, `POST /me/rewards/:id/claim` | Reward/coupon catalog manager (brand, offer text, code pool, earn criteria) | 3 | Not built |
-| PR-23 | Profile – Rewards | Locked (VM-gated) rewards list: cost, progress, "X VM more" | reward VM price, user balance | `rewards` | `GET /me/rewards` | Reward/coupon catalog manager | 3 | Not built |
+| PR-22 | Profile – Rewards | Rewards list: name, "how earned", reveal/copy code, READY/USED/COPIED states. **Decided: Finlamma-only at launch** (badges, titles, cosmetic themes) — no fictional brand coupons; `rewards.category` supports real brand-partner rewards later without a schema change | reward catalog + per-user claim state | `rewards` (category finlamma\|brand_partner), `reward_claims` | `GET /me/rewards`, `POST /me/rewards/:id/claim` | Reward catalog manager (name, category, fixed VM price, earn criteria) | 3 | Not built |
+| PR-23 | Profile – Rewards | Locked rewards list: cost, progress, "X VM more". **Decided: fixed, admin-set VM price** — never computed from the viewing user's own balance (that was a prototype UI trick) | reward VM price (fixed), user balance | `rewards.price_vm` | `GET /me/rewards` | Reward catalog manager | 3 | Not built |
 | PR-24 | Profile – Rewards | Redeem history ledger (date, description, ± VM) | vmoney_ledger filtered to reward-related entries | `vmoney_ledger` | `GET /me/wallet/history` | none | 3 | Not built |
 | PR-25 | Profile – Trades | Portfolio value hero + equity sparkline (12 bars) | holdings valuation over time | `holdings`, `orders` | `GET /me/portfolio/summary` | none | 4 | Not built |
 | PR-26 | Profile – Trades | Trading-stats grid (6 stats: e.g. win rate, avg hold) | derived from closed orders | `orders` | `GET /me/portfolio/stats` | none | 4 | Not built |
@@ -238,7 +238,7 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 | PR-32 | Profile – Report Card | 8-week speed-vs-accuracy trend chart | weekly speed/accuracy history | `report_snapshots` (weekly rows, 8-week window) | (same) | none | 3 | Not built |
 | PR-33 | Profile – Report Card | **Decided: rule-based templates, no AI for v1.** Coach notes: 4 categories (TAAKAT/strength, GAP, MAUKA/opportunity, AADAT/habit), computed per the formula in PRODUCT_SPEC §6 | template strings (en/hi/hx) + the user's real per-metric numbers | `coach_note_templates`, `report_snapshots` | (same) | Coach-note template editor (draft → publish, logged) | 3 | Not built |
 | PR-34 | Profile – Report Card | Reward ledger (earn/spend log with running totals) | vmoney_ledger, filtered/summed for the period | `vmoney_ledger` | `GET /me/report-card` | none | 3 | Not built |
-| PR-35 | Profile – Report Card | Export/share sheet: 3 actions — download PDF report card, generate 1080×1920 "story card" image, "send to mentor" weekly summary letter | PDF/image generation; mentor contact info + delivery | MISSING: PDF/image generation pipeline; MISSING: any concept of a parent/mentor contact anywhere in DATA_MODEL — **still open, see Gaps & Questions** (not part of this round's 4 decisions) | `POST /me/report-card/export` (`format: pdf\|story\|mentor-letter`) | none | TBD | Not built |
+| PR-35 | Profile – Report Card | Export/share sheet: 3 actions — download PDF report card, generate 1080×1920 "story card" image, "send to mentor" weekly summary letter. **Decided: v1 is self-service only** — student shares via the device share sheet; no message sent on their behalf. Future: opt-in weekly email to a verified parent contact once the consent flow (Settings §7) exists. | PDF/image generation (`@react-pdf/renderer`, no headless browser) | `report_snapshots`, S3 via `src/lib/s3.ts` | `POST /me/report-card/export` (`format: pdf\|story`) | none | 3 | Not built |
 | PR-36 | Profile – Certificates | Certificate view per cleared world: name, world, stars, issued date, XP, score, certificate ID | certificate record | `certificates` | `GET /me/certificates/:worldId` | none | 3 | Not built |
 | PR-37 | Profile – Certificates | Certificate download as PDF (A4 landscape, browser print) | certificate render data + generated file | `certificates` (needs `file_key` populated) | `GET /me/certificates/:worldId/pdf` | none | 3 | Not built |
 | PR-38 | Profile – Certificates | Certificate share sheet (WhatsApp/Instagram/LinkedIn/copy link) | shareable link or re-generated PDF | `certificates` | (same as PR-37, or a share-link endpoint) | none | 3 | Not built |
@@ -257,16 +257,20 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 | SET-08 | Settings | Sound & haptics on/off toggle | sound pref | MISSING: no column for this in `users` or elsewhere in DATA_MODEL.md | `PATCH /me` (extend) or new `preferences` jsonb | none | TBD | Not built |
 | SET-09 | Settings | Data saver on/off toggle (lower-res lesson videos) | data-saver pref | MISSING: not in DATA_MODEL.md | `PATCH /me` (extend) or new `preferences` jsonb | none | TBD | Not built |
 | SET-10 | Settings | Account fields: Full name, Email, Mobile (masked), Bio — view + "Edit" affordance (no actual edit flow drawn) | first_name, email, phone, bio | `users` (first_name, email, phone exist); MISSING: no `bio` field in DATA_MODEL.md | `PATCH /me` (bio needs schema addition) | none | 1 for name/email/phone; TBD for bio | Partially built (see /me), bio missing |
-| SET-11 | Settings | Login methods list: Google (linked), Password (change), Login PIN (off) | auth method status | Clerk-managed, not our DB | none — this is Clerk account-management UI, not our API | none | TBD | Not built — needs a decision, see Gaps |
+| SET-11 | Settings | Login methods list: Google (linked), Password (change). **Decided: thin wrapper over Clerk's own hosted account flows; "Login PIN" is cut for v1** (not a Clerk feature) | auth method status | Clerk-managed, not our DB | none — this is Clerk account-management UI, not our API | none | 1 | Not built |
 | SET-12 | Settings | Log out (confirm sheet, "progress/streak/coins stay safe") | none (client-side session clear) | none | none (Clerk client SDK) | none | 1 | Not built (client-only, no server dependency) |
 | SET-13 | Settings | "Delete my account permanently" | account deletion | `users` (soft-delete/anonymize, per DATA_MODEL) | `DELETE /me` | none | 1 (already built per ROADMAP) | Built server-side per ROADMAP — **the prototype's button itself has no onClick handler**, i.e. the mockup never wires this UI to anything |
 | SET-14 | Settings | Contact channels: Ask Lamma AI (24×7), email (help@finlamma.in), WhatsApp support (hours shown), School partnerships | static contact info + optional AI entry point | none (static) for channel list; Doubt Zone AI itself needs `doubt_threads`/`doubt_messages` | none for static list; AI chat uses Doubt Zone endpoints | none | TBD (static list) / 7 (AI entry) | Not built |
 | SET-15 | Settings | "Write to us" form: topic chips + message textarea + Send | topic, free-text message | MISSING: no support-ticket table in DATA_MODEL.md | `POST /support/messages` (new) or route to Resend email — proposal | possibly a "Support inbox" admin page (not in prototype) | TBD | Not built — decorative/non-functional in prototype too |
-| SET-16 | Settings | Terms & Conditions: legal tabs (Terms of use / Privacy / Risk disclosure) + clause list | legal copy | none (static content), unless staff-editable — see Gaps | none needed if static | none, unless CMS-editable — see Gaps | TBD | Not built. **Note: in the prototype the tabs don't filter content — all 6 clauses always show regardless of selected tab** |
-| SET-17 | Settings | Risk disclosure banner ("not a SEBI-registered investment adviser...") | static copy | none | none | none | TBD | Not built (copy exists, needs to ship as static app content) |
-| SET-18 | Settings | Rate Finlamma: 1–5 star rating + verdict word + "what did you love" tag chips + feedback textarea + "Rate on Play Store" CTA | rating value, selected tags, free text | MISSING: no ratings/feedback table in DATA_MODEL.md | `POST /feedback/rating` (new, proposal) | possibly a feedback-review admin page (not in prototype) | TBD | Not built |
+| SET-16 | Settings | Terms & Conditions: legal tabs (Terms of use / Privacy / Risk disclosure) + clause list. **Decided: staff-editable with versioning**, super_admin-only publish, per-user (and per-parent) acceptance tracked per version, re-acceptance prompted on a new version | legal copy, version, acceptance records | `legal_documents`, `legal_acceptances` | `GET /me/legal-status`, admin: `POST /admin/legal/{type}/publish` | Legal document editor (draft → publish, versioned) | 2 | Not built |
+| SET-17 | Settings | Risk disclosure banner ("not a SEBI-registered investment adviser...") | static copy, version, acceptance | `legal_documents` (type risk_disclosure) | `GET /me/legal-status` | Legal document editor | 2 | Not built |
+| SET-18 | Settings | Rate Finlamma. **Decided: no backend** — deep-link to Play Store/App Store listing only, matching the prototype's own non-functional CTA | — | — | — (client-only deep link) | none | — | Not built (client-only) |
 | SET-19 | Settings | App version/build footer (`v2.4.1 (build 318)`) | app version string | none | none (client constant) | none | N/A | N/A |
 | SET-20 | Settings | Settings reachable both from Home (bell/profile area) and from Profile tab — same component, two entry points | none | none | none | none | N/A | N/A (UX note, not a distinct backend feature) |
+| SET-21 | Onboarding | Date of birth capture at signup | `users.date_of_birth` | `users` | `PATCH /me` (onboarding step) | none | 2 | Not built |
+| SET-22 | Onboarding | Under-18 gate: parent/guardian is contacted (email or phone) and verifies via OTP/email link before the account gets full access; account has limited features until verified | parent contact + OTP/email verification flow | `parent_contacts`, `consent_records` | `POST /me/parent-consent/request`, `POST /me/parent-consent/verify` | Consent review view (staff can see status, not bypass it) | 2 | Not built |
+| SET-23 | Onboarding | Every consent is recorded: who gave it, when, method, and which legal-document version was accepted | consent audit trail | `consent_records`, `legal_acceptances` | (part of SET-22 flow) | Legal/consent audit view | 2 | Not built |
+| SET-24 | Onboarding | School/institution accounts — shown in the prototype's legal text, **decided: out of v1, deferred to v2**, removed from v1's legal copy | — | — | — | — | — | Deferred to v2 |
 
 ## Lesson Flow + quizzes (LF)
 
@@ -314,96 +318,92 @@ whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other
 ## Gaps & Questions
 
 Organized by screen. Each item is either (a) something the prototype shows that PRODUCT_SPEC.md,
-ROADMAP.md or DATA_MODEL.md don't cover or describe differently, or (b) fake/simulated data in the
-prototype that needs a founder decision about how it should work for real. A prioritized summary
-of the ones that most affect scope and schema is in the chat message that shipped alongside this
-file.
+ROADMAP.md or DATA_MODEL.md didn't originally cover or described differently, or (b) fake/
+simulated data in the prototype that needed a founder decision about how it should work for real.
 
-Status legend: **RESOLVED** (decided in the economy round) · **PROPOSED (default)** (this round's
-proposed answer, applied to the docs — matches the prototype's behavior unless noted, awaiting
-your sign-off) · **NEEDS YOUR DECISION** (touches economy/rewards, child safety/privacy, legal/
-compliance, payments/ads, or would be expensive to change after launch — not defaulted, see the
-chat message for the batch of questions).
+Status: **all items below are DECIDED** — two rounds of founder review, first the economy round,
+then the full remaining-gaps round. Every decision is reflected in PRODUCT_SPEC/DATA_MODEL/
+ROADMAP; this section keeps the reasoning and the original question for reference.
 
 ### World Home
-1. **RESOLVED.** XP and V Money are earned independently — see PRODUCT_SPEC §2 and `docs/ECONOMY.md` for the `reward_rules` model and the seeded values (3× the prototype's VM amounts).
-2. **NEEDS YOUR DECISION.** World unlock rule: XP threshold, level threshold, or "must clear the previous world's boss quiz" (sequential)? The prototype shows conflicting signals (level pills `LVL 32/40/50`, DATA_MODEL's `unlock_xp`, PRODUCT_SPEC's "clearing the boss quiz unlocks the next world").
+1. **DECIDED.** XP and V Money are earned independently — see PRODUCT_SPEC §2 and `docs/ECONOMY.md` for the `reward_rules` model and the seeded values (3× the prototype's VM amounts).
+2. **DECIDED: sequential unlock only** — clearing a world's Boss Quiz unlocks the next one. XP/level shown on a locked world's card is a progress indicator only, never the actual gate. Trading's own unlock (World 4) follows this same rule. See PRODUCT_SPEC §1/§4.
 3. Duplicated, inconsistent `WORLDS` data across screens — no action needed, just confirms `worlds` must be one real table (already true in DATA_MODEL).
-4. **RESOLVED.** Mentors are an admin-editable content type — `mentors` table added to DATA_MODEL, Mentor content editor added.
-5. **PROPOSED (default): build a lightweight `session_time_daily`** (user_id, date, seconds), written from client-reported session-end pings — not analytics-verified, just enough to back the header's TIME stat. *Why:* the prototype treats this as a core stat tile; cheap to build; no founder judgment needed on the mechanism.
+4. **DECIDED.** Mentors are an admin-editable content type — `mentors` table added to DATA_MODEL, Mentor content editor added.
+5. **DECIDED: build a lightweight `session_time_daily`** (user_id, date, seconds), written from client-reported session-end pings.
 6. V Money weekly numbers in the prototype don't reconcile (spend+trade > balance) — fabricated filler, no action needed.
-7. **PROPOSED (default): implement as a real 30-day retention rule** (nightly cleanup job). *Why:* matches the prototype exactly; cheap; no reason to keep notifications forever.
-8. **PROPOSED (default): the 5 observed types are the full v1 set** — streak-about-to-break, boss battle, market news, session goal, Arena rank-change. *Why:* matches everything the prototype demonstrates; ROADMAP Phase 7 can add more later without a redesign.
-9. **PROPOSED (default): global percentile**, not scoped. *Why:* it's a single standalone tile with no scope selector shown (unlike Arena, which has explicit scope chips) — simplest match to what's actually drawn.
+7. **DECIDED: implement as a real 30-day retention rule** (nightly cleanup job).
+8. **DECIDED: the 5 observed types are the full v1 set** — streak-about-to-break, boss battle, market news, session goal, Arena rank-change.
+9. **DECIDED: global percentile**, not scoped.
 
 ### Arena
-1. **RESOLVED.** In scope for v1, Phase 6 — `competitions`/`competition_entries` tables added to DATA_MODEL, Competition manager admin page added.
-2. **RESOLVED.** Prizes are virtual-only (V Money + badges/titles + optional coupons), admin-configurable per competition — see PRODUCT_SPEC §3 and ROADMAP Phase 6.
-3. **NEEDS YOUR DECISION.** "My State" scope needs a `state` field on `users` — collect it at signup? Any privacy concern for a kid-safe app collecting location-adjacent data?
-4. **PROPOSED (default): build for v1**, via cached/materialized per-user aggregates (short Redis TTL, not computed per-request). *Why:* these stats are core to the leaderboard-row-expand interaction the prototype demonstrates throughout Arena; cutting them would visibly regress that experience.
-5. **PROPOSED (default): cut "LIVE" presence for v1**, no real-time infra. *Why:* cosmetic flourish, not core to leaderboard correctness; meaningful Redis/websocket cost for low value; trivial to add later without breaking anything.
-6. **PROPOSED (default): flat pool per scope, top/bottom ~25% computed live** — no named tiers (Bronze/Silver/Gold). *Why:* matches the prototype exactly; named tiers are unrequested extra scope PRODUCT_SPEC's wording only implied, didn't specify.
-7. **NEEDS YOUR DECISION.** Cheer has no rate limit in the prototype — should it be limited (e.g. once per player per day) to prevent XP farming via repeated cheer/uncheer? (Touches the XP economy.)
-8. **NEEDS YOUR DECISION.** Should Arena reward/prize amounts (500/150 VM, gold crest) become admin-editable via the same `reward_rules`-style mechanism as lessons? (Touches rewards/economy — likely "yes, for consistency," but flagged per your rule rather than defaulted.)
-9. **PROPOSED (default): a daily Inngest snapshot job** (reuses the pattern already established for the weekly report-card job) powers the 7-day world-XP sparkline and member counts. *Why:* consistent with an already-decided pattern, no new judgment call.
+1. **DECIDED.** In scope for v1, Phase 6 — `competitions`/`competition_entries` tables added to DATA_MODEL, Competition manager admin page added.
+2. **DECIDED.** Prizes are virtual-only (V Money + badges/titles + optional coupons), admin-configurable per competition — see PRODUCT_SPEC §3 and ROADMAP Phase 6.
+3. **DECIDED: `users.state` is optional**, collected at onboarding with a plain-language explanation of why it's asked, used only for the state leaderboard scope, **never shown on any public profile**.
+4. **DECIDED: build for v1**, via cached/materialized per-user aggregates (short Redis TTL, not computed per-request).
+5. **DECIDED: cut "LIVE" presence for v1**, no real-time infra.
+6. **DECIDED: flat pool per scope, top/bottom ~25% computed live** — no named tiers (Bronze/Silver/Gold).
+7. **DECIDED: one cheer per recipient per sender per day**, plus a daily cap on total XP a user can receive from cheers; un-cheering and re-cheering the same person never re-awards the XP.
+8. **DECIDED: yes**, Arena reward/prize amounts (500/150 VM, gold crest, Competition prizes) are admin-editable via the same `reward_rules`-style mechanism as lessons.
+9. **DECIDED: a daily Inngest snapshot job** (reuses the pattern already established for the weekly report-card job) powers the 7-day world-XP sparkline and member counts.
 
 ### Trade + Ops console
-1. **PROPOSED (default): no per-user watchlist for v1** — "Watchlist" is simply the full, admin-curated 12-instrument list (matches the prototype exactly; no add/remove control exists there).
-2. **PROPOSED (default): `instrument_daily_bars` table + Redis** for candle history beyond the relay's live cache; indices (NIFTY 50/BANK NIFTY/SENSEX) sourced from the same Twelve Data vendor already chosen. *Why:* purely a technical requirement to render what the prototype already shows, no new vendor or judgment call.
-3. **PROPOSED (default): `funds` gets the full field set shown** (risk, category, nav, aum, expense_ratio, 1y/3y/5y returns, star_rating, description). *Why:* schema catch-up, not a decision.
-4. **PROPOSED (default): a simple risk-flag rule** — NEW = joined <7 days ago; WATCH = >50% of portfolio in one position, or >10 orders in a day; OK = otherwise; thresholds admin-tunable later. *Why:* internal staff-monitoring aid, not user-facing or economy-facing; easy to refine without consequence.
-5. **PROPOSED (default): `instruments` gets `tip` (jsonb {en,hi,hx}) and `tags` (text[]) fields**, admin-curated. *Why:* matches PRODUCT_SPEC's existing "admin-editable instrument list" language.
-6. **NEEDS YOUR DECISION.** Ops console "volatility" control — once real Twelve Data prices are live, what should this actually control? Options: (a) remove entirely — real prices are real prices; (b) repurpose as a synthetic fallback feed for when the market is closed / a symbol has no data, so practice trading always has something to react to; (c) something else. (Affects trading-simulation integrity, hard to change later.)
-7. **PROPOSED (default): PAUSED = freeze at last known price, reject new fills, "market paused" banner (reuses the existing halted-banner pattern); DELAYED = serve a 15-minute-lagged price** (matches the market-status pill's existing "15M DELAY" label). *Why:* already well-defined by the existing UI copy, no ambiguity left to resolve.
-8. **PROPOSED (default): stock sector/about/tip text stays admin-curated static text**, not pulled live from a data provider. *Why:* matches PRODUCT_SPEC's existing "admin-editable" language; it's educational copy, not live data.
+1. **DECIDED: no per-user watchlist for v1** — "Watchlist" is simply the full, admin-curated 12-instrument list (matches the prototype exactly; no add/remove control exists there).
+2. **DECIDED: `instrument_daily_bars` table + Redis** for candle history beyond the relay's live cache; indices (NIFTY 50/BANK NIFTY/SENSEX) sourced from the same Twelve Data vendor already chosen.
+3. **DECIDED: `funds` gets the full field set shown** (risk, category, nav, aum, expense_ratio, 1y/3y/5y returns, star_rating, description).
+4. **DECIDED: a simple risk-flag rule** — NEW = joined <7 days ago; WATCH = >50% of portfolio in one position, or >10 orders in a day; OK = otherwise; thresholds admin-tunable later.
+5. **DECIDED: `instruments` gets `tip` (jsonb {en,hi,hx}) and `tags` (text[]) fields**, admin-curated.
+6. **DECIDED: remove the volatility control entirely.** When the market is closed, every screen shows the last real close. No synthetic price movement ever near a real trade, at any time, for any reason.
+7. **DECIDED: PAUSED = freeze at last known price, reject new fills, "market paused" banner; DELAYED = serve a 15-minute-lagged price** (matches the market-status pill's existing "15M DELAY" label).
+8. **DECIDED: stock sector/about/tip text stays admin-curated static text**, not pulled live from a data provider.
 9. Brokerage ₹0 — confirmed permanent, no action needed.
-10. **PROPOSED (default): Ops console KPIs become live aggregate queries** (active traders = distinct users with an order in 30 days; orders today = count; VM in play = sum of holdings market value; risk flags = count of WATCH/NEW rows). *Why:* obviously correct for an operational console; the specific formula is a reasonable, low-stakes default.
-11. **RESOLVED.** No starting cash, ever. Trade opens in explore mode from day one; the order pad unlocks at an admin-configurable world (default Market Maidan/World 4); trading capital is purely earned V Money — see PRODUCT_SPEC §4 and `docs/ECONOMY.md` for the affordability simulation behind this.
+10. **DECIDED: Ops console KPIs become live aggregate queries** (active traders = distinct users with an order in 30 days; orders today = count; VM in play = sum of holdings market value; risk flags = count of WATCH/NEW rows).
+11. **DECIDED.** No starting cash, ever. Trade opens in explore mode from day one; the order pad unlocks when World 3's Boss Quiz is cleared (World 4/Market Maidan reached) — see WH-2's sequential-unlock decision, not a separate threshold; trading capital is purely earned V Money — see PRODUCT_SPEC §4 and `docs/ECONOMY.md`.
 
 ### News + Pulse Check + News Desk
-1. **PROPOSED (default): drop the unused "PREDICT" format toggle for v1** — no implementation exists to back it; can be reintroduced later with a real question type.
-2. **PROPOSED (default): add `news_desk_picks`** (kind desk_pick/exam_alert/scam_watch, staff-authored, separate from the algorithmic feed). *Why:* matches the prototype's explicit distinct card type, natural modeling choice.
-3. **PROPOSED (default): auto-heuristic quality grade** (word count in target range + jargon term present + AI simplification confidence above a threshold), staff-overridable. *Why:* internal tooling aid, not user-facing, low stakes to approximate and refine later.
-4. **PROPOSED (default): a fixed, admin-extensible topic taxonomy** — RBI & Rates, Inflation, Stock Market Basics, IPOs & New Listings, Mutual Funds, Banking, Scams & Fraud, Government & Budget, Global Markets, Currency. *Why:* covers the sample content seen, cheap to extend later.
-5. **PROPOSED (default): a separate Pulse-Check-scoped streak** (`streaks.scope = 'pulse_check'`, same table shape as the learning streak). *Why:* the prototype treats them as two distinct habit loops with different rewards/UI; a scope column is cheap.
-6. **PROPOSED (default): add `news_reads`** (user_id, story_id, read_at, dwell_seconds). *Why:* not really optional — needed regardless for the "PADH LIYA" badge and any read-gating.
-7. **PROPOSED (default): News Desk KPIs and the 7-day engagement chart become live computed queries**, not hardcoded. *Why:* obviously correct for an operational console.
-8. **PROPOSED (default): correct the copy to "2 sources" (Finnhub + 1 India source)**, not the prototype's placeholder "7 partner feeds." *Why:* factual correction to match ARCHITECTURE.md, not a design decision.
-9. **NEEDS YOUR DECISION** (bundled into the "Confirm reward-value defaults" question): base VM per Pulse Check question staying admin-editable via `reward_rules`, and keeping the prototype's exact speed/combo/all-correct bonus constants as the real rule.
-10. **PROPOSED (default): replace the live "N people playing now" counter with a cheaper static "X people played today"** (computed once, cached). *Why:* avoids real-time infra for low value.
+1. **DECIDED: drop the unused "PREDICT" format toggle for v1.**
+2. **DECIDED: add `news_desk_picks`** (kind desk_pick/exam_alert/scam_watch, staff-authored, separate from the algorithmic feed).
+3. **DECIDED: auto-heuristic quality grade** (word count in target range + jargon term present + AI simplification confidence above a threshold), staff-overridable.
+4. **DECIDED: a fixed, admin-extensible topic taxonomy** — RBI & Rates, Inflation, Stock Market Basics, IPOs & New Listings, Mutual Funds, Banking, Scams & Fraud, Government & Budget, Global Markets, Currency.
+5. **DECIDED: a separate Pulse-Check-scoped streak** (`streaks.scope = 'pulse_check'`, same table shape as the learning streak).
+6. **DECIDED: add `news_reads`** (user_id, story_id, read_at, dwell_seconds).
+7. **DECIDED: News Desk KPIs and the 7-day engagement chart become live computed queries**, not hardcoded.
+8. **DECIDED: correct the copy to "2 sources" (Finnhub + 1 India source)**, not the prototype's placeholder "7 partner feeds."
+9. **DECIDED: keep the prototype's exact speed/combo/all-correct bonus constants as the real rule; base VM per Pulse Check question stays admin-editable via `reward_rules`**, same mechanism as everything else in the economy.
+10. **DECIDED: replace the live "N people playing now" counter with a cheaper static "X people played today"** (computed once, cached).
 
 ### Profile + report card + certificates
-**RESOLVED (report card scope):** the weekly report card, efficiency score, coach notes and topic
+**DECIDED (report card scope):** the weekly report card, efficiency score, coach notes and topic
 mastery are in scope for v1 (Phase 3) — see PRODUCT_SPEC §6, `report_snapshots` and
 `coach_note_templates` in DATA_MODEL.
 
-1. **NEEDS YOUR DECISION.** The "send weekly summary to Mentor" letter — self-service PDF the student shares themselves, or a real notification/email to a registered parent contact (needs consent + contact storage)? Nothing in PRODUCT_SPEC/DATA_MODEL models a parent/guardian contact today.
-2. **PROPOSED (default): Profile's rank/percentile reads from Arena's weekly leaderboard snapshot once Phase 6 ships**; before that, show self-progress only (no percentile). *Why:* avoids duplicating ranking logic, natural dependency ordering.
-3. **RESOLVED.** Coach notes: rule-based templates, no AI for v1 — see PRODUCT_SPEC §6.
-4. **PROPOSED (default): reuse the Lesson Flow engine's exact grade thresholds app-wide** (≥95% S, ≥83% A, ≥67% B, else C) for both Lesson report cards and the Profile weekly report card. *Why:* the LF engine has an explicit formula in the prototype; Profile's screen only shows illustrative samples, so LF's formula is the authoritative source — one consistent rule everywhere beats two.
-5. **PROPOSED (default): badge VM rewards/thresholds are admin-editable**, via the Badge manager admin page already scoped for CRUD. *Why:* the admin page was already decided to exist; editable rewards is a natural, low-risk part of that CRUD (flagged here for visibility since it touches economy, but the mechanism — an existing planned admin page — isn't new).
-6. **NEEDS YOUR DECISION.** Reward-catalog brand partnerships — do you have real partner brands lined up, or should launch ship with a small fixed/admin-curated set of Finlamma-only rewards (V Money discounts, cosmetic items) instead of the prototype's fictional brand coupons?
-7. **NEEDS YOUR DECISION.** Locked-reward pricing — should real rewards get fixed admin-set VM prices (replacing the prototype's "price scales with your own current balance" trick, which always looks almost-affordable but isn't a real price)?
-8. **PROPOSED (default): `FL-<2-letter world code>-<YYYY>-<6-digit sequential>` for certificates** (widened from 4 to 6 digits for scale); report-card export id = `FL-RPT-<user short id>-<week number>`. *Why:* cosmetic, easily migrated later if wrong, no real consequence either way.
-9. **PROPOSED (default): server-side PDF rendering** (headless browser render from the same HTML templates the prototype already designed) uploaded via `src/lib/s3.ts`; share = a signed URL, not native deep-linking. *Why:* standard engineering, not a product decision.
+1. **DECIDED: v1 is self-service only** — the student shares the report-card PDF via the device share sheet themselves; Finlamma never contacts anyone on their behalf in v1. **Future**: once the parental-consent flow (see Settings #5) gives us a verified parent contact, add an opt-in weekly email to that contact.
+2. **DECIDED: Profile's rank/percentile reads from Arena's weekly leaderboard snapshot once Phase 6 ships**; before that, show self-progress only (no percentile).
+3. **DECIDED.** Coach notes: rule-based templates, no AI for v1 — see PRODUCT_SPEC §6.
+4. **DECIDED: reuse the Lesson Flow engine's exact grade thresholds app-wide** (≥95% S, ≥83% A, ≥67% B, else C) for both Lesson report cards and the Profile weekly report card.
+5. **DECIDED: badge VM rewards/thresholds are admin-editable**, via the Badge manager admin page already scoped for CRUD.
+6. **DECIDED: launch with Finlamma-only rewards** — badges, titles, cosmetic themes, no fictional brand coupons. Real brand-partner rewards are a later addition via admin once partnerships exist (`rewards.category` supports it without a schema change).
+7. **DECIDED: yes — fixed, admin-set VM prices for every reward**, replacing the prototype's "price scales with your own balance" trick.
+8. **DECIDED: `FL-<2-letter world code>-<YYYY>-<6-digit sequential>` for certificates** (widened from 4 to 6 digits for scale); report-card export id = `FL-RPT-<user short id>-<week number>`.
+9. **DECIDED (corrected from the first proposal): PDFs are rendered server-side with a browser-free library** (e.g. `@react-pdf/renderer`) from the templates the prototype already designed, **not a headless browser** (Vercel doesn't run one reliably) — uploaded via `src/lib/s3.ts`; share = a signed URL the student sends themselves.
 
 ### Settings
-1. **PROPOSED (default): `users.bio` (text, nullable)**. *Why:* trivial schema addition matching the account screen already shown.
-2. **PROPOSED (default): a single `users.preferences jsonb`** for sound/haptics/data-saver. *Why:* matches DATA_MODEL's existing jsonb pattern for small per-user settings; minimal footprint for a few booleans.
-3. **NEEDS YOUR DECISION.** Legal content (Terms/Privacy/Risk disclosure) — static content shipped in the app repo, or staff-editable via a simple CMS page? (Legal/compliance.)
-4. **PROPOSED (default): login methods become a thin wrapper over Clerk's own hosted account-management flows** (Google/password); **"Login PIN" is cut for v1** (not a Clerk feature, no clear need identified). *Why:* avoids inventing new auth infrastructure Clerk doesn't provide.
-5. **NEEDS YOUR DECISION.** The prototype's legal clauses mention "under-18 needs parent/guardian approval" and "school accounts are managed by the institution" — neither modeled anywhere. Is COPPA/DPDP-style parental consent actually in scope for v1, or boilerplate overstating real scope? (Legal/compliance + child safety — likely the single most consequential open question in this whole review.)
-6. **PROPOSED (default): no backend for "Write to us" or "Rate Finlamma"** — "Write to us" opens a `mailto:`/WhatsApp deep link, "Rate Finlamma" deep-links to the Play Store/App Store listing. *Why:* matches "decorative in the prototype too," avoids building a ticket system nobody's asked for yet.
+1. **DECIDED: `users.bio` (text, nullable)**.
+2. **DECIDED: a single `users.preferences jsonb`** for sound/haptics/data-saver.
+3. **DECIDED: legal docs are staff-editable with versioning.** Only `super_admin` can publish a new version; every acceptance (by the user, or by their consenting parent for a minor) records which version they accepted; publishing a new version prompts re-acceptance from anyone who hasn't accepted it yet.
+4. **DECIDED: login methods become a thin wrapper over Clerk's own hosted account-management flows** (Google/password); **"Login PIN" is cut for v1** (not a Clerk feature).
+5. **DECIDED: parental consent is real, in-scope, v1 launch-blocking.** Date of birth collected at onboarding; a user under 18 needs **verifiable** parental consent — a parent/guardian is contacted (email or phone) and verifies via OTP/email — before full access; every consent records who gave it, when, by what method, and which legal-document version was accepted; the account has limited features until consent completes (exact limits: a Phase 2 kickoff decision). **School/institution accounts are removed from v1's legal text entirely** (deferred to v2). The consent flow and the legal text both need an outside legal review before launch (added to ROADMAP's pre-launch checklist).
+6. **DECIDED: no backend for "Write to us" or "Rate Finlamma"** — "Write to us" opens a `mailto:`/WhatsApp deep link, "Rate Finlamma" deep-links to the Play Store/App Store listing.
 
 ### Lesson Flow + quizzes
-1. **NEEDS YOUR DECISION.** Do Boss Quiz and Role Play lesson kinds reuse the exact same Lesson Flow engine (just different content data), or are they different enough to need their own screens/design? (Core content architecture for all of Phase 2 — expensive to get wrong.)
-2. **PROPOSED (default): no forced convergence** — keep the 3 observed taxonomies separate (5 pop-quiz types, 6 practice types, 9 Pulse Check formats), each scoped to its own context. *Why:* matches the prototype exactly; unifying them is unrequested extra work with no clear payoff.
-3. **NEEDS YOUR DECISION** (bundled into "Confirm reward-value defaults"): keep the prototype's exact fever-mode rule (combo≥3 → 2× XP) and 45%-of-timer speed-bonus threshold as the real rule — including correcting PRODUCT_SPEC's current "within half the time" wording to 45%?
-4. **PROPOSED (default): mastery = a real computed metric via a lightweight topic-tag system on questions** (reusing the News topic taxonomy pattern, extended to lesson questions); **class-percentile simplified to the same global-percentile default as World Home gap #9** — no school/class enrollment concept, since none exists or is otherwise planned. *Why:* reuses already-decided patterns instead of inventing a new cohort/school model.
-5. **RESOLVED** (same decision as Profile's report card): weak-spot/superpower coach notes are rule-based templates, no AI.
-6. **NEEDS YOUR DECISION.** Is the in-lesson "Lamma AI" doubt chat the real Doubt Zone AI mentor (Phase 7, live LLM calls) surfaced mid-lesson, or a separate, simpler scripted explainer that could ship in Phase 2 without a live AI integration? (Cost/scope, expensive to change once users are used to one behavior.)
+1. **DECIDED: both reuse the same Lesson Flow engine, no separate design needed.** Boss Quiz reuses the quiz engine with boss-specific settings (longer timer, bigger reward, chapter-final framing) — this was already how the prototype's own `LSTEP` override worked. Role Play was specifically checked against the prototype: it has **no distinct scene/screen type anywhere** — it's only a lesson-node label ("Practice round" in the UI, blurb "you play the decision-maker and live with the result") whose actual content uses the existing dialogue/receipt-framed practice-quiz mechanic already built for "options" steps (see LF-16). Nothing new to build for either kind beyond content authoring.
+2. **DECIDED: no forced convergence** — keep the 3 observed taxonomies separate (5 pop-quiz types, 6 practice types, 9 Pulse Check formats), each scoped to its own context.
+3. **DECIDED: keep the prototype's exact fever-mode rule (combo≥3 → 2× XP) and 45%-of-timer speed-bonus threshold as the real rule.** PRODUCT_SPEC corrected from "within half the time" to 45%. Both constants (and the rest of the scoring formula) live in admin-editable `settings_kv` config, not hardcoded.
+4. **DECIDED: mastery = a real computed metric via a lightweight topic-tag system on questions** (reusing the News topic taxonomy pattern, extended to lesson questions); **class-percentile simplified to the same global-percentile default as World Home #9** — no school/class enrollment concept.
+5. **DECIDED** (same decision as Profile's report card): weak-spot/superpower coach notes are rule-based templates, no AI.
+6. **DECIDED: Phase 2 ships a scripted in-lesson "Lamma AI"** — a fixed Q&A authored by the content team per lesson, no live AI call. **The real AI Doubt Zone (live LLM, with minors-appropriate safety and rate-limit rules) ships in Phase 7** and becomes the upgrade path for this same node kind, and for the standalone Doubt Zone entry point.
 7. All lesson content being Hinglish-only in the prototype — no action needed, confirms the prototype just doesn't demo the translation layer for content (ROADMAP Phase 2 already requires en/hi/hx per content field).
-8. **PROPOSED (default): scene "kind" is an open, admin-extensible enum**, authored per lesson. *Why:* flexible, low-risk, consistent with how other taxonomies in this doc are handled.
+8. **DECIDED: scene "kind" is an open, admin-extensible enum**, authored per lesson.
 
 ### Global / App shell
 1. **RESOLVED as part of this round's economy decisions.** The displayed V Money balance is a

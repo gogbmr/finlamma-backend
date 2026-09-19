@@ -31,9 +31,21 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] `GET/PATCH /me`, account deletion (DB + Clerk)
 
 ## Phase 2 — Learning content
-- [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats), boss quizzes
+- [ ] **Onboarding & parental consent** (do this early — it gates everything else): date of birth
+      capture, `parent_contacts` + `consent_records` for under-18 users (parent verifies via
+      OTP/email), `legal_documents` + `legal_acceptances` (staff-editable, versioned,
+      super_admin-only publish, re-acceptance on new versions), limited feature access until
+      consent completes — see `docs/PRODUCT_SPEC.md` §7. School/institution accounts are v2, not
+      in v1's legal text.
+- [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
+      **sequential only** (clearing the previous world's Boss Quiz) — no XP/level gate; Boss Quiz
+      and Role Play reuse the same lesson-flow content shape as Quiz, not separate engines
 - [ ] Content CRUD in admin with draft → published flow and uploads to storage
 - [ ] Translations for `en`, `hi`, `hx` on every content field
+- [ ] Scoring constants (speed-bonus 45% threshold, fever mode combo≥3 → 2×, combo bonus,
+      all-correct bonus) as admin-editable `settings_kv`, seeded from the prototype's exact values
+- [ ] "Doubt Zone" node kind ships **scripted** in v1 — fixed Q&A written by the content team per
+      lesson, no live AI call. The live AI mentor upgrade is Phase 7.
 - [ ] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
 
 ## Phase 3 — Progress economy
@@ -42,10 +54,14 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
       `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
 - [ ] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
       on every ledger entry
-- [ ] Streaks (IST days) + 2 freezes/month; daily goal
-- [ ] Badges and rewards (coupons)
+- [ ] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month; daily goal
+- [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
+      admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
+      brand-partner rewards later without a schema change
 - [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language)
-- [ ] Certificates on world completion (PDF, stored in storage)
+- [ ] Certificates on world completion — PDF via a browser-free renderer (e.g.
+      `@react-pdf/renderer`, not a headless browser — Vercel-compatible), stored in storage,
+      shared as a signed URL via the device share sheet (the student sends it, we never do)
 - [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
       module breakdown, 8-week trend; `coach_note_templates` (admin-editable, draft → publish,
       no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules
@@ -55,9 +71,10 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 ## Phase 4 — Trading engine (needs the market relay for live prices)
 - [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
 - [ ] Twelve Data REST: quotes and candle history with Redis caching
-- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad locked until
-      `settings_kv.trade_unlock_world_order` (default: Market Maidan/World 4) is reached — no
-      starting balance or unlock grant, ever (see `docs/ECONOMY.md`)
+- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks when the
+      user reaches `settings_kv.trade_unlock_world_order` (default: Market Maidan/World 4) via
+      the same sequential world-clear rule as Phase 2, not an XP/level threshold — no starting
+      balance or unlock grant, ever (see `docs/ECONOMY.md`)
 - [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
 - [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
 - [ ] Limit-order matching job (Inngest)
@@ -66,7 +83,9 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
       Twelve Data source
 - [ ] Ops console: feed mode, halts, trade-unlock-world setting, user ledger with risk flags
       (default rule: NEW = joined <7 days ago; WATCH = >50% of portfolio in one position or >10
-      orders in a day; admin-tunable thresholds), live KPI queries (not hardcoded)
+      orders in a day; admin-tunable thresholds), live KPI queries (not hardcoded). **No
+      volatility control** — closed market always shows the last real close, never a synthetic
+      price near a real trade
 
 ## Phase 5 — News & Pulse Check
 - [ ] Ingestion jobs: Finnhub + India source → `news_raw` (2 sources at launch, not the
@@ -82,20 +101,25 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [ ] App endpoints: feed, story, bookmarks, Pulse Check (server-scored)
 
 ## Phase 6 — Arena & social
-- [ ] Weekly leaderboards (Redis sorted sets), scopes, leagues with promote/demote job. Leagues
-      are a flat pool per scope with computed top/bottom ~25% (matches the prototype) — no named
-      tiers (Bronze/Silver/Gold) for v1
+- [ ] Weekly leaderboards (Redis sorted sets), scopes (state scope uses `users.state`, optional,
+      collected with an explanation, never shown publicly), leagues with promote/demote job.
+      Leagues are a flat pool per scope with computed top/bottom ~25% (matches the prototype) —
+      no named tiers (Bronze/Silver/Gold) for v1. Promote/safe/demote reward amounts admin-editable
+      via `reward_rules`
 - [ ] Worlds table; daily `world_xp_snapshots`/rollup job for the 7-day sparkline; cached
       per-user aggregate stats (lessons/quiz accuracy/sim P&L) for leaderboard row expansion. No
       real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost)
-- [ ] Cheers (+5 XP, notification)
+- [ ] Cheers (+5 XP, notification) — one cheer per recipient per sender per day, a daily
+      per-receiver XP cap from cheers, un-cheer/re-cheer never re-awards XP
 - [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
       admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
       currency) — depends on Phase 4's order execution primitives
 
 ## Phase 7 — Notifications & Doubt Zone
 - [ ] Expo push tokens, notification preferences, streak/boss/news jobs
-- [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and safety rules
+- [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
+      rules — this is the live upgrade of Phase 2's scripted in-lesson "Doubt Zone"/"Lamma AI"
+      node, and also the standalone Doubt Zone entry point
 
 ## Phase 8 — Monetisation
 - [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
@@ -106,6 +130,8 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
+      (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
 - [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
       `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
 - [ ] Create PostHog project, add `NEXT_PUBLIC_POSTHOG_KEY`/`NEXT_PUBLIC_POSTHOG_HOST`, wire up
