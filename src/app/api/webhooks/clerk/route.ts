@@ -86,13 +86,22 @@ export const POST = withErrors(async (req: Request) => {
     // try too, not just .verify(), otherwise a bad secret in production
     // becomes an uncaught 500 instead of a clear 400.
     const wh = new Webhook(env.CLERK_WEBHOOK_SIGNING_SECRET);
-    // svix@2.5.0's types claim verify() returns undefined; it actually
-    // returns the parsed, verified payload at runtime.
-    evt = wh.verify(body, {
+    // svix@2.5.0's Webhook.verify() ONLY validates the signature (it throws
+    // on failure) - it never returns the parsed payload. Its compiled
+    // source (node_modules/svix/dist/index.mjs) discards the inner
+    // verifier's return value and always forces { jsonParse: false }
+    // regardless of what's asked for, so `wh.verify(...)` is always
+    // undefined on success. A prior version of this code wrongly assumed
+    // otherwise (only ever exercised through a test mock that didn't match
+    // this), which crashed every real webhook delivery with "Cannot read
+    // properties of undefined (reading 'type')". Parse the already-verified
+    // raw body ourselves instead.
+    wh.verify(body, {
       "svix-id": svixId,
       "svix-timestamp": svixTimestamp,
       "svix-signature": svixSignature,
-    }) as unknown as WebhookEvent;
+    });
+    evt = JSON.parse(body) as WebhookEvent;
   } catch {
     // Deliberately don't log the caught error: svix's own error messages
     // are generic (e.g. "Secret can't be empty."), but the underlying

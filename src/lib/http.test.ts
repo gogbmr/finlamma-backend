@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { AppError } from "./errors";
 import {
@@ -92,6 +92,37 @@ describe("withErrors", () => {
     const res = await handler();
     expect(res.status).toBe(500);
     expect((await res.json()).error.code).toBe("INTERNAL");
+  });
+
+  it("tags an unexpected error with a findable errorId in both the response and the log", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = withErrors(async () => {
+      throw new Error("boom");
+    });
+
+    const res = await handler();
+    const body = await res.json();
+
+    expect(body.error.details.errorId).toEqual(expect.any(String));
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining(body.error.details.errorId),
+    );
+    consoleError.mockRestore();
+  });
+
+  it("never logs a non-Error thrown value raw (scrubbed)", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const secretLookingPayload = { apiKey: "sk_should_never_be_logged" };
+    const handler = withErrors(async () => {
+      throw secretLookingPayload;
+    });
+
+    await handler();
+
+    for (const call of consoleError.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain("sk_should_never_be_logged");
+    }
+    consoleError.mockRestore();
   });
 });
 

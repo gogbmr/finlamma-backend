@@ -31,6 +31,22 @@ type RouteHandler<Args extends unknown[]> = (
   ...args: Args
 ) => Promise<Response>;
 
+// Logs an unexpected (non-AppError, non-ZodError) thrown value tagged with
+// errorId so it can be found in the server logs from the errorId alone -
+// e.g. handed back from a webhook provider's failed-delivery dashboard,
+// with no other way to correlate it to a specific log line. Scrubbed: an
+// arbitrary thrown value (not necessarily an Error) could be anything, so
+// we only ever log a plain string built from the id and a name/message/
+// stack we control the shape of, never the raw value itself - the same
+// reasoning as the raw-driver-error scrub in src/server/users/repo.ts.
+function logInternalError(errorId: string, err: unknown): void {
+  if (err instanceof Error) {
+    console.error(`[${errorId}] ${err.stack ?? `${err.name}: ${err.message}`}`);
+  } else {
+    console.error(`[${errorId}] Non-Error value thrown (${typeof err})`);
+  }
+}
+
 // Wraps a route handler so any thrown AppError/ZodError becomes the standard
 // error envelope instead of crashing the request.
 export function withErrors<Args extends unknown[]>(
@@ -50,8 +66,11 @@ export function withErrors<Args extends unknown[]>(
           ),
         );
       }
-      console.error(err);
-      return fail(new AppError("INTERNAL", "Something went wrong"));
+      const errorId = crypto.randomUUID();
+      logInternalError(errorId, err);
+      return fail(
+        new AppError("INTERNAL", "Something went wrong", { errorId }),
+      );
     }
   };
 }
