@@ -101,5 +101,28 @@ A real accepted invite is stronger evidence than Clerk's synthetic "Send Example
 reaches `completeStaffInviteFromClerkEvent` at all if signature verification, `public_metadata`
 role-reading, and the DB write all worked correctly end to end.
 
-**Consumer webhook (`/api/webhooks/clerk`): not yet re-verified.** Still needs a real signup +
-delete via the consumer Clerk app's Account Portal (no app UI exists yet to drive this).
+**Consumer webhook (`/api/webhooks/clerk`): verified, real signup + real delete.** The user signed
+up email-only (no phone) via the consumer Clerk app's Account Portal, then deleted the account in
+the Clerk dashboard. Full trail confirmed via Supabase, all consistent and in order:
+| Time (UTC) | Event | Evidence |
+|---|---|---|
+| 15:59:52.7 | Real `user.created` webhook on signup | `users` row `202d092e-...`, `email` set, `phone`/`first_name`/`last_initial` null (matches email-only signup with no name collected) |
+| 15:59:53.2 | Sync logged | `user.synced_from_clerk`, `metadata.clerkEventType: "user.created"` |
+| 16:01:46.0 | Real `user.deleted` webhook on delete | `deleted_at` set, `email`/`phone`/`last_initial` cleared, `first_name` → `"Deleted user"` (a deliberate display placeholder per the comment in `anonymizeUserFromClerk`, `src/server/users/repo.ts:83-86` - carries no personal data) |
+| 16:01:47.5 | Deletion logged | `user.deleted_from_clerk` |
+
+**Both webhooks fully re-verified against the corrected production database with real signup and
+delete events. Item 4 complete.**
+
+## Phases 0 and 1: fully verified
+
+Every check from the 2026-09-19 audit passes, every finding it raised is either fixed or an
+explicitly tracked follow-up, the production DATABASE_URL incident is resolved, the admin
+access-denied incident is resolved, and both Clerk webhooks are proven working end to end against
+the real production database with real (not synthetic) events. Ready to start Phase 2.
+
+Still open (not blocking):
+- **Your action**: confirm in the Clerk dashboard that the staff app has public sign-up disabled
+  (defense-in-depth only - the code already only grants staff access via a signed invite).
+- **(Security, Low, tracked)** account-deletion Clerk-then-DB ordering gap - revisit once Inngest
+  exists (Phase 7).
