@@ -18,6 +18,14 @@ if (env.NODE_ENV === "test") {
 
 // Transaction pool mode (Supabase pooler, port 6543) does not support
 // prepared statements or connection-level state, so prepare is disabled.
-const queryClient = postgres(env.DATABASE_URL, { prepare: false });
+// max: 1 is Supabase's own documented setting for serverless functions: this
+// client is created once at module scope and reused across warm Vercel
+// invocations, so a larger client-side pool can end up holding connections
+// that Supavisor (the server-side pooler) has already recycled while the
+// function was frozen - the next invocation then tries to use a dead
+// connection and fails with an opaque, non-constraint query error instead
+// of a clean one. Capping it at 1 means each invocation holds at most one
+// connection, which the already-pooled Supavisor layer is designed for.
+const queryClient = postgres(env.DATABASE_URL, { prepare: false, max: 1 });
 
 export const db = drizzle({ client: queryClient, schema });
