@@ -54,3 +54,37 @@ You corrected the Vercel production environment variables and redeployed. Re-ver
 - **(Security, Low)** Account deletion can leave a user "stuck" between Clerk-deleted and
   DB-anonymized if the second step throws (`src/server/users/service.ts` `deleteMe()`, comment at
   line 52). Needs a reconciliation job - revisit once Inngest exists (Phase 7).
+
+## 2026-09-19 — Production admin access-denied incident
+
+`/admin` showed "Access denied: your account isn't set up as an active staff member" for a real
+staff Clerk user id, right after the DATABASE_URL fix above.
+
+**Root cause: `staff_members` was completely empty in production** - never bootstrapped (expected
+for a first-time setup; nobody had run `pnpm seed:super-admin` against the corrected database
+yet). Not a Clerk misconfiguration: added a `clerkKeys` field to `/api/v1/health` (decodes both
+publishable keys' embedded Frontend API host and compares them - both are public-by-design, so
+nothing secret is read) specifically to rule out the STAFF and CONSUMER Clerk apps' keys being
+silently swapped, since that would produce this exact symptom too. Production confirmed
+`"clerkKeys":"ok"` - the two apps are correctly separate.
+
+**Fixed:** ran the equivalent of `scripts/seed-super-admin.ts` as raw SQL in Supabase's SQL
+Editor (my Supabase MCP connection is read-only, so I prepared the SQL and the user ran it):
+inserted a `staff_members` row (`id d8db1463-2c7f-4cd9-8533-9357ffd40be9`,
+`clerk_user_id user_3JXs4KAH4UsDUDQNKsJTe2jOg03`, role `super_admin`, `active: true`) plus the
+matching `staff.bootstrap_super_admin` activity_logs entry. Both verified via the read-only MCP
+connection afterward. `/admin` confirmed working.
+
+**Shipped as a result:**
+- `/api/v1/health`'s `clerkKeys` check (`ok` / `swapped` / `unconfigured`) - catches the staff and
+  consumer Clerk apps' publishable keys being silently pointed at the same instance, which would
+  make a real staff sign-in authenticate against the wrong Clerk application and look exactly like
+  "not set up as staff" even when the `staff_members` row is correct.
+
+### Follow-up (not yet done)
+- **Full webhook re-verification against the corrected database was never actually run** - the
+  original audit only checked that unsigned requests get rejected with 400, not the real
+  signed-event → DB-write path, and that hadn't been re-tested since the DATABASE_URL fix. Walked
+  the user through it (3 Clerk "Send Example" events + 1 real signup + 1 real delete, for both the
+  staff and consumer webhooks) - not yet completed as of this entry. Re-check this file for an
+  update once it has been.
