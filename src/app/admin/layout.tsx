@@ -7,5 +7,8 @@ import type { ReactNode } from "react";
 // CLERK_SECRET_KEY), the only one that ever holds a session cookie on this
 // domain.
 export default function AdminLayout({ children }: { children: ReactNode }) {
-  return <ClerkProvider>{children}</ClerkProvider>;
+  // afterSignOutUrl lives on the provider, not on <UserButton> - Clerk moved
+  // it here in a past major version (UserButton no longer accepts redirect
+  // override props).
+  return <ClerkProvider afterSignOutUrl="/admin/sign-in">{children}</ClerkProvider>;
 }

@@ -79,3 +79,6 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
       `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
 - [ ] Create PostHog project, add `NEXT_PUBLIC_POSTHOG_KEY`/`NEXT_PUBLIC_POSTHOG_HOST`, wire up
       the `posthog-node` server client - deferred from Phase 0
+- [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
+      admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
+      wasn't attempted in the sandbox this was built in over a slow connection

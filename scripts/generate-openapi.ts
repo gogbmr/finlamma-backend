@@ -11,6 +11,7 @@ import { registry } from "../src/lib/openapi";
 import "../src/app/api/v1/health/route";
 import "../src/app/api/v1/me/route";
 import "../src/app/api/webhooks/clerk/route";
+import "../src/app/api/webhooks/clerk-staff/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

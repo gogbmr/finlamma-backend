@@ -1,9 +1,7 @@
-import type { WebhookEvent } from "@clerk/nextjs/server";
-import { Webhook } from "svix";
 import { z } from "zod";
 import { env } from "@/lib/env";
-import { AppError } from "@/lib/errors";
-import { fail, ok, withErrors } from "@/lib/http";
+import { verifyClerkWebhook } from "@/lib/clerk-webhook";
+import { ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { syncUserFromClerkEvent } from "@/server/users/service";
 
@@ -15,10 +13,12 @@ const WebhookResponseSchema = registry.register(
 registry.registerPath({
   method: "post",
   path: "/api/webhooks/clerk",
-  summary: "Clerk user webhook",
+  summary: "Clerk user webhook (consumer app)",
   description:
     "Called by Clerk (not the app or the mobile client) on user.created, user.updated and " +
-    "user.deleted to keep our users table in sync. Authenticated by an HMAC signature in the " +
+    "user.deleted to keep our users table in sync. This is the CONSUMER Clerk application's " +
+    "webhook (see docs/ARCHITECTURE.md decision D2a) - the STAFF app has its own separate " +
+    "webhook at /api/webhooks/clerk-staff. Authenticated by an HMAC signature in the " +
     "svix-id / svix-timestamp / svix-signature headers, verified against " +
     "CLERK_WEBHOOK_SIGNING_SECRET - configured as a webhook endpoint in the Clerk dashboard, " +
     "not by a user or staff session.",
@@ -57,63 +57,7 @@ registry.registerPath({
 });
 
 export const POST = withErrors(async (req: Request) => {
-  if (!env.CLERK_WEBHOOK_SIGNING_SECRET) {
-    // Fail closed: without a secret we cannot verify authenticity, so we
-    // must not process the event. This lets us deploy the route before
-    // it's registered in the Clerk dashboard (which needs the deployed
-    // URL first) without ever accepting unverified webhook calls.
-    return fail(
-      new AppError("SERVICE_UNAVAILABLE", "Webhook signing secret not configured"),
-    );
-  }
-
-  const svixId = req.headers.get("svix-id");
-  const svixTimestamp = req.headers.get("svix-timestamp");
-  const svixSignature = req.headers.get("svix-signature");
-  if (!svixId || !svixTimestamp || !svixSignature) {
-    return fail(new AppError("INVALID_SIGNATURE", "Missing svix headers"));
-  }
-
-  // Signature verification needs the exact raw bytes Clerk signed - read
-  // the body as text, never req.json(), which would re-serialize it.
-  const body = await req.text();
-
-  let evt: WebhookEvent;
-  try {
-    // `new Webhook(secret)` itself throws synchronously if the secret is
-    // empty, the wrong type, or not valid base64 (e.g. a malformed value
-    // pasted into the hosting provider's env vars) - it must be inside this
-    // try too, not just .verify(), otherwise a bad secret in production
-    // becomes an uncaught 500 instead of a clear 400.
-    const wh = new Webhook(env.CLERK_WEBHOOK_SIGNING_SECRET);
-    // svix@2.5.0's Webhook.verify() ONLY validates the signature (it throws
-    // on failure) - it never returns the parsed payload. Its compiled
-    // source (node_modules/svix/dist/index.mjs) discards the inner
-    // verifier's return value and always forces { jsonParse: false }
-    // regardless of what's asked for, so `wh.verify(...)` is always
-    // undefined on success. A prior version of this code wrongly assumed
-    // otherwise (only ever exercised through a test mock that didn't match
-    // this), which crashed every real webhook delivery with "Cannot read
-    // properties of undefined (reading 'type')". Parse the already-verified
-    // raw body ourselves instead.
-    wh.verify(body, {
-      "svix-id": svixId,
-      "svix-timestamp": svixTimestamp,
-      "svix-signature": svixSignature,
-    });
-    evt = JSON.parse(body) as WebhookEvent;
-  } catch {
-    // Deliberately don't log the caught error: svix's own error messages
-    // are generic (e.g. "Secret can't be empty."), but the underlying
-    // base64 decoder is third-party code we don't control, and this path
-    // runs on every input that touches CLERK_WEBHOOK_SIGNING_SECRET, so we
-    // never take the risk of a future dependency change echoing the secret
-    // into logs.
-    console.error("Clerk webhook signature verification failed");
-    return fail(new AppError("INVALID_SIGNATURE", "Invalid webhook signature"));
-  }
-
+  const evt = await verifyClerkWebhook(req, env.CLERK_WEBHOOK_SIGNING_SECRET);
   await syncUserFromClerkEvent(evt);
-
   return ok({ received: true as const });
 });

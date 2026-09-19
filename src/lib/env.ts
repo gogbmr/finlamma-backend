@@ -34,6 +34,11 @@ const envSchema = z.object({
   // secret to put here - it needs the deployed route URL first. This is
   // the CONSUMER app's webhook (it syncs `users`, not `staff_members`).
   CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
+  // The STAFF app's webhook: completes a staff invite (see
+  // src/server/staff/service.ts inviteStaffMember()) into a staff_members
+  // row on user.created, and deactivates one on user.deleted. Same
+  // fail-closed-until-configured pattern as the consumer webhook above.
+  STAFF_CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
 
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),

@@ -5,11 +5,15 @@ import { ZodError } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import {
-  CreateStaffMemberSchema,
+  InviteStaffMemberSchema,
   SetStaffActiveSchema,
   UpdateStaffRoleSchema,
 } from "@/server/staff/schemas";
-import { addStaffMember, changeStaffMemberRole, setStaffMemberActive } from "@/server/staff/service";
+import {
+  changeStaffMemberRole,
+  inviteStaffMember,
+  setStaffMemberActive,
+} from "@/server/staff/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -33,11 +37,11 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   }
 }
 
-export async function createStaffMemberAction(input: unknown): Promise<ActionResult> {
+export async function inviteStaffMemberAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
     const actor = await requireStaff("staff.manage");
-    const parsed = CreateStaffMemberSchema.parse(input);
-    await addStaffMember(actor, parsed);
+    const parsed = InviteStaffMemberSchema.parse(input);
+    await inviteStaffMember(actor, parsed);
     revalidatePath("/admin/staff");
   });
 }

@@ -19,9 +19,8 @@ export default async function StaffPage() {
       <div>
         <h1 className="text-xl font-semibold">Staff</h1>
         <p className="text-sm text-neutral-600">
-          Manage who has access to this admin dashboard. New staff first sign in once at{" "}
-          <code className="rounded bg-neutral-100 px-1 py-0.5 text-xs">/admin/sign-in</code>,
-          then share their Clerk user ID with a super admin to add here.
+          Manage who has access to this admin dashboard. Inviting someone sends them a Clerk
+          invite email - they appear here automatically once they accept and sign up.
         </p>
       </div>
 

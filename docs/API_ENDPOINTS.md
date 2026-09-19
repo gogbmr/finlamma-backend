@@ -19,7 +19,8 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 
 **Webhooks**
 
-- `POST /api/webhooks/clerk` — Clerk user webhook
+- `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
+- `POST /api/webhooks/clerk-staff` — Clerk user webhook (staff app)
 
 ## System
 
@@ -221,9 +222,78 @@ Permanently deletes the Clerk identity and anonymizes the DB row in place (email
 
 ### `POST /api/webhooks/clerk`
 
-**Clerk user webhook**
+**Clerk user webhook (consumer app)**
 
-Called by Clerk (not the app or the mobile client) on user.created, user.updated and user.deleted to keep our users table in sync. Authenticated by an HMAC signature in the svix-id / svix-timestamp / svix-signature headers, verified against CLERK_WEBHOOK_SIGNING_SECRET - configured as a webhook endpoint in the Clerk dashboard, not by a user or staff session.
+Called by Clerk (not the app or the mobile client) on user.created, user.updated and user.deleted to keep our users table in sync. This is the CONSUMER Clerk application's webhook (see docs/ARCHITECTURE.md decision D2a) - the STAFF app has its own separate webhook at /api/webhooks/clerk-staff. Authenticated by an HMAC signature in the svix-id / svix-timestamp / svix-signature headers, verified against CLERK_WEBHOOK_SIGNING_SECRET - configured as a webhook endpoint in the Clerk dashboard, not by a user or staff session.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `svix-id` | header | string | yes | Unique id of this webhook delivery |
+| `svix-timestamp` | header | string | yes | Unix timestamp the webhook was sent |
+| `svix-signature` | header | string | yes | HMAC signature(s) of the request body |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `type` | string | yes |  |
+| `data` | object | yes |  |
+
+```json
+{
+  "type": "user.created",
+  "data": {}
+}
+```
+
+**Responses**
+
+- **200** — Event processed (or a type we don't act on)
+
+```json
+{
+  "data": {
+    "received": true
+  }
+}
+```
+
+- **400** — Missing/invalid svix signature
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+- **503** — Webhook signing secret not configured
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+
+---
+
+### `POST /api/webhooks/clerk-staff`
+
+**Clerk user webhook (staff app)**
+
+Called by Clerk on user.created and user.deleted for the STAFF Clerk application (see docs/ARCHITECTURE.md decision D2a) - the consumer app's webhook at /api/webhooks/clerk is separate. On user.created, completes a pending staff invite (see src/server/staff/service.ts inviteStaffMember()): if the new user's public metadata carries the role id the invitation was created with, a staff_members row is created for them. On user.deleted, deactivates their staff_members row if they had one, so deleting a staff Clerk identity directly in the Clerk dashboard also revokes admin access here. Authenticated by an HMAC signature in the svix-id / svix-timestamp / svix-signature headers, verified against STAFF_CLERK_WEBHOOK_SIGNING_SECRET - configured as a webhook endpoint in the Clerk dashboard, not by a user or staff session.
 
 **Auth:** none
 

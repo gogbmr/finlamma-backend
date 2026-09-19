@@ -14,8 +14,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CreateStaffMemberSchema, type CreateStaffMemberInput } from "@/server/staff/schemas";
-import { createStaffMemberAction } from "./actions";
+import { InviteStaffMemberSchema, type InviteStaffMemberInput } from "@/server/staff/schemas";
+import { inviteStaffMemberAction } from "./actions";
 
 export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] }) {
   const [isPending, startTransition] = useTransition();
@@ -26,18 +26,18 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
     setValue,
     watch,
     formState: { errors },
-  } = useForm<CreateStaffMemberInput>({ resolver: zodResolver(CreateStaffMemberSchema) });
+  } = useForm<InviteStaffMemberInput>({ resolver: zodResolver(InviteStaffMemberSchema) });
 
   const roleId = watch("roleId");
 
-  function onSubmit(values: CreateStaffMemberInput) {
+  function onSubmit(values: InviteStaffMemberInput) {
     startTransition(async () => {
-      const result = await createStaffMemberAction(values);
+      const result = await inviteStaffMemberAction(values);
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Staff member added");
+      toast.success(`Invitation sent to ${values.email}`);
       reset();
     });
   }
@@ -48,16 +48,15 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
       className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 p-4"
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="clerkUserId">Clerk user ID</Label>
+        <Label htmlFor="email">Email</Label>
         <Input
-          id="clerkUserId"
-          placeholder="user_2abc123"
-          {...register("clerkUserId")}
-          className="w-56"
+          id="email"
+          type="email"
+          placeholder="newstaff@finlamma.com"
+          {...register("email")}
+          className="w-64"
         />
-        {errors.clerkUserId && (
-          <p className="text-xs text-red-600">{errors.clerkUserId.message}</p>
-        )}
+        {errors.email && <p className="text-xs text-red-600">{errors.email.message}</p>}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -78,7 +77,7 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
       </div>
 
       <Button type="submit" disabled={isPending}>
-        {isPending ? "Adding..." : "Add staff member"}
+        {isPending ? "Sending..." : "Send invite"}
       </Button>
     </form>
   );
