@@ -80,6 +80,32 @@ export async function requireUser(req: Request) {
   return user;
 }
 
+// Permanently deletes the identity from the CONSUMER Clerk application
+// (account deletion - see docs/PRODUCT_SPEC.md Settings and non-negotiable
+// rule 10). This triggers Clerk's own user.deleted webhook asynchronously,
+// but callers should also anonymize the DB row directly (see
+// anonymizeUserFromClerk in src/server/users/repo.ts, which is idempotent)
+// so deletion is reflected immediately rather than waiting on webhook
+// delivery.
+export async function deleteConsumerClerkUser(clerkUserId: string): Promise<void> {
+  const consumerClerkClient = getConsumerClerkClient();
+  if (!consumerClerkClient) {
+    throw new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Consumer Clerk application not configured",
+    );
+  }
+
+  try {
+    await consumerClerkClient.users.deleteUser(clerkUserId);
+  } catch {
+    // Same reasoning as requireUser's catch below: never log the raw error
+    // from Clerk's SDK on a path that runs with the secret key in scope.
+    console.error("Consumer Clerk user deletion failed unexpectedly");
+    throw new AppError("SERVICE_UNAVAILABLE", "Could not delete account right now");
+  }
+}
+
 // Authorizes a staff-only route: the caller must have an active staff Clerk
 // session (via clerkMiddleware()/auth() - see middleware.ts and
 // docs/ARCHITECTURE.md decision D2a) with a staff_members row whose role

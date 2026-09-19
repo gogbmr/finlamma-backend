@@ -8,6 +8,16 @@ extendZodWithOpenApi(z);
 
 export const registry = new OpenAPIRegistry();
 
+// The mobile app's Bearer token, verified against the CONSUMER Clerk
+// application in requireUser() (src/lib/auth.ts) - not the staff/admin
+// session, which never touches /api/v1 routes. See docs/ARCHITECTURE.md
+// decision D2a.
+registry.registerComponent("securitySchemes", "bearerAuth", {
+  type: "http",
+  scheme: "bearer",
+  description: "Consumer Clerk session token, sent as `Authorization: Bearer <token>`.",
+});
+
 // Shared error envelope every route can reference in its responses.
 export const ErrorResponseSchema = registry.register(
   "ErrorResponse",

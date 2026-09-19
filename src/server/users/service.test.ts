@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 const mockUpsert = vi.fn();
 const mockAnonymize = vi.fn();
+const mockUpdatePrefs = vi.fn();
 vi.mock("./repo", () => ({
   upsertUserFromClerk: (input: unknown) => mockUpsert(input),
   anonymizeUserFromClerk: (id: unknown) => mockAnonymize(id),
+  updateUserPrefs: (id: unknown, input: unknown) => mockUpdatePrefs(id, input),
 }));
 
 const mockLogActivity = vi.fn();
@@ -13,7 +15,12 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
-import { syncUserFromClerkEvent } from "./service";
+const mockDeleteConsumerClerkUser = vi.fn();
+vi.mock("@/lib/auth", () => ({
+  deleteConsumerClerkUser: (id: unknown) => mockDeleteConsumerClerkUser(id),
+}));
+
+import { deleteMe, getMe, syncUserFromClerkEvent, updateMe } from "./service";
 
 function userEvent(
   type: "user.created" | "user.updated",
@@ -160,6 +167,84 @@ describe("syncUserFromClerkEvent", () => {
     await syncUserFromClerkEvent(evt);
 
     expect(mockUpsert).not.toHaveBeenCalled();
+    expect(mockAnonymize).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+});
+
+const USER_ROW = {
+  id: "u1",
+  clerkUserId: "clerk_123",
+  firstName: "Chirag",
+  lastInitial: "B",
+  email: "chirag@example.com",
+  phone: null,
+  language: "en" as const,
+  theme: "dark" as const,
+  clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
+  deletedAt: null,
+  createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+};
+
+describe("getMe", () => {
+  it("shapes the users row into the public profile fields", () => {
+    expect(getMe(USER_ROW)).toEqual({
+      id: "u1",
+      firstName: "Chirag",
+      lastInitial: "B",
+      email: "chirag@example.com",
+      phone: null,
+      language: "en",
+      theme: "dark",
+    });
+  });
+});
+
+describe("updateMe", () => {
+  it("persists the update and logs it as the user's own action", async () => {
+    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, language: "hi" as const });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    const result = await updateMe(USER_ROW, { language: "hi" });
+
+    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { language: "hi" });
+    expect(mockLogActivity).toHaveBeenCalledWith({
+      actorType: "user",
+      actorId: "u1",
+      action: "user.updated_prefs",
+      targetType: "user",
+      targetId: "u1",
+      metadata: { language: "hi" },
+    });
+    expect(result.language).toBe("hi");
+  });
+});
+
+describe("deleteMe", () => {
+  it("deletes from Clerk, then anonymizes the DB row, then logs it", async () => {
+    mockDeleteConsumerClerkUser.mockResolvedValueOnce(undefined);
+    mockAnonymize.mockResolvedValueOnce(undefined);
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    await deleteMe(USER_ROW);
+
+    expect(mockDeleteConsumerClerkUser).toHaveBeenCalledWith("clerk_123");
+    expect(mockAnonymize).toHaveBeenCalledWith("clerk_123");
+    expect(mockLogActivity).toHaveBeenCalledWith({
+      actorType: "user",
+      actorId: "u1",
+      action: "user.deleted_self",
+      targetType: "user",
+      targetId: "u1",
+    });
+  });
+
+  it("does not anonymize the DB row if the Clerk deletion fails", async () => {
+    mockDeleteConsumerClerkUser.mockRejectedValueOnce(new Error("Clerk unavailable"));
+
+    await expect(deleteMe(USER_ROW)).rejects.toThrow();
+
     expect(mockAnonymize).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });

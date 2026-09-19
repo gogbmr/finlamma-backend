@@ -28,7 +28,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
       (super_admin, user_manager, content_uploader, content_publisher, quiz_maker)
 - [x] `requireStaff(permission)` helper
 - [ ] Admin shell: layout, sign-in, staff management page, activity log viewer
-- [ ] `GET/PATCH /me`, account deletion (DB + Clerk)
+- [x] `GET/PATCH /me`, account deletion (DB + Clerk)
 
 ## Phase 2 — Learning content
 - [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats), boss quizzes

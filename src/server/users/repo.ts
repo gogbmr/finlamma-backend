@@ -26,6 +26,22 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+export type UserPrefsUpdate = {
+  language?: "en" | "hi" | "hx";
+  theme?: "dark" | "light";
+};
+
+// UpdateMeRequestSchema (src/server/users/schemas.ts) already guarantees at
+// least one field is present, so `set` is never empty here.
+export async function updateUserPrefs(userId: string, input: UserPrefsUpdate) {
+  const [updated] = await db
+    .update(users)
+    .set(input)
+    .where(eq(users.id, userId))
+    .returning();
+  return updated;
+}
+
 export type ClerkUserSync = {
   clerkUserId: string;
   firstName: string | null;

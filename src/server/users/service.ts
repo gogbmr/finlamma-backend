@@ -1,6 +1,61 @@
 import type { WebhookEvent } from "@clerk/nextjs/server";
 import { logActivity } from "@/lib/activity-log";
-import { anonymizeUserFromClerk, upsertUserFromClerk } from "./repo";
+import { deleteConsumerClerkUser } from "@/lib/auth";
+import type { users } from "@/db/schema";
+import type { UpdateMeInput } from "./schemas";
+import { anonymizeUserFromClerk, updateUserPrefs, upsertUserFromClerk } from "./repo";
+
+type UserRow = typeof users.$inferSelect;
+
+function toMeResponse(user: UserRow) {
+  return {
+    id: user.id,
+    firstName: user.firstName,
+    lastInitial: user.lastInitial,
+    email: user.email,
+    phone: user.phone,
+    language: user.language,
+    theme: user.theme,
+  };
+}
+
+export function getMe(user: UserRow) {
+  return toMeResponse(user);
+}
+
+export async function updateMe(user: UserRow, input: UpdateMeInput) {
+  const updated = await updateUserPrefs(user.id, input);
+
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "user.updated_prefs",
+    targetType: "user",
+    targetId: user.id,
+    metadata: input,
+  });
+
+  return toMeResponse(updated);
+}
+
+// Account deletion (docs/PRODUCT_SPEC.md Settings, non-negotiable rule 10):
+// deletes the Clerk identity first (the harder-to-retry external call - if
+// it fails, nothing in our DB has changed yet), then anonymizes our own row
+// directly rather than waiting on the resulting user.deleted webhook, so
+// the caller sees the effect immediately. anonymizeUserFromClerk is
+// idempotent, so the webhook redelivery is a harmless no-op.
+export async function deleteMe(user: UserRow) {
+  await deleteConsumerClerkUser(user.clerkUserId);
+  await anonymizeUserFromClerk(user.clerkUserId);
+
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "user.deleted_self",
+    targetType: "user",
+    targetId: user.id,
+  });
+}
 
 function primaryVerifiedEmail(
   data: Extract<WebhookEvent, { type: "user.created" | "user.updated" }>["data"],
