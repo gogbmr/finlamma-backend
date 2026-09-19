@@ -9,6 +9,7 @@ import {
   ok,
   okList,
   parseLimit,
+  requestMeta,
   withErrors,
 } from "./http";
 
@@ -219,5 +220,24 @@ describe("cursor pagination", () => {
     expect(parseLimit("500")).toBe(100);
     expect(() => parseLimit("0")).toThrow(AppError);
     expect(() => parseLimit("abc")).toThrow(AppError);
+  });
+});
+
+describe("requestMeta", () => {
+  it("takes the first address in a comma-separated x-forwarded-for chain", () => {
+    const headers = new Headers({
+      "x-forwarded-for": "203.0.113.5, 70.41.3.18, 150.172.238.178",
+      "user-agent": "FinlammaApp/1.0",
+    });
+    expect(requestMeta(headers)).toEqual({ ip: "203.0.113.5", userAgent: "FinlammaApp/1.0" });
+  });
+
+  it("falls back to x-real-ip when x-forwarded-for is absent", () => {
+    const headers = new Headers({ "x-real-ip": "203.0.113.5" });
+    expect(requestMeta(headers)).toEqual({ ip: "203.0.113.5", userAgent: null });
+  });
+
+  it("returns nulls when no relevant headers are present", () => {
+    expect(requestMeta(new Headers())).toEqual({ ip: null, userAgent: null });
   });
 });

@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { ok, withErrors } from "@/lib/http";
+import { ok, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import {
   DeleteMeResponseSchema,
@@ -123,12 +123,12 @@ export const GET = withErrors(async (req: Request) => {
 export const PATCH = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   const input = UpdateMeRequestSchema.parse(await req.json());
-  const updated = await updateMe(user, input);
+  const updated = await updateMe(user, input, requestMeta(req.headers));
   return ok(updated);
 });
 
 export const DELETE = withErrors(async (req: Request) => {
   const user = await requireUser(req);
-  await deleteMe(user);
+  await deleteMe(user, requestMeta(req.headers));
   return ok({ deleted: true as const });
 });

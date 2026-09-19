@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { ZodError } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
+import { requestMeta } from "@/lib/http";
 import {
   InviteStaffMemberSchema,
   SetStaffActiveSchema,
@@ -41,7 +43,7 @@ export async function inviteStaffMemberAction(input: unknown): Promise<ActionRes
   return runAction(async () => {
     const actor = await requireStaff("staff.manage");
     const parsed = InviteStaffMemberSchema.parse(input);
-    await inviteStaffMember(actor, parsed);
+    await inviteStaffMember(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/staff");
   });
 }
@@ -50,7 +52,7 @@ export async function setStaffActiveAction(input: unknown): Promise<ActionResult
   return runAction(async () => {
     const actor = await requireStaff("staff.manage");
     const parsed = SetStaffActiveSchema.parse(input);
-    await setStaffMemberActive(actor, parsed.staffId, parsed.active);
+    await setStaffMemberActive(actor, parsed.staffId, parsed.active, requestMeta(await headers()));
     revalidatePath("/admin/staff");
   });
 }
@@ -59,7 +61,12 @@ export async function updateStaffRoleAction(input: unknown): Promise<ActionResul
   return runAction(async () => {
     const actor = await requireStaff("staff.manage");
     const parsed = UpdateStaffRoleSchema.parse(input);
-    await changeStaffMemberRole(actor, parsed.staffId, parsed.roleId);
+    await changeStaffMemberRole(
+      actor,
+      parsed.staffId,
+      parsed.roleId,
+      requestMeta(await headers()),
+    );
     revalidatePath("/admin/staff");
   });
 }

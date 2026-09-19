@@ -2,6 +2,7 @@ import { clerkClient } from "@clerk/nextjs/server";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
+import type { requestMeta } from "@/lib/http";
 import type { InviteStaffMemberInput } from "./schemas";
 import {
   deactivateStaffMemberByClerkId,
@@ -16,6 +17,7 @@ import {
 // (from requireStaff("staff.manage") in the caller), used as the activity
 // log actorId - never the target being changed.
 type Actor = { id: string };
+type RequestMeta = ReturnType<typeof requestMeta>;
 
 // Public metadata key on the Clerk invitation, which Clerk copies onto the
 // resulting User's own publicMetadata once they accept and sign up (see
@@ -30,7 +32,11 @@ export async function getStaffPageData() {
   return { staff, roles };
 }
 
-export async function inviteStaffMember(actor: Actor, input: InviteStaffMemberInput) {
+export async function inviteStaffMember(
+  actor: Actor,
+  input: InviteStaffMemberInput,
+  meta: RequestMeta,
+) {
   const client = await clerkClient();
 
   let invitation;
@@ -54,6 +60,8 @@ export async function inviteStaffMember(actor: Actor, input: InviteStaffMemberIn
     targetType: "staff_invitation",
     targetId: invitation.id,
     metadata: { email: input.email, roleId: input.roleId },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
   });
 
   return invitation;
@@ -63,6 +71,14 @@ export async function inviteStaffMember(actor: Actor, input: InviteStaffMemberIn
 // signup is an invited one (Clerk's own sign-up page is reachable directly
 // unless disabled in the dashboard), so a missing/invalid role id in
 // publicMetadata is a normal no-op, not an error.
+//
+// Security note (see docs/ARCHITECTURE.md decision D14 and the regression
+// test in src/app/api/webhooks/clerk-staff/route.test.ts): this MUST only
+// ever be driven by public_metadata, never unsafe_metadata - Clerk lets a
+// signed-in user set unsafe_metadata on themselves via the client SDK, so
+// reading that field here would let anyone who signs up self-grant a
+// staff role. public_metadata can only be written with the Backend API
+// (our secret key), which callers never have.
 export async function completeStaffInviteFromClerkEvent(
   clerkUserId: string,
   publicMetadata: Record<string, unknown>,
@@ -97,7 +113,12 @@ export async function deactivateStaffMemberFromClerkEvent(clerkUserId: string) {
   });
 }
 
-export async function setStaffMemberActive(actor: Actor, staffId: string, active: boolean) {
+export async function setStaffMemberActive(
+  actor: Actor,
+  staffId: string,
+  active: boolean,
+  meta: RequestMeta,
+) {
   const updated = await setStaffActive(staffId, active);
 
   await logActivity({
@@ -106,12 +127,19 @@ export async function setStaffMemberActive(actor: Actor, staffId: string, active
     action: active ? "staff.activated" : "staff.deactivated",
     targetType: "staff_member",
     targetId: staffId,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
   });
 
   return updated;
 }
 
-export async function changeStaffMemberRole(actor: Actor, staffId: string, roleId: string) {
+export async function changeStaffMemberRole(
+  actor: Actor,
+  staffId: string,
+  roleId: string,
+  meta: RequestMeta,
+) {
   const updated = await updateStaffRole(staffId, roleId);
 
   await logActivity({
@@ -121,6 +149,8 @@ export async function changeStaffMemberRole(actor: Actor, staffId: string, roleI
     targetType: "staff_member",
     targetId: staffId,
     metadata: { roleId },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
   });
 
   return updated;

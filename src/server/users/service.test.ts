@@ -201,12 +201,14 @@ describe("getMe", () => {
   });
 });
 
+const META = { ip: "203.0.113.5", userAgent: "FinlammaApp/1.0" };
+
 describe("updateMe", () => {
-  it("persists the update and logs it as the user's own action", async () => {
+  it("persists the update and logs it as the user's own action, with request meta", async () => {
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, language: "hi" as const });
     mockLogActivity.mockResolvedValueOnce(undefined);
 
-    const result = await updateMe(USER_ROW, { language: "hi" });
+    const result = await updateMe(USER_ROW, { language: "hi" }, META);
 
     expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { language: "hi" });
     expect(mockLogActivity).toHaveBeenCalledWith({
@@ -216,18 +218,20 @@ describe("updateMe", () => {
       targetType: "user",
       targetId: "u1",
       metadata: { language: "hi" },
+      ip: "203.0.113.5",
+      userAgent: "FinlammaApp/1.0",
     });
     expect(result.language).toBe("hi");
   });
 });
 
 describe("deleteMe", () => {
-  it("deletes from Clerk, then anonymizes the DB row, then logs it", async () => {
+  it("deletes from Clerk, then anonymizes the DB row, then logs it with request meta", async () => {
     mockDeleteConsumerClerkUser.mockResolvedValueOnce(undefined);
     mockAnonymize.mockResolvedValueOnce(undefined);
     mockLogActivity.mockResolvedValueOnce(undefined);
 
-    await deleteMe(USER_ROW);
+    await deleteMe(USER_ROW, META);
 
     expect(mockDeleteConsumerClerkUser).toHaveBeenCalledWith("clerk_123");
     expect(mockAnonymize).toHaveBeenCalledWith("clerk_123");
@@ -237,13 +241,15 @@ describe("deleteMe", () => {
       action: "user.deleted_self",
       targetType: "user",
       targetId: "u1",
+      ip: "203.0.113.5",
+      userAgent: "FinlammaApp/1.0",
     });
   });
 
   it("does not anonymize the DB row if the Clerk deletion fails", async () => {
     mockDeleteConsumerClerkUser.mockRejectedValueOnce(new Error("Clerk unavailable"));
 
-    await expect(deleteMe(USER_ROW)).rejects.toThrow();
+    await expect(deleteMe(USER_ROW, META)).rejects.toThrow();
 
     expect(mockAnonymize).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();

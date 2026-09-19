@@ -1,11 +1,13 @@
 import type { WebhookEvent } from "@clerk/nextjs/server";
 import { logActivity } from "@/lib/activity-log";
 import { deleteConsumerClerkUser } from "@/lib/auth";
+import type { requestMeta } from "@/lib/http";
 import type { users } from "@/db/schema";
 import type { UpdateMeInput } from "./schemas";
 import { anonymizeUserFromClerk, updateUserPrefs, upsertUserFromClerk } from "./repo";
 
 type UserRow = typeof users.$inferSelect;
+type RequestMeta = ReturnType<typeof requestMeta>;
 
 function toMeResponse(user: UserRow) {
   return {
@@ -23,7 +25,7 @@ export function getMe(user: UserRow) {
   return toMeResponse(user);
 }
 
-export async function updateMe(user: UserRow, input: UpdateMeInput) {
+export async function updateMe(user: UserRow, input: UpdateMeInput, meta: RequestMeta) {
   const updated = await updateUserPrefs(user.id, input);
 
   await logActivity({
@@ -33,6 +35,8 @@ export async function updateMe(user: UserRow, input: UpdateMeInput) {
     targetType: "user",
     targetId: user.id,
     metadata: input,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
   });
 
   return toMeResponse(updated);
@@ -44,7 +48,14 @@ export async function updateMe(user: UserRow, input: UpdateMeInput) {
 // directly rather than waiting on the resulting user.deleted webhook, so
 // the caller sees the effect immediately. anonymizeUserFromClerk is
 // idempotent, so the webhook redelivery is a harmless no-op.
-export async function deleteMe(user: UserRow) {
+//
+// Known gap (flagged by security review, not fixed here - needs a
+// reconciliation job, which needs Inngest, not yet set up in this phase):
+// if the Clerk delete above succeeds but the anonymize below throws, the
+// user is stuck - requireUser() now fails (Clerk identity gone) before
+// they can retry, and the only remaining path to consistency is the async
+// user.deleted webhook eventually arriving. Revisit once Inngest exists.
+export async function deleteMe(user: UserRow, meta: RequestMeta) {
   await deleteConsumerClerkUser(user.clerkUserId);
   await anonymizeUserFromClerk(user.clerkUserId);
 
@@ -54,6 +65,8 @@ export async function deleteMe(user: UserRow) {
     action: "user.deleted_self",
     targetType: "user",
     targetId: user.id,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
   });
 }
 

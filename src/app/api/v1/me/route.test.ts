@@ -11,8 +11,8 @@ const mockUpdateMe = vi.fn();
 const mockDeleteMe = vi.fn();
 vi.mock("@/server/users/service", () => ({
   getMe: (user: unknown) => mockGetMe(user),
-  updateMe: (user: unknown, input: unknown) => mockUpdateMe(user, input),
-  deleteMe: (user: unknown) => mockDeleteMe(user),
+  updateMe: (user: unknown, input: unknown, meta: unknown) => mockUpdateMe(user, input, meta),
+  deleteMe: (user: unknown, meta: unknown) => mockDeleteMe(user, meta),
 }));
 
 import { DELETE, GET, PATCH } from "./route";
@@ -89,7 +89,7 @@ describe("PATCH /api/v1/me", () => {
     const res = await PATCH(makeRequest("PATCH", { language: "hi" }));
 
     expect(res.status).toBe(200);
-    expect(mockUpdateMe).toHaveBeenCalledWith(USER, { language: "hi" });
+    expect(mockUpdateMe).toHaveBeenCalledWith(USER, { language: "hi" }, { ip: null, userAgent: null });
     const body = await res.json();
     expect(body.data.language).toBe("hi");
   });
@@ -117,7 +117,7 @@ describe("DELETE /api/v1/me", () => {
     const res = await DELETE(makeRequest("DELETE"));
 
     expect(res.status).toBe(200);
-    expect(mockDeleteMe).toHaveBeenCalledWith(USER);
+    expect(mockDeleteMe).toHaveBeenCalledWith(USER, { ip: null, userAgent: null });
     const body = await res.json();
     expect(body.data.deleted).toBe(true);
   });

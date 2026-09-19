@@ -40,6 +40,7 @@ import {
 } from "./service";
 
 const ACTOR = { id: "staff-actor-1" };
+const META = { ip: "203.0.113.5", userAgent: "Mozilla/5.0" };
 
 beforeEach(() => {
   mockListRoles.mockReset();
@@ -68,7 +69,11 @@ describe("inviteStaffMember", () => {
     mockCreateInvitation.mockResolvedValueOnce({ id: "inv_1" });
     mockLogActivity.mockResolvedValueOnce(undefined);
 
-    const result = await inviteStaffMember(ACTOR, { email: "new@example.com", roleId: "role-1" });
+    const result = await inviteStaffMember(
+      ACTOR,
+      { email: "new@example.com", roleId: "role-1" },
+      META,
+    );
 
     expect(mockCreateInvitation).toHaveBeenCalledWith({
       emailAddress: "new@example.com",
@@ -82,6 +87,8 @@ describe("inviteStaffMember", () => {
       targetType: "staff_invitation",
       targetId: "inv_1",
       metadata: { email: "new@example.com", roleId: "role-1" },
+      ip: "203.0.113.5",
+      userAgent: "Mozilla/5.0",
     });
     expect(result).toEqual({ id: "inv_1" });
   });
@@ -90,7 +97,7 @@ describe("inviteStaffMember", () => {
     mockCreateInvitation.mockRejectedValueOnce(new Error("Clerk API down"));
 
     await expect(
-      inviteStaffMember(ACTOR, { email: "new@example.com", roleId: "role-1" }),
+      inviteStaffMember(ACTOR, { email: "new@example.com", roleId: "role-1" }, META),
     ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
@@ -156,7 +163,7 @@ describe("setStaffMemberActive", () => {
     mockSetStaffActive.mockResolvedValueOnce({ id: "s1", active: false });
     mockLogActivity.mockResolvedValueOnce(undefined);
 
-    await setStaffMemberActive(ACTOR, "s1", false);
+    await setStaffMemberActive(ACTOR, "s1", false, META);
 
     expect(mockSetStaffActive).toHaveBeenCalledWith("s1", false);
     expect(mockLogActivity).toHaveBeenCalledWith({
@@ -165,6 +172,8 @@ describe("setStaffMemberActive", () => {
       action: "staff.deactivated",
       targetType: "staff_member",
       targetId: "s1",
+      ip: "203.0.113.5",
+      userAgent: "Mozilla/5.0",
     });
   });
 
@@ -172,7 +181,7 @@ describe("setStaffMemberActive", () => {
     mockSetStaffActive.mockResolvedValueOnce({ id: "s1", active: true });
     mockLogActivity.mockResolvedValueOnce(undefined);
 
-    await setStaffMemberActive(ACTOR, "s1", true);
+    await setStaffMemberActive(ACTOR, "s1", true, META);
 
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "staff.activated" }),
@@ -185,7 +194,7 @@ describe("changeStaffMemberRole", () => {
     mockUpdateStaffRole.mockResolvedValueOnce({ id: "s1", roleId: "role-2" });
     mockLogActivity.mockResolvedValueOnce(undefined);
 
-    await changeStaffMemberRole(ACTOR, "s1", "role-2");
+    await changeStaffMemberRole(ACTOR, "s1", "role-2", META);
 
     expect(mockUpdateStaffRole).toHaveBeenCalledWith("s1", "role-2");
     expect(mockLogActivity).toHaveBeenCalledWith({
@@ -195,6 +204,8 @@ describe("changeStaffMemberRole", () => {
       targetType: "staff_member",
       targetId: "s1",
       metadata: { roleId: "role-2" },
+      ip: "203.0.113.5",
+      userAgent: "Mozilla/5.0",
     });
   });
 });

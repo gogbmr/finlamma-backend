@@ -136,6 +136,18 @@ export function decodeCursor<T = unknown>(
   }
 }
 
+// Extracts the caller's IP/user-agent for activity_logs, from a Headers
+// object - a plain Request's `.headers` in a route handler, or Next's
+// headers() (from "next/headers") in a Server Action, which returns the
+// same interface. x-forwarded-for can carry a client-supplied chain behind
+// some proxies, so it's informational only (audit trail), never used for
+// auth/rate-limit decisions.
+export function requestMeta(headers: Headers): { ip: string | null; userAgent: string | null } {
+  const forwardedFor = headers.get("x-forwarded-for");
+  const ip = forwardedFor ? (forwardedFor.split(",")[0]?.trim() ?? null) : headers.get("x-real-ip");
+  return { ip, userAgent: headers.get("user-agent") };
+}
+
 export const DEFAULT_PAGE_LIMIT = 20;
 export const MAX_PAGE_LIMIT = 100;
 

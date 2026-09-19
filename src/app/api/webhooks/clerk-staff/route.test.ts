@@ -94,6 +94,30 @@ describe("POST /api/webhooks/clerk-staff", () => {
     expect(mockCompleteInvite).toHaveBeenCalledWith("staff_clerk_2", {});
   });
 
+  it("regression: only reads public_metadata, never unsafe_metadata (which an end user can set on themselves)", async () => {
+    // unsafe_metadata is writable by the signed-in user themselves via
+    // Clerk's client SDK - if this route ever read it instead of (or in
+    // addition to) public_metadata, a self-invited attacker could set
+    // unsafe_metadata.finlammaStaffRoleId on their own account and grant
+    // themselves a staff role. Only public_metadata is Backend-API-only
+    // (see docs/ARCHITECTURE.md decision D14), and that's what must reach
+    // completeStaffInviteFromClerkEvent - this pins that down so a future
+    // refactor can't silently swap the trusted field.
+    const evt = {
+      type: "user.created",
+      data: {
+        id: "staff_clerk_attacker",
+        public_metadata: {},
+        unsafe_metadata: { finlammaStaffRoleId: "super-admin-role-id" },
+      },
+    };
+    mockCompleteInvite.mockResolvedValueOnce(undefined);
+
+    await POST(makeRequest(JSON.stringify(evt)));
+
+    expect(mockCompleteInvite).toHaveBeenCalledWith("staff_clerk_attacker", {});
+  });
+
   it("on user.deleted, deactivates the staff member", async () => {
     const evt = { type: "user.deleted", data: { id: "staff_clerk_1", deleted: true } };
     mockDeactivate.mockResolvedValueOnce(undefined);
