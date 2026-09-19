@@ -6,12 +6,13 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
 **Identity & staff**
 - `users` — clerk_user_id (unique), first_name, last_initial (nullable until onboarding),
   email, phone (both nullable/unique - Clerk allows email, phone, Google, Apple or username
-  sign-in, so a user may have either, both, or briefly neither), language, theme,
-  clerk_updated_at (Clerk's own updated_at for the last change we applied, so the webhook can
-  ignore stale/out-of-order redeliveries), deleted_at. On `user.deleted` from Clerk, the row is
-  soft-deleted and anonymized in place (personal fields cleared) rather than removed, so ledger/
-  trading/leaderboard history stays intact. `level`, `total_xp`, `current_world_id` are added in
-  Phase 3 (progress economy) once `worlds` exists.
+  sign-in, so a user may have either, both, or briefly neither), language, theme, bio (text,
+  nullable), preferences jsonb (sound, haptics, data_saver — small booleans, same jsonb pattern
+  as translatable text), clerk_updated_at (Clerk's own updated_at for the last change we applied,
+  so the webhook can ignore stale/out-of-order redeliveries), deleted_at. On `user.deleted` from
+  Clerk, the row is soft-deleted and anonymized in place (personal fields cleared) rather than
+  removed, so ledger/trading/leaderboard history stays intact. `level`, `total_xp`,
+  `current_world_id` are added in Phase 3 (progress economy) once `worlds` exists.
 - `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
   `users` - staff never has a row in `users`), role_id, active
 - `roles`, `permissions` (key like `quiz.create`), `role_permissions`
@@ -33,7 +34,8 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   default_xp, default_vm, active) — admin-editable; XP and VM are earned independently (no
   conversion rate between them), and an individual lesson/quiz's content can override its kind's
   default. See `docs/ECONOMY.md` for the seeded starting values and the simulation behind them.
-- `streaks` (user_id, current, longest, last_active_date_ist, freezes_left, freezes_reset_on)
+- `streaks` (user_id, scope `learning`|`pulse_check` — two independent habit loops, same shape,
+  current, longest, last_active_date_ist, freezes_left, freezes_reset_on)
 - `badges`, `user_badges`, `rewards`, `reward_claims`
 - `mentors` (order, name, bio jsonb {en,hi,hx}, world_range, art_key) — admin-editable content
   type (not hardcoded in the app)
@@ -49,17 +51,25 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   placeholders, status draft|published) — admin-editable, no AI in v1
 
 **Trading**
-- `instruments` (symbol, exchange, name, sector, about jsonb, active, halted). Order pad access is
-  gated by `settings_kv.trade_unlock_world_order` (default: Market Maidan, world order 4) —
+- `instruments` (symbol, exchange, name, sector, about jsonb, tip jsonb {en,hi,hx}, tags text[],
+  mcap, pe, lot_size, active, halted). Order pad access is gated by
+  `settings_kv.trade_unlock_world_order` (default: Market Maidan, world order 4) —
   quotes/charts/watchlist stay visible to everyone regardless ("explore mode"); no starting
-  balance or unlock grant is ever issued (see `docs/ECONOMY.md`). Orders are whole-share only.
-- `market_holidays` (date, name), `market_controls` (feed_mode, global_halt)
+  balance or unlock grant is ever issued (see `docs/ECONOMY.md`). Orders are whole-share only. No
+  per-user watchlist table — "Watchlist" in the app is simply the full active `instruments` list
+  (matches the prototype, which has no add/remove control).
+- `instrument_daily_bars` (instrument_id, date, open/high/low/close/volume, all paise) — daily
+  candle history for chart timeframes beyond what the relay's Redis cache retains; today's/live
+  candle still comes from Redis per ARCHITECTURE.md. NIFTY 50 / BANK NIFTY / SENSEX indices reuse
+  the same Twelve Data source and caching, no separate table.
+- `market_holidays` (date, name), `market_controls` (feed_mode, global_halt, volatility — meaning
+  still open, see FEATURE_MAP.md "Needs your decision")
 - `orders` (user_id, instrument_id, side, type, qty, limit_price_paise, status, fill_price_paise,
   reject_reason, idempotency_key, filled_at)
 - `holdings` (user_id, instrument_id, qty, avg_price_paise)
 - `funds` (name, category, risk, nav, aum, expense_ratio, min_sip_paise — tiered: ₹100 for index
-  funds, ₹500 for equity/hybrid/debt/ELSS, star_rating, description jsonb), `fund_navs`,
-  `sip_plans`, `fund_holdings`
+  funds, ₹500 for equity/hybrid/debt/ELSS, return_1y/3y/5y, star_rating, description jsonb),
+  `fund_navs`, `sip_plans`, `fund_holdings`
 - `competitions` (name, instrument_id, virtual_capital_vm, window_start, window_end, prizes jsonb
   — V Money / badge / coupon only, **never real currency**, admin-set per competition — and rules
   jsonb), `competition_entries`/`competition_trades` (isolated from the user's main paper-trading
@@ -67,8 +77,15 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
 
 **News**
 - `news_raw` (source, external_id, url, headline, summary, published_at, payload)
-- `news_stories` (raw_id, category, tag good|bad|neutral, content jsonb {en,hi,hx}, jargon jsonb, status)
+- `news_stories` (raw_id, category, topic — fixed admin-extensible enum: RBI & Rates, Inflation,
+  Stock Market Basics, IPOs & New Listings, Mutual Funds, Banking, Scams & Fraud, Government &
+  Budget, Global Markets, Currency — tag good|bad|neutral, content jsonb {en,hi,hx}, jargon jsonb,
+  quality_grade A|B|C (auto-heuristic, staff-overridable), status)
 - `news_editions` (date, published), `bookmarks`
+- `news_reads` (user_id, story_id, read_at, dwell_seconds) — backs the "read" badge and any
+  read-gating on Pulse Check
+- `news_desk_picks` (kind desk_pick|exam_alert|scam_watch, story_id or standalone content jsonb,
+  attribution `by`, status) — staff-curated highlights shown separately from the algorithmic feed
 
 **Social & notifications**
 - `leaderboard_snapshots` (week, scope, rankings jsonb), `leagues`, `league_members`, `cheers`

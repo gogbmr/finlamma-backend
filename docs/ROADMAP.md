@@ -49,6 +49,8 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
       module breakdown, 8-week trend; `coach_note_templates` (admin-editable, draft → publish,
       no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules
+- [ ] `users.bio`, `users.preferences` (sound/haptics/data-saver); Settings screens that don't
+      need their own backend (legal pages, contact, rate-app) ship as static/deep-link content
 
 ## Phase 4 — Trading engine (needs the market relay for live prices)
 - [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
@@ -60,17 +62,33 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
 - [ ] Limit-order matching job (Inngest)
 - [ ] Mutual funds: AMFI NAV import job, SIP (tiered minimums: ₹100 index / ₹500 other) + lump sum
+- [ ] `instrument_daily_bars` (candle history), indices (NIFTY 50/BANK NIFTY/SENSEX) via the same
+      Twelve Data source
 - [ ] Ops console: feed mode, halts, trade-unlock-world setting, user ledger with risk flags
+      (default rule: NEW = joined <7 days ago; WATCH = >50% of portfolio in one position or >10
+      orders in a day; admin-tunable thresholds), live KPI queries (not hardcoded)
 
 ## Phase 5 — News & Pulse Check
-- [ ] Ingestion jobs: Finnhub + India source → `news_raw`
-- [ ] AI simplification (3 languages) + jargon term + quiz drafts
-- [ ] News Desk console: review, publish toggle, quiz generator settings, engagement
+- [ ] Ingestion jobs: Finnhub + India source → `news_raw` (2 sources at launch, not the
+      prototype's placeholder "7 partner feeds" figure)
+- [ ] AI simplification (3 languages) + jargon term + quiz drafts; auto quality grade (A/B/C,
+      staff-overridable) + topic tagging (fixed admin-extensible taxonomy, see DATA_MODEL.md)
+- [ ] `news_reads` (backs the read badge), `news_desk_picks` (staff-curated Desk Pick/Exam
+      Alert/Scam Watch cards, separate from the algorithmic feed)
+- [ ] Pulse Check ships the 9 formats the prototype implements; the unused "PREDICT" toggle is
+      dropped for v1
+- [ ] News Desk console: review, publish toggle, quiz generator settings, live engagement query
+      (not hardcoded), live KPI tiles
 - [ ] App endpoints: feed, story, bookmarks, Pulse Check (server-scored)
 
 ## Phase 6 — Arena & social
-- [ ] Weekly leaderboards (Redis sorted sets), scopes, leagues with promote/demote job
-- [ ] Worlds table; cheers (+5 XP, notification)
+- [ ] Weekly leaderboards (Redis sorted sets), scopes, leagues with promote/demote job. Leagues
+      are a flat pool per scope with computed top/bottom ~25% (matches the prototype) — no named
+      tiers (Bronze/Silver/Gold) for v1
+- [ ] Worlds table; daily `world_xp_snapshots`/rollup job for the 7-day sparkline; cached
+      per-user aggregate stats (lessons/quiz accuracy/sim P&L) for leaderboard row expansion. No
+      real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost)
+- [ ] Cheers (+5 XP, notification)
 - [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
       admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
       currency) — depends on Phase 4's order execution primitives

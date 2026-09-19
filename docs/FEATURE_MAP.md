@@ -319,87 +319,91 @@ prototype that needs a founder decision about how it should work for real. A pri
 of the ones that most affect scope and schema is in the chat message that shipped alongside this
 file.
 
+Status legend: **RESOLVED** (decided in the economy round) · **PROPOSED (default)** (this round's
+proposed answer, applied to the docs — matches the prototype's behavior unless noted, awaiting
+your sign-off) · **NEEDS YOUR DECISION** (touches economy/rewards, child safety/privacy, legal/
+compliance, payments/ads, or would be expensive to change after launch — not defaulted, see the
+chat message for the batch of questions).
+
 ### World Home
 1. **RESOLVED.** XP and V Money are earned independently — see PRODUCT_SPEC §2 and `docs/ECONOMY.md` for the `reward_rules` model and the seeded values (3× the prototype's VM amounts).
-2. **World unlock rule: XP vs. level vs. previous-world-cleared.** Still open — DATA_MODEL's `worlds.unlock_xp` implies an XP gate; the prototype's pills show `LVL 32/40/50` (level, not XP); PRODUCT_SPEC says "clearing the boss quiz unlocks the next world" (sequential, not XP/level). Which rule (or combination) is correct?
-3. **Duplicated, inconsistent `WORLDS` data across screens** (World Home, Arena, Profile each hardcode their own copy) — expected in a prototype, just confirms `worlds` must be one real table.
+2. **NEEDS YOUR DECISION.** World unlock rule: XP threshold, level threshold, or "must clear the previous world's boss quiz" (sequential)? The prototype shows conflicting signals (level pills `LVL 32/40/50`, DATA_MODEL's `unlock_xp`, PRODUCT_SPEC's "clearing the boss quiz unlocks the next world").
+3. Duplicated, inconsistent `WORLDS` data across screens — no action needed, just confirms `worlds` must be one real table (already true in DATA_MODEL).
 4. **RESOLVED.** Mentors are an admin-editable content type — `mentors` table added to DATA_MODEL, Mentor content editor added.
-5. **Screen-time tracking isn't in DATA_MODEL or ROADMAP** — is session time purely client/PostHog-derived, or does the app need to report it to our API?
-6. V Money weekly numbers in the prototype don't reconcile (spend+trade > balance) — just fabricated filler, no question needed.
-7. **Notification auto-expiry after 30 days** — real rule, or prototype flavor text?
-8. The scripted push-notification demo (4 items) is obviously prototype-only — confirm the notification *types* observed (streak, boss, market news, session goal, rank-change) is the full intended set for ROADMAP Phase 7.
-9. Is the "Top 8%" percentile on World Home global, or scoped like Arena's leaderboard scopes?
+5. **PROPOSED (default): build a lightweight `session_time_daily`** (user_id, date, seconds), written from client-reported session-end pings — not analytics-verified, just enough to back the header's TIME stat. *Why:* the prototype treats this as a core stat tile; cheap to build; no founder judgment needed on the mechanism.
+6. V Money weekly numbers in the prototype don't reconcile (spend+trade > balance) — fabricated filler, no action needed.
+7. **PROPOSED (default): implement as a real 30-day retention rule** (nightly cleanup job). *Why:* matches the prototype exactly; cheap; no reason to keep notifications forever.
+8. **PROPOSED (default): the 5 observed types are the full v1 set** — streak-about-to-break, boss battle, market news, session goal, Arena rank-change. *Why:* matches everything the prototype demonstrates; ROADMAP Phase 7 can add more later without a redesign.
+9. **PROPOSED (default): global percentile**, not scoped. *Why:* it's a single standalone tile with no scope selector shown (unlike Arena, which has explicit scope chips) — simplest match to what's actually drawn.
 
 ### Arena
 1. **RESOLVED.** In scope for v1, Phase 6 — `competitions`/`competition_entries` tables added to DATA_MODEL, Competition manager admin page added.
 2. **RESOLVED.** Prizes are virtual-only (V Money + badges/titles + optional coupons), admin-configurable per competition — see PRODUCT_SPEC §3 and ROADMAP Phase 6.
-3. "My State" scope needs a `state` field on `users` — collect it at signup? Privacy concern for a kid-safe app?
-4. Per-user aggregate stats shown everywhere (lessons done, quiz accuracy, sim P&L) are prototype hash-based fakes — which are must-have for launch vs. cuttable (perf-sensitive if not)?
-5. "LIVE" presence tag has no real-time presence concept elsewhere — worth building (Redis), or cut as a nice-to-have?
-6. **League structure is flat, not tiered** — PRODUCT_SPEC implies real promotable tiers (Bronze/Silver/Gold); prototype only computes top/bottom 25% of one pool. Which is the real design?
-7. Cheer has no rate limit/cooldown in the prototype — should it be limited to prevent XP farming?
-8. Arena reward/prize amounts are hardcoded with no "admin-controlled" language (unlike the XP→VM rate) — should they be `settings_kv`-editable too?
-9. Sparkline/member-count data has no source table — needs a daily snapshot job or Redis time-series.
+3. **NEEDS YOUR DECISION.** "My State" scope needs a `state` field on `users` — collect it at signup? Any privacy concern for a kid-safe app collecting location-adjacent data?
+4. **PROPOSED (default): build for v1**, via cached/materialized per-user aggregates (short Redis TTL, not computed per-request). *Why:* these stats are core to the leaderboard-row-expand interaction the prototype demonstrates throughout Arena; cutting them would visibly regress that experience.
+5. **PROPOSED (default): cut "LIVE" presence for v1**, no real-time infra. *Why:* cosmetic flourish, not core to leaderboard correctness; meaningful Redis/websocket cost for low value; trivial to add later without breaking anything.
+6. **PROPOSED (default): flat pool per scope, top/bottom ~25% computed live** — no named tiers (Bronze/Silver/Gold). *Why:* matches the prototype exactly; named tiers are unrequested extra scope PRODUCT_SPEC's wording only implied, didn't specify.
+7. **NEEDS YOUR DECISION.** Cheer has no rate limit in the prototype — should it be limited (e.g. once per player per day) to prevent XP farming via repeated cheer/uncheer? (Touches the XP economy.)
+8. **NEEDS YOUR DECISION.** Should Arena reward/prize amounts (500/150 VM, gold crest) become admin-editable via the same `reward_rules`-style mechanism as lessons? (Touches rewards/economy — likely "yes, for consistency," but flagged per your rule rather than defaulted.)
+9. **PROPOSED (default): a daily Inngest snapshot job** (reuses the pattern already established for the weekly report-card job) powers the 7-day world-XP sparkline and member counts. *Why:* consistent with an already-decided pattern, no new judgment call.
 
 ### Trade + Ops console
-**Doc gaps:** `market_controls` has no volatility field; no watchlist table (or is "watchlist" just the full always-shown instrument list?); no candle/OHLC history table; no indices data source; `funds` table is a one-line stub missing most fields shown; no risk-flag computation rule defined; `instruments` has no per-stock tip/tag fields.
-
-**Fake data needing a decision:**
-1. **Volatility slider (0–3×)** — once real Twelve Data prices are wired in, what should this control (removed entirely, a synthetic-fallback mode, a demo toggle)?
-2. **Feed mode PAUSED/DELAYED** — confirm the exact real mechanism (stop forwarding Redis updates / serve N-minute-old prices) so it's not just a label.
-3. 12-stock sector/about/tip text — admin-curated static text (matches PRODUCT_SPEC), or pulled from a data provider?
-4. Brokerage ₹0 — confirmed permanent, just flagging it's a hardcoded string today.
-5. Mutual fund returns/star ratings aren't AMFI fields — where do they come from if AMFI only gives NAV?
-6. Ops console KPIs are hardcoded, not computed — confirm these become real aggregate queries.
-7. **RESOLVED.** No starting cash, ever. Trade opens in explore mode from day one; the order pad unlocks at an admin-configurable world (default Market Maidan/World 4); trading capital is purely earned V Money — see PRODUCT_SPEC §4 and `docs/ECONOMY.md` for the affordability simulation behind this.
+1. **PROPOSED (default): no per-user watchlist for v1** — "Watchlist" is simply the full, admin-curated 12-instrument list (matches the prototype exactly; no add/remove control exists there).
+2. **PROPOSED (default): `instrument_daily_bars` table + Redis** for candle history beyond the relay's live cache; indices (NIFTY 50/BANK NIFTY/SENSEX) sourced from the same Twelve Data vendor already chosen. *Why:* purely a technical requirement to render what the prototype already shows, no new vendor or judgment call.
+3. **PROPOSED (default): `funds` gets the full field set shown** (risk, category, nav, aum, expense_ratio, 1y/3y/5y returns, star_rating, description). *Why:* schema catch-up, not a decision.
+4. **PROPOSED (default): a simple risk-flag rule** — NEW = joined <7 days ago; WATCH = >50% of portfolio in one position, or >10 orders in a day; OK = otherwise; thresholds admin-tunable later. *Why:* internal staff-monitoring aid, not user-facing or economy-facing; easy to refine without consequence.
+5. **PROPOSED (default): `instruments` gets `tip` (jsonb {en,hi,hx}) and `tags` (text[]) fields**, admin-curated. *Why:* matches PRODUCT_SPEC's existing "admin-editable instrument list" language.
+6. **NEEDS YOUR DECISION.** Ops console "volatility" control — once real Twelve Data prices are live, what should this actually control? Options: (a) remove entirely — real prices are real prices; (b) repurpose as a synthetic fallback feed for when the market is closed / a symbol has no data, so practice trading always has something to react to; (c) something else. (Affects trading-simulation integrity, hard to change later.)
+7. **PROPOSED (default): PAUSED = freeze at last known price, reject new fills, "market paused" banner (reuses the existing halted-banner pattern); DELAYED = serve a 15-minute-lagged price** (matches the market-status pill's existing "15M DELAY" label). *Why:* already well-defined by the existing UI copy, no ambiguity left to resolve.
+8. **PROPOSED (default): stock sector/about/tip text stays admin-curated static text**, not pulled live from a data provider. *Why:* matches PRODUCT_SPEC's existing "admin-editable" language; it's educational copy, not live data.
+9. Brokerage ₹0 — confirmed permanent, no action needed.
+10. **PROPOSED (default): Ops console KPIs become live aggregate queries** (active traders = distinct users with an order in 30 days; orders today = count; VM in play = sum of holdings market value; risk flags = count of WATCH/NEW rows). *Why:* obviously correct for an operational console; the specific formula is a reasonable, low-stakes default.
+11. **RESOLVED.** No starting cash, ever. Trade opens in explore mode from day one; the order pad unlocks at an admin-configurable world (default Market Maidan/World 4); trading capital is purely earned V Money — see PRODUCT_SPEC §4 and `docs/ECONOMY.md` for the affordability simulation behind this.
 
 ### News + Pulse Check + News Desk
-**Doc gaps:** a 10th "PREDICT" quiz format toggle exists with no implementation — keep or remove? No table for staff-curated "FinLamma Desk" picks distinct from auto-ingested stories. No quality-grade (A/B/C) rubric defined. No topic taxonomy for "topic-wise mastery." Is the "7-day Pulse Check streak" the same `streaks` table as the main learning streak, or separate? No per-user "read" tracking table.
-
-**Fake data needing a decision:**
-1. News Desk KPIs ("31 ingested", "3.2L VM", "1,284 users") are hardcoded — live queries from day one, or an acceptable fixed dashboard early on?
-2. "7 partner feeds" is flavor text — ARCHITECTURE.md says Finnhub + one India source (2, not 7). What's the real target?
-3. Base VM per question (20/30/50) — admin-editable per PRODUCT_SPEC's general principle, or fixed?
-4. Speed bonus/combo bonus/all-correct bonus constants — intended real values, or should they be `settings_kv`-configurable?
-5. Live "N people playing now" counter — real-time concurrent count in scope, or a cheaper static "X played today"?
+1. **PROPOSED (default): drop the unused "PREDICT" format toggle for v1** — no implementation exists to back it; can be reintroduced later with a real question type.
+2. **PROPOSED (default): add `news_desk_picks`** (kind desk_pick/exam_alert/scam_watch, staff-authored, separate from the algorithmic feed). *Why:* matches the prototype's explicit distinct card type, natural modeling choice.
+3. **PROPOSED (default): auto-heuristic quality grade** (word count in target range + jargon term present + AI simplification confidence above a threshold), staff-overridable. *Why:* internal tooling aid, not user-facing, low stakes to approximate and refine later.
+4. **PROPOSED (default): a fixed, admin-extensible topic taxonomy** — RBI & Rates, Inflation, Stock Market Basics, IPOs & New Listings, Mutual Funds, Banking, Scams & Fraud, Government & Budget, Global Markets, Currency. *Why:* covers the sample content seen, cheap to extend later.
+5. **PROPOSED (default): a separate Pulse-Check-scoped streak** (`streaks.scope = 'pulse_check'`, same table shape as the learning streak). *Why:* the prototype treats them as two distinct habit loops with different rewards/UI; a scope column is cheap.
+6. **PROPOSED (default): add `news_reads`** (user_id, story_id, read_at, dwell_seconds). *Why:* not really optional — needed regardless for the "PADH LIYA" badge and any read-gating.
+7. **PROPOSED (default): News Desk KPIs and the 7-day engagement chart become live computed queries**, not hardcoded. *Why:* obviously correct for an operational console.
+8. **PROPOSED (default): correct the copy to "2 sources" (Finnhub + 1 India source)**, not the prototype's placeholder "7 partner feeds." *Why:* factual correction to match ARCHITECTURE.md, not a design decision.
+9. **NEEDS YOUR DECISION** (bundled into the "Confirm reward-value defaults" question): base VM per Pulse Check question staying admin-editable via `reward_rules`, and keeping the prototype's exact speed/combo/all-correct bonus constants as the real rule.
+10. **PROPOSED (default): replace the live "N people playing now" counter with a cheaper static "X people played today"** (computed once, cached). *Why:* avoids real-time infra for low value.
 
 ### Profile + report card + certificates
 **RESOLVED (report card scope):** the weekly report card, efficiency score, coach notes and topic
-mastery are in scope for v1 (Phase 3) — see PRODUCT_SPEC §6 for the exact formula, `report_snapshots`
-and `coach_note_templates` in DATA_MODEL. Still open: **nothing anywhere mentions a parent/mentor
-contact**, yet the prototype has a real "send weekly summary to Mentor" letter feature — is this a
-self-service PDF the student shares themselves, or a real notification/email to a registered parent
-contact (needs consent + contact storage)? Does Profile's rank/percentile read from Arena's weekly
-snapshot (built later, Phase 6) rather than compute its own?
+mastery are in scope for v1 (Phase 3) — see PRODUCT_SPEC §6, `report_snapshots` and
+`coach_note_templates` in DATA_MODEL.
 
-**Fake data needing a decision:**
-1. **RESOLVED.** Rule-based templates, no AI for v1 — see PRODUCT_SPEC §6 for the exact coach-note rules.
-2. Module letter-grade cutoffs (S/A/B/C) have no stated rule beyond the sample data — what are the real thresholds, fixed or admin-tunable?
-3. Badge VM rewards/thresholds are hardcoded per badge — admin-editable like the XP→VM rate, or fixed at launch?
-4. All reward-catalog brands are explicitly fictional (prototype admits "no real tie-ups") — real partners need sourcing before launch; is a reward-catalog admin CRUD in scope for Phase 3?
-5. Locked-reward pricing scales with the *viewing user's own balance* — a UI trick, not a real price. Real rewards should have fixed admin-set VM prices instead?
-6. Certificate ID format (`FL-<world>-<year>-<4 digits>`) and the report-card ID formula are both arbitrary — what's the real ID generation rule?
-7. Certificate/report download and share both just open the browser print dialog — confirm real implementation needs actual server-side PDF generation + storage (`certificates.file_key` already implies this).
+1. **NEEDS YOUR DECISION.** The "send weekly summary to Mentor" letter — self-service PDF the student shares themselves, or a real notification/email to a registered parent contact (needs consent + contact storage)? Nothing in PRODUCT_SPEC/DATA_MODEL models a parent/guardian contact today.
+2. **PROPOSED (default): Profile's rank/percentile reads from Arena's weekly leaderboard snapshot once Phase 6 ships**; before that, show self-progress only (no percentile). *Why:* avoids duplicating ranking logic, natural dependency ordering.
+3. **RESOLVED.** Coach notes: rule-based templates, no AI for v1 — see PRODUCT_SPEC §6.
+4. **PROPOSED (default): reuse the Lesson Flow engine's exact grade thresholds app-wide** (≥95% S, ≥83% A, ≥67% B, else C) for both Lesson report cards and the Profile weekly report card. *Why:* the LF engine has an explicit formula in the prototype; Profile's screen only shows illustrative samples, so LF's formula is the authoritative source — one consistent rule everywhere beats two.
+5. **PROPOSED (default): badge VM rewards/thresholds are admin-editable**, via the Badge manager admin page already scoped for CRUD. *Why:* the admin page was already decided to exist; editable rewards is a natural, low-risk part of that CRUD (flagged here for visibility since it touches economy, but the mechanism — an existing planned admin page — isn't new).
+6. **NEEDS YOUR DECISION.** Reward-catalog brand partnerships — do you have real partner brands lined up, or should launch ship with a small fixed/admin-curated set of Finlamma-only rewards (V Money discounts, cosmetic items) instead of the prototype's fictional brand coupons?
+7. **NEEDS YOUR DECISION.** Locked-reward pricing — should real rewards get fixed admin-set VM prices (replacing the prototype's "price scales with your own current balance" trick, which always looks almost-affordable but isn't a real price)?
+8. **PROPOSED (default): `FL-<2-letter world code>-<YYYY>-<6-digit sequential>` for certificates** (widened from 4 to 6 digits for scale); report-card export id = `FL-RPT-<user short id>-<week number>`. *Why:* cosmetic, easily migrated later if wrong, no real consequence either way.
+9. **PROPOSED (default): server-side PDF rendering** (headless browser render from the same HTML templates the prototype already designed) uploaded via `src/lib/s3.ts`; share = a signed URL, not native deep-linking. *Why:* standard engineering, not a product decision.
 
 ### Settings
-1. **Not itemized in ROADMAP.md at all**: sound/haptics, data-saver, contact channels, support form, rate-app flow, legal-content delivery, PIN login.
-2. `bio` field missing from `users` in DATA_MODEL — add it, or out of scope?
-3. No preferences storage for sound/haptics/data-saver — new `users` columns, or one `preferences jsonb`?
-4. **Legal content (Terms/Privacy/Risk disclosure)**: static in the app repo, or staff-editable via a simple CMS? The prototype's version is English-only (no hi/hx) unlike everything else — intentional, or just not bothered with in the mockup?
-5. **Login methods (Google/Password/PIN)** — should this literally reflect Clerk's own account UI, or a thin Finlamma wrapper? "Login PIN" isn't a documented Clerk or Finlamma concept anywhere — real feature or cut?
-6. **Legal clauses mention parental-consent and school-account concepts** not modeled anywhere — is COPPA/DPDP-style parental consent actually in scope for v1, or boilerplate that overstates real scope?
-7. "Write to us" and "Rate Finlamma" are non-functional even in the prototype — real ticket table + admin inbox, or just deep-links to email/Play Store with no backend?
+1. **PROPOSED (default): `users.bio` (text, nullable)**. *Why:* trivial schema addition matching the account screen already shown.
+2. **PROPOSED (default): a single `users.preferences jsonb`** for sound/haptics/data-saver. *Why:* matches DATA_MODEL's existing jsonb pattern for small per-user settings; minimal footprint for a few booleans.
+3. **NEEDS YOUR DECISION.** Legal content (Terms/Privacy/Risk disclosure) — static content shipped in the app repo, or staff-editable via a simple CMS page? (Legal/compliance.)
+4. **PROPOSED (default): login methods become a thin wrapper over Clerk's own hosted account-management flows** (Google/password); **"Login PIN" is cut for v1** (not a Clerk feature, no clear need identified). *Why:* avoids inventing new auth infrastructure Clerk doesn't provide.
+5. **NEEDS YOUR DECISION.** The prototype's legal clauses mention "under-18 needs parent/guardian approval" and "school accounts are managed by the institution" — neither modeled anywhere. Is COPPA/DPDP-style parental consent actually in scope for v1, or boilerplate overstating real scope? (Legal/compliance + child safety — likely the single most consequential open question in this whole review.)
+6. **PROPOSED (default): no backend for "Write to us" or "Rate Finlamma"** — "Write to us" opens a `mailto:`/WhatsApp deep link, "Rate Finlamma" deep-links to the Play Store/App Store listing. *Why:* matches "decorative in the prototype too," avoids building a ticket system nobody's asked for yet.
 
 ### Lesson Flow + quizzes
-1. **PRODUCT_SPEC's "6 node kinds" don't map cleanly onto what's built.** Only one continuous Video-flow example exists; no Story, Boss Quiz, or Role Play example anywhere. Do those reuse this same `lf` engine with different content, or are they structurally different screens still needing design?
-2. **Two different quiz-format taxonomies** exist (5 pop-quiz types vs. 6 practice types), overlapping with but distinct from Pulse Check's own 9 formats, and PRODUCT_SPEC only names a few examples. Is the full canonical format list the union of all of these, or should they converge into one shared list app-wide?
-3. **Fever mode's exact rule (combo=3 → 2× XP) is hardcoded and undocumented** in PRODUCT_SPEC (which just says "fever mode on long combos"). Keep exactly this rule, or is it a placeholder?
-4. **Speed-bonus threshold mismatch: PRODUCT_SPEC says "within half the time," the prototype's actual code uses 45% of the timer.** Which number is final? Also: there's no visible separate "all-correct bonus" in this engine (only in Pulse Check) — does lesson scoring need one too?
-5. "Concept mastery" and "class percentile" need data models nothing in DATA_MODEL covers (skill/concept tagging, a class/cohort grouping concept). Real scored metrics, or decorative/simulated?
-6. "Weak spot"/"Superpower" coach-note sentences — same question as Profile's coach notes: AI-generated or templated?
-7. **Is the in-lesson "Lamma AI" doubt chat the real Doubt Zone feature (Phase 7) surfaced mid-lesson, or a separate simpler scripted explainer that could ship in Phase 2 without a live LLM?**
-8. All lesson content is Hinglish-only in the prototype (unlike World Home's UI chrome) — confirms the prototype just doesn't demo the translation layer for content, not that content shouldn't be translated (ROADMAP Phase 2 already requires en/hi/hx per content field).
-9. Only one lesson's worth of content exists — does every video lesson reuse the same 3 scene "kinds" (trade/coins/timeline), or is scene "kind" an open enum content authors pick per lesson?
+1. **NEEDS YOUR DECISION.** Do Boss Quiz and Role Play lesson kinds reuse the exact same Lesson Flow engine (just different content data), or are they different enough to need their own screens/design? (Core content architecture for all of Phase 2 — expensive to get wrong.)
+2. **PROPOSED (default): no forced convergence** — keep the 3 observed taxonomies separate (5 pop-quiz types, 6 practice types, 9 Pulse Check formats), each scoped to its own context. *Why:* matches the prototype exactly; unifying them is unrequested extra work with no clear payoff.
+3. **NEEDS YOUR DECISION** (bundled into "Confirm reward-value defaults"): keep the prototype's exact fever-mode rule (combo≥3 → 2× XP) and 45%-of-timer speed-bonus threshold as the real rule — including correcting PRODUCT_SPEC's current "within half the time" wording to 45%?
+4. **PROPOSED (default): mastery = a real computed metric via a lightweight topic-tag system on questions** (reusing the News topic taxonomy pattern, extended to lesson questions); **class-percentile simplified to the same global-percentile default as World Home gap #9** — no school/class enrollment concept, since none exists or is otherwise planned. *Why:* reuses already-decided patterns instead of inventing a new cohort/school model.
+5. **RESOLVED** (same decision as Profile's report card): weak-spot/superpower coach notes are rule-based templates, no AI.
+6. **NEEDS YOUR DECISION.** Is the in-lesson "Lamma AI" doubt chat the real Doubt Zone AI mentor (Phase 7, live LLM calls) surfaced mid-lesson, or a separate, simpler scripted explainer that could ship in Phase 2 without a live AI integration? (Cost/scope, expensive to change once users are used to one behavior.)
+7. All lesson content being Hinglish-only in the prototype — no action needed, confirms the prototype just doesn't demo the translation layer for content (ROADMAP Phase 2 already requires en/hi/hx per content field).
+8. **PROPOSED (default): scene "kind" is an open, admin-extensible enum**, authored per lesson. *Why:* flexible, low-risk, consistent with how other taxonomies in this doc are handled.
 
 ### Global / App shell
 1. **RESOLVED as part of this round's economy decisions.** The displayed V Money balance is a
