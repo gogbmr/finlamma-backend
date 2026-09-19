@@ -31,17 +31,61 @@ type RouteHandler<Args extends unknown[]> = (
   ...args: Args
 ) => Promise<Response>;
 
+// drizzle-orm/postgres-js query errors format their `.message` as
+// "Failed query: <sql>\nparams: <the actual interpolated values>" - the SQL
+// text itself is safe (schema names and placeholders only), but the params
+// line can contain literal user data (a real email, phone, name, ...), so
+// it's stripped out wherever it appears, including inside a full `.stack`
+// string (which starts with the same message).
+function scrubDriverParamsLine(text: string): string {
+  return text.replace(/\nparams:[^\n]*/i, "");
+}
+
+// A driver error's `.cause` (e.g. postgres-js's PostgresError, or its
+// connection-level errors like CONNECTION_CLOSED) can carry the real
+// SQLSTATE code and schema metadata that's exactly what's needed to
+// diagnose a production failure. Only ever surface these specific,
+// non-user-data fields though - never `message`/`detail`/`hint`, which
+// Postgres fills with the literal offending value for constraint
+// violations (e.g. "Key (email)=(user@example.com) already exists.") -
+// same reasoning as the raw-driver-error scrub in src/server/users/repo.ts.
+const SAFE_CAUSE_FIELDS = [
+  "code",
+  "severity",
+  "schema_name",
+  "table_name",
+  "column_name",
+  "constraint_name",
+  "routine",
+  "errno",
+  "address",
+  "port",
+] as const;
+
+function safeCauseFields(cause: unknown): Record<string, unknown> | undefined {
+  if (typeof cause !== "object" || cause === null) return undefined;
+  const safe: Record<string, unknown> = {};
+  for (const key of SAFE_CAUSE_FIELDS) {
+    if (key in cause) safe[key] = (cause as Record<string, unknown>)[key];
+  }
+  return Object.keys(safe).length > 0 ? safe : undefined;
+}
+
 // Logs an unexpected (non-AppError, non-ZodError) thrown value tagged with
 // errorId so it can be found in the server logs from the errorId alone -
 // e.g. handed back from a webhook provider's failed-delivery dashboard,
 // with no other way to correlate it to a specific log line. Scrubbed: an
 // arbitrary thrown value (not necessarily an Error) could be anything, so
-// we only ever log a plain string built from the id and a name/message/
-// stack we control the shape of, never the raw value itself - the same
-// reasoning as the raw-driver-error scrub in src/server/users/repo.ts.
+// we only ever log a plain string built from fields we control the shape
+// of, never the raw value/message itself.
 function logInternalError(errorId: string, err: unknown): void {
   if (err instanceof Error) {
-    console.error(`[${errorId}] ${err.stack ?? `${err.name}: ${err.message}`}`);
+    const stack = scrubDriverParamsLine(err.stack ?? `${err.name}: ${err.message}`);
+    const cause = "cause" in err ? safeCauseFields(err.cause) : undefined;
+    console.error(
+      `[${errorId}] ${stack}` +
+        (cause ? `\n[${errorId}] cause: ${JSON.stringify(cause)}` : ""),
+    );
   } else {
     console.error(`[${errorId}] Non-Error value thrown (${typeof err})`);
   }

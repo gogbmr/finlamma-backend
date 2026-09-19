@@ -124,6 +124,52 @@ describe("withErrors", () => {
     }
     consoleError.mockRestore();
   });
+
+  it("strips a driver query error's params line (real user data) but keeps the SQL and stack", async () => {
+    // Regression test: drizzle-orm/postgres-js formats a query error's
+    // message as "Failed query: <sql>\nparams: <literal values>" - a prior
+    // version of logInternalError logged `.stack` (which starts with that
+    // same message) unscrubbed, meaning a real user's email/phone would
+    // have been written straight into the server logs of a kid-safe app.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const queryError = new Error(
+      'Failed query: update "users" set "email" = $1\nparams: kid@example.com',
+    );
+    queryError.name = "DrizzleQueryError";
+    const handler = withErrors(async () => {
+      throw queryError;
+    });
+
+    await handler();
+
+    const logged = consoleError.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(logged).toContain('Failed query: update "users" set "email" = $1');
+    expect(logged).not.toContain("kid@example.com");
+    consoleError.mockRestore();
+  });
+
+  it("surfaces safe, structural cause fields (code/constraint) without the raw cause message", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const queryError = new Error("Failed query: insert into \"users\" ...\nparams: a,b,c");
+    queryError.cause = {
+      code: "23505",
+      constraint_name: "users_email_unique",
+      table_name: "users",
+      message: "Key (email)=(kid@example.com) already exists.",
+      detail: "Key (email)=(kid@example.com) already exists.",
+    };
+    const handler = withErrors(async () => {
+      throw queryError;
+    });
+
+    await handler();
+
+    const logged = consoleError.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(logged).toContain("23505");
+    expect(logged).toContain("users_email_unique");
+    expect(logged).not.toContain("kid@example.com");
+    consoleError.mockRestore();
+  });
 });
 
 describe("cursor pagination", () => {
