@@ -70,6 +70,9 @@ src/
   db/
     schema/              Drizzle table definitions, one file per domain
     client.ts
+  test/
+    db.ts                createTestDb() — in-process PGlite db, migrated fresh from drizzle/
+    fixtures.ts          uniqueEmail(), uniqueClerkUserId() — generated, collision-proof test values
   lib/
     auth.ts              requireUser(), requireStaff(permission)
     activity-log.ts      logActivity()
@@ -116,6 +119,14 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
     with model names from env (`ANTHROPIC_MODEL_FAST`, `ANTHROPIC_MODEL_SMART`). AI output
     is a draft until a staff member publishes it (except Doubt Zone chat replies, which are
     streamed but must refuse personal investment advice).
+12. **Tests must never touch the real Supabase database.** A test that needs real Postgres
+    behavior (constraints, `ON CONFLICT`, RLS, ...) mocks `@/db/client` to return
+    `createTestDb()` from `src/test/db.ts` — an in-process PGlite instance migrated fresh from
+    `drizzle/` — never the real `DATABASE_URL`. `src/db/client.ts` throws immediately if
+    evaluated with `NODE_ENV=test`, so an unmocked import fails loudly instead of silently
+    reaching production. Use `uniqueEmail()`/`uniqueClerkUserId()` from `src/test/fixtures.ts`
+    (or another generated value) for anything with a unique constraint — never a hardcoded
+    email or id, which can collide across parallel test runs.
 
 ## API endpoint documentation (required)
 `docs/API_ENDPOINTS.md` must always list **every** endpoint with method, path, summary, auth,

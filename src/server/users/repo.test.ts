@@ -1,31 +1,22 @@
-// Integration tests: these hit the real dev Supabase database instead of
-// mocking `db`, because the behavior under test - Postgres's
-// ON CONFLICT ... WHERE clause silently ignoring stale/duplicate events -
-// can't be observed through a mock.  Each test cleans up its own row.
-//
-// @/db/client validates env vars at import time, but Vitest sets
-// NODE_ENV=test, and @next/env deliberately skips .env.local when
-// NODE_ENV=test (it looks for .env.test.local/.env.test instead, per
-// Next's own docs) - so it never gets loaded here automatically the way
-// envConfig.ts loads it for scripts/drizzle-kit. Load it directly with
-// Node's built-in loader, then import anything env-dependent dynamically
-// so it happens afterwards (static imports are hoisted above this).
+// Integration tests: these run against an in-process PGlite database
+// (src/test/db.ts) instead of mocking `db`, because the behavior under
+// test - Postgres's ON CONFLICT ... WHERE clause silently ignoring
+// stale/duplicate events - can't be observed through a mock. They never
+// touch the real Supabase database (see @/db/client's NODE_ENV=test guard).
 import { eq } from "drizzle-orm";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { users } from "@/db/schema";
+import { createTestDb, type TestDb } from "@/test/db";
+import { uniqueClerkUserId, uniqueEmail } from "@/test/fixtures";
 
-process.loadEnvFile(".env.local");
-const { db } = await import("@/db/client");
+vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
+
 const { anonymizeUserFromClerk, upsertUserFromClerk } = await import("./repo");
+const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
-  const clerkUserId = `repo-test-${Date.now()}`;
-
-  afterEach(async () => {
-    await db.delete(users).where(eq(users.clerkUserId, clerkUserId));
-  });
-
   it("is idempotent under a duplicate webhook delivery", async () => {
+    const clerkUserId = uniqueClerkUserId("idempotent");
     const input = {
       clerkUserId,
       firstName: "Test",
@@ -44,11 +35,12 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
   });
 
   it("cannot resurrect personal data with a user.updated that arrives after user.deleted", async () => {
+    const clerkUserId = uniqueClerkUserId("resurrect");
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
       lastInitial: "U",
-      email: "test@example.com",
+      email: uniqueEmail("resurrect-before"),
       phone: null,
       clerkUpdatedAt: new Date("2026-01-01T00:00:00Z"),
     });
@@ -62,7 +54,7 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
       clerkUserId,
       firstName: "Resurrected",
       lastInitial: "U",
-      email: "resurrected@example.com",
+      email: uniqueEmail("resurrect-after"),
       phone: null,
       clerkUpdatedAt: new Date("2026-06-01T00:00:00Z"),
     });
@@ -75,6 +67,7 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
   });
 
   it("allows null firstName/lastInitial for a phone-only signup with no name yet", async () => {
+    const clerkUserId = uniqueClerkUserId("phone-only");
     await upsertUserFromClerk({
       clerkUserId,
       firstName: null,
@@ -91,8 +84,9 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
   });
 
   it("scrubs the raw Postgres error on a duplicate email instead of leaking it", async () => {
-    const otherClerkUserId = `${clerkUserId}-other`;
-    const email = `${clerkUserId}@example.com`;
+    const clerkUserId = uniqueClerkUserId("dup");
+    const otherClerkUserId = uniqueClerkUserId("dup-other");
+    const email = uniqueEmail("duplicate");
     await upsertUserFromClerk({
       clerkUserId: otherClerkUserId,
       firstName: "First",
@@ -102,19 +96,15 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
       clerkUpdatedAt: new Date(),
     });
 
-    try {
-      await expect(
-        upsertUserFromClerk({
-          clerkUserId,
-          firstName: "Second",
-          lastInitial: "U",
-          email, // already taken by otherClerkUserId
-          phone: null,
-          clerkUpdatedAt: new Date(),
-        }),
-      ).rejects.toMatchObject({ code: "CONFLICT" });
-    } finally {
-      await db.delete(users).where(eq(users.clerkUserId, otherClerkUserId));
-    }
+    await expect(
+      upsertUserFromClerk({
+        clerkUserId,
+        firstName: "Second",
+        lastInitial: "U",
+        email, // already taken by otherClerkUserId
+        phone: null,
+        clerkUpdatedAt: new Date(),
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
   });
 });
