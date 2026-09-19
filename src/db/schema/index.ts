@@ -2,3 +2,4 @@
 // worlds.ts, ledger.ts, ...), re-exported from this barrel.
 export * from "./users";
 export * from "./activity_logs";
+export * from "./staff";

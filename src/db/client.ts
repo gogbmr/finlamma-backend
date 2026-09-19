@@ -18,6 +18,11 @@ if (env.NODE_ENV === "test") {
 
 // Transaction pool mode (Supabase pooler, port 6543) does not support
 // prepared statements or connection-level state, so prepare is disabled.
+// Concurrent queries against this client (e.g. Promise.all([db.select()...,
+// db.select()...])) can hang indefinitely rather than queue, once the
+// connection has done enough prior sequential queries in the same process -
+// reproduced while writing scripts/seed-roles.ts. Always await db calls one
+// at a time; never Promise.all them.
 // max: 1 is Supabase's own documented setting for serverless functions: this
 // client is created once at module scope and reused across warm Vercel
 // invocations, so a larger client-side pool can end up holding connections

@@ -1,7 +1,8 @@
 import { createClerkClient } from "@clerk/backend";
-import { eq } from "drizzle-orm";
+import { auth } from "@clerk/nextjs/server";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { permissions, rolePermissions, staffMembers, users } from "@/db/schema";
 import { env } from "@/lib/env";
 import { AppError } from "./errors";
 
@@ -77,4 +78,41 @@ export async function requireUser(req: Request) {
   }
 
   return user;
+}
+
+// Authorizes a staff-only route: the caller must have an active staff Clerk
+// session (via clerkMiddleware()/auth() - see middleware.ts and
+// docs/ARCHITECTURE.md decision D2a) with a staff_members row whose role
+// grants the given permission key (e.g. "staff.manage"). Returns the
+// staff_members row so callers can use its id as the activity log actorId.
+export async function requireStaff(permission: string) {
+  const { userId: clerkUserId } = await auth();
+  if (!clerkUserId) {
+    throw new AppError("UNAUTHENTICATED", "Staff sign-in required");
+  }
+
+  const [staff] = await db
+    .select()
+    .from(staffMembers)
+    .where(eq(staffMembers.clerkUserId, clerkUserId))
+    .limit(1);
+
+  if (!staff || !staff.active) {
+    throw new AppError("FORBIDDEN", "No active staff account for this session");
+  }
+
+  const [grant] = await db
+    .select({ id: rolePermissions.id })
+    .from(rolePermissions)
+    .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+    .where(
+      and(eq(rolePermissions.roleId, staff.roleId), eq(permissions.key, permission)),
+    )
+    .limit(1);
+
+  if (!grant) {
+    throw new AppError("FORBIDDEN", `Missing permission: ${permission}`);
+  }
+
+  return staff;
 }

@@ -15,20 +15,32 @@ vi.mock("@clerk/backend", () => ({
   createClerkClient: (options: unknown) => mockCreateClerkClient(options),
 }));
 
+// Generic chainable query mock: every intermediate method (from/where/
+// innerJoin) returns the same chain, and .limit() is the only terminal -
+// this covers both requireUser's select().from().where().limit() and
+// requireStaff's select().from().innerJoin().where().limit(). Each call to
+// mockLimit() is queued in call order via mockResolvedValueOnce.
 const mockLimit = vi.fn();
+function queryChain(): unknown {
+  return {
+    from: () => queryChain(),
+    where: () => queryChain(),
+    innerJoin: () => queryChain(),
+    limit: () => mockLimit(),
+  };
+}
 vi.mock("@/db/client", () => ({
   db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => mockLimit(),
-        }),
-      }),
-    }),
+    select: () => queryChain(),
   },
 }));
 
-import { requireUser } from "./auth";
+const mockAuth = vi.fn();
+vi.mock("@clerk/nextjs/server", () => ({
+  auth: () => mockAuth(),
+}));
+
+import { requireStaff, requireUser } from "./auth";
 
 function makeRequest(headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/v1/me", { headers });
@@ -49,6 +61,7 @@ describe("requireUser", () => {
     mockAuthenticateRequest.mockReset();
     mockCreateClerkClient.mockClear();
     mockLimit.mockReset();
+    mockAuth.mockReset();
   });
 
   it("throws SERVICE_UNAVAILABLE when the consumer Clerk app isn't configured yet", async () => {
@@ -141,5 +154,66 @@ describe("requireUser", () => {
     const user = await requireUser(makeRequest());
 
     expect(user).toEqual({ id: "u1", clerkUserId: "clerk_123", deletedAt: null });
+  });
+});
+
+describe("requireStaff", () => {
+  beforeEach(() => {
+    mockLimit.mockReset();
+    mockAuth.mockReset();
+  });
+
+  it("throws UNAUTHENTICATED when there is no staff Clerk session", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: null });
+
+    await expect(requireStaff("staff.manage")).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+    });
+    expect(mockLimit).not.toHaveBeenCalled();
+  });
+
+  it("throws FORBIDDEN when there is no staff_members row for this Clerk user", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    mockLimit.mockResolvedValueOnce([]);
+
+    await expect(requireStaff("staff.manage")).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("throws FORBIDDEN when the staff_members row is deactivated", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    mockLimit.mockResolvedValueOnce([
+      { id: "s1", clerkUserId: "staff_clerk_1", roleId: "r1", active: false },
+    ]);
+
+    await expect(requireStaff("staff.manage")).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("throws FORBIDDEN when the staff member's role lacks the permission", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    mockLimit
+      .mockResolvedValueOnce([
+        { id: "s1", clerkUserId: "staff_clerk_1", roleId: "r1", active: true },
+      ])
+      .mockResolvedValueOnce([]);
+
+    await expect(requireStaff("staff.manage")).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("returns the staff_members row when the role grants the permission", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    const staff = { id: "s1", clerkUserId: "staff_clerk_1", roleId: "r1", active: true };
+    mockLimit
+      .mockResolvedValueOnce([staff])
+      .mockResolvedValueOnce([{ id: "rp1" }]);
+
+    const result = await requireStaff("staff.manage");
+
+    expect(result).toEqual(staff);
   });
 });
