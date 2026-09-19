@@ -106,6 +106,25 @@ export async function deleteConsumerClerkUser(clerkUserId: string): Promise<void
   }
 }
 
+// For Server Components (e.g. the admin layout) that need to know "is this
+// an active staff member" without requiring one specific permission -
+// unlike requireStaff(), this returns null instead of throwing, since a
+// layout wants to render a page (sign-in redirect / forbidden screen), not
+// produce an API error envelope. Individual admin pages still gate their
+// own actions with requireStaff("<specific.permission>").
+export async function getStaffMember() {
+  const { userId: clerkUserId } = await auth();
+  if (!clerkUserId) return null;
+
+  const [staff] = await db
+    .select()
+    .from(staffMembers)
+    .where(eq(staffMembers.clerkUserId, clerkUserId))
+    .limit(1);
+
+  return staff && staff.active ? staff : null;
+}
+
 // Authorizes a staff-only route: the caller must have an active staff Clerk
 // session (via clerkMiddleware()/auth() - see middleware.ts and
 // docs/ARCHITECTURE.md decision D2a) with a staff_members row whose role

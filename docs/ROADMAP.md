@@ -27,7 +27,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] `roles`, `permissions`, `role_permissions`, `staff_members`; seed roles
       (super_admin, user_manager, content_uploader, content_publisher, quiz_maker)
 - [x] `requireStaff(permission)` helper
-- [ ] Admin shell: layout, sign-in, staff management page, activity log viewer
+- [x] Admin shell: layout, sign-in, staff management page, activity log viewer
 - [x] `GET/PATCH /me`, account deletion (DB + Clerk)
 
 ## Phase 2 — Learning content

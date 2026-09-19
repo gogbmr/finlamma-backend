@@ -40,7 +40,7 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: () => mockAuth(),
 }));
 
-import { requireStaff, requireUser } from "./auth";
+import { getStaffMember, requireStaff, requireUser } from "./auth";
 
 function makeRequest(headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/v1/me", { headers });
@@ -215,5 +215,45 @@ describe("requireStaff", () => {
     const result = await requireStaff("staff.manage");
 
     expect(result).toEqual(staff);
+  });
+});
+
+describe("getStaffMember", () => {
+  beforeEach(() => {
+    mockLimit.mockReset();
+    mockAuth.mockReset();
+  });
+
+  it("returns null when there is no staff Clerk session", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: null });
+
+    const result = await getStaffMember();
+
+    expect(result).toBeNull();
+    expect(mockLimit).not.toHaveBeenCalled();
+  });
+
+  it("returns null when there is no matching staff_members row", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    mockLimit.mockResolvedValueOnce([]);
+
+    expect(await getStaffMember()).toBeNull();
+  });
+
+  it("returns null when the staff_members row is deactivated", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    mockLimit.mockResolvedValueOnce([
+      { id: "s1", clerkUserId: "staff_clerk_1", roleId: "r1", active: false },
+    ]);
+
+    expect(await getStaffMember()).toBeNull();
+  });
+
+  it("returns the staff_members row when active", async () => {
+    mockAuth.mockResolvedValueOnce({ userId: "staff_clerk_1" });
+    const staff = { id: "s1", clerkUserId: "staff_clerk_1", roleId: "r1", active: true };
+    mockLimit.mockResolvedValueOnce([staff]);
+
+    expect(await getStaffMember()).toEqual(staff);
   });
 });
