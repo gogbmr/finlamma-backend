@@ -42,6 +42,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "status": "ok",
     "database": "ok",
     "migrations": "ok",
+    "clerkKeys": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }

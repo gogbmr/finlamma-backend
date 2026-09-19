@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock the db client so this test never touches a real database and never
 // triggers env.ts validation (which needs real DATABASE_URL etc.).
@@ -6,8 +6,28 @@ vi.mock("@/db/client", () => ({
   db: { execute: vi.fn() },
 }));
 
+function clerkKey(host: string) {
+  return "pk_test_" + Buffer.from(`${host}$`).toString("base64");
+}
+
+const STAFF_HOST = "staff-app.clerk.accounts.dev";
+const CONSUMER_HOST = "consumer-app.clerk.accounts.dev";
+
+const mockEnv = vi.hoisted(() => ({
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
+  CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
+}));
+vi.mock("@/lib/env", () => ({ env: mockEnv }));
+
 import { db } from "@/db/client";
 import { GET } from "./route";
+
+beforeEach(() => {
+  // Distinct staff/consumer hosts by default, so existing tests below don't
+  // need to know about the Clerk-key check at all.
+  mockEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = clerkKey(STAFF_HOST);
+  mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
+});
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
 // for the migrations-applied check. latestAppliedMs defaults to matching
@@ -31,6 +51,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.status).toBe("ok");
     expect(body.data.database).toBe("ok");
     expect(body.data.migrations).toBe("ok");
+    expect(body.data.clerkKeys).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
   });
 
@@ -84,5 +105,27 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(503);
     expect((await res.json()).error.code).toBe("SERVICE_UNAVAILABLE");
+  });
+
+  it("returns 503 before ever touching the database when the staff and consumer Clerk keys are the same app", async () => {
+    mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(STAFF_HOST); // same host as staff
+
+    const res = await GET();
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error.code).toBe("SERVICE_UNAVAILABLE");
+    expect(body.error.message).toMatch(/same Clerk application/i);
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("treats an unconfigured consumer Clerk key as a non-failing 'unconfigured' status", async () => {
+    mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.clerkKeys).toBe("unconfigured");
   });
 });

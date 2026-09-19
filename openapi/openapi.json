@@ -72,6 +72,16 @@
                 "example": "ok",
                 "description": "Whether the latest migration in drizzle/ has actually been applied to this database (pnpm db:migrate) - catches deploying code that depends on a migration nobody ran yet."
               },
+              "clerkKeys": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "swapped",
+                  "unconfigured"
+                ],
+                "example": "ok",
+                "description": "Whether NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (staff app) and CONSUMER_CLERK_PUBLISHABLE_KEY (consumer app) resolve to two different Clerk applications, as they must - catches the two being silently swapped or both pointed at the same app in env vars."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -82,6 +92,7 @@
               "status",
               "database",
               "migrations",
+              "clerkKeys",
               "timestamp"
             ]
           }
