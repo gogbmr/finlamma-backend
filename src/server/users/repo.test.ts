@@ -4,7 +4,7 @@
 // stale/duplicate events - can't be observed through a mock. They never
 // touch the real Supabase database (see @/db/client's NODE_ENV=test guard).
 import { eq } from "drizzle-orm";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { users } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId, uniqueEmail } from "@/test/fixtures";
@@ -13,6 +13,14 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const { anonymizeUserFromClerk, upsertUserFromClerk } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
+
+// The vi.mock factory above runs once for this file, so this is a single
+// PGlite instance shared by every test below - never recreated per `it()`.
+// It's still never reclaimed on its own though (real WASM memory), so it
+// must be closed explicitly once the file's tests are done.
+afterAll(async () => {
+  await db.$client.close();
+});
 
 describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
   it("is idempotent under a duplicate webhook delivery", async () => {

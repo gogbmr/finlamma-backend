@@ -72,12 +72,10 @@ async function seed() {
       });
   }
 
-  // Sequential, not Promise.all: src/db/client.ts caps the pool at max: 1
-  // (Supabase's serverless guidance), and two concurrent queries against
-  // that single pooled connection hang indefinitely rather than queueing -
-  // seen firsthand while building this script.
-  const allRoles = await db.select().from(roles);
-  const allPermissions = await db.select().from(permissions);
+  const [allRoles, allPermissions] = await Promise.all([
+    db.select().from(roles),
+    db.select().from(permissions),
+  ]);
   const roleIdByKey = new Map(allRoles.map((r) => [r.key, r.id]));
   const permissionIdByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
 

@@ -13,12 +13,8 @@ import {
 // log actorId - never the target being changed.
 type Actor = { id: string };
 
-// Sequential, not Promise.all - see the comment in scripts/seed-roles.ts:
-// concurrent queries against src/db/client.ts's max: 1 pooled connection
-// hang instead of queueing.
 export async function getStaffPageData() {
-  const staff = await listStaffWithRoles();
-  const roles = await listRoles();
+  const [staff, roles] = await Promise.all([listStaffWithRoles(), listRoles()]);
   return { staff, roles };
 }
 
