@@ -4,8 +4,8 @@
 
 Audited: Phase 0 (project setup), Phase 1 (identity, roles, activity log).
 
-**Result: code/DB/API/docs all PASS. One production issue found, root-caused, and now
-self-diagnosing - fix needs the Vercel dashboard, tracked below.**
+**Result: PASS. All checks green, both Medium and one Low security finding fixed, and the
+production DATABASE_URL misconfiguration this audit surfaced has been corrected and re-verified.**
 
 ### What passed
 - Every ticked Phase 0/1 roadmap item traced to real, working code.
@@ -32,26 +32,23 @@ self-diagnosing - fix needs the Vercel dashboard, tracked below.**
   actually-applied migration identifiers) instead of just a generic message - this is what
   surfaced the root cause below within a minute of deploying.
 
-### Open production issue
-`GET /api/v1/health` on `https://finlamma-backend-rho.vercel.app` still returns 503:
+### Production issue - resolved 2026-09-19
+`GET /api/v1/health` was returning 503 with `actualLatestAppliedAtMs: null`, meaning production's
+`DATABASE_URL`/`DATABASE_URL_DIRECT` pointed at a database with an empty
+`drizzle.__drizzle_migrations` table - not the `rzymlgyhifphdsqnczsm` Supabase project this audit
+verified has all 4 migrations applied and a matching schema. Two other theories (Vercel
+file-tracing missing `drizzle/meta/_journal.json`; CRLF causing a content-hash mismatch) were
+investigated and ruled out with direct evidence - see the `8145527` commit message.
+
+You corrected the Vercel production environment variables and redeployed. Re-verified same day:
 ```json
-{"error":{"code":"SERVICE_UNAVAILABLE","message":"Database migrations are pending - run pnpm db:migrate","details":{"expectedMigration":"0003_brave_ultimo","expectedAppliedAtMs":1789808860813,"actualLatestAppliedAtMs":null}}}
+{"data":{"status":"ok","database":"ok","migrations":"ok","timestamp":"2026-09-19T15:07:21.821Z"}}
 ```
-`actualLatestAppliedAtMs: null` means the `drizzle.__drizzle_migrations` table production is
-actually connected to has **zero rows** - i.e. production's `DATABASE_URL`/`DATABASE_URL_DIRECT`
-point at a different (or empty) database than the `rzymlgyhifphdsqnczsm` Supabase project this
-audit verified has all 4 migrations applied and a matching schema. Two theories floated during
-the audit (Vercel file-tracing missing `drizzle/meta/_journal.json`; CRLF causing a content-hash
-mismatch) were both investigated and ruled out with direct evidence - see the
-`8145527` commit message. This is an environment-configuration issue, not a code bug.
 
 ### Your actions
-1. **Vercel dashboard** → Project → Settings → Environment Variables (Production): confirm
-   `DATABASE_URL` and `DATABASE_URL_DIRECT` point at the `rzymlgyhifphdsqnczsm` Supabase project,
-   redeploy, then re-check `/api/v1/health` - `migrations` should flip to `"ok"`.
-2. **Clerk dashboard**, staff application: confirm public sign-up is disabled (invite-only). The
-   code already only grants a `staff_members` row via a signed invite, so this is defense-in-depth
-   only, not a live hole.
+- **Clerk dashboard**, staff application: confirm public sign-up is disabled (invite-only). The
+  code already only grants a `staff_members` row via a signed invite, so this is defense-in-depth
+  only, not a live hole.
 
 ### Follow-ups (tracked, not fixed now)
 - **(Security, Low)** Account deletion can leave a user "stuck" between Clerk-deleted and
