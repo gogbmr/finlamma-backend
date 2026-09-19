@@ -56,6 +56,15 @@
                 ],
                 "example": "ok"
               },
+              "migrations": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "pending"
+                ],
+                "example": "ok",
+                "description": "Whether the latest migration in drizzle/ has actually been applied to this database (pnpm db:migrate) - catches deploying code that depends on a migration nobody ran yet."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -65,6 +74,7 @@
             "required": [
               "status",
               "database",
+              "migrations",
               "timestamp"
             ]
           }

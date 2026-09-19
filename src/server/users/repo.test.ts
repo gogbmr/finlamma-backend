@@ -107,4 +107,68 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
       }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
   });
+
+  it("anonymizing a clerk_user_id we've never seen is a safe no-op, not an error", async () => {
+    // Clerk's "Send Example" test events use a different fake user id per
+    // event type, so a user.deleted can arrive for an id with no matching
+    // row. Postgres's UPDATE with a WHERE clause matching zero rows is a
+    // normal success (0 rows affected), never a thrown error - this test
+    // pins that down instead of relying on it accidentally staying true.
+    await expect(
+      anonymizeUserFromClerk(uniqueClerkUserId("never-seen")),
+    ).resolves.toBeUndefined();
+  });
+
+  it("upserting a clerk_user_id we've never seen creates a new row, not an error", async () => {
+    // Same reasoning for user.updated: INSERT ... ON CONFLICT DO UPDATE
+    // with no existing row just inserts a fresh one.
+    const clerkUserId = uniqueClerkUserId("updated-first");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "New",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.firstName).toBe("New");
+  });
+
+  it("runs the full lifecycle: created, then updated, then deleted and anonymized", async () => {
+    const clerkUserId = uniqueClerkUserId("lifecycle");
+
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Original",
+      lastInitial: "U",
+      email: uniqueEmail("lifecycle"),
+      phone: null,
+      clerkUpdatedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+    let [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.firstName).toBe("Original");
+    expect(row.deletedAt).toBeNull();
+
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Updated",
+      lastInitial: "U",
+      email: uniqueEmail("lifecycle-updated"),
+      phone: null,
+      clerkUpdatedAt: new Date("2026-02-01T00:00:00Z"),
+    });
+    [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.firstName).toBe("Updated");
+    expect(row.deletedAt).toBeNull();
+
+    await anonymizeUserFromClerk(clerkUserId);
+    [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.firstName).toBe("Deleted user");
+    expect(row.lastInitial).toBeNull();
+    expect(row.email).toBeNull();
+    expect(row.phone).toBeNull();
+    expect(row.deletedAt).not.toBeNull();
+  });
 });

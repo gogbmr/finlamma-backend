@@ -110,7 +110,13 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
    which is disabled in the dashboard and must never be re-enabled or used from this codebase.
 7. **Time**: store UTC `timestamptz`; compute streak days and market hours in `Asia/Kolkata`.
 8. **Schema changes**: edit `src/db/schema`, run `pnpm db:generate`, review the SQL, then ask
-   the user before `pnpm db:migrate`. Use the `db-migration` skill.
+   the user before `pnpm db:migrate`. Use the `db-migration` skill. **Never push code that
+   depends on a migration that hasn't actually been applied to the real database yet** — a
+   migration sitting generated-but-unrun in `drizzle/` while dependent code ships is a real
+   incident waiting to happen, not a theoretical one. `GET /api/v1/health`'s `migrations` field
+   (compares the latest local migration in `drizzle/meta/_journal.json` against
+   `drizzle.__drizzle_migrations`) exists to catch this after the fact — treat it as a safety
+   net, not a substitute for running `pnpm db:migrate` before pushing.
 9. **Secrets**: never read `.env*` files or print secrets. New variables go into `.env.example`
    and `src/lib/env.ts`, and you tell the user what to add.
 10. **Privacy (kid-safe)**: public display name = first name + last initial. No photos, no chat

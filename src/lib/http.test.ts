@@ -94,6 +94,26 @@ describe("withErrors", () => {
     expect((await res.json()).error.code).toBe("INTERNAL");
   });
 
+  it.each([
+    ["no cause at all", new Error("boom")],
+    ["cause: undefined", Object.assign(new Error("boom"), { cause: undefined })],
+    ["cause: null", Object.assign(new Error("boom"), { cause: null })],
+    ["cause is a primitive string", Object.assign(new Error("boom"), { cause: "just a string" })],
+    ["cause is a primitive number", Object.assign(new Error("boom"), { cause: 42 })],
+    ["cause is an empty object", Object.assign(new Error("boom"), { cause: {} })],
+  ])("never crashes the error handler itself when %s", async (_label, err) => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = withErrors(async () => {
+      throw err;
+    });
+
+    const res = await handler();
+
+    expect(res.status).toBe(500);
+    expect((await res.json()).error.code).toBe("INTERNAL");
+    consoleError.mockRestore();
+  });
+
   it("tags an unexpected error with a findable errorId in both the response and the log", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const handler = withErrors(async () => {

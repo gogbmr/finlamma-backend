@@ -18,3 +18,10 @@ paths: "src/db/**, drizzle/**"
 4. Update `docs/DATA_MODEL.md` if the change is meaningful.
 5. Ask the user before running `pnpm db:migrate`. Explain what will change.
 6. After migrating, run the tests that touch the changed tables.
+7. **Never commit or push code that depends on a migration that hasn't been run against the
+   real database yet** (a new column, table or constraint some route/service now reads or
+   writes). A generated migration sitting unapplied in `drizzle/` while dependent code ships is
+   exactly how a working local setup (migrations applied ad hoc during development) diverges
+   from what's actually live - `GET /api/v1/health`'s `migrations` field exists specifically to
+   catch this class of drift, but the fix is to run `pnpm db:migrate` before shipping, not to
+   rely on the health check noticing after the fact.

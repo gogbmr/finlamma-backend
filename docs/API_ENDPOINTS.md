@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-18.
+> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-19.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -34,6 +34,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
   "data": {
     "status": "ok",
     "database": "ok",
+    "migrations": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
