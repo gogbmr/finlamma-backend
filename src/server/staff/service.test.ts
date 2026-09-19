@@ -6,6 +6,10 @@ const mockSetStaffActive = vi.fn();
 const mockUpdateStaffRole = vi.fn();
 const mockUpsertStaffMemberFromInvite = vi.fn();
 const mockDeactivateStaffMemberByClerkId = vi.fn();
+const mockGetRoleById = vi.fn();
+const mockGetStaffMemberById = vi.fn();
+const mockRoleHasPermission = vi.fn();
+const mockCountActiveStaffWithPermission = vi.fn();
 vi.mock("./repo", () => ({
   listRoles: () => mockListRoles(),
   listStaffWithRoles: () => mockListStaffWithRoles(),
@@ -13,6 +17,12 @@ vi.mock("./repo", () => ({
   updateStaffRole: (id: unknown, roleId: unknown) => mockUpdateStaffRole(id, roleId),
   upsertStaffMemberFromInvite: (input: unknown) => mockUpsertStaffMemberFromInvite(input),
   deactivateStaffMemberByClerkId: (id: unknown) => mockDeactivateStaffMemberByClerkId(id),
+  getRoleById: (id: unknown) => mockGetRoleById(id),
+  getStaffMemberById: (id: unknown) => mockGetStaffMemberById(id),
+  roleHasPermission: (roleId: unknown, permission: unknown) =>
+    mockRoleHasPermission(roleId, permission),
+  countActiveStaffWithPermission: (permission: unknown) =>
+    mockCountActiveStaffWithPermission(permission),
 }));
 
 const mockLogActivity = vi.fn();
@@ -51,6 +61,17 @@ beforeEach(() => {
   mockDeactivateStaffMemberByClerkId.mockReset();
   mockLogActivity.mockReset();
   mockCreateInvitation.mockReset();
+
+  mockGetRoleById.mockReset().mockResolvedValue({ id: "role-1", key: "some_role" });
+  mockGetStaffMemberById.mockReset().mockResolvedValue({
+    id: "s1",
+    active: true,
+    roleId: "role-current",
+  });
+  // Default: the target doesn't hold staff.manage, so the lockout guard
+  // never engages unless a test explicitly opts in below.
+  mockRoleHasPermission.mockReset().mockResolvedValue(false);
+  mockCountActiveStaffWithPermission.mockReset().mockResolvedValue(0);
 });
 
 describe("getStaffPageData", () => {
@@ -99,6 +120,16 @@ describe("inviteStaffMember", () => {
     await expect(
       inviteStaffMember(ACTOR, { email: "new@example.com", roleId: "role-1" }, META),
     ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND and never contacts Clerk when the role id doesn't exist", async () => {
+    mockGetRoleById.mockResolvedValueOnce(undefined);
+
+    await expect(
+      inviteStaffMember(ACTOR, { email: "new@example.com", roleId: "bogus-role" }, META),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockCreateInvitation).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
@@ -187,6 +218,38 @@ describe("setStaffMemberActive", () => {
       expect.objectContaining({ action: "staff.activated" }),
     );
   });
+
+  it("refuses to deactivate the last active staff.manage holder", async () => {
+    mockGetStaffMemberById.mockResolvedValueOnce({
+      id: "s1",
+      active: true,
+      roleId: "role-super-admin",
+    });
+    mockRoleHasPermission.mockResolvedValueOnce(true); // current role holds staff.manage
+    mockCountActiveStaffWithPermission.mockResolvedValueOnce(1); // only this one
+
+    await expect(setStaffMemberActive(ACTOR, "s1", false, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(mockSetStaffActive).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("allows deactivating a staff.manage holder when another one is still active", async () => {
+    mockGetStaffMemberById.mockResolvedValueOnce({
+      id: "s1",
+      active: true,
+      roleId: "role-super-admin",
+    });
+    mockRoleHasPermission.mockResolvedValueOnce(true);
+    mockCountActiveStaffWithPermission.mockResolvedValueOnce(2); // this one plus another
+    mockSetStaffActive.mockResolvedValueOnce({ id: "s1", active: false });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    await setStaffMemberActive(ACTOR, "s1", false, META);
+
+    expect(mockSetStaffActive).toHaveBeenCalledWith("s1", false);
+  });
 });
 
 describe("changeStaffMemberRole", () => {
@@ -207,5 +270,45 @@ describe("changeStaffMemberRole", () => {
       ip: "203.0.113.5",
       userAgent: "Mozilla/5.0",
     });
+  });
+
+  it("throws NOT_FOUND when the target role id doesn't exist", async () => {
+    mockGetRoleById.mockResolvedValueOnce(undefined);
+
+    await expect(changeStaffMemberRole(ACTOR, "s1", "bogus-role", META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockUpdateStaffRole).not.toHaveBeenCalled();
+  });
+
+  it("refuses a demotion that would leave no active staff.manage holder", async () => {
+    mockGetStaffMemberById.mockResolvedValueOnce({
+      id: "s1",
+      active: true,
+      roleId: "role-super-admin",
+    });
+    // Current role holds staff.manage, the new one doesn't.
+    mockRoleHasPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    mockCountActiveStaffWithPermission.mockResolvedValueOnce(1);
+
+    await expect(changeStaffMemberRole(ACTOR, "s1", "role-quiz-maker", META)).rejects.toMatchObject(
+      { code: "CONFLICT" },
+    );
+    expect(mockUpdateStaffRole).not.toHaveBeenCalled();
+  });
+
+  it("allows a role change that keeps staff.manage on the target", async () => {
+    mockGetStaffMemberById.mockResolvedValueOnce({
+      id: "s1",
+      active: true,
+      roleId: "role-super-admin",
+    });
+    mockRoleHasPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    mockUpdateStaffRole.mockResolvedValueOnce({ id: "s1", roleId: "role-2" });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    await changeStaffMemberRole(ACTOR, "s1", "role-2", META);
+
+    expect(mockUpdateStaffRole).toHaveBeenCalledWith("s1", "role-2");
   });
 });

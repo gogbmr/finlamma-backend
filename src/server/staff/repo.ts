@@ -1,10 +1,46 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { roles, staffMembers } from "@/db/schema";
+import { permissions, rolePermissions, roles, staffMembers } from "@/db/schema";
 import { AppError } from "@/lib/errors";
 
 export async function listRoles() {
   return db.select().from(roles).orderBy(asc(roles.name));
+}
+
+export async function getRoleById(id: string) {
+  const [row] = await db.select().from(roles).where(eq(roles.id, id)).limit(1);
+  return row;
+}
+
+export async function getStaffMemberById(id: string) {
+  const [row] = await db.select().from(staffMembers).where(eq(staffMembers.id, id)).limit(1);
+  return row;
+}
+
+// Same permission lookup as requireStaff() in src/lib/auth.ts, reused here
+// so the admin-lockout guard in service.ts can check "does this role grant
+// staff.manage" without a live Clerk session in scope.
+export async function roleHasPermission(roleId: string, permission: string): Promise<boolean> {
+  const [grant] = await db
+    .select({ id: rolePermissions.id })
+    .from(rolePermissions)
+    .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+    .where(and(eq(rolePermissions.roleId, roleId), eq(permissions.key, permission)))
+    .limit(1);
+  return !!grant;
+}
+
+// How many active staff members currently hold the given permission -
+// used by the admin-lockout guard to refuse an action that would leave
+// zero of them.
+export async function countActiveStaffWithPermission(permission: string): Promise<number> {
+  const rows = await db
+    .select({ id: staffMembers.id })
+    .from(staffMembers)
+    .innerJoin(rolePermissions, eq(rolePermissions.roleId, staffMembers.roleId))
+    .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+    .where(and(eq(staffMembers.active, true), eq(permissions.key, permission)));
+  return rows.length;
 }
 
 export async function listStaffWithRoles() {

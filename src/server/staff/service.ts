@@ -5,9 +5,13 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import type { InviteStaffMemberInput } from "./schemas";
 import {
+  countActiveStaffWithPermission,
   deactivateStaffMemberByClerkId,
+  getRoleById,
+  getStaffMemberById,
   listRoles,
   listStaffWithRoles,
+  roleHasPermission,
   setStaffActive,
   updateStaffRole,
   upsertStaffMemberFromInvite,
@@ -18,6 +22,37 @@ import {
 // log actorId - never the target being changed.
 type Actor = { id: string };
 type RequestMeta = ReturnType<typeof requestMeta>;
+
+// The one permission that can manage staff at all - guarded below so no
+// combination of deactivate/role-change actions can ever leave zero active
+// staff members able to grant it back. Permission-driven (not hardcoded to
+// "super_admin") since roles are meant to be extensible - see requireStaff()
+// in src/lib/auth.ts.
+const STAFF_MANAGE_PERMISSION = "staff.manage";
+
+// True if applying `newState` to `staffId` would leave no active staff
+// member holding `permission` - e.g. deactivating or demoting the only
+// active super_admin. Only ever true when the target row itself currently
+// holds the permission and wouldn't after the change; a target that never
+// held it, or still holds it after, is never blocked.
+async function wouldLeaveNoActiveHolder(
+  staffId: string,
+  permission: string,
+  newState: { active: boolean; roleId?: string },
+): Promise<boolean> {
+  const current = await getStaffMemberById(staffId);
+  if (!current) return false; // let the update itself 404
+
+  const currentlyHolds = current.active && (await roleHasPermission(current.roleId, permission));
+  if (!currentlyHolds) return false;
+
+  const roleIdAfterChange = newState.roleId ?? current.roleId;
+  const stillHolds = newState.active && (await roleHasPermission(roleIdAfterChange, permission));
+  if (stillHolds) return false;
+
+  const totalActiveHolders = await countActiveStaffWithPermission(permission);
+  return totalActiveHolders <= 1;
+}
 
 // Public metadata key on the Clerk invitation, which Clerk copies onto the
 // resulting User's own publicMetadata once they accept and sign up (see
@@ -37,6 +72,9 @@ export async function inviteStaffMember(
   input: InviteStaffMemberInput,
   meta: RequestMeta,
 ) {
+  const role = await getRoleById(input.roleId);
+  if (!role) throw new AppError("NOT_FOUND", "Role not found");
+
   const client = await clerkClient();
 
   let invitation;
@@ -119,6 +157,19 @@ export async function setStaffMemberActive(
   active: boolean,
   meta: RequestMeta,
 ) {
+  if (!active) {
+    const wouldLockOut = await wouldLeaveNoActiveHolder(staffId, STAFF_MANAGE_PERMISSION, {
+      active: false,
+    });
+    if (wouldLockOut) {
+      throw new AppError(
+        "CONFLICT",
+        `Can't deactivate the last active staff member with "${STAFF_MANAGE_PERMISSION}" - ` +
+          "give someone else that permission first.",
+      );
+    }
+  }
+
   const updated = await setStaffActive(staffId, active);
 
   await logActivity({
@@ -140,6 +191,21 @@ export async function changeStaffMemberRole(
   roleId: string,
   meta: RequestMeta,
 ) {
+  const role = await getRoleById(roleId);
+  if (!role) throw new AppError("NOT_FOUND", "Role not found");
+
+  const wouldLockOut = await wouldLeaveNoActiveHolder(staffId, STAFF_MANAGE_PERMISSION, {
+    active: true,
+    roleId,
+  });
+  if (wouldLockOut) {
+    throw new AppError(
+      "CONFLICT",
+      `Can't change this staff member's role - it would leave no active staff member with ` +
+        `"${STAFF_MANAGE_PERMISSION}".`,
+    );
+  }
+
   const updated = await updateStaffRole(staffId, roleId);
 
   await logActivity({
