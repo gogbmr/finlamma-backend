@@ -55,6 +55,24 @@ describe("GET /api/v1/health", () => {
     const body = await res.json();
     expect(body.error.code).toBe("SERVICE_UNAVAILABLE");
     expect(body.error.message).toMatch(/migrations/i);
+    // Diagnostic details so a mismatch is readable straight from the health
+    // check's own response - e.g. distinguishing "nobody ran db:migrate"
+    // from "this deployment's DATABASE_URL points at the wrong database".
+    expect(body.error.details.actualLatestAppliedAtMs).toBe(1);
+    expect(typeof body.error.details.expectedMigration).toBe("string");
+    expect(typeof body.error.details.expectedAppliedAtMs).toBe("number");
+  });
+
+  it("returns 503 with details when the migrations table is empty (max() returns null)", async () => {
+    vi.mocked(db.execute)
+      .mockResolvedValueOnce(undefined as never) // select 1 succeeds
+      .mockResolvedValueOnce([{ latest: null }] as never); // no rows applied
+
+    const res = await GET();
+
+    expect(res.status).toBe(503);
+    const body = await res.json();
+    expect(body.error.details.actualLatestAppliedAtMs).toBeNull();
   });
 
   it("returns 503 when drizzle.__drizzle_migrations doesn't exist or errors", async () => {

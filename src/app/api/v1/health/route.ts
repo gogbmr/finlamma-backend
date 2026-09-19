@@ -2,11 +2,15 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { AppError } from "@/lib/errors";
-import { fail, ok, withErrors } from "@/lib/http";
+import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
 // drizzle/meta/_journal.json would risk not being traced into the bundle.
+// Confirmed this actually happens: the built chunk for this route contains
+// the journal's literal values inlined as a JS object, and Vercel's own
+// file-tracing manifest (route.js.nft.json) never references drizzle/ at
+// all - so there is no separate file this route depends on at runtime.
 import migrationJournal from "../../../../../drizzle/meta/_journal.json";
 
 const HealthDataSchema = z.object({
@@ -21,6 +25,17 @@ const HealthDataSchema = z.object({
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
 
+type MigrationsCheck = {
+  ok: boolean;
+  // Included in the 503 response's `details` when not ok, so a mismatch is
+  // diagnosable from the health check's own output alone (e.g. distinguishing
+  // "nobody ran db:migrate yet" from "this deployment is pointed at the wrong
+  // database") without needing direct database access.
+  expectedMigration: string;
+  expectedAppliedAtMs: number;
+  actualLatestAppliedAtMs: number | null;
+};
+
 // Compares the latest migration this deployment was built with against the
 // latest one actually applied to the database (drizzle.__drizzle_migrations,
 // drizzle-kit's own tracking table - a separate thing from Supabase's own
@@ -28,15 +43,23 @@ const HealthDataSchema = z.object({
 // guarantee every intermediate migration matches, but it directly catches
 // the case that matters: code shipped that depends on a migration nobody
 // ran against the real database yet.
-async function areMigrationsApplied(): Promise<boolean> {
-  const latestLocal = migrationJournal.entries.at(-1)?.when;
-  if (latestLocal === undefined) return true; // no migrations exist yet
+async function checkMigrationsApplied(): Promise<MigrationsCheck> {
+  const latestEntry = migrationJournal.entries.at(-1);
+  if (!latestEntry) {
+    // No migrations exist yet - nothing to be behind on.
+    return { ok: true, expectedMigration: "(none)", expectedAppliedAtMs: 0, actualLatestAppliedAtMs: null };
+  }
 
   const [row] = await db.execute<{ latest: string | null }>(
     sql`select max(created_at)::bigint as latest from drizzle.__drizzle_migrations`,
   );
-  const latestApplied = row?.latest ? Number(row.latest) : null;
-  return latestApplied !== null && latestApplied >= latestLocal;
+  const actualLatestAppliedAtMs = row?.latest ? Number(row.latest) : null;
+  return {
+    ok: actualLatestAppliedAtMs !== null && actualLatestAppliedAtMs >= latestEntry.when,
+    expectedMigration: latestEntry.tag,
+    expectedAppliedAtMs: latestEntry.when,
+    actualLatestAppliedAtMs,
+  };
 }
 
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
@@ -70,20 +93,24 @@ export const GET = withErrors(async () => {
   try {
     await db.execute(sql`select 1`);
   } catch (err) {
-    console.error("Health check: database ping failed", err);
+    logInternalError("health.db_unreachable", err);
     return fail(new AppError("SERVICE_UNAVAILABLE", "Database is unreachable"));
   }
 
-  let migrationsOk: boolean;
+  let migrationsCheck: MigrationsCheck;
   try {
-    migrationsOk = await areMigrationsApplied();
+    migrationsCheck = await checkMigrationsApplied();
   } catch (err) {
-    console.error("Health check: migrations check failed", err);
+    logInternalError("health.migrations_check_failed", err);
     return fail(new AppError("SERVICE_UNAVAILABLE", "Could not verify migrations"));
   }
-  if (!migrationsOk) {
+  if (!migrationsCheck.ok) {
     return fail(
-      new AppError("SERVICE_UNAVAILABLE", "Database migrations are pending - run pnpm db:migrate"),
+      new AppError("SERVICE_UNAVAILABLE", "Database migrations are pending - run pnpm db:migrate", {
+        expectedMigration: migrationsCheck.expectedMigration,
+        expectedAppliedAtMs: migrationsCheck.expectedAppliedAtMs,
+        actualLatestAppliedAtMs: migrationsCheck.actualLatestAppliedAtMs,
+      }),
     );
   }
 

@@ -1,0 +1,7 @@
+# drizzle-kit computes a content hash of each migration file (stored in
+# drizzle.__drizzle_migrations.hash) to decide whether it's already been
+# applied. Force LF here so that hash can never drift between a Windows
+# checkout and Vercel's Linux build, regardless of contributors' local
+# core.autocrlf settings.
+drizzle/**/*.sql text eol=lf
+drizzle/**/*.json text eol=lf

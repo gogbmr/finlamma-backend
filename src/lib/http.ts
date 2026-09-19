@@ -77,8 +77,10 @@ function safeCauseFields(cause: unknown): Record<string, unknown> | undefined {
 // with no other way to correlate it to a specific log line. Scrubbed: an
 // arbitrary thrown value (not necessarily an Error) could be anything, so
 // we only ever log a plain string built from fields we control the shape
-// of, never the raw value/message itself.
-function logInternalError(errorId: string, err: unknown): void {
+// of, never the raw value/message itself. Exported so any other path that
+// catches a raw driver/SDK error (e.g. the health check) can log it the
+// same scrubbed way instead of a bare console.error(msg, err).
+export function logInternalError(errorId: string, err: unknown): void {
   if (err instanceof Error) {
     const stack = scrubDriverParamsLine(err.stack ?? `${err.name}: ${err.message}`);
     const cause = "cause" in err ? safeCauseFields(err.cause) : undefined;
