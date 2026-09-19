@@ -81,10 +81,25 @@ connection afterward. `/admin` confirmed working.
   make a real staff sign-in authenticate against the wrong Clerk application and look exactly like
   "not set up as staff" even when the `staff_members` row is correct.
 
-### Follow-up (not yet done)
-- **Full webhook re-verification against the corrected database was never actually run** - the
-  original audit only checked that unsigned requests get rejected with 400, not the real
-  signed-event → DB-write path, and that hadn't been re-tested since the DATABASE_URL fix. Walked
-  the user through it (3 Clerk "Send Example" events + 1 real signup + 1 real delete, for both the
-  staff and consumer webhooks) - not yet completed as of this entry. Re-check this file for an
-  update once it has been.
+### Webhook re-verification against the corrected database
+The original audit only checked that unsigned requests get rejected with 400, not the real
+signed-event → DB-write path, and that hadn't been re-tested since the DATABASE_URL fix.
+
+**Staff webhook (`/api/webhooks/clerk-staff`): verified, real invite + real delete.** The user
+invited a throwaway test email (`quiz_maker` role) from `/admin/staff`, accepted it, then deleted
+the test account in the Clerk dashboard. Full trail confirmed via Supabase, all consistent and in
+order:
+| Time (UTC) | Event | Evidence |
+|---|---|---|
+| 15:40:22 | Invite sent | `staff.invited`, actor = the super_admin seeded above, target `inv_3JYKB66Nt4KnneZittFr8W7stZ9` |
+| 15:44:19.8 | Real `user.created` webhook on accept | `staff_members` row `b950044d-...`, `role_id` = `quiz_maker` (matches invite) |
+| 15:44:20.2 | Invite completion logged | `staff.joined_via_invite` |
+| 15:46:05.2 | Real `user.deleted` webhook on delete | `staff_members.active` → `false` |
+| 15:46:06.6 | Deactivation logged | `staff.deactivated_from_clerk` |
+
+A real accepted invite is stronger evidence than Clerk's synthetic "Send Example" events - it only
+reaches `completeStaffInviteFromClerkEvent` at all if signature verification, `public_metadata`
+role-reading, and the DB write all worked correctly end to end.
+
+**Consumer webhook (`/api/webhooks/clerk`): not yet re-verified.** Still needs a real signup +
+delete via the consumer Clerk app's Account Portal (no app UI exists yet to drive this).
