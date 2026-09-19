@@ -11,9 +11,16 @@ inline). **Phase** is a best guess at which `docs/ROADMAP.md` phase should own t
 the founder has answered the Gaps & Questions section below (see step 4 of the audit this file was
 built for).
 
-**249 rows** across 7 screens: World Home (28), Arena (24), Trade + Ops console (56), News +
+**250 rows** across 7 screens: World Home (28), Arena (24), Trade + Ops console (57), News +
 Pulse Check + News Desk (47), Profile + report card + certificates (38), Settings (20), Lesson
 Flow + quizzes (36).
+
+**Resolved this round** (see `docs/ECONOMY.md` and the updated PRODUCT_SPEC/DATA_MODEL/ROADMAP):
+Arena Competition prizes are virtual-only; mentors are an admin-editable content type; the weekly
+report card is in scope for v1 with rule-based (no-AI) coach notes; XP and V Money are earned
+independently via an admin-editable `reward_rules` table, trading capital has no starting grant,
+the order pad locks until an admin-configurable world (default Market Maidan), orders are
+whole-share-only, and fund SIP minimums stay tiered (₹100 index / ₹500 other).
 
 ---
 
@@ -29,12 +36,12 @@ Flow + quizzes (36).
 | WH-06 | World Home | "Resume" banner (continue current lesson) | user's current world + lesson-in-progress pointer | `lesson_progress`, `worlds`, `lessons` | `GET /api/v1/me/current-lesson` | none | 2 | Not built |
 | WH-07 | World Home | World map: 7 world cards (title, tagline, art, lock state, progress %, mentor chip) | worlds list + per-user progress per world | `worlds`, `lesson_progress` (aggregated) | `GET /api/v1/worlds` (with per-user progress merged) | World/lesson content editor (create/edit/reorder worlds) | 2 | Not built |
 | WH-08 | World Home | World unlock rule: locked worlds show a level/XP threshold, never a paywall (prototype uses level thresholds LVL 32/40/50 for worlds 5/6/7, inconsistent with a flat `unlock_xp` field) | world unlock rule (level vs XP) | `worlds.unlock_xp` (DATA_MODEL) vs. observed level-based thresholds | n/a | World content editor: set unlock threshold | 2 | Not built |
-| WH-09 | World Home | Mentor evolution panel: 3 mentors (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, with active/locked visual state | mentor definitions + which one is "active" for the user's current world | MISSING: no `mentors` table in DATA_MODEL — mentor-to-world mapping is currently hardcoded in the prototype, not admin-editable | `GET /api/v1/mentors` | Mentor content editor (name, bio, world range, art) — not in current admin scope | TBD | Not built |
-| WH-10 | World Home | Tapping a mentor opens an intro modal: bio, typed-dialogue animation (3 lines), and the list of worlds that mentor teaches | mentor bio + dialogue lines (per language) + world list | same MISSING `mentors` table as WH-09 | `GET /api/v1/mentors/{key}` | Mentor content editor | TBD | Not built |
+| WH-09 | World Home | Mentor evolution panel: 3 mentors (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, with active/locked visual state | mentor definitions + which one is "active" for the user's current world | `mentors` (decided: admin-editable content type — see PRODUCT_SPEC §1) | `GET /api/v1/mentors` | Mentor content editor (name, bio, world range, art) | 3 | Not built |
+| WH-10 | World Home | Tapping a mentor opens an intro modal: bio, typed-dialogue animation (3 lines), and the list of worlds that mentor teaches | mentor bio + dialogue lines (per language) + world list | `mentors` (see WH-09) | `GET /api/v1/mentors/{key}` | Mentor content editor | 3 | Not built |
 | WH-11 | World Home – Onboarding | First-open onboarding: same mentor-intro modal, triggered automatically for a new user instead of by tap | "has user completed onboarding" flag | `users` (needs an `onboarding_completed_at`-style column — not currently in DATA_MODEL) | `PATCH /api/v1/me` (set onboarding flag) | none | 2 | Not built |
 | WH-12 | World Home | Per-world "journey" map: 40 lesson nodes per world (8 chapters × 5 steps) laid out on an interactive drag-to-tilt 3D path, with a "you are here" mentor avatar that hops between nodes | full lesson list per world with per-node state (done/current/next/locked) | `worlds`, `lessons`, `lesson_progress` | `GET /api/v1/worlds/{id}/lessons` | World/lesson content editor | 2 | Not built |
 | WH-13 | World Home | Lesson node kinds (6): Video, Story, AI Chat (Doubt Zone), Role Play, Quiz, Boss Quiz — each chapter's 5th step is one of the first 5 kinds; the last chapter's last step is always "Boss Quiz" | `lessons.kind` enum + per-kind copy (name + one-line description, localized) | `lessons` | (covered by WH-12) | World/lesson content editor | 2 | Not built |
-| WH-14 | World Home | Per-lesson-kind fixed rewards: Video 4min/20XP/10VM, Story 6min/30XP/15VM, AI Chat 5min/25XP/20VM, Role Play 7min/40XP/25VM, Quiz 3min/50XP/30VM, Boss Quiz 10min/120XP/100VM (all hardcoded per kind, not derived from a single XP→VM conversion rate) | reward config per lesson (or per kind, admin-editable) | MISSING: DATA_MODEL has no explicit per-lesson reward fields — `lessons.content jsonb` would need to carry them, or a separate rewards config table | n/a (content authoring) | World/lesson content editor: set XP/VM reward per lesson | 2/3 | Not built |
+| WH-14 | World Home | Per-lesson-kind rewards, decided (see `docs/ECONOMY.md`): Video 4min/20XP/30VM, Story 6min/30XP/45VM, AI Chat 5min/25XP/60VM, Role Play 7min/40XP/75VM, Quiz 3min/50XP/90VM, Boss Quiz 10min/120XP/300VM — XP unchanged from the prototype, VM seeded at 3× the prototype's values; individual lessons may override their kind's default | `reward_rules` seed data + per-lesson override | `reward_rules` (decided) | n/a (content authoring) | World/lesson content editor: set XP/VM reward per lesson, override `reward_rules` default | 3 | Not built |
 | WH-15 | World Home | Tapping a lesson node opens a bottom sheet: kind, chapter, title, blurb, 4 quick stats (time/XP/VM/status), locked-reason note, Start/Review/Locked CTA | lesson detail + user's per-lesson state | `lessons`, `lesson_progress` | `GET /api/v1/lessons/{id}` | World/lesson content editor | 2 | Not built |
 | WH-16 | World Home | World-complete reward card at the end of the path: "Boss reward: N V Money" before completion, "World cleared · certificate earned" after, with a pointer to the certificate in Profile | world completion state + certificate | `certificates` | `GET /api/v1/worlds/{id}` (completion status) | none | 2/3 | Not built |
 | WH-17 | World Home | Drag-to-tilt 3D / flat 2D toggle for the journey map (pure UI preference, no backend) | none | n/a | n/a | n/a | n/a | Not built (client-only, no backend needed) |
@@ -67,10 +74,10 @@ Flow + quizzes (36).
 | AR-11 | Arena – Players | "LIVE" tag on players currently active in-session | live/online presence | MISSING: no presence tracking (Redis TTL key per user) | n/a (websocket or short-poll) | none | 6 | Not built |
 | AR-12 | Arena – Players | Cheer button per player → sends +5 XP to receiver + notification; disabled/relabelled "TUM" for the user's own row | cheer action, cooldown/limit (none specified) | `cheers` (DATA_MODEL has this table) | `POST /api/v1/arena/cheers` | Cheer abuse/audit view (optional) | 6 | Not built |
 | AR-13 | Arena – Players | Season Rewards card: Promote → "next league promote + 500 V Money + gold crest"; Safe → "150 V Money"; Demote → "one league down · streak shield stays" | reward payout rules per zone | `settings_kv` (reward amounts, admin-editable) + `vmoney_ledger` (payout) | `POST /api/v1/arena/season/settle` (Inngest job, not user-facing) | Arena rewards config | 6 | Not built |
-| AR-14 | Arena – Contest | Monthly single-stock trading Competition hero: sponsor logo, stock, sector, LTP, % change this month, players count, virtual capital (₹1L), prize pool, date window, days left, progress bar | competition metadata | MISSING: no `competitions` table in DATA_MODEL | `GET /api/v1/arena/competitions/current` | Competition manager (create/edit competition) | 6 | Not built |
-| AR-15 | Arena – Contest | "You" rank card: user's rank (#N), trades made, ROI %, push line ("Top 10 needs +X% more ROI") | user's competition rank/ROI/trade count | MISSING: competition-scoped position table | `GET /api/v1/arena/competitions/current/me` | none | 6 | Not built |
-| AR-16 | Arena – Contest | Top-3 ROI podium + full ranked board (expand → best trade, win rate, avg hold time, note) | per-contestant ROI, trade count, avg price, best trade, win rate, avg hold | MISSING: needs contest-scoped trade/position aggregation, separate from main paper-trading portfolio (contest uses isolated ₹1L virtual capital in one stock) | `GET /api/v1/arena/competitions/current/leaderboard` | Competition leaderboard view | 6 | Not built |
-| AR-17 | Arena – Contest | Prize breakdown: 1st ₹10,000 scholarship + badge; 2nd-3rd ₹4,000 each + 5,000 V-coins; 4th-10th 1,000 V-coins + badge | prize schedule (real-money scholarship!) | `settings_kv` or `competitions.prizes jsonb` | admin-only, no app endpoint | Competition manager | 6 | Not built |
+| AR-14 | Arena – Contest | Monthly single-stock trading Competition hero: sponsor logo, stock, sector, LTP, % change this month, players count, virtual capital (₹1L), prize pool, date window, days left, progress bar | competition metadata | `competitions` (decided — see PRODUCT_SPEC §3) | `GET /api/v1/arena/competitions/current` | Competition manager (create/edit competition) | 6 | Not built |
+| AR-15 | Arena – Contest | "You" rank card: user's rank (#N), trades made, ROI %, push line ("Top 10 needs +X% more ROI") | user's competition rank/ROI/trade count | `competition_entries` | `GET /api/v1/arena/competitions/current/me` | none | 6 | Not built |
+| AR-16 | Arena – Contest | Top-3 ROI podium + full ranked board (expand → best trade, win rate, avg hold time, note) | per-contestant ROI, trade count, avg price, best trade, win rate, avg hold | `competition_entries`/`competition_trades` — isolated from the main paper-trading portfolio | `GET /api/v1/arena/competitions/current/leaderboard` | Competition leaderboard view | 6 | Not built |
+| AR-17 | Arena – Contest | **Decided: prizes are never real money.** V Money + exclusive badges/titles + optional brand coupons from the Rewards catalog, admin-configurable per competition (replaces the prototype's ₹10,000/₹4,000 cash amounts). A future, legally-reviewed option may add sponsored non-cash prizes — not v1. | prize schedule (virtual only) | `competitions.prizes jsonb` | admin-only, no app endpoint | Competition manager | 6 | Not built |
 | AR-18 | Arena – Contest | Rules panel (5 rules: virtual ₹1,00,000 single-stock capital; max 10 trades/month, min 1 to qualify; ranked by ROI% not profit; square-off deadline (last price used after); disqualify copy-trading/circuit-hit entries) + "practice only, no real payouts" disclaimer | static rules text (admin-editable per competition) | `competitions.rules jsonb` | `GET /api/v1/arena/competitions/current` (rules field) | Competition manager | 6 | Not built |
 | AR-19 | Arena | "Khelo" (Play) quick-action sheet: 2 shortcuts — Take a lesson (+250 XP, shows "N lessons pending"), Daily news quiz (+120 XP, "60 seconds") | pending lesson count, XP amounts (admin-controlled) | `lessons`/`lesson_progress`, `settings_kv` (xp amounts) | reuses World Home / News endpoints | none | 2/5/6 | Not built |
 | AR-20 | Arena | Player profile bottom sheet (opened from any avatar/name): bio, week XP, streak, Arena ROI, quiz accuracy %, badge count + badge grid, current world + % complete | user's public profile stats | MISSING: needs a "public profile" projection (kid-safe: first name + last initial only per PRODUCT_SPEC — prototype's sample names already follow this convention) | `GET /api/v1/users/{id}/public-profile` | none | 6 | Not built |
@@ -134,7 +141,8 @@ Flow + quizzes (36).
 | TR-49 | Trade – Ops console | Symbol Master table: per-symbol LTP, sector, change %, LIVE/HALT flag toggle | `instruments.halted` | `instruments` | `GET /api/v1/admin/trade/instruments`, `PATCH /api/v1/admin/trade/instruments/{symbol}/halt` | Ops console | 4 | Not built |
 | TR-50 | Trade – Ops console | Live "TICK {n}s" age indicator for symbol feed | last tick timestamp | Redis price cache (per ARCHITECTURE.md `px:<SYMBOL>:NSE`) | `GET /api/v1/admin/trade/ops/summary` (reuses TR-45) | Ops console | 4 | Not built |
 | TR-51 | Trade – Ops console | User Trading Ledger table: name, class+world meta, V Money balance, P&L %, risk flag (OK/WATCH/NEW) | user progress + vmoney balance + risk classification | `users`, `vmoney_ledger` + MISSING: no risk-flag field/logic anywhere in DATA_MODEL | `GET /api/v1/admin/trade/ops/users` | Ops console | 4 | Not built |
-| TR-52 | Trade – Ops console | XP → V Money issuance rate presets: 100XP=100VM / 250VM / 500VM | rate setting | `settings_kv` (`xp_to_vmoney_rate`) | `PATCH /api/v1/admin/economy/xp-rate` (also relevant to XP economy, Phase 3) | 3 or 4 (cross-cutting) | Not built |
+| TR-52 | Trade – Ops console | **Decided (see PRODUCT_SPEC §2, `docs/ECONOMY.md`): replaced by a global V Money issuance multiplier** (default 1.0) applied at award time on top of `reward_rules`' seeded XP/VM values — not a conversion rate, since XP and VM are earned independently | multiplier setting | `settings_kv` (`vm_issuance_multiplier`) | `PATCH /api/v1/admin/economy/vm-multiplier` (Phase 3) | Ops console | 3 | Not built |
+| TR-57 | Trade | **Decided (see PRODUCT_SPEC §4): explore mode from day one** — quotes/charts/watchlist visible to everyone; the order pad is locked until the learner reaches the admin-configurable unlock world (default Market Maidan/World 4), shown with a progress message. No starting balance or unlock grant is ever issued — trading capital is purely earned V Money, carried over automatically | unlock world setting, user's world progress | `settings_kv` (`trade_unlock_world_order`), `lesson_progress` | `GET /api/v1/trade/market-status` (include unlock state) | Ops console (set unlock world) | 4 | Not built |
 | TR-53 | Trade – Ops console | Audit log: timestamped kind-tagged events (FEED/COIN/ORDER/RISK/SIP/HALT) with free text | ops action history | `activity_logs` (append-only, per CLAUDE.md rule 5) | `GET /api/v1/admin/trade/ops/audit-log` (or reuse general activity log viewer) | Ops console | 4 | Not built |
 | TR-54 | Trade – Ops console | "SANDBOX" environment tag on the console header | — | — | — | Ops console | 4 | Not built |
 | TR-55 | Trade – Design Notes panel | Static internal design-rationale cards (not a real feature — prototype-only documentation aid) | — | — | — | none (prototype-only, likely dropped from real admin) | N/A | N/A |
@@ -225,12 +233,12 @@ Flow + quizzes (36).
 | PR-27 | Profile – Trades | Win/loss bar + breakdown rows | win/loss counts | `orders` | `GET /me/portfolio/stats` | none | 4 | Not built |
 | PR-28 | Profile – Trades | Trade history list w/ filter (All/Open/Closed) | order history, P&L per trade | `orders` | `GET /me/portfolio/trades?status=` | none | 4 | Not built |
 | PR-29 | Profile – Notifications | Notification panel: grouped list (Today / Past 7 days), mark-all-read, 30-day auto-expiry | user notifications | `notifications` | `GET /me/notifications`, `POST /me/notifications/read-all` | none | 7 | Not built |
-| PR-30 | Profile – Report Card | Full report card panel: 6 KPI tiles (syllabus %, watch time, quiz acc, avg session, trade win %, global rank) | cross-domain aggregate snapshot | MISSING: no report-card table/job | `GET /me/report-card?period=week` | none | TBD | Not built |
-| PR-31 | Profile – Report Card | Module-wise breakdown table: done, time, accuracy, letter grade (S/A/B/C) per module | per-module rollup + grade thresholds | MISSING: no "module" grading concept or thresholds defined | (same) | Grade-threshold settings (if admin-tunable) | TBD | Not built |
-| PR-32 | Profile – Report Card | 8-week speed-vs-accuracy trend chart | weekly speed/accuracy history | MISSING: no weekly-snapshot table | (same) | none | TBD | Not built |
-| PR-33 | Profile – Report Card | Coach notes: 4 categories (TAAKAT/strength, GAP, MAUKA/opportunity, AADAT/habit) | either templated-from-stats or AI-generated text | MISSING: no coach-notes table; unclear if AI or template | (same) | none (or a review/approve step if AI-generated) | TBD | Not built |
+| PR-30 | Profile – Report Card | **Decided: in scope for v1.** Full report card panel: 6 KPI tiles (syllabus %, watch time, quiz acc, avg session, trade win %, global rank) | cross-domain aggregate snapshot | `report_snapshots` (decided — weekly Inngest job, see PRODUCT_SPEC §6) | `GET /me/report-card?period=week` | none | 3 | Not built |
+| PR-31 | Profile – Report Card | Module-wise breakdown table: done, time, accuracy, letter grade (S/A/B/C) per module | per-module rollup + grade thresholds | `report_snapshots.module_breakdown` — grade cutoffs (S/A/B/C) still need a founder-confirmed threshold, currently proposed as the prototype's own bands (see FEATURE_MAP Lesson Flow gap #4) | (same) | Grade-threshold settings (if admin-tunable) | 3 | Not built |
+| PR-32 | Profile – Report Card | 8-week speed-vs-accuracy trend chart | weekly speed/accuracy history | `report_snapshots` (weekly rows, 8-week window) | (same) | none | 3 | Not built |
+| PR-33 | Profile – Report Card | **Decided: rule-based templates, no AI for v1.** Coach notes: 4 categories (TAAKAT/strength, GAP, MAUKA/opportunity, AADAT/habit), computed per the formula in PRODUCT_SPEC §6 | template strings (en/hi/hx) + the user's real per-metric numbers | `coach_note_templates`, `report_snapshots` | (same) | Coach-note template editor (draft → publish, logged) | 3 | Not built |
 | PR-34 | Profile – Report Card | Reward ledger (earn/spend log with running totals) | vmoney_ledger, filtered/summed for the period | `vmoney_ledger` | `GET /me/report-card` | none | 3 | Not built |
-| PR-35 | Profile – Report Card | Export/share sheet: 3 actions — download PDF report card, generate 1080×1920 "story card" image, "send to mentor" weekly summary letter | PDF/image generation; mentor contact info + delivery | MISSING: PDF/image generation pipeline; MISSING: any concept of a parent/mentor contact anywhere in DATA_MODEL | `POST /me/report-card/export` (`format: pdf\|story\|mentor-letter`) | none | TBD | Not built |
+| PR-35 | Profile – Report Card | Export/share sheet: 3 actions — download PDF report card, generate 1080×1920 "story card" image, "send to mentor" weekly summary letter | PDF/image generation; mentor contact info + delivery | MISSING: PDF/image generation pipeline; MISSING: any concept of a parent/mentor contact anywhere in DATA_MODEL — **still open, see Gaps & Questions** (not part of this round's 4 decisions) | `POST /me/report-card/export` (`format: pdf\|story\|mentor-letter`) | none | TBD | Not built |
 | PR-36 | Profile – Certificates | Certificate view per cleared world: name, world, stars, issued date, XP, score, certificate ID | certificate record | `certificates` | `GET /me/certificates/:worldId` | none | 3 | Not built |
 | PR-37 | Profile – Certificates | Certificate download as PDF (A4 landscape, browser print) | certificate render data + generated file | `certificates` (needs `file_key` populated) | `GET /me/certificates/:worldId/pdf` | none | 3 | Not built |
 | PR-38 | Profile – Certificates | Certificate share sheet (WhatsApp/Instagram/LinkedIn/copy link) | shareable link or re-generated PDF | `certificates` | (same as PR-37, or a share-link endpoint) | none | 3 | Not built |
@@ -312,10 +320,10 @@ of the ones that most affect scope and schema is in the chat message that shippe
 file.
 
 ### World Home
-1. **XP→V Money conversion rate vs. per-lesson hardcoded rewards.** PRODUCT_SPEC says "100 XP = 250 VM (admin-controlled)" via a single `settings_kv` rate, but the prototype hardcodes separate, unrelated XP and VM rewards per lesson kind (e.g. Video = 20 XP **and** 10 VM — not a 100:250 ratio). Which model is real: one global conversion rate, or independently authored XP/VM per lesson?
-2. **World unlock rule: XP vs. level vs. previous-world-cleared.** DATA_MODEL's `worlds.unlock_xp` implies an XP gate; the prototype's pills show `LVL 32/40/50` (level, not XP); PRODUCT_SPEC says "clearing the boss quiz unlocks the next world" (sequential, not XP/level). Which rule (or combination) is correct?
+1. **RESOLVED.** XP and V Money are earned independently — see PRODUCT_SPEC §2 and `docs/ECONOMY.md` for the `reward_rules` model and the seeded values (3× the prototype's VM amounts).
+2. **World unlock rule: XP vs. level vs. previous-world-cleared.** Still open — DATA_MODEL's `worlds.unlock_xp` implies an XP gate; the prototype's pills show `LVL 32/40/50` (level, not XP); PRODUCT_SPEC says "clearing the boss quiz unlocks the next world" (sequential, not XP/level). Which rule (or combination) is correct?
 3. **Duplicated, inconsistent `WORLDS` data across screens** (World Home, Arena, Profile each hardcode their own copy) — expected in a prototype, just confirms `worlds` must be one real table.
-4. **Mentors have no backing table anywhere in DATA_MODEL.** Should mentors be fully hardcoded/shipped in the app (no admin control), or a real admin-editable content type?
+4. **RESOLVED.** Mentors are an admin-editable content type — `mentors` table added to DATA_MODEL, Mentor content editor added.
 5. **Screen-time tracking isn't in DATA_MODEL or ROADMAP** — is session time purely client/PostHog-derived, or does the app need to report it to our API?
 6. V Money weekly numbers in the prototype don't reconcile (spend+trade > balance) — just fabricated filler, no question needed.
 7. **Notification auto-expiry after 30 days** — real rule, or prototype flavor text?
@@ -323,8 +331,8 @@ file.
 9. Is the "Top 8%" percentile on World Home global, or scoped like Arena's leaderboard scopes?
 
 ### Arena
-1. **Competitions are entirely undocumented** — no `competitions` table, no phase, no admin console anywhere in PRODUCT_SPEC/ROADMAP/DATA_MODEL. Is this in scope for v1, and if so which phase?
-2. **Real-money prize pool (₹10,000 scholarship, ₹4,000 cash) contradicts "nothing involves real rupees."** Real money (KYC, payout rails, parental consent, tax/compliance) or virtual-only for v1?
+1. **RESOLVED.** In scope for v1, Phase 6 — `competitions`/`competition_entries` tables added to DATA_MODEL, Competition manager admin page added.
+2. **RESOLVED.** Prizes are virtual-only (V Money + badges/titles + optional coupons), admin-configurable per competition — see PRODUCT_SPEC §3 and ROADMAP Phase 6.
 3. "My State" scope needs a `state` field on `users` — collect it at signup? Privacy concern for a kid-safe app?
 4. Per-user aggregate stats shown everywhere (lessons done, quiz accuracy, sim P&L) are prototype hash-based fakes — which are must-have for launch vs. cuttable (perf-sensitive if not)?
 5. "LIVE" presence tag has no real-time presence concept elsewhere — worth building (Redis), or cut as a nice-to-have?
@@ -343,7 +351,7 @@ file.
 4. Brokerage ₹0 — confirmed permanent, just flagging it's a hardcoded string today.
 5. Mutual fund returns/star ratings aren't AMFI fields — where do they come from if AMFI only gives NAV?
 6. Ops console KPIs are hardcoded, not computed — confirm these become real aggregate queries.
-7. Starting cash ₹5,00,000 — does a new user start at ₹0 and earn toward it, or is it seeded?
+7. **RESOLVED.** No starting cash, ever. Trade opens in explore mode from day one; the order pad unlocks at an admin-configurable world (default Market Maidan/World 4); trading capital is purely earned V Money — see PRODUCT_SPEC §4 and `docs/ECONOMY.md` for the affordability simulation behind this.
 
 ### News + Pulse Check + News Desk
 **Doc gaps:** a 10th "PREDICT" quiz format toggle exists with no implementation — keep or remove? No table for staff-curated "FinLamma Desk" picks distinct from auto-ingested stories. No quality-grade (A/B/C) rubric defined. No topic taxonomy for "topic-wise mastery." Is the "7-day Pulse Check streak" the same `streaks` table as the main learning streak, or separate? No per-user "read" tracking table.
@@ -356,10 +364,16 @@ file.
 5. Live "N people playing now" counter — real-time concurrent count in scope, or a cheaper static "X played today"?
 
 ### Profile + report card + certificates
-**Doc gaps:** DATA_MODEL has no table at all for the weekly report card, efficiency score, coach notes, topic mastery, or the 5-week consistency heatmap — ROADMAP Phase 3 doesn't list a report-card item either. **Nothing anywhere mentions a parent/mentor contact**, yet the prototype has a real "send weekly summary to Mentor" letter feature — is this a self-service PDF the student shares themselves, or a real notification/email to a registered parent contact (needs consent + contact storage)? Does Profile's rank/percentile read from Arena's weekly snapshot (built later, Phase 6) rather than compute its own?
+**RESOLVED (report card scope):** the weekly report card, efficiency score, coach notes and topic
+mastery are in scope for v1 (Phase 3) — see PRODUCT_SPEC §6 for the exact formula, `report_snapshots`
+and `coach_note_templates` in DATA_MODEL. Still open: **nothing anywhere mentions a parent/mentor
+contact**, yet the prototype has a real "send weekly summary to Mentor" letter feature — is this a
+self-service PDF the student shares themselves, or a real notification/email to a registered parent
+contact (needs consent + contact storage)? Does Profile's rank/percentile read from Arena's weekly
+snapshot (built later, Phase 6) rather than compute its own?
 
 **Fake data needing a decision:**
-1. Coach notes are hand-written per the sample numbers — AI-generated per user per week (with staff review, like news drafts?), or templated?
+1. **RESOLVED.** Rule-based templates, no AI for v1 — see PRODUCT_SPEC §6 for the exact coach-note rules.
 2. Module letter-grade cutoffs (S/A/B/C) have no stated rule beyond the sample data — what are the real thresholds, fixed or admin-tunable?
 3. Badge VM rewards/thresholds are hardcoded per badge — admin-editable like the XP→VM rate, or fixed at launch?
 4. All reward-catalog brands are explicitly fictional (prototype admits "no real tie-ups") — real partners need sourcing before launch; is a reward-catalog admin CRUD in scope for Phase 3?
@@ -388,4 +402,7 @@ file.
 9. Only one lesson's worth of content exists — does every video lesson reuse the same 3 scene "kinds" (trade/coins/timeline), or is scene "kind" an open enum content authors pick per lesson?
 
 ### Global / App shell
-1. **The V Money balance the app displays is derived directly from the Trade screen's own cash + market value of positions in the prototype**, not from a separate ledger balance. DATA_MODEL's `vmoney_ledger` is meant to be the source of truth for V Money (per ARCHITECTURE.md decision D7, "balances are derived" from the ledger) — confirming the real implementation computes the displayed balance from `vmoney_ledger`, and that the Trade `cash` figure is itself just one more ledger-derived read, not an independent number that could drift from it.
+1. **RESOLVED as part of this round's economy decisions.** The displayed V Money balance is a
+   `vmoney_ledger`-derived read everywhere it appears (World Home header, Profile, Trade's cash
+   figure) — never an independent number. There is no separate "Trade cash" that could drift from
+   the ledger; a BUY/SELL order is itself just another `vmoney_ledger` entry.

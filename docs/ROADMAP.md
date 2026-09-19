@@ -38,19 +38,29 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 
 ## Phase 3 — Progress economy
 - [ ] XP events, levels, world unlocks
-- [ ] V Money ledger, XP → V Money conversion (admin-set rate)
+- [ ] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
+      `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
+- [ ] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
+      on every ledger entry
 - [ ] Streaks (IST days) + 2 freezes/month; daily goal
 - [ ] Badges and rewards (coupons)
+- [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language)
 - [ ] Certificates on world completion (PDF, stored in storage)
+- [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
+      module breakdown, 8-week trend; `coach_note_templates` (admin-editable, draft → publish,
+      no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules
 
 ## Phase 4 — Trading engine (needs the market relay for live prices)
 - [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
 - [ ] Twelve Data REST: quotes and candle history with Redis caching
-- [ ] Orders (market/limit), holdings, P&L; idempotency; halts; margin checks
+- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad locked until
+      `settings_kv.trade_unlock_world_order` (default: Market Maidan/World 4) is reached — no
+      starting balance or unlock grant, ever (see `docs/ECONOMY.md`)
+- [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
 - [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
 - [ ] Limit-order matching job (Inngest)
-- [ ] Mutual funds: AMFI NAV import job, SIP + lump sum
-- [ ] Ops console: feed mode, halts, conversion rate, user ledger with risk flags
+- [ ] Mutual funds: AMFI NAV import job, SIP (tiered minimums: ₹100 index / ₹500 other) + lump sum
+- [ ] Ops console: feed mode, halts, trade-unlock-world setting, user ledger with risk flags
 
 ## Phase 5 — News & Pulse Check
 - [ ] Ingestion jobs: Finnhub + India source → `news_raw`
@@ -61,6 +71,9 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 ## Phase 6 — Arena & social
 - [ ] Weekly leaderboards (Redis sorted sets), scopes, leagues with promote/demote job
 - [ ] Worlds table; cheers (+5 XP, notification)
+- [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
+      admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
+      currency) — depends on Phase 4's order execution primitives
 
 ## Phase 7 — Notifications & Doubt Zone
 - [ ] Expo push tokens, notification preferences, streak/boss/news jobs
