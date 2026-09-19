@@ -16,9 +16,11 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] Deploy preview on Vercel
 
 ## Phase 1 — Identity, roles, activity log
-- [x] Clerk middleware; `requireUser()` for app tokens (Bearer), session auth for admin
-      (admin session auth deferred to the admin-shell item — needs a second Clerk app, see
-      docs/ARCHITECTURE.md decisions)
+- [x] Two Clerk applications (see docs/ARCHITECTURE.md decision D2): `clerkMiddleware()`/
+      `auth()` bound to the STAFF app (the only one that ever holds a session cookie on this
+      domain — admin sign-in UI itself is still the admin-shell item below); `requireUser(req)`
+      verifies the mobile app's Bearer token directly against the separate CONSUMER app via
+      `@clerk/backend`, independent of the middleware
 - [x] `activity_logs` (append-only, RLS enabled) + `logActivity()` (moved up: the webhook
       below needs it) — no update/delete path exists for this table anywhere in the codebase
 - [x] Clerk webhook → `users` table (created/updated/deleted)

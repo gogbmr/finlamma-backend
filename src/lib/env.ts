@@ -14,13 +14,25 @@ const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   DATABASE_URL_DIRECT: z.string().url(),
 
-  // Clerk (consumer app + admin session auth). The admin dashboard uses a
-  // separate Clerk application (ADMIN_* vars), added once Phase 1 builds
-  // the admin shell.
+  // Clerk - two separate Clerk applications, never one. Staff/admin is the
+  // only side that ever carries a session cookie on this domain, so it
+  // owns the conventional env var names that clerkMiddleware()/auth()/
+  // <ClerkProvider> read implicitly. The mobile app's users are verified
+  // manually (see requireUser() in src/lib/auth.ts) via @clerk/backend's
+  // authenticateRequest() against the CONSUMER_* keys below - this never
+  // touches clerkMiddleware/auth() at all, so there's no session-cookie
+  // handshake between the two instances on this domain. See
+  // docs/ARCHITECTURE.md decision D2.
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string(),
   CLERK_SECRET_KEY: z.string(),
+  // Optional until the second (consumer) Clerk application exists and its
+  // keys are added - requireUser() fails closed (503) until then, the same
+  // pattern as CLERK_WEBHOOK_SIGNING_SECRET below.
+  CONSUMER_CLERK_PUBLISHABLE_KEY: z.string().optional(),
+  CONSUMER_CLERK_SECRET_KEY: z.string().optional(),
   // Optional until the Clerk webhook endpoint exists and has a signing
-  // secret to put here - it needs the deployed route URL first.
+  // secret to put here - it needs the deployed route URL first. This is
+  // the CONSUMER app's webhook (it syncs `users`, not `staff_members`).
   CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
 
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
