@@ -8,14 +8,21 @@ const mockEnv = vi.hoisted(
 );
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
-const mockVerify = vi.fn();
-vi.mock("svix", () => ({
-  // route.ts does `new Webhook(secret)`, so the mock must be a real
-  // constructor - an arrow function implementation can't be `new`-ed.
-  Webhook: vi.fn(function MockWebhook() {
-    return { verify: mockVerify };
-  }),
-}));
+// vi.hoisted: same reason as mockEnv above - both mocks are used inside the
+// vi.mock factory below, which vitest hoists above plain const declarations,
+// so mockVerify must also be created inside the hoisted callback.
+const { mockVerify, mockWebhookCtor } = vi.hoisted(() => {
+  const mockVerify = vi.fn();
+  return {
+    mockVerify,
+    // route.ts does `new Webhook(secret)`, so the mock must be a real
+    // constructor - an arrow function implementation can't be `new`-ed.
+    mockWebhookCtor: vi.fn(function MockWebhook() {
+      return { verify: mockVerify };
+    }),
+  };
+});
+vi.mock("svix", () => ({ Webhook: mockWebhookCtor }));
 
 const mockSync = vi.fn();
 vi.mock("@/server/users/service", () => ({
@@ -42,6 +49,7 @@ describe("POST /api/webhooks/clerk", () => {
     mockEnv.CLERK_WEBHOOK_SIGNING_SECRET = "whsec_test";
     mockVerify.mockReset();
     mockSync.mockReset();
+    mockWebhookCtor.mockClear();
   });
 
   it("fails closed with 503 when no signing secret is configured", async () => {
@@ -62,6 +70,24 @@ describe("POST /api/webhooks/clerk", () => {
     const res = await POST(req);
 
     expect(res.status).toBe(400);
+    expect(mockSync).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 with INVALID_SIGNATURE (not 500) when the signing secret is malformed", async () => {
+    // Regression test: `new Webhook(secret)` throws synchronously for a
+    // malformed secret (e.g. bad base64 from a mis-pasted env var), not
+    // just .verify() - this used to escape the try/catch and surface as an
+    // uncaught 500 INTERNAL instead of a clear 400.
+    mockWebhookCtor.mockImplementationOnce(() => {
+      throw new Error("Secret can't be empty.");
+    });
+
+    const res = await POST(makeRequest(JSON.stringify({ type: "user.created" })));
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe("INVALID_SIGNATURE");
+    expect(mockVerify).not.toHaveBeenCalled();
     expect(mockSync).not.toHaveBeenCalled();
   });
 

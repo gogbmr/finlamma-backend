@@ -78,9 +78,14 @@ export const POST = withErrors(async (req: Request) => {
   // the body as text, never req.json(), which would re-serialize it.
   const body = await req.text();
 
-  const wh = new Webhook(env.CLERK_WEBHOOK_SIGNING_SECRET);
   let evt: WebhookEvent;
   try {
+    // `new Webhook(secret)` itself throws synchronously if the secret is
+    // empty, the wrong type, or not valid base64 (e.g. a malformed value
+    // pasted into the hosting provider's env vars) - it must be inside this
+    // try too, not just .verify(), otherwise a bad secret in production
+    // becomes an uncaught 500 instead of a clear 400.
+    const wh = new Webhook(env.CLERK_WEBHOOK_SIGNING_SECRET);
     // svix@2.5.0's types claim verify() returns undefined; it actually
     // returns the parsed, verified payload at runtime.
     evt = wh.verify(body, {
@@ -89,6 +94,13 @@ export const POST = withErrors(async (req: Request) => {
       "svix-signature": svixSignature,
     }) as unknown as WebhookEvent;
   } catch {
+    // Deliberately don't log the caught error: svix's own error messages
+    // are generic (e.g. "Secret can't be empty."), but the underlying
+    // base64 decoder is third-party code we don't control, and this path
+    // runs on every input that touches CLERK_WEBHOOK_SIGNING_SECRET, so we
+    // never take the risk of a future dependency change echoing the secret
+    // into logs.
+    console.error("Clerk webhook signature verification failed");
     return fail(new AppError("INVALID_SIGNATURE", "Invalid webhook signature"));
   }
 

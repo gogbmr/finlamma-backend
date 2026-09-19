@@ -93,6 +93,26 @@ describe("syncUserFromClerkEvent", () => {
     );
   });
 
+  it("does not crash when primary_email_address_id points at an id absent from email_addresses", async () => {
+    // Regression test: Clerk's own "send example event" payload for
+    // user.created sets primary_email_address_id to a placeholder id while
+    // email_addresses is []. find() over the empty array just returns
+    // undefined, so this must resolve to no verified email, not throw.
+    mockUpsert.mockResolvedValueOnce(undefined);
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    await syncUserFromClerkEvent(
+      userEvent("user.created", {
+        email_addresses: [],
+        primary_email_address_id: "idn_does_not_exist",
+      }),
+    );
+
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ email: null }),
+    );
+  });
+
   it("ignores an unverified primary email/phone", async () => {
     mockUpsert.mockResolvedValueOnce(undefined);
     mockLogActivity.mockResolvedValueOnce(undefined);
