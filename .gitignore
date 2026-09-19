@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# stray tool worktrees/state that don't belong in the repo
+.kilo/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
