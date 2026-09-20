@@ -16,17 +16,24 @@ Follow every step. Do not skip the activity log or OpenAPI registration.
 3. **Route handler** in `src/app/api/v1/<resource>/route.ts` stays thin:
    `withErrors(async (req) => { const user = await requireUser(req); const input = Schema.parse(...); const result = await service.fn(user, input); return ok(result); })`
    Admin/staff routes use `requireStaff("<permission.key>")`.
-4. **Service** in `src/server/<domain>/service.ts` holds the logic; DB access in `repo.ts`.
+4. **Import the new route file in `scripts/generate-openapi.ts`** (the "Import every route file
+   that registers a path as a side effect" list near the top). A route file that registers a path
+   but is never imported there silently never reaches `openapi.json`/`docs/API_ENDPOINTS.md`, even
+   though `pnpm contract` exits 0 - this bit Phase 2b Checkpoint 2. `scripts/generate-openapi.test.ts`
+   scans `src/app/api/v1` and fails the run if any `route.ts` is missing from that import list, so
+   forgetting this step fails `pnpm test`, not just the honor system - but add the import anyway,
+   don't rely on the test to remind you.
+5. **Service** in `src/server/<domain>/service.ts` holds the logic; DB access in `repo.ts`.
    Wrap multi-table writes in a Drizzle transaction.
-5. **Activity log**: every mutation calls `logActivity({ actorType, actorId, action: "<domain>.<verb>", targetType, targetId, metadata })`
+6. **Activity log**: every mutation calls `logActivity({ actorType, actorId, action: "<domain>.<verb>", targetType, targetId, metadata })`
    inside the same transaction when possible.
-6. **Rate limit** sensitive endpoints (auth-adjacent, orders, AI) with `@upstash/ratelimit`.
-7. **Errors**: throw `AppError(code, message, status)` with a code from `src/lib/errors.ts`
+7. **Rate limit** sensitive endpoints (auth-adjacent, orders, AI) with `@upstash/ratelimit`.
+8. **Errors**: throw `AppError(code, message, status)` with a code from `src/lib/errors.ts`
    (add new codes there). Never leak stack traces or SQL.
-8. **Tests** (`*.test.ts`, Vitest): happy path, validation failure, unauthorized, forbidden
+9. **Tests** (`*.test.ts`, Vitest): happy path, validation failure, unauthorized, forbidden
    (for staff routes), and domain edge cases.
-9. Run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm contract`.
-10. Open `docs/API_ENDPOINTS.md` and check the new endpoint's section is complete (params,
+10. Run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm contract`.
+11. Open `docs/API_ENDPOINTS.md` and check the new endpoint's section is complete (params,
     request example, all responses). If something is missing, fix the registration, not the doc.
-11. Commit code + `openapi/` + `docs/API_ENDPOINTS.md` together.
-12. Summarise for the user: method, path, who can call it, request/response example.
+12. Commit code + `openapi/` + `docs/API_ENDPOINTS.md` together.
+13. Summarise for the user: method, path, who can call it, request/response example.

@@ -226,21 +226,23 @@ describe("unpublishMentor", () => {
   });
 });
 
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+const WEBP_BYTES = Buffer.concat([
+  Buffer.from("RIFF", "ascii"),
+  Buffer.from([0x24, 0, 0, 0]),
+  Buffer.from("WEBP", "ascii"),
+]);
+
 describe("uploadMentorArt", () => {
-  it("uploads to storage, records the key, and logs it", async () => {
+  it("uploads to storage under a server-generated key, records it, and logs it", async () => {
     mockGetMentorById.mockResolvedValueOnce(mentorRow());
     mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/art.png" }));
 
-    const result = await uploadMentorArt(
-      ACTOR,
-      "mentor_1",
-      { body: Buffer.from("x"), contentType: "image/png" },
-      META,
-    );
+    const result = await uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META);
 
     expect(mockUploadObject).toHaveBeenCalledWith(
       "mentors/mentor_1/art.png",
-      expect.any(Buffer),
+      PNG_BYTES,
       "image/png",
     );
     expect(result.artKey).toBe("mentors/mentor_1/art.png");
@@ -249,11 +251,49 @@ describe("uploadMentorArt", () => {
     );
   });
 
+  it("derives the storage key/content-type from sniffed bytes, not any client-supplied label", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow());
+    mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/art.webp" }));
+
+    await uploadMentorArt(ACTOR, "mentor_1", { body: WEBP_BYTES }, META);
+
+    expect(mockUploadObject).toHaveBeenCalledWith(
+      "mentors/mentor_1/art.webp",
+      WEBP_BYTES,
+      "image/webp",
+    );
+  });
+
+  it("rejects a file whose bytes aren't a real PNG/JPEG/WebP - e.g. an SVG renamed to look like one", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow());
+    const svgDisguisedAsImage = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+      "utf8",
+    );
+
+    await expect(
+      uploadMentorArt(ACTOR, "mentor_1", { body: svgDisguisedAsImage }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+    expect(mockSetMentorArtKey).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file over the 2MB cap even if the bytes are a real PNG", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow());
+    const oversized = Buffer.concat([PNG_BYTES, Buffer.alloc(2 * 1024 * 1024)]);
+
+    await expect(
+      uploadMentorArt(ACTOR, "mentor_1", { body: oversized }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
   it("throws NOT_FOUND for an unknown mentor", async () => {
     mockGetMentorById.mockResolvedValueOnce(null);
 
     await expect(
-      uploadMentorArt(ACTOR, "nope", { body: Buffer.from("x"), contentType: "image/png" }, META),
+      uploadMentorArt(ACTOR, "nope", { body: PNG_BYTES }, META),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockUploadObject).not.toHaveBeenCalled();
   });

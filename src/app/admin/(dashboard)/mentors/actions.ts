@@ -75,9 +75,11 @@ export async function unpublishMentorAction(input: unknown): Promise<ActionResul
   });
 }
 
-const MAX_ART_BYTES = 2 * 1024 * 1024;
-const ALLOWED_ART_TYPES = new Set(["image/png", "image/jpeg"]);
-
+// No Content-Type/extension/size check here on purpose - a client-supplied
+// File.type or filename is not evidence of anything (a Server Action can be
+// called directly, not just through this form). The only real check is
+// uploadMentorArt's byte-level format sniff and size cap (src/lib/image.ts),
+// which this delegates to unconditionally.
 export async function uploadMentorArtAction(formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
     const actor = await requireStaff("mentor.manage");
@@ -86,14 +88,8 @@ export async function uploadMentorArtAction(formData: FormData): Promise<ActionR
     if (!(file instanceof File)) {
       throw new AppError("VALIDATION_FAILED", "No file provided");
     }
-    if (!ALLOWED_ART_TYPES.has(file.type)) {
-      throw new AppError("VALIDATION_FAILED", "Art must be a PNG or JPEG image");
-    }
-    if (file.size > MAX_ART_BYTES) {
-      throw new AppError("VALIDATION_FAILED", "Art must be 2MB or smaller");
-    }
     const body = Buffer.from(await file.arrayBuffer());
-    await uploadMentorArt(actor, id, { body, contentType: file.type }, requestMeta(await headers()));
+    await uploadMentorArt(actor, id, { body }, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
   });
 }

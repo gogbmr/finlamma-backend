@@ -2,6 +2,7 @@ import { logActivity } from "@/lib/activity-log";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import {
   getMentorById,
@@ -143,15 +144,31 @@ export async function updateMentorDraft(
 export async function uploadMentorArt(
   actor: { id: string },
   id: string,
-  file: { body: Buffer; contentType: string },
+  file: { body: Buffer },
   meta: RequestMeta,
 ) {
   const mentor = await getMentorById(id);
   if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
 
-  const extension = file.contentType === "image/png" ? "png" : "jpg";
-  const artKey = `mentors/${id}/art.${extension}`;
-  await uploadObject(artKey, file.body, file.contentType);
+  if (file.body.byteLength > MAX_IMAGE_BYTES) {
+    throw new AppError("VALIDATION_FAILED", "Art must be 2MB or smaller");
+  }
+
+  // Never trusts a client-supplied Content-Type or filename extension for
+  // either the allowlist check or the S3 key/content-type we actually
+  // store - both are sniffed from the real bytes. This is what makes an
+  // SVG (which can carry a <script> payload) impossible to upload here no
+  // matter what header or filename accompanies it - see src/lib/image.ts.
+  const detectedType = sniffImageType(file.body);
+  if (!detectedType) {
+    throw new AppError("VALIDATION_FAILED", "Art must be a valid PNG, JPEG or WebP image");
+  }
+
+  // Server-generated key, never the client's filename - id + detected
+  // extension only, so nothing about the uploaded filename ever reaches
+  // storage.
+  const artKey = `mentors/${id}/art.${imageExtension(detectedType)}`;
+  await uploadObject(artKey, file.body, imageContentType(detectedType));
   const updated = await setMentorArtKey(id, artKey);
   if (!updated) throw new AppError("NOT_FOUND", "Mentor not found");
 

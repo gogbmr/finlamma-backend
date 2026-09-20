@@ -330,7 +330,7 @@ function MentorForm({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg"
+            accept="image/png,image/jpeg,image/webp"
             disabled={isPending}
             onChange={(e) => {
               const file = e.target.files?.[0];

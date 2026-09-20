@@ -154,10 +154,9 @@ describe("happy paths", () => {
     });
   });
 
-  it("uploadMentorArtAction rejects a non-image content type", async () => {
+  it("uploadMentorArtAction rejects when no file is provided, without calling the service", async () => {
     const formData = new FormData();
     formData.set("id", MENTOR_ID);
-    formData.set("file", new File([new Uint8Array([1])], "art.gif", { type: "image/gif" }));
 
     const result = await uploadMentorArtAction(formData);
 
@@ -165,11 +164,20 @@ describe("happy paths", () => {
     expect(mockUploadMentorArt).not.toHaveBeenCalled();
   });
 
-  it("uploadMentorArtAction uploads a valid PNG", async () => {
+  // Format/size validation is deliberately NOT re-tested here - actions.ts
+  // no longer trusts (or even reads) the client's declared Content-Type, it
+  // just reads the raw bytes and delegates entirely to uploadMentorArt,
+  // whose byte-sniffing rejection is covered in src/server/mentors/service.test.ts
+  // and src/lib/image.test.ts. This test only proves the bytes make it
+  // through untouched, regardless of what File.type the client claims.
+  it("uploadMentorArtAction reads the raw file bytes and passes them to the service, ignoring the client's declared type", async () => {
     mockUploadMentorArt.mockResolvedValueOnce({ id: MENTOR_ID, artKey: `mentors/${MENTOR_ID}/art.png` });
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
     const formData = new FormData();
     formData.set("id", MENTOR_ID);
-    formData.set("file", new File([new Uint8Array([1, 2, 3])], "art.png", { type: "image/png" }));
+    // Deliberately mislabeled - a spoofed Content-Type must not change
+    // what's forwarded to the service.
+    formData.set("file", new File([bytes], "art.gif", { type: "image/gif" }));
 
     const result = await uploadMentorArtAction(formData);
 
@@ -177,7 +185,7 @@ describe("happy paths", () => {
     expect(mockUploadMentorArt).toHaveBeenCalledWith(
       ACTOR,
       MENTOR_ID,
-      expect.objectContaining({ contentType: "image/png" }),
+      { body: Buffer.from(bytes) },
       expect.any(Object),
     );
   });

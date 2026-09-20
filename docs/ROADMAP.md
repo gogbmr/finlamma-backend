@@ -155,6 +155,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
+      questions, emails, consent pages) — the seed/draft copy written during development (e.g.
+      `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
+      reviewed by a native speaker.
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
 - [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps
