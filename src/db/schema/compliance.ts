@@ -166,5 +166,14 @@ export const consentRecords = pgTable(
   (t) => [
     uniqueIndex("consent_records_user_id_idx").on(t.userId),
     index("consent_records_parent_contact_id_idx").on(t.parentContactId),
+    // Every public, unauthenticated confirm/decline/withdraw request looks
+    // up a row by one of these two hashes - a security audit found neither
+    // was indexed, so any request (including an invalid/guessed token) was
+    // a full sequential scan, a free amplification vector as the table
+    // grows. Unique also documents the "these must never collide"
+    // invariant (Postgres allows multiple NULLs in a unique index, so this
+    // is fine for withdraw_token_hash before a record is ever consented).
+    uniqueIndex("consent_records_token_hash_idx").on(t.tokenHash),
+    uniqueIndex("consent_records_withdraw_token_hash_idx").on(t.withdrawTokenHash),
   ],
 ).enableRLS();

@@ -619,6 +619,25 @@ describe("withdrawParentConsent", () => {
       expect.objectContaining({ action: "consent.withdrawn", targetId: "u1" }),
     );
   });
+
+  it("reports alreadyWithdrawn:true (not an error) when a concurrent request wins the withdraw race", async () => {
+    // record still reads as 'consented' here, but withdrawConsentRecord's
+    // atomic WHERE clause loses to a concurrent request that withdrew it
+    // first - a security audit found this used to throw CONFLICT, breaking
+    // the "withdrawal is idempotent" promise documented above.
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "consented",
+    });
+    mockWithdrawConsentRecord.mockResolvedValueOnce(null);
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await withdrawParentConsent("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyWithdrawn: true });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
 });
 
 describe("getConsentReviewList / revealParentContact", () => {

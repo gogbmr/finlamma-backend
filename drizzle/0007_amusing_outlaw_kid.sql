@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "consent_records_token_hash_idx" ON "consent_records" USING btree ("token_hash");--> statement-breakpoint
+CREATE UNIQUE INDEX "consent_records_withdraw_token_hash_idx" ON "consent_records" USING btree ("withdraw_token_hash");

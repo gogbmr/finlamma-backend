@@ -428,7 +428,14 @@ export async function withdrawParentConsent(token: string, meta: RequestMeta) {
     actorUserAgent: meta.userAgent,
   });
   if (!updated) {
-    throw new AppError("CONFLICT", "There's no active consent to withdraw for this request");
+    // A security audit found this previously threw CONFLICT here, which
+    // broke the "idempotent" promise above: since record.status was just
+    // confirmed 'consented' a moment ago, the only way the atomic update
+    // can still miss is a concurrent withdraw request winning the race in
+    // between - i.e. exactly the already-withdrawn case, not a real
+    // conflict. Report it the same way.
+    const childFirstName = await getUserFirstName(record.userId);
+    return { childFirstName: childFirstName ?? "your child", alreadyWithdrawn: true };
   }
 
   await logActivity({
