@@ -36,13 +36,20 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
       publish, re-acceptance on new versions) for Terms/Privacy/Risk-disclosure, with an admin
       legal-document editor. School/institution accounts are v2, not in v1's legal text.
-- [ ] `parent_contacts` + `consent_records` for under-18 users. **v1 parent verification is by
-      email only** (a verification link or a code sent to the parent's email) — no SMS. SMS OTP
-      for parents needs an Indian SMS provider + DLT template registration, so it's deferred (see
-      Pre-launch checklist).
-- [ ] Limited feature access for a minor's account until consent completes
-- [ ] Admin: consent/legal-acceptance review view (staff can see status, not bypass it)
-- See `docs/PRODUCT_SPEC.md` §7 for the exact flow and feature limits.
+- [ ] `parent_contacts` + `consent_records` for under-18 users. **v1 parent verification is
+      email-link only** (no code — a code is trivially self-verifiable by a child with a second
+      email — and no SMS). The magic link opens a public consent page (GET never records
+      anything; separate "I consent" / "I do not consent" POSTs do); tokens are single-use,
+      hashed, valid 7 days, rate-limited to resend. Every email to a verified parent also carries
+      a withdraw-consent link (same GET-page/POST-action pattern). The minor also taps "I accept"
+      once in-app after parent consent — both are recorded. SMS OTP for parents needs an Indian
+      SMS provider + DLT template registration, so it's deferred (see Pre-launch checklist).
+- [ ] Limited feature access (onboarding, Settings, legal pages only) for an account with no DOB
+      yet or an unresolved minor consent — `requireFullAccess(user)`, which every XP/VM/trading/
+      social endpoint from Phase 2b onward must call
+- [ ] Admin: consent/legal-acceptance review view (`consent.view`, `user_manager`, read-only;
+      every staff view of a parent's contact details is logged)
+- See `docs/PRODUCT_SPEC.md`'s Onboarding & parental consent section for the exact flow.
 
 ## Phase 2b — Learning content
 - [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
