@@ -60,11 +60,21 @@ export function isMinor(dateOfBirth: string): boolean {
   return age < 18;
 }
 
-// Sends via Resend, except in a non-production environment with no
+// Sends via Resend, except outside the real production deployment with no
 // verified Resend domain configured yet - there, it logs the link to the
 // server console instead of throwing, so the consent flow stays testable
-// locally/in preview before Resend is set up. Production always sends for
-// real (or fails closed) - never silently skips a legally-required email.
+// locally and on a Vercel preview before Resend is set up. Production
+// always sends for real (or fails closed) - never silently skips a
+// legally-required email.
+//
+// Deliberately checks VERCEL_ENV, not NODE_ENV: `next build` always sets
+// NODE_ENV=production, on a Vercel preview deployment too, so gating on
+// NODE_ENV alone would make this fallback unreachable on preview - exactly
+// where it's needed to test this flow before Resend is set up.
+function isRealProductionDeployment(): boolean {
+  return env.VERCEL_ENV ? env.VERCEL_ENV === "production" : env.NODE_ENV === "production";
+}
+
 async function sendConsentEmailOrLog(params: {
   to: string;
   subject: string;
@@ -73,7 +83,7 @@ async function sendConsentEmailOrLog(params: {
   devLogDetail: string;
 }) {
   const emailConfigured = Boolean(env.RESEND_API_KEY && env.EMAIL_FROM);
-  if (!emailConfigured && env.NODE_ENV !== "production") {
+  if (!emailConfigured && !isRealProductionDeployment()) {
     console.log(`[dev] Email not configured - ${params.devLogLabel}: ${params.devLogDetail}`);
     return;
   }

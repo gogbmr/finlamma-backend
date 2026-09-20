@@ -7,6 +7,14 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
+  // Vercel sets this automatically on every deployment - unlike NODE_ENV
+  // (which `next build` always sets to "production", preview deployments
+  // included), this is the actual signal for "is this the real production
+  // deployment". Absent outside Vercel (local dev, tests). See
+  // src/server/onboarding/service.ts's sendConsentEmailOrLog for why this
+  // distinction matters: a preview deployment must still be able to fall
+  // back to console-logging an email link when Resend isn't configured.
+  VERCEL_ENV: z.enum(["production", "preview", "development"]).optional(),
   APP_URL: z.string().url(),
 
   // Supabase Postgres: pooled connection for the app at runtime, direct

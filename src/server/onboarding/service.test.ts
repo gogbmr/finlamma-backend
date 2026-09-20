@@ -5,6 +5,7 @@ const mockEnv = vi.hoisted(() => ({
   RESEND_API_KEY: undefined as string | undefined,
   EMAIL_FROM: undefined as string | undefined,
   NODE_ENV: "test" as string,
+  VERCEL_ENV: undefined as "production" | "preview" | "development" | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -74,6 +75,7 @@ beforeEach(() => {
   mockEnv.RESEND_API_KEY = undefined;
   mockEnv.EMAIL_FROM = undefined;
   mockEnv.NODE_ENV = "test";
+  mockEnv.VERCEL_ENV = undefined;
   mockGetSettingNumber.mockImplementation((_key, fallback) => Promise.resolve(fallback));
 });
 
@@ -207,6 +209,49 @@ describe("requestParentConsent", () => {
     expect(mockCountChildrenForParentEmail).toHaveBeenCalledWith("priya@example.com");
     expect(mockSumRequestsTodayForParentEmail).toHaveBeenCalledWith("priya@example.com", expect.any(String));
     expect(mockUpsertParentContact).toHaveBeenCalledWith("u1", "Priya", "priya@example.com");
+  });
+
+  it("falls back to console-logging the link on a Vercel preview deployment, even though NODE_ENV is 'production' there", async () => {
+    // next build always sets NODE_ENV=production, preview deployments
+    // included - VERCEL_ENV is the actual signal this must key off, or the
+    // preview fallback (needed to test this flow before Resend is set up)
+    // would never trigger. See sendConsentEmailOrLog in service.ts.
+    mockEnv.NODE_ENV = "production";
+    mockEnv.VERCEL_ENV = "preview";
+    mockGetConsentRecord.mockResolvedValueOnce(null);
+    mockGetParentContact.mockResolvedValueOnce(null);
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(5);
+    mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
+    mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
+    mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({ ok: true, record: {} });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await requestParentConsent(MINOR, INPUT, META);
+
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("parent consent link"));
+    consoleSpy.mockRestore();
+  });
+
+  it("always attempts a real send on the real production deployment, even if NODE_ENV somehow isn't 'production' and Resend isn't configured (never silently falls back there)", async () => {
+    mockEnv.NODE_ENV = "development";
+    mockEnv.VERCEL_ENV = "production";
+    mockGetConsentRecord.mockResolvedValueOnce(null);
+    mockGetParentContact.mockResolvedValueOnce(null);
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(5);
+    mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
+    mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
+    mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({ ok: true, record: {} });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    mockSendEmail.mockResolvedValueOnce(undefined);
+
+    await requestParentConsent(MINOR, INPUT, META);
+
+    expect(mockSendEmail).toHaveBeenCalledWith(expect.objectContaining({ to: "priya@example.com" }));
+    expect(consoleSpy).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it("throws PARENT_EMAIL_LIMIT_REACHED when the parent email already backs the max number of children", async () => {
