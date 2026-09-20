@@ -85,7 +85,9 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   never computed from the viewing user's own balance), `reward_claims`
 - `mentors` (order, name, bio jsonb {en,hi,hx}, world_range, art_key) — admin-editable content
   type (not hardcoded in the app)
-- `settings_kv` (e.g. `vm_issuance_multiplier` default 1.0, `trade_unlock_world_order` default 4
+- `settings_kv` (generic key/value store, introduced in Phase 2a for
+  `parent_email_max_children` default 5 and `consent_resend_daily_cap` — see Compliance above;
+  e.g. `vm_issuance_multiplier` default 1.0, `trade_unlock_world_order` default 4
   — see Trading below; scoring constants `speed_bonus_threshold_pct` = 45,
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
   `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values)

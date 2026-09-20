@@ -1,4 +1,4 @@
-import { pgEnum, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { date, pgEnum, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 import { idAndTimestamps } from "./_helpers";
 
 export const languageEnum = pgEnum("language", ["en", "hi", "hx"]);
@@ -18,6 +18,13 @@ export const users = pgTable("users", {
   lastInitial: varchar("last_initial", { length: 1 }),
   email: text("email").unique(),
   phone: text("phone").unique(),
+  // Collected once at onboarding; drives the under-18 parental-consent gate
+  // (see src/server/compliance). Set-once from the app - the service layer
+  // rejects a second self-service PATCH once this is non-null. Only staff
+  // can correct it afterwards, with a required reason, logged via
+  // activity_logs (see docs/PRODUCT_SPEC.md's Onboarding & parental consent
+  // section).
+  dateOfBirth: date("date_of_birth"),
   language: languageEnum("language").default("hx").notNull(),
   theme: themeEnum("theme").default("dark").notNull(),
   // Clerk's own updated_at for the last change we applied, so the Clerk

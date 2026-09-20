@@ -179,6 +179,7 @@ const USER_ROW = {
   lastInitial: "B",
   email: "chirag@example.com",
   phone: null,
+  dateOfBirth: null,
   language: "en" as const,
   theme: "dark" as const,
   clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
