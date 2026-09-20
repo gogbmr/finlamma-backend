@@ -22,6 +22,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/legal/{type}` — Get a published legal document
 - `GET /api/v1/me/legal-status` — Get my legal-document acceptance status
 - `POST /api/v1/me/legal/accept` — Accept the currently published legal documents
+- `POST /api/v1/me/legal/reapproval/resend` — Resend pending parent re-approval email(s)
 
 **Onboarding**
 
@@ -56,6 +57,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "clerkKeys": "ok",
     "legalDocuments": "ok",
     "version": "2d303f6",
+    "consentPiiHmacKey": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
@@ -302,10 +304,13 @@ Whether the signed-in user has accepted the currently published Terms/Privacy/Ri
         "type": "terms",
         "currentVersion": 1,
         "accepted": true,
-        "acceptedAt": "2026-01-01T00:00:00.000Z"
+        "acceptedAt": "2026-01-01T00:00:00.000Z",
+        "requiresParentReapproval": false,
+        "parentApproved": true
       }
     ],
-    "allAccepted": true
+    "allAccepted": true,
+    "allParentApproved": true
   }
 }
 ```
@@ -353,6 +358,65 @@ Records the signed-in user's own acceptance of every currently published Terms/P
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/legal/reapproval/resend`
+
+**Resend pending parent re-approval email(s)**
+
+For a minor whose parent already consented once, but a later material legal-document change now needs a fresh parent re-approval (see requiresParentReapproval on GET /api/v1/me/legal-status): resends the re-approval email(s), each with a fresh 7-day single-use link and a rotated withdraw link. Subject to the same 60s cooldown and daily cap as the original consent-request resend flow.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Re-approval email(s) resent
+
+```json
+{
+  "data": {
+    "resent": 1
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **409** — There's no pending re-approval for this account
+
+```json
+{
+  "error": {
+    "code": "CONSENT_NOT_NEEDED",
+    "message": "There's no pending re-approval for this account"
+  }
+}
+```
+
+- **429** — Resend cooldown or daily cap reached
+
+```json
+{
+  "error": {
+    "code": "RESEND_TOO_SOON",
+    "message": "Please wait a bit before requesting another email",
+    "details": {
+      "retryAfterSeconds": 42
+    }
   }
 }
 ```

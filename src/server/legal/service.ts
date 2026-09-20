@@ -32,26 +32,41 @@ export async function getPublicDocument(type: LegalDocumentType) {
   return toPublicDocument(doc);
 }
 
+// `requiresParentReapproval`/`parentApproved` let requireFullAccess
+// (src/server/onboarding/service.ts) enforce the reapproval flow without
+// its own legal_acceptances queries. A document that never required
+// reapproval (the overwhelming common case) always reports
+// `parentApproved: true` - only a document staff explicitly published with
+// `requires_parent_reapproval = true` can ever make this false, and only
+// until a fresh `accepted_by: 'parent'` row exists for its current version.
 export async function getLegalStatus(user: { id: string }) {
   const published = await listPublishedDocuments();
-  const acceptances = await getAcceptances(
-    user.id,
-    published.map((d) => d.id),
-    "self",
-  );
-  const acceptanceByDocId = new Map(acceptances.map((a) => [a.legalDocumentId, a]));
+  const docIds = published.map((d) => d.id);
+  const [selfAcceptances, parentAcceptances] = await Promise.all([
+    getAcceptances(user.id, docIds, "self"),
+    getAcceptances(user.id, docIds, "parent"),
+  ]);
+  const selfByDocId = new Map(selfAcceptances.map((a) => [a.legalDocumentId, a]));
+  const parentByDocId = new Map(parentAcceptances.map((a) => [a.legalDocumentId, a]));
 
   const documents = published.map((doc) => {
-    const acceptance = acceptanceByDocId.get(doc.id);
+    const selfAcceptance = selfByDocId.get(doc.id);
+    const parentAcceptance = parentByDocId.get(doc.id);
     return {
       type: doc.type,
       currentVersion: doc.version,
-      accepted: Boolean(acceptance),
-      acceptedAt: acceptance?.acceptedAt.toISOString() ?? null,
+      accepted: Boolean(selfAcceptance),
+      acceptedAt: selfAcceptance?.acceptedAt.toISOString() ?? null,
+      requiresParentReapproval: doc.requiresParentReapproval,
+      parentApproved: !doc.requiresParentReapproval || Boolean(parentAcceptance),
     };
   });
 
-  return { documents, allAccepted: documents.every((d) => d.accepted) };
+  return {
+    documents,
+    allAccepted: documents.every((d) => d.accepted),
+    allParentApproved: documents.every((d) => d.parentApproved),
+  };
 }
 
 // Records the caller's own acceptance of every currently published document
@@ -128,9 +143,10 @@ export async function upsertLegalDraft(
 export async function publishLegalDocument(
   actor: { id: string },
   type: LegalDocumentType,
+  requiresParentReapproval: boolean,
   meta: RequestMeta,
 ) {
-  const published = await publishDraft(type, actor.id);
+  const published = await publishDraft(type, actor.id, requiresParentReapproval);
   if (!published) throw new AppError("NOT_FOUND", `No draft ${type} document to publish`);
 
   await logActivity({
@@ -139,7 +155,11 @@ export async function publishLegalDocument(
     action: "legal.published",
     targetType: "legal_document",
     targetId: published.id,
-    metadata: { type, version: published.version },
+    metadata: {
+      type,
+      version: published.version,
+      requiresParentReapproval: published.requiresParentReapproval,
+    },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });

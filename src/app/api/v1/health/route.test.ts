@@ -17,6 +17,7 @@ const mockEnv = vi.hoisted(() => ({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
   VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
+  CONSENT_PII_HMAC_KEY: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -39,6 +40,7 @@ beforeEach(() => {
   mockEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = clerkKey(STAFF_HOST);
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
   mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
+  mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
   // All three types published, none placeholder - existing tests below
   // don't need to know about the legalDocuments warning field at all.
   mockListPublishedDocuments.mockReset().mockResolvedValue([
@@ -73,6 +75,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.clerkKeys).toBe("ok");
     expect(body.data.legalDocuments).toBe("ok");
     expect(body.data.version).toBe("local");
+    expect(body.data.consentPiiHmacKey).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
   });
 
@@ -200,5 +203,15 @@ describe("GET /api/v1/health", () => {
     const res = await GET();
 
     expect((await res.json()).data.version).toBe("local");
+  });
+
+  it("reports consentPiiHmacKey: 'missing' (not a 503) when CONSENT_PII_HMAC_KEY isn't configured", async () => {
+    mockEnv.CONSENT_PII_HMAC_KEY = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.consentPiiHmacKey).toBe("missing");
   });
 });

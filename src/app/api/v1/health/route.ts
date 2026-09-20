@@ -47,6 +47,14 @@ const HealthDataSchema = z.object({
       "so confirming what's actually live doesn't require the Vercel dashboard. 'local' outside " +
       "Vercel (local dev, tests).",
   }),
+  consentPiiHmacKey: z.enum(["ok", "missing"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't " +
+      "configured, so account deletion still scrubs a minor's parent-contact PII but can't " +
+      "store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's " +
+      "scrubConsentDataForDeletedUser.",
+  }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
 
@@ -218,6 +226,7 @@ export const GET = withErrors(async () => {
     clerkKeys,
     legalDocuments,
     version: currentVersion(),
+    consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     timestamp: new Date().toISOString(),
   });
 });

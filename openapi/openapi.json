@@ -97,6 +97,15 @@
                 "example": "2d303f6",
                 "description": "The deployed commit's short SHA (Vercel's VERCEL_GIT_COMMIT_SHA, first 7 characters), so confirming what's actually live doesn't require the Vercel dashboard. 'local' outside Vercel (local dev, tests)."
               },
+              "consentPiiHmacKey": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "missing"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -110,6 +119,7 @@
               "clerkKeys",
               "legalDocuments",
               "version",
+              "consentPiiHmacKey",
               "timestamp"
             ]
           }
@@ -348,24 +358,41 @@
                     "null"
                   ],
                   "format": "date-time"
+                },
+                "requiresParentReapproval": {
+                  "type": "boolean",
+                  "example": false,
+                  "description": "True if this version was published with a material change that requires a minor's parent to re-approve it, even if the parent already consented to an earlier version."
+                },
+                "parentApproved": {
+                  "type": "boolean",
+                  "example": true,
+                  "description": "True if this document doesn't require parent re-approval, or a parent has already approved this specific version. Only relevant for a minor's account."
                 }
               },
               "required": [
                 "type",
                 "currentVersion",
                 "accepted",
-                "acceptedAt"
+                "acceptedAt",
+                "requiresParentReapproval",
+                "parentApproved"
               ]
             }
           },
           "allAccepted": {
             "type": "boolean",
             "description": "True once every currently published document has been self-accepted."
+          },
+          "allParentApproved": {
+            "type": "boolean",
+            "description": "True once every currently published document that requires parent re-approval has been re-approved. Always true for an adult's account."
           }
         },
         "required": [
           "documents",
-          "allAccepted"
+          "allAccepted",
+          "allParentApproved"
         ]
       },
       "LegalStatusResponse": {
@@ -499,6 +526,27 @@
             "required": [
               "status",
               "parentEmail"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ResendLegalReapprovalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "resent": {
+                "type": "integer",
+                "example": 1,
+                "description": "How many pending re-approval emails were actually resent just now."
+              }
+            },
+            "required": [
+              "resent"
             ]
           }
         },
@@ -1021,6 +1069,83 @@
                   "error": {
                     "code": "CONSENT_NOT_NEEDED",
                     "message": "Set your date of birth first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Resend cooldown or daily cap reached",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RESEND_TOO_SOON",
+                    "message": "Please wait a bit before requesting another email",
+                    "details": {
+                      "retryAfterSeconds": 42
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal/reapproval/resend": {
+      "post": {
+        "summary": "Resend pending parent re-approval email(s)",
+        "description": "For a minor whose parent already consented once, but a later material legal-document change now needs a fresh parent re-approval (see requiresParentReapproval on GET /api/v1/me/legal-status): resends the re-approval email(s), each with a fresh 7-day single-use link and a rotated withdraw link. Subject to the same 60s cooldown and daily cap as the original consent-request resend flow.",
+        "tags": [
+          "Legal"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Re-approval email(s) resent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResendLegalReapprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "There's no pending re-approval for this account",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONSENT_NOT_NEEDED",
+                    "message": "There's no pending re-approval for this account"
                   }
                 },
                 "schema": {

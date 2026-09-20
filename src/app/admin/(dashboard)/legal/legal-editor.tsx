@@ -61,11 +61,18 @@ export function LegalEditor({ documents }: { documents: DocumentState[] }) {
   );
 }
 
+// A staff member must explicitly pick one before Publish is enabled - no
+// default, since silently defaulting either way would either skip a needed
+// re-approval or needlessly limit-access every minor on a trivial wording
+// fix (see the plan's condition #1).
+type ReapprovalChoice = "yes" | "no";
+
 function DocumentEditor({ document }: { document: DocumentState }) {
   const [isPending, startTransition] = useTransition();
   const [content, setContent] = useState<LegalDocumentContent>(
     document.draft?.content ?? document.published?.content ?? { en: "", hi: "", hx: "" },
   );
+  const [reapprovalChoice, setReapprovalChoice] = useState<ReapprovalChoice | null>(null);
 
   function save() {
     startTransition(async () => {
@@ -79,13 +86,22 @@ function DocumentEditor({ document }: { document: DocumentState }) {
   }
 
   function publish() {
+    if (!reapprovalChoice) return;
     startTransition(async () => {
-      const result = await publishLegalDocumentAction({ type: document.type });
+      const result = await publishLegalDocumentAction({
+        type: document.type,
+        requiresParentReapproval: reapprovalChoice === "yes",
+      });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
-      toast.success("Published - everyone will be prompted to re-accept.");
+      setReapprovalChoice(null);
+      toast.success(
+        reapprovalChoice === "yes"
+          ? "Published - every affected minor's parent will be emailed to re-approve."
+          : "Published - everyone will be prompted to re-accept.",
+      );
     });
   }
 
@@ -123,11 +139,43 @@ function DocumentEditor({ document }: { document: DocumentState }) {
         </div>
       ))}
 
+      {document.draft && (
+        <div className="space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+          <p className="text-sm font-medium text-neutral-800">
+            Does this change require every already-consented minor&apos;s parent to re-approve?
+          </p>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant={reapprovalChoice === "yes" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setReapprovalChoice("yes")}
+            >
+              Yes, material change
+            </Button>
+            <Button
+              type="button"
+              variant={reapprovalChoice === "no" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setReapprovalChoice("no")}
+            >
+              No, minor/wording only
+            </Button>
+          </div>
+          {reapprovalChoice === "yes" && (
+            <p className="rounded bg-red-100 px-2 py-1.5 text-xs text-red-800">
+              Every minor whose parent already consented will lose full access until their parent
+              re-approves this version. They&apos;ll each get an email with a fresh 7-day link.
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-2">
         <Button type="button" variant="outline" onClick={save} disabled={isPending}>
           Save draft
         </Button>
-        <Button type="button" onClick={publish} disabled={isPending || !document.draft}>
+        <Button type="button" onClick={publish} disabled={isPending || !document.draft || !reapprovalChoice}>
           Publish
         </Button>
       </div>

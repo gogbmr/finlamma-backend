@@ -64,6 +64,13 @@
       "when": 1789898293293,
       "tag": "0008_lyrical_giant_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789899363092,
+      "tag": "0009_glamorous_wind_dancer",
+      "breakpoints": true
     }
   ]
 }

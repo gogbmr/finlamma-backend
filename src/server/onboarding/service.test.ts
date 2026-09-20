@@ -28,6 +28,15 @@ const mockGetUserFirstName = vi.fn();
 const mockIsUserDeleted = vi.fn();
 const mockAnonymizeParentContact = vi.fn();
 const mockSetConsentRecordParentEmailHmac = vi.fn();
+const mockListCandidatesForReapproval = vi.fn();
+const mockClaimReapprovalRequestSlot = vi.fn();
+const mockGetReapprovalRequestByTokenHash = vi.fn();
+const mockListPendingReapprovalRequestsForUser = vi.fn();
+const mockMarkReapprovalApproved = vi.fn();
+const mockMarkReapprovalDeclined = vi.fn();
+const mockRefuseConsentedRecord = vi.fn();
+const mockSetConsentRecordWithdrawTokenHash = vi.fn();
+const mockMergeConsentRecordLegalVersion = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
   getParentContact: (id: unknown) => mockGetParentContact(id),
@@ -51,6 +60,19 @@ vi.mock("./repo", () => ({
   anonymizeParentContact: (id: unknown) => mockAnonymizeParentContact(id),
   setConsentRecordParentEmailHmac: (userId: unknown, hmac: unknown) =>
     mockSetConsentRecordParentEmailHmac(userId, hmac),
+  listCandidatesForReapproval: (legalDocumentId: unknown) =>
+    mockListCandidatesForReapproval(legalDocumentId),
+  claimReapprovalRequestSlot: (input: unknown) => mockClaimReapprovalRequestSlot(input),
+  getReapprovalRequestByTokenHash: (hash: unknown) => mockGetReapprovalRequestByTokenHash(hash),
+  listPendingReapprovalRequestsForUser: (userId: unknown) =>
+    mockListPendingReapprovalRequestsForUser(userId),
+  markReapprovalApproved: (id: unknown, meta: unknown) => mockMarkReapprovalApproved(id, meta),
+  markReapprovalDeclined: (id: unknown, meta: unknown) => mockMarkReapprovalDeclined(id, meta),
+  refuseConsentedRecord: (id: unknown, meta: unknown) => mockRefuseConsentedRecord(id, meta),
+  setConsentRecordWithdrawTokenHash: (userId: unknown, hash: unknown) =>
+    mockSetConsentRecordWithdrawTokenHash(userId, hash),
+  mergeConsentRecordLegalVersion: (userId: unknown, type: unknown, version: unknown) =>
+    mockMergeConsentRecordLegalVersion(userId, type, version),
 }));
 
 const mockLogActivity = vi.fn();
@@ -69,8 +91,13 @@ vi.mock("@/lib/settings", () => ({
 }));
 
 const mockListPublishedDocuments = vi.fn();
+const mockGetLegalDocumentById = vi.fn();
+const mockInsertAcceptance = vi.fn();
 vi.mock("@/server/legal/repo", () => ({
   listPublishedDocuments: () => mockListPublishedDocuments(),
+  getLegalDocumentById: (id: unknown) => mockGetLegalDocumentById(id),
+  insertAcceptance: (userId: unknown, docId: unknown, by: unknown) =>
+    mockInsertAcceptance(userId, docId, by),
 }));
 
 const mockGetLegalStatus = vi.fn();
@@ -79,14 +106,19 @@ vi.mock("@/server/legal/service", () => ({
 }));
 
 import {
+  approveReapproval,
   confirmParentConsent,
   declineParentConsent,
+  declineReapproval,
   getConsentRequestView,
   getConsentReviewList,
+  getReapprovalRequestView,
   getWithdrawRequestView,
   isMinor,
+  notifyAffectedMinorsForReapproval,
   requestParentConsent,
   requireFullAccess,
+  resendReapprovalRequests,
   revealParentContact,
   scrubConsentDataForDeletedUser,
   setDateOfBirth,
@@ -581,8 +613,21 @@ describe("requireFullAccess", () => {
 
   it("passes for a consented minor who has accepted everything", async () => {
     mockGetConsentRecord.mockResolvedValueOnce({ status: "consented" });
-    mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true });
+    mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true, allParentApproved: true });
     await expect(requireFullAccess(MINOR)).resolves.toBeUndefined();
+  });
+
+  it("throws PARENT_REAPPROVAL_REQUIRED for a consented minor whose parent hasn't approved a changed document", async () => {
+    mockGetConsentRecord.mockResolvedValueOnce({ status: "consented" });
+    mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true, allParentApproved: false });
+    await expect(requireFullAccess(MINOR)).rejects.toMatchObject({
+      code: "PARENT_REAPPROVAL_REQUIRED",
+    });
+  });
+
+  it("doesn't require parent re-approval for an adult, even if allParentApproved were false", async () => {
+    mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true, allParentApproved: false });
+    await expect(requireFullAccess(ADULT)).resolves.toBeUndefined();
   });
 });
 
@@ -884,5 +929,302 @@ describe("scrubConsentDataForDeletedUser", () => {
       expect.objectContaining({ metadata: { parentContactAnonymized: true, hmacStored: false } }),
     );
     consoleErrorSpy.mockRestore();
+  });
+});
+
+const REAPPROVAL_DOC = {
+  id: "doc_2",
+  type: "terms" as const,
+  version: 2,
+  content: { en: "en v2", hi: "hi v2", hx: "hx v2" },
+};
+
+describe("notifyAffectedMinorsForReapproval", () => {
+  it("throws NOT_FOUND when the legal document doesn't exist", async () => {
+    mockGetLegalDocumentById.mockResolvedValueOnce(null);
+    await expect(notifyAffectedMinorsForReapproval("doc_2", META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("notifies only minor candidates, skipping one who has since turned 18", async () => {
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockListCandidatesForReapproval.mockResolvedValueOnce([
+      {
+        userId: "minor1",
+        dateOfBirth: "2015-01-01",
+        firstName: "Aarav",
+        parentContactId: "pc1",
+        parentEmail: "priya@example.com",
+        parentName: "Priya",
+      },
+      {
+        userId: "adult-now",
+        dateOfBirth: "1990-01-01",
+        firstName: "Rohan",
+        parentContactId: "pc2",
+        parentEmail: "other@example.com",
+        parentName: "Other",
+      },
+    ]);
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockClaimReapprovalRequestSlot.mockResolvedValueOnce({ ok: true, record: { id: "rr1" } });
+
+    const result = await notifyAffectedMinorsForReapproval("doc_2", META);
+
+    expect(result).toEqual({ notified: 1 });
+    expect(mockClaimReapprovalRequestSlot).toHaveBeenCalledTimes(1);
+    expect(mockClaimReapprovalRequestSlot).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "minor1", legalDocumentId: "doc_2", parentContactId: "pc1" }),
+    );
+    expect(mockSetConsentRecordWithdrawTokenHash).toHaveBeenCalledWith("minor1", expect.any(String));
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "legal.reapproval_requested",
+        targetId: "minor1",
+        metadata: { legalDocumentId: "doc_2", type: "terms", version: 2 },
+      }),
+    );
+  });
+
+  it("skips a candidate whose claim unexpectedly fails without aborting the rest of the batch", async () => {
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockListCandidatesForReapproval.mockResolvedValueOnce([
+      {
+        userId: "minor1",
+        dateOfBirth: "2015-01-01",
+        firstName: "Aarav",
+        parentContactId: "pc1",
+        parentEmail: "priya@example.com",
+        parentName: "Priya",
+      },
+      {
+        userId: "minor2",
+        dateOfBirth: "2015-01-01",
+        firstName: "Diya",
+        parentContactId: "pc2",
+        parentEmail: "raj@example.com",
+        parentName: "Raj",
+      },
+    ]);
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockClaimReapprovalRequestSlot
+      .mockResolvedValueOnce({ ok: false, reason: "already_resolved" })
+      .mockResolvedValueOnce({ ok: true, record: { id: "rr2" } });
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await notifyAffectedMinorsForReapproval("doc_2", META);
+
+    expect(result).toEqual({ notified: 1 });
+    expect(mockLogActivity).toHaveBeenCalledTimes(1);
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ targetId: "minor2" }));
+    consoleErrorSpy.mockRestore();
+  });
+});
+
+describe("getReapprovalRequestView", () => {
+  it("returns 'invalid' when no request matches the token", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(null);
+    await expect(getReapprovalRequestView("t")).resolves.toEqual({ state: "invalid" });
+  });
+
+  it("returns 'already_resolved' when the request isn't pending anymore", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce({
+      userId: "u1",
+      status: "approved",
+      usedAt: new Date(),
+      tokenExpiresAt: new Date(Date.now() + 1000),
+      legalDocumentId: "doc_2",
+    });
+    await expect(getReapprovalRequestView("t")).resolves.toEqual({ state: "already_resolved" });
+  });
+
+  it("returns 'already_resolved' for a deleted account, without revealing why", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce({
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000),
+      legalDocumentId: "doc_2",
+    });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+    await expect(getReapprovalRequestView("t")).resolves.toEqual({ state: "already_resolved" });
+  });
+
+  it("returns 'expired' when the token's expiry has passed", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce({
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() - 1000),
+      legalDocumentId: "doc_2",
+    });
+    await expect(getReapprovalRequestView("t")).resolves.toEqual({ state: "expired" });
+  });
+
+  it("returns the document content for a valid, pending, unexpired request", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce({
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000),
+      legalDocumentId: "doc_2",
+    });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+
+    const result = await getReapprovalRequestView("t");
+
+    expect(result).toEqual({
+      state: "valid",
+      childFirstName: "Aarav",
+      documentType: "terms",
+      documentVersion: 2,
+      documentContent: REAPPROVAL_DOC.content,
+    });
+  });
+});
+
+describe("approveReapproval", () => {
+  const PENDING_REQUEST = {
+    id: "rr1",
+    userId: "u1",
+    legalDocumentId: "doc_2",
+    status: "pending",
+    usedAt: null,
+    tokenExpiresAt: new Date(Date.now() + 1000),
+  };
+
+  it("throws NOT_FOUND when no request matches the token", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(null);
+    await expect(approveReapproval("t", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("throws CONFLICT when the request has already been used", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    await expect(approveReapproval("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("throws NOT_FOUND when the token has expired", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce({
+      ...PENDING_REQUEST,
+      tokenExpiresAt: new Date(Date.now() - 1000),
+    });
+    await expect(approveReapproval("t", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("records the parent acceptance, merges the version onto the consent record, and logs it", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockMarkReapprovalApproved.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await approveReapproval("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav" });
+    expect(mockInsertAcceptance).toHaveBeenCalledWith("u1", "doc_2", "parent");
+    expect(mockMergeConsentRecordLegalVersion).toHaveBeenCalledWith("u1", "terms", 2);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "legal.reapproval_approved", targetId: "u1" }),
+    );
+  });
+
+  it("throws CONFLICT when markReapprovalApproved loses a race (already resolved concurrently)", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockMarkReapprovalApproved.mockResolvedValueOnce(null);
+
+    await expect(approveReapproval("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mockInsertAcceptance).not.toHaveBeenCalled();
+  });
+});
+
+describe("declineReapproval", () => {
+  const PENDING_REQUEST = {
+    id: "rr1",
+    userId: "u1",
+    legalDocumentId: "doc_2",
+    status: "pending",
+    usedAt: null,
+    tokenExpiresAt: new Date(Date.now() + 1000),
+  };
+
+  it("throws NOT_FOUND when no request matches the token", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(null);
+    await expect(declineReapproval("t", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("revokes the parent's original consent entirely (refuseConsentedRecord), not just this document version", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockMarkReapprovalDeclined.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "declined" });
+    mockGetConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await declineReapproval("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav" });
+    expect(mockRefuseConsentedRecord).toHaveBeenCalledWith("cr1", expect.any(Object));
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "legal.reapproval_declined", targetId: "u1" }),
+    );
+  });
+
+  it("doesn't touch the consent record if it somehow isn't 'consented' anymore", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockMarkReapprovalDeclined.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "declined" });
+    mockGetConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "withdrawn" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    await declineReapproval("t", META);
+
+    expect(mockRefuseConsentedRecord).not.toHaveBeenCalled();
+  });
+});
+
+describe("resendReapprovalRequests", () => {
+  it("throws CONSENT_NOT_NEEDED when there's nothing pending", async () => {
+    mockListPendingReapprovalRequestsForUser.mockResolvedValueOnce([]);
+    await expect(
+      resendReapprovalRequests({ id: "u1", email: null, firstName: "Aarav", dateOfBirth: "2015-01-01" }, META),
+    ).rejects.toMatchObject({ code: "CONSENT_NOT_NEEDED" });
+  });
+
+  it("resends every pending request and rotates the withdraw token each time", async () => {
+    mockListPendingReapprovalRequestsForUser.mockResolvedValueOnce([
+      { id: "rr1", legalDocumentId: "doc_2" },
+    ]);
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockClaimReapprovalRequestSlot.mockResolvedValueOnce({ ok: true, record: { id: "rr1" } });
+
+    const result = await resendReapprovalRequests(
+      { id: "u1", email: null, firstName: "Aarav", dateOfBirth: "2015-01-01" },
+      META,
+    );
+
+    expect(result).toEqual({ resent: 1 });
+    expect(mockSetConsentRecordWithdrawTokenHash).toHaveBeenCalledWith("u1", expect.any(String));
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "legal.reapproval_resent", actorId: "u1" }),
+    );
+  });
+
+  it("throws RESEND_TOO_SOON when the claim says the cooldown hasn't passed", async () => {
+    mockListPendingReapprovalRequestsForUser.mockResolvedValueOnce([
+      { id: "rr1", legalDocumentId: "doc_2" },
+    ]);
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockClaimReapprovalRequestSlot.mockResolvedValueOnce({
+      ok: false,
+      reason: "too_soon",
+      retryAfterSeconds: 30,
+    });
+
+    await expect(
+      resendReapprovalRequests({ id: "u1", email: null, firstName: "Aarav", dateOfBirth: "2015-01-01" }, META),
+    ).rejects.toMatchObject({ code: "RESEND_TOO_SOON", details: { retryAfterSeconds: 30 } });
   });
 });

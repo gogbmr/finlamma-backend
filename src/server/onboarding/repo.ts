@@ -1,6 +1,12 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { consentRecords, legalAcceptances, parentContacts, users } from "@/db/schema";
+import {
+  consentRecords,
+  legalAcceptances,
+  legalReapprovalRequests,
+  parentContacts,
+  users,
+} from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 
 // Guarded by `where isNull(dateOfBirth)` even though the service layer
@@ -402,4 +408,296 @@ export async function setConsentRecordParentEmailHmac(
   parentEmailHmac: string | null,
 ): Promise<void> {
   await db.update(consentRecords).set({ parentEmailHmac }).where(eq(consentRecords.userId, userId));
+}
+
+// --- Parent re-approval on legal-document changes (src/server/onboarding/
+// service.ts notifyAffectedMinorsForReapproval / approveReapproval /
+// declineReapproval / resendReapprovalRequests) ---
+
+export type ReapprovalCandidate = {
+  userId: string;
+  dateOfBirth: string | null;
+  firstName: string | null;
+  parentContactId: string;
+  parentEmail: string;
+  parentName: string;
+};
+
+// Every non-deleted, already-consented account whose parent hasn't yet
+// approved this specific legal_documents version - the audience for
+// notifyAffectedMinorsForReapproval. isMinor(dateOfBirth) is deliberately
+// filtered by the caller, not here, so a user who has since turned 18
+// correctly falls out of the notification list - same pattern as every
+// other parent/consent check being nested inside isMinor(...) in
+// requireFullAccess.
+export async function listCandidatesForReapproval(
+  legalDocumentId: string,
+): Promise<ReapprovalCandidate[]> {
+  const rows = await db
+    .select({
+      userId: users.id,
+      dateOfBirth: users.dateOfBirth,
+      firstName: users.firstName,
+      parentContactId: parentContacts.id,
+      parentEmail: parentContacts.email,
+      parentName: parentContacts.name,
+      priorAcceptanceId: legalAcceptances.id,
+    })
+    .from(consentRecords)
+    .innerJoin(users, eq(users.id, consentRecords.userId))
+    .innerJoin(parentContacts, eq(parentContacts.id, consentRecords.parentContactId))
+    .leftJoin(
+      legalAcceptances,
+      and(
+        eq(legalAcceptances.userId, consentRecords.userId),
+        eq(legalAcceptances.legalDocumentId, legalDocumentId),
+        eq(legalAcceptances.acceptedBy, "parent"),
+      ),
+    )
+    .where(and(eq(consentRecords.status, "consented"), isNull(users.deletedAt)));
+
+  return rows
+    .filter((r) => r.priorAcceptanceId === null)
+    .map((r) => ({
+      userId: r.userId,
+      dateOfBirth: r.dateOfBirth,
+      firstName: r.firstName,
+      parentContactId: r.parentContactId,
+      parentEmail: r.parentEmail,
+      parentName: r.parentName,
+    }));
+}
+
+export async function getReapprovalRequestByTokenHash(tokenHash: string) {
+  const [row] = await db
+    .select()
+    .from(legalReapprovalRequests)
+    .where(eq(legalReapprovalRequests.tokenHash, tokenHash))
+    .limit(1);
+  return row ?? null;
+}
+
+// Pending-only, used by resendReapprovalRequests to find what to resend for
+// the signed-in user - an already approved/declined row is never resent.
+export async function listPendingReapprovalRequestsForUser(userId: string) {
+  return db
+    .select()
+    .from(legalReapprovalRequests)
+    .where(
+      and(eq(legalReapprovalRequests.userId, userId), eq(legalReapprovalRequests.status, "pending")),
+    );
+}
+
+type ReapprovalRequestRow = typeof legalReapprovalRequests.$inferSelect;
+
+type ClaimReapprovalRequestInput = {
+  userId: string;
+  legalDocumentId: string;
+  parentContactId: string;
+  tokenHash: string;
+  tokenExpiresAt: Date;
+  todayUtc: string;
+  cooldownMs: number;
+  dailyCap: number;
+};
+
+export type ClaimReapprovalRequestResult =
+  | { ok: true; record: ReapprovalRequestRow }
+  | { ok: false; reason: "too_soon"; retryAfterSeconds: number }
+  | { ok: false; reason: "daily_cap" }
+  | { ok: false; reason: "already_resolved" };
+
+// Same shape and same race-closing reasoning as claimConsentRequestSlot,
+// scoped to (userId, legalDocumentId) instead of just userId (a minor can
+// have more than one outstanding reapproval at once - see the unique index
+// on legalReapprovalRequests). A first-ever call for a given pair always
+// takes the "no existing row" branch and succeeds unconditionally - this is
+// what lets notifyAffectedMinorsForReapproval's initial notification and
+// resendReapprovalRequests' later resends share one function: the initial
+// call always lands in that branch, a genuine resend lands in the
+// cooldown/cap branch below. "already_resolved" covers the parent acting on
+// the request in between a resend being queued and this claim running.
+export async function claimReapprovalRequestSlot(
+  input: ClaimReapprovalRequestInput,
+): Promise<ClaimReapprovalRequestResult> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(legalReapprovalRequests)
+      .where(
+        and(
+          eq(legalReapprovalRequests.userId, input.userId),
+          eq(legalReapprovalRequests.legalDocumentId, input.legalDocumentId),
+        ),
+      )
+      .for("update")
+      .limit(1);
+
+    const now = new Date();
+
+    if (!existing) {
+      try {
+        const [created] = await tx
+          .insert(legalReapprovalRequests)
+          .values({
+            userId: input.userId,
+            legalDocumentId: input.legalDocumentId,
+            parentContactId: input.parentContactId,
+            status: "pending",
+            tokenHash: input.tokenHash,
+            tokenExpiresAt: input.tokenExpiresAt,
+            lastRequestedAt: now,
+            requestCount: 1,
+            requestCountDate: input.todayUtc,
+          })
+          .returning();
+        return { ok: true, record: created };
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return { ok: false, reason: "too_soon", retryAfterSeconds: 1 };
+        }
+        throw err;
+      }
+    }
+
+    if (existing.status !== "pending") {
+      return { ok: false, reason: "already_resolved" };
+    }
+
+    if (existing.lastRequestedAt) {
+      const msSinceLast = now.getTime() - existing.lastRequestedAt.getTime();
+      if (msSinceLast < input.cooldownMs) {
+        return {
+          ok: false,
+          reason: "too_soon",
+          retryAfterSeconds: Math.ceil((input.cooldownMs - msSinceLast) / 1000),
+        };
+      }
+    }
+
+    const requestsToday = existing.requestCountDate === input.todayUtc ? existing.requestCount : 0;
+    if (requestsToday >= input.dailyCap) {
+      return { ok: false, reason: "daily_cap" };
+    }
+
+    const [updated] = await tx
+      .update(legalReapprovalRequests)
+      .set({
+        parentContactId: input.parentContactId,
+        tokenHash: input.tokenHash,
+        tokenExpiresAt: input.tokenExpiresAt,
+        usedAt: null,
+        lastRequestedAt: now,
+        requestCount: requestsToday + 1,
+        requestCountDate: input.todayUtc,
+      })
+      .where(eq(legalReapprovalRequests.id, existing.id))
+      .returning();
+    return { ok: true, record: updated };
+  });
+}
+
+// Only flips a row that's still `pending` - a null return means the token
+// was already consumed by a concurrent request or is simply stale, same
+// guard style as declineConsentRecord/withdrawConsentRecord.
+export async function markReapprovalApproved(
+  requestId: string,
+  meta: { actorIp: string | null; actorUserAgent: string | null },
+) {
+  const now = new Date();
+  const [updated] = await db
+    .update(legalReapprovalRequests)
+    .set({
+      status: "approved",
+      usedAt: now,
+      actedAt: now,
+      actorIp: meta.actorIp,
+      actorUserAgent: meta.actorUserAgent,
+    })
+    .where(
+      and(eq(legalReapprovalRequests.id, requestId), eq(legalReapprovalRequests.status, "pending")),
+    )
+    .returning();
+  return updated ?? null;
+}
+
+export async function markReapprovalDeclined(
+  requestId: string,
+  meta: { actorIp: string | null; actorUserAgent: string | null },
+) {
+  const now = new Date();
+  const [updated] = await db
+    .update(legalReapprovalRequests)
+    .set({
+      status: "declined",
+      usedAt: now,
+      actedAt: now,
+      actorIp: meta.actorIp,
+      actorUserAgent: meta.actorUserAgent,
+    })
+    .where(
+      and(eq(legalReapprovalRequests.id, requestId), eq(legalReapprovalRequests.status, "pending")),
+    )
+    .returning();
+  return updated ?? null;
+}
+
+// The reapproval-decline counterpart to declineConsentRecord - that
+// function only guards `status = pending` (the original, never-consented-
+// yet decline), but a reapproval decline is a parent withdrawing consent
+// they'd *already* given, so it must transition an already-`consented` row
+// instead. Guarding on `status = consented` keeps this from ever touching a
+// row that's pending, already refused, or already withdrawn.
+export async function refuseConsentedRecord(
+  consentRecordId: string,
+  meta: { actorIp: string | null; actorUserAgent: string | null },
+) {
+  const now = new Date();
+  const [updated] = await db
+    .update(consentRecords)
+    .set({
+      status: "refused",
+      actedAt: now,
+      actorIp: meta.actorIp,
+      actorUserAgent: meta.actorUserAgent,
+    })
+    .where(and(eq(consentRecords.id, consentRecordId), eq(consentRecords.status, "consented")))
+    .returning();
+  return updated ?? null;
+}
+
+// Rotates the withdraw token on a minor's existing consent_records row -
+// used when a reapproval-request email is (re)sent, so every email to an
+// already-verified parent always carries a currently-valid withdraw link
+// (CLAUDE.md rule 13), mirroring the rotation that already happens on
+// initial consent in confirmConsentAndRecordAcceptances.
+export async function setConsentRecordWithdrawTokenHash(
+  userId: string,
+  withdrawTokenHash: string,
+): Promise<void> {
+  await db
+    .update(consentRecords)
+    .set({ withdrawTokenHash })
+    .where(eq(consentRecords.userId, userId));
+}
+
+// Shallow-merges { [type]: version } into the user's consent_records.
+// legal_document_versions - jsonb `||` overwrites only the matching
+// top-level key, leaving every other type's previously-recorded version
+// untouched. Done as a single atomic UPDATE (not read-modify-write) so two
+// concurrent approvals for different document types on the same user can't
+// clobber each other.
+export async function mergeConsentRecordLegalVersion(
+  userId: string,
+  type: string,
+  version: number,
+): Promise<void> {
+  await db
+    .update(consentRecords)
+    .set({
+      legalDocumentVersions: sql`coalesce(${consentRecords.legalDocumentVersions}, '{}'::jsonb) || ${JSON.stringify(
+        { [type]: version },
+      )}::jsonb`,
+    })
+    .where(eq(consentRecords.userId, userId));
 }

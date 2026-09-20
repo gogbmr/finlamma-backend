@@ -4,8 +4,10 @@ import { headers } from "next/headers";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
+  approveReapproval,
   confirmParentConsent,
   declineParentConsent,
+  declineReapproval,
   withdrawParentConsent,
 } from "@/server/onboarding/service";
 
@@ -44,6 +46,26 @@ export async function withdrawParentConsentAction(token: string): Promise<Withdr
   try {
     const result = await withdrawParentConsent(token, requestMeta(await headers()));
     return { ok: true, childFirstName: result.childFirstName, alreadyWithdrawn: result.alreadyWithdrawn };
+  } catch (err) {
+    if (err instanceof AppError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+export async function approveReapprovalAction(token: string): Promise<ChildResult> {
+  try {
+    const result = await approveReapproval(token, requestMeta(await headers()));
+    return { ok: true, childFirstName: result.childFirstName };
+  } catch (err) {
+    if (err instanceof AppError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+export async function declineReapprovalAction(token: string): Promise<ChildResult> {
+  try {
+    const result = await declineReapproval(token, requestMeta(await headers()));
+    return { ok: true, childFirstName: result.childFirstName };
   } catch (err) {
     if (err instanceof AppError) return { ok: false, error: err.message };
     throw err;

@@ -49,3 +49,15 @@ export const RequestParentConsentResponseSchema = registry.register(
     }),
   }),
 );
+
+export const ResendLegalReapprovalResponseSchema = registry.register(
+  "ResendLegalReapprovalResponse",
+  z.object({
+    data: z.object({
+      resent: z.number().int().openapi({
+        example: 1,
+        description: "How many pending re-approval emails were actually resent just now.",
+      }),
+    }),
+  }),
+);

@@ -16,7 +16,8 @@ vi.mock("./repo", () => ({
   insertAcceptance: (userId: unknown, docId: unknown, by: unknown) =>
     mockInsertAcceptance(userId, docId, by),
   upsertDraft: (type: unknown, content: unknown) => mockUpsertDraft(type, content),
-  publishDraft: (type: unknown, staffId: unknown) => mockPublishDraft(type, staffId),
+  publishDraft: (type: unknown, staffId: unknown, requiresParentReapproval: unknown) =>
+    mockPublishDraft(type, staffId, requiresParentReapproval),
 }));
 
 const mockLogActivity = vi.fn();
@@ -45,6 +46,7 @@ function doc(overrides: Partial<Record<string, unknown>> = {}) {
     publishedBy: null,
     publishedAt: new Date("2026-01-01T00:00:00.000Z"),
     isPlaceholder: false,
+    requiresParentReapproval: false,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -80,33 +82,78 @@ describe("getPublicDocument", () => {
 describe("getLegalStatus", () => {
   it("reports accepted:false for a document with no self-acceptance row", async () => {
     mockListPublishedDocuments.mockResolvedValueOnce([doc({ id: "doc_1" })]);
-    mockGetAcceptances.mockResolvedValueOnce([]);
+    mockGetAcceptances.mockResolvedValueOnce([]).mockResolvedValueOnce([]); // self, then parent
 
     const result = await getLegalStatus({ id: "user_1" });
 
     expect(result).toEqual({
-      documents: [{ type: "terms", currentVersion: 1, accepted: false, acceptedAt: null }],
+      documents: [
+        {
+          type: "terms",
+          currentVersion: 1,
+          accepted: false,
+          acceptedAt: null,
+          requiresParentReapproval: false,
+          parentApproved: true,
+        },
+      ],
       allAccepted: false,
+      allParentApproved: true,
     });
     expect(mockGetAcceptances).toHaveBeenCalledWith("user_1", ["doc_1"], "self");
+    expect(mockGetAcceptances).toHaveBeenCalledWith("user_1", ["doc_1"], "parent");
   });
 
   it("reports allAccepted:true once every published document has a self-acceptance", async () => {
     mockListPublishedDocuments.mockResolvedValueOnce([doc({ id: "doc_1" })]);
-    mockGetAcceptances.mockResolvedValueOnce([
-      {
-        id: "acc_1",
-        userId: "user_1",
-        legalDocumentId: "doc_1",
-        acceptedBy: "self",
-        acceptedAt: new Date("2026-01-02T00:00:00.000Z"),
-      },
-    ]);
+    mockGetAcceptances
+      .mockResolvedValueOnce([
+        {
+          id: "acc_1",
+          userId: "user_1",
+          legalDocumentId: "doc_1",
+          acceptedBy: "self",
+          acceptedAt: new Date("2026-01-02T00:00:00.000Z"),
+        },
+      ])
+      .mockResolvedValueOnce([]);
 
     const result = await getLegalStatus({ id: "user_1" });
 
     expect(result.allAccepted).toBe(true);
     expect(result.documents[0]).toMatchObject({ accepted: true, acceptedAt: "2026-01-02T00:00:00.000Z" });
+  });
+
+  it("reports parentApproved:false when a document requires parent reapproval and no parent acceptance exists yet", async () => {
+    mockListPublishedDocuments.mockResolvedValueOnce([
+      doc({ id: "doc_1", requiresParentReapproval: true }),
+    ]);
+    mockGetAcceptances.mockResolvedValueOnce([]).mockResolvedValueOnce([]); // self, then parent
+
+    const result = await getLegalStatus({ id: "user_1" });
+
+    expect(result.documents[0]).toMatchObject({ requiresParentReapproval: true, parentApproved: false });
+    expect(result.allParentApproved).toBe(false);
+  });
+
+  it("reports parentApproved:true once a parent-acceptance row exists for the required document", async () => {
+    mockListPublishedDocuments.mockResolvedValueOnce([
+      doc({ id: "doc_1", requiresParentReapproval: true }),
+    ]);
+    mockGetAcceptances.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: "acc_1",
+        userId: "user_1",
+        legalDocumentId: "doc_1",
+        acceptedBy: "parent",
+        acceptedAt: new Date("2026-01-03T00:00:00.000Z"),
+      },
+    ]);
+
+    const result = await getLegalStatus({ id: "user_1" });
+
+    expect(result.documents[0]).toMatchObject({ requiresParentReapproval: true, parentApproved: true });
+    expect(result.allParentApproved).toBe(true);
   });
 });
 
@@ -173,20 +220,25 @@ describe("publishLegalDocument", () => {
   it("throws NOT_FOUND when there is no draft to publish", async () => {
     mockPublishDraft.mockResolvedValueOnce(null);
 
-    await expect(publishLegalDocument({ id: "staff_1" }, "terms", META)).rejects.toMatchObject({
+    await expect(publishLegalDocument({ id: "staff_1" }, "terms", false, META)).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it("publishes the draft and logs it", async () => {
-    mockPublishDraft.mockResolvedValueOnce(doc({ id: "doc_2", version: 2 }));
+  it("publishes the draft and logs it, passing requiresParentReapproval through to publishDraft", async () => {
+    mockPublishDraft.mockResolvedValueOnce(doc({ id: "doc_2", version: 2, requiresParentReapproval: true }));
 
-    const result = await publishLegalDocument({ id: "staff_1" }, "terms", META);
+    const result = await publishLegalDocument({ id: "staff_1" }, "terms", true, META);
 
+    expect(mockPublishDraft).toHaveBeenCalledWith("terms", "staff_1", true);
     expect(result.id).toBe("doc_2");
     expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "legal.published", actorId: "staff_1" }),
+      expect.objectContaining({
+        action: "legal.published",
+        actorId: "staff_1",
+        metadata: expect.objectContaining({ requiresParentReapproval: true }),
+      }),
     );
   });
 });

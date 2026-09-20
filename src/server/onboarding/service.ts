@@ -3,17 +3,19 @@ import type { ReactElement } from "react";
 import { ParentConsentConfirmedEmail } from "@/emails/parent-consent-confirmed";
 import { ParentConsentRequestEmail } from "@/emails/parent-consent-request";
 import { ParentConsentWithdrawnEmail } from "@/emails/parent-consent-withdrawn";
+import { ParentReapprovalRequestEmail } from "@/emails/parent-reapproval-request";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { sendEmail } from "@/lib/email";
 import { logInternalError, type requestMeta } from "@/lib/http";
 import { getSettingNumber } from "@/lib/settings";
-import { listPublishedDocuments } from "@/server/legal/repo";
+import { getLegalDocumentById, insertAcceptance, listPublishedDocuments } from "@/server/legal/repo";
 import { getLegalStatus } from "@/server/legal/service";
 import {
   anonymizeParentContact,
   claimConsentRequestSlot,
+  claimReapprovalRequestSlot,
   confirmConsentAndRecordAcceptances,
   countChildrenForParentEmail,
   declineConsentRecord,
@@ -22,16 +24,30 @@ import {
   getConsentRecordByWithdrawTokenHash,
   getParentContact,
   getParentContactForReview,
+  getReapprovalRequestByTokenHash,
   getUserFirstName,
   isUserDeleted,
+  listCandidatesForReapproval,
   listConsentRecordsForReview,
+  listPendingReapprovalRequestsForUser,
+  markReapprovalApproved,
+  markReapprovalDeclined,
+  mergeConsentRecordLegalVersion,
+  refuseConsentedRecord,
   setConsentRecordParentEmailHmac,
+  setConsentRecordWithdrawTokenHash,
   setDateOfBirthOnce,
   sumRequestsTodayForParentEmail,
   upsertParentContact,
   withdrawConsentRecord,
 } from "./repo";
 import type { RequestParentConsentInput, SetDateOfBirthInput } from "./schemas";
+
+const LEGAL_DOCUMENT_LABELS: Record<string, string> = {
+  terms: "Terms of Use",
+  privacy: "Privacy Policy",
+  risk_disclosure: "Risk Disclosure",
+};
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type MeUser = { id: string; email: string | null; firstName: string | null; dateOfBirth: string | null };
@@ -592,7 +608,9 @@ export async function requireFullAccess(user: MeUser): Promise<void> {
     throw new AppError("FORBIDDEN", "Complete onboarding before using this feature");
   }
 
-  if (isMinor(user.dateOfBirth)) {
+  const minor = isMinor(user.dateOfBirth);
+
+  if (minor) {
     const consent = await getConsentRecord(user.id);
     if (consent?.status !== "consented") {
       throw new AppError("FORBIDDEN", "Parental consent is required before using this feature");
@@ -606,4 +624,321 @@ export async function requireFullAccess(user: MeUser): Promise<void> {
       "Accept the current Terms, Privacy and Risk-disclosure before using this feature",
     );
   }
+
+  // A minor who already has full consent can still be knocked back into
+  // limited access by a later material legal-document change - same
+  // limited-access bucket as first-time consent, but a distinct error code
+  // so the app can tell the two apart (see src/lib/errors.ts).
+  if (minor && !legalStatus.allParentApproved) {
+    throw new AppError(
+      "PARENT_REAPPROVAL_REQUIRED",
+      "Your parent needs to approve the updated Terms, Privacy or Risk-disclosure before you can continue",
+    );
+  }
+}
+
+// --- Parent re-approval on legal-document changes ---
+
+async function sendReapprovalEmail(params: {
+  userId: string;
+  parentEmail: string;
+  childFirstName: string;
+  documentLabel: string;
+  reapprovalUrl: string;
+  withdrawUrl: string;
+}) {
+  await sendConsentEmailOrLog({
+    to: params.parentEmail,
+    subject: `We updated our ${params.documentLabel} - please review it for ${params.childFirstName}`,
+    react: ParentReapprovalRequestEmail({
+      childFirstName: params.childFirstName,
+      documentLabel: params.documentLabel,
+      reapprovalUrl: params.reapprovalUrl,
+      withdrawUrl: params.withdrawUrl,
+    }),
+    devLogLabel: `parent reapproval link for user ${params.userId}`,
+    devLogDetail: params.reapprovalUrl,
+  });
+}
+
+// Called from the admin Legal editor's publish Server Action (never from
+// here directly - the onboarding domain can't be called from legal/service.ts
+// without creating a circular import, since legal already has no dependency
+// on onboarding and onboarding already depends on legal) right after a
+// version is published with requires_parent_reapproval = true. Every
+// already-consented, non-deleted minor without a `parent` acceptance row for
+// this exact legal_document_id gets a fresh 7-day single-use reapproval link
+// plus a rotated withdraw link, reusing the same cooldown/daily-cap settings
+// as the original consent-request flow (docs/PRODUCT_SPEC.md: "reuse
+// existing rate limits and the resend flow").
+export async function notifyAffectedMinorsForReapproval(
+  legalDocumentId: string,
+  meta: RequestMeta,
+): Promise<{ notified: number }> {
+  const doc = await getLegalDocumentById(legalDocumentId);
+  if (!doc) throw new AppError("NOT_FOUND", "Legal document not found");
+
+  const candidates = await listCandidatesForReapproval(legalDocumentId);
+  const minors = candidates.filter((c) => c.dateOfBirth && isMinor(c.dateOfBirth));
+
+  const dailyCap = await getSettingNumber("consent_resend_daily_cap", DEFAULT_RESEND_DAILY_CAP);
+  const today = todayUtc();
+  const documentLabel = LEGAL_DOCUMENT_LABELS[doc.type] ?? doc.type;
+
+  let notified = 0;
+  for (const candidate of minors) {
+    const token = generateToken();
+    const claim = await claimReapprovalRequestSlot({
+      userId: candidate.userId,
+      legalDocumentId,
+      parentContactId: candidate.parentContactId,
+      tokenHash: hashToken(token),
+      tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+      todayUtc: today,
+      cooldownMs: RESEND_COOLDOWN_MS,
+      dailyCap,
+    });
+    if (!claim.ok) {
+      // A first-ever call for a brand-new legal_document_id always takes
+      // the unconditional "no existing row" branch (see
+      // claimReapprovalRequestSlot) - this shouldn't happen, but one
+      // unexpected failure must never abort notifying the rest of the batch.
+      logInternalError(
+        "legal.reapproval_notify_claim_failed",
+        new Error(`claimReapprovalRequestSlot failed for a candidate: ${claim.reason}`),
+      );
+      continue;
+    }
+
+    const withdrawToken = generateToken();
+    await setConsentRecordWithdrawTokenHash(candidate.userId, hashToken(withdrawToken));
+
+    const childFirstName = candidate.firstName ?? "Your child";
+    await sendReapprovalEmail({
+      userId: candidate.userId,
+      parentEmail: candidate.parentEmail,
+      childFirstName,
+      documentLabel,
+      reapprovalUrl: `${env.APP_URL}/consent/reapprove?token=${token}`,
+      withdrawUrl: `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`,
+    });
+
+    await logActivity({
+      actorType: "system",
+      action: "legal.reapproval_requested",
+      targetType: "user",
+      targetId: candidate.userId,
+      metadata: { legalDocumentId, type: doc.type, version: doc.version },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    notified += 1;
+  }
+
+  return { notified };
+}
+
+export type ReapprovalRequestView =
+  | { state: "invalid" }
+  | { state: "expired" }
+  | { state: "already_resolved" }
+  | {
+      state: "valid";
+      childFirstName: string;
+      documentType: string;
+      documentVersion: number;
+      documentContent: { en: string; hi: string; hx: string };
+    };
+
+// Read-only lookup for the public reapproval page's GET render - same
+// GET-must-be-side-effect-free rule as getConsentRequestView.
+export async function getReapprovalRequestView(token: string): Promise<ReapprovalRequestView> {
+  const record = await getReapprovalRequestByTokenHash(hashToken(token));
+  if (!record) return { state: "invalid" };
+  if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
+    return { state: "already_resolved" };
+  }
+  if (record.tokenExpiresAt.getTime() < Date.now()) return { state: "expired" };
+
+  const [childFirstName, doc] = await Promise.all([
+    getUserFirstName(record.userId),
+    getLegalDocumentById(record.legalDocumentId),
+  ]);
+  if (!doc) return { state: "invalid" }; // shouldn't happen - FK guarantees the row exists
+
+  return {
+    state: "valid",
+    childFirstName: childFirstName ?? "your child",
+    documentType: doc.type,
+    documentVersion: doc.version,
+    documentContent: doc.content,
+  };
+}
+
+// The actual mutation behind the reapproval page's "I approve" POST -
+// records the parent's fresh acceptance of this exact document version and
+// folds its version into consent_records.legal_document_versions (condition
+// 6: "record which legal versions the parent approved on the consent
+// record"), so requireFullAccess's allParentApproved check passes again.
+export async function approveReapproval(token: string, meta: RequestMeta) {
+  const record = await getReapprovalRequestByTokenHash(hashToken(token));
+  if (!record) throw new AppError("NOT_FOUND", "This link is invalid");
+  if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
+    throw new AppError("CONFLICT", "This link has already been used");
+  }
+  if (record.tokenExpiresAt.getTime() < Date.now()) {
+    throw new AppError("NOT_FOUND", "This link has expired - ask your child to request a new one");
+  }
+
+  const doc = await getLegalDocumentById(record.legalDocumentId);
+  if (!doc) throw new AppError("NOT_FOUND", "This link is invalid");
+
+  const updated = await markReapprovalApproved(record.id, {
+    actorIp: meta.ip,
+    actorUserAgent: meta.userAgent,
+  });
+  if (!updated) throw new AppError("CONFLICT", "This link has already been used");
+
+  await insertAcceptance(record.userId, record.legalDocumentId, "parent");
+  await mergeConsentRecordLegalVersion(record.userId, doc.type, doc.version);
+
+  await logActivity({
+    actorType: "system",
+    action: "legal.reapproval_approved",
+    targetType: "user",
+    targetId: record.userId,
+    metadata: { legalDocumentId: doc.id, type: doc.type, version: doc.version },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const childFirstName = await getUserFirstName(record.userId);
+  return { childFirstName: childFirstName ?? "your child" };
+}
+
+// The reapproval page's "I do not approve" counterpart - condition 5: same
+// outcome as the existing decline flow, which means the parent's *original*
+// consent is revoked entirely (refuseConsentedRecord), not just this one
+// document version staying unapproved. requireFullAccess already blocks a
+// minor on any non-'consented' status, so this alone returns the account to
+// limited access.
+export async function declineReapproval(token: string, meta: RequestMeta) {
+  const record = await getReapprovalRequestByTokenHash(hashToken(token));
+  if (!record) throw new AppError("NOT_FOUND", "This link is invalid");
+  if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
+    throw new AppError("CONFLICT", "This link has already been used");
+  }
+  if (record.tokenExpiresAt.getTime() < Date.now()) {
+    throw new AppError("NOT_FOUND", "This link has expired - ask your child to request a new one");
+  }
+
+  const updated = await markReapprovalDeclined(record.id, {
+    actorIp: meta.ip,
+    actorUserAgent: meta.userAgent,
+  });
+  if (!updated) throw new AppError("CONFLICT", "This link has already been used");
+
+  const consentRecord = await getConsentRecord(record.userId);
+  if (consentRecord && consentRecord.status === "consented") {
+    await refuseConsentedRecord(consentRecord.id, {
+      actorIp: meta.ip,
+      actorUserAgent: meta.userAgent,
+    });
+  }
+
+  await logActivity({
+    actorType: "system",
+    action: "legal.reapproval_declined",
+    targetType: "user",
+    targetId: record.userId,
+    metadata: { legalDocumentId: record.legalDocumentId },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const childFirstName = await getUserFirstName(record.userId);
+  return { childFirstName: childFirstName ?? "your child" };
+}
+
+// Authenticated endpoint (POST /api/v1/me/legal/reapproval/resend) for the
+// signed-in minor to ask for their pending reapproval email(s) again -
+// reuses claimReapprovalRequestSlot's cooldown/daily-cap branch, same as
+// requestParentConsent's resend path. In the rare case of more than one
+// simultaneous pending reapproval, hitting a cooldown/cap on one aborts the
+// whole call rather than partially resending - acceptable given how rare
+// that overlap is in practice.
+export async function resendReapprovalRequests(user: MeUser, meta: RequestMeta) {
+  const pending = await listPendingReapprovalRequestsForUser(user.id);
+  if (pending.length === 0) {
+    throw new AppError("CONSENT_NOT_NEEDED", "There's no pending re-approval for this account");
+  }
+
+  const parentContact = await getParentContact(user.id);
+  if (!parentContact) {
+    throw new AppError("CONSENT_NOT_NEEDED", "There's no pending re-approval for this account");
+  }
+
+  const dailyCap = await getSettingNumber("consent_resend_daily_cap", DEFAULT_RESEND_DAILY_CAP);
+  const today = todayUtc();
+  const childFirstName = user.firstName ?? "Your child";
+
+  let resent = 0;
+  for (const request of pending) {
+    const doc = await getLegalDocumentById(request.legalDocumentId);
+    if (!doc) continue;
+
+    const token = generateToken();
+    const claim = await claimReapprovalRequestSlot({
+      userId: user.id,
+      legalDocumentId: request.legalDocumentId,
+      parentContactId: parentContact.id,
+      tokenHash: hashToken(token),
+      tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+      todayUtc: today,
+      cooldownMs: RESEND_COOLDOWN_MS,
+      dailyCap,
+    });
+    if (!claim.ok) {
+      if (claim.reason === "too_soon") {
+        throw new AppError("RESEND_TOO_SOON", "Please wait a bit before requesting another email", {
+          retryAfterSeconds: claim.retryAfterSeconds,
+        });
+      }
+      if (claim.reason === "daily_cap") {
+        throw new AppError(
+          "RESEND_LIMIT_REACHED",
+          "Daily limit for re-approval emails reached - try again tomorrow",
+        );
+      }
+      continue; // already_resolved - the parent acted since this was listed
+    }
+
+    const withdrawToken = generateToken();
+    await setConsentRecordWithdrawTokenHash(user.id, hashToken(withdrawToken));
+
+    await sendReapprovalEmail({
+      userId: user.id,
+      parentEmail: parentContact.email,
+      childFirstName,
+      documentLabel: LEGAL_DOCUMENT_LABELS[doc.type] ?? doc.type,
+      reapprovalUrl: `${env.APP_URL}/consent/reapprove?token=${token}`,
+      withdrawUrl: `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`,
+    });
+
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "legal.reapproval_resent",
+      targetType: "user",
+      targetId: user.id,
+      metadata: { legalDocumentId: request.legalDocumentId, type: doc.type, version: doc.version },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+
+    resent += 1;
+  }
+
+  return { resent };
 }

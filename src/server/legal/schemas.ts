@@ -52,6 +52,18 @@ const LegalStatusItemSchema = z.object({
     description: "Whether the signed-in user has accepted the currently published version themselves.",
   }),
   acceptedAt: z.string().datetime().nullable(),
+  requiresParentReapproval: z.boolean().openapi({
+    example: false,
+    description:
+      "True if this version was published with a material change that requires a minor's " +
+      "parent to re-approve it, even if the parent already consented to an earlier version.",
+  }),
+  parentApproved: z.boolean().openapi({
+    example: true,
+    description:
+      "True if this document doesn't require parent re-approval, or a parent has already " +
+      "approved this specific version. Only relevant for a minor's account.",
+  }),
 });
 
 export const LegalStatusDataSchema = registry.register(
@@ -60,6 +72,11 @@ export const LegalStatusDataSchema = registry.register(
     documents: z.array(LegalStatusItemSchema),
     allAccepted: z.boolean().openapi({
       description: "True once every currently published document has been self-accepted.",
+    }),
+    allParentApproved: z.boolean().openapi({
+      description:
+        "True once every currently published document that requires parent re-approval has " +
+        "been re-approved. Always true for an adult's account.",
     }),
   }),
 );
@@ -85,5 +102,10 @@ export type SaveLegalDraftInput = z.infer<typeof SaveLegalDraftSchema>;
 
 export const PublishLegalDocumentSchema = z.object({
   type: LegalDocumentTypeSchema,
+  // No default and no optional() - the admin editor's publish button is
+  // disabled until staff explicitly picks Yes/No (see legal-editor.tsx),
+  // so there is never a "did they mean to skip this" ambiguity to paper
+  // over here.
+  requiresParentReapproval: z.boolean(),
 });
 export type PublishLegalDocumentInput = z.infer<typeof PublishLegalDocumentSchema>;

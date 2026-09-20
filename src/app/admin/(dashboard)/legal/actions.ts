@@ -8,6 +8,7 @@ import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import { PublishLegalDocumentSchema, SaveLegalDraftSchema } from "@/server/legal/schemas";
 import { publishLegalDocument, upsertLegalDraft } from "@/server/legal/service";
+import { notifyAffectedMinorsForReapproval } from "@/server/onboarding/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -38,7 +39,11 @@ export async function publishLegalDocumentAction(input: unknown): Promise<Action
   return runAction(async () => {
     const actor = await requireStaff("legal.manage");
     const parsed = PublishLegalDocumentSchema.parse(input);
-    await publishLegalDocument(actor, parsed.type, requestMeta(await headers()));
+    const meta = requestMeta(await headers());
+    const published = await publishLegalDocument(actor, parsed.type, parsed.requiresParentReapproval, meta);
+    if (published.requiresParentReapproval) {
+      await notifyAffectedMinorsForReapproval(published.id, meta);
+    }
     revalidatePath("/admin/legal");
   });
 }

@@ -24,6 +24,11 @@ export const ErrorCode = {
   PARENT_EMAIL_LIMIT_REACHED: "PARENT_EMAIL_LIMIT_REACHED",
   RESEND_TOO_SOON: "RESEND_TOO_SOON",
   RESEND_LIMIT_REACHED: "RESEND_LIMIT_REACHED",
+  // Distinct from the initial-consent FORBIDDEN case in requireFullAccess -
+  // the app needs to tell "your parent hasn't consented yet at all" apart
+  // from "your parent already consented once, but a legal document changed
+  // and needs a fresh approval" so it can show the right screen.
+  PARENT_REAPPROVAL_REQUIRED: "PARENT_REAPPROVAL_REQUIRED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -45,6 +50,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   PARENT_EMAIL_LIMIT_REACHED: 409,
   RESEND_TOO_SOON: 429,
   RESEND_LIMIT_REACHED: 429,
+  PARENT_REAPPROVAL_REQUIRED: 403,
 };
 
 export class AppError extends Error {

@@ -57,6 +57,15 @@ export const legalDocuments = pgTable(
     // src/app/api/v1/health/route.ts). A real staff-authored publish always
     // leaves this false.
     isPlaceholder: boolean("is_placeholder").default(false).notNull(),
+    // Staff's explicit choice at publish time (src/server/legal/service.ts
+    // publishLegalDocument) - never defaulted by the UI or the API, which
+    // both require it to be passed. When true, every already-consented
+    // minor's parent must re-approve this specific version before
+    // requireFullAccess passes again for that minor - see
+    // legalReapprovalRequests below. Always false for a placeholder
+    // version, regardless of what's passed in (re-approving filler text
+    // makes no sense).
+    requiresParentReapproval: boolean("requires_parent_reapproval").default(false).notNull(),
   },
   (t) => [
     index("legal_documents_type_idx").on(t.type),
@@ -182,5 +191,60 @@ export const consentRecords = pgTable(
     // is fine for withdraw_token_hash before a record is ever consented).
     uniqueIndex("consent_records_token_hash_idx").on(t.tokenHash),
     uniqueIndex("consent_records_withdraw_token_hash_idx").on(t.withdrawTokenHash),
+  ],
+).enableRLS();
+
+export const legalReapprovalStatusEnum = pgEnum("legal_reapproval_status", [
+  "pending",
+  "approved",
+  "declined",
+]);
+
+// One row per (minor, specific new legal_documents version that needs
+// re-approval) - created when staff publishes a version with
+// requires_parent_reapproval = true (src/server/legal/service.ts
+// publishLegalDocument), for every already-consented, non-deleted minor.
+// Deliberately separate from consentRecords (which represents the
+// one-time blanket "may this minor use Finlamma at all" consent, one row
+// per user) - this table can have several rows per minor over time (a
+// re-approval per material legal-document change), and approving/declining
+// one never touches the others. Same single-use/hashed-token/rate-limit
+// shape as consentRecords' original request/confirm flow, reused per
+// docs/PRODUCT_SPEC.md's Onboarding & parental consent section: "reuse
+// existing rate limits and the resend flow."
+export const legalReapprovalRequests = pgTable(
+  "legal_reapproval_requests",
+  {
+    ...idAndTimestamps(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    legalDocumentId: uuid("legal_document_id")
+      .notNull()
+      .references(() => legalDocuments.id, { onDelete: "cascade" }),
+    parentContactId: uuid("parent_contact_id")
+      .notNull()
+      .references(() => parentContacts.id, { onDelete: "cascade" }),
+    status: legalReapprovalStatusEnum("status").default("pending").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    actedAt: timestamp("acted_at", { withTimezone: true }),
+    actorIp: text("actor_ip"),
+    actorUserAgent: text("actor_user_agent"),
+    // Same DB-backed resend rate limiting as consentRecords - see its
+    // comment above. Scoped per (user, legal_document) here rather than
+    // just per user, since a minor could in principle have more than one
+    // outstanding reapproval at once.
+    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }),
+    requestCount: integer("request_count").default(1).notNull(),
+    requestCountDate: date("request_count_date"),
+  },
+  (t) => [
+    uniqueIndex("legal_reapproval_requests_user_document_idx").on(t.userId, t.legalDocumentId),
+    index("legal_reapproval_requests_legal_document_id_idx").on(t.legalDocumentId),
+    // Same reasoning as consent_records' token indexes - every public,
+    // unauthenticated approve/decline request looks this up by hash.
+    uniqueIndex("legal_reapproval_requests_token_hash_idx").on(t.tokenHash),
   ],
 ).enableRLS();
