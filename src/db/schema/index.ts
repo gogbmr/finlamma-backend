@@ -5,3 +5,4 @@ export * from "./activity_logs";
 export * from "./staff";
 export * from "./compliance";
 export * from "./settings";
+export * from "./mentors";

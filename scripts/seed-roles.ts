@@ -56,14 +56,34 @@ const PERMISSIONS = [
       "View parental-consent and legal-acceptance status for user accounts, read-only. " +
       "Every view of a parent's contact details is logged.",
   },
+  {
+    key: "mentor.manage",
+    description:
+      "Create mentors and edit a mentor's draft fields (name, bio, world range, art). " +
+      "Cannot edit a mentor that's currently published - unpublish it first.",
+  },
+  {
+    key: "mentor.publish",
+    description: "Publish or unpublish a mentor, making it visible to (or hidden from) the app.",
+  },
 ] as const;
 
-// Permissions granted to each role, by key. Only super_admin and
-// user_manager have any for now - other roles get permissions as their
-// domain (quizzes, content, ...) is actually built in later phases.
+// Permissions granted to each role, by key. super_admin gets every
+// permission that exists, explicitly listed (not an implicit wildcard) so
+// role_permissions stays a readable audit trail of exactly what's granted.
+// Other roles get permissions as their domain (quizzes, content, ...) is
+// actually built in later phases.
 const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
-  super_admin: ["staff.manage", "activity_log.view", "legal.manage"],
+  super_admin: [
+    "staff.manage",
+    "activity_log.view",
+    "legal.manage",
+    "mentor.manage",
+    "mentor.publish",
+  ],
   user_manager: ["consent.view"],
+  content_uploader: ["mentor.manage"],
+  content_publisher: ["mentor.publish"],
 };
 
 async function seed() {

@@ -29,6 +29,11 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `PATCH /api/v1/me/date-of-birth` — Set my date of birth (once)
 - `POST /api/v1/me/parent-consent/request` — Request parental consent
 
+**Learning**
+
+- `GET /api/v1/mentors` — List published mentors
+- `GET /api/v1/mentors/{key}` — Get a published mentor
+
 **Webhooks**
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
@@ -552,6 +557,145 @@ For an under-18 account: emails the given parent/guardian a magic link to a publ
     "details": {
       "retryAfterSeconds": 42
     }
+  }
+}
+```
+
+
+---
+
+## Learning
+
+### `GET /api/v1/mentors`
+
+**List published mentors**
+
+The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, ordered by their display order. Only published mentors are returned.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Published mentors, ordered
+
+```json
+{
+  "data": [
+    {
+      "key": "baby",
+      "order": 1,
+      "name": {
+        "en": "Baby Lamma",
+        "hi": "बेबी लामा",
+        "hx": "Baby Lamma"
+      },
+      "bio": {
+        "en": "The very first mentor - asks lots of questions, never judges.",
+        "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
+        "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
+      },
+      "worldRangeStart": 1,
+      "worldRangeEnd": 3,
+      "artUrl": "https://example.com"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/mentors/{key}`
+
+**Get a published mentor**
+
+A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `key` | path | string | yes | Stable slug identifying this mentor. |
+
+**Responses**
+
+- **200** — The published mentor
+
+```json
+{
+  "data": {
+    "key": "baby",
+    "order": 1,
+    "name": {
+      "en": "Baby Lamma",
+      "hi": "बेबी लामा",
+      "hx": "Baby Lamma"
+    },
+    "bio": {
+      "en": "The very first mentor - asks lots of questions, never judges.",
+      "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
+      "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
+    },
+    "worldRangeStart": 1,
+    "worldRangeEnd": 3,
+    "artUrl": "https://example.com"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published mentor with this key
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published mentor with key \"baby\""
   }
 }
 ```

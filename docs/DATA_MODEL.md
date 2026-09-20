@@ -99,7 +99,15 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   not an XP/level gate), `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
   Role Play are `lessons.kind` values, not separate tables or engines — both render through the
   same lesson-flow content shape as a Quiz step, with different settings.
-- `quizzes` (lesson_id or news_edition_id, settings), `questions` (quiz_id, format, payload jsonb, answer jsonb)
+- `quizzes` (lesson_id or news_edition_id, settings), `questions` (quiz_id, format, payload jsonb,
+  answer jsonb). **Single source of truth: every question — including an in-video pop-quiz's —
+  is a row in `questions`, never inlined into `lessons.content`.** A video lesson's `content` cues
+  reference the question by id/order at a timestamp (presentation/timing only); the question's
+  actual prompt, options and correct answer live only in `questions`. Text fields inside
+  `questions.payload` are leaf-localized `{en,hi,hx}`; `questions.answer` (the correct index/value)
+  is language-independent — one shared answer per question, not one per language. A learner-facing
+  response never includes `questions.answer` or its explanation text until that specific question
+  has been graded server-side (see `docs/ARCHITECTURE.md` D17 and Phase 2b's answer-leakage tests).
 - `lesson_progress`, `quiz_attempts`, `question_answers`
 - `certificates` (user_id, world_id, code, file_key) — PDFs are rendered server-side with a
   browser-free library (e.g. `@react-pdf/renderer`, not a headless browser — Vercel-compatible)

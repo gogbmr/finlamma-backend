@@ -554,6 +554,123 @@
           "data"
         ]
       },
+      "Mentor": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "example": "baby",
+            "description": "Stable slug identifying this mentor."
+          },
+          "order": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "Baby Lamma",
+              "hi": "बेबी लामा",
+              "hx": "Baby Lamma"
+            }
+          },
+          "bio": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "The very first mentor - asks lots of questions, never judges.",
+              "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
+              "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
+            }
+          },
+          "worldRangeStart": {
+            "type": "integer",
+            "example": 1
+          },
+          "worldRangeEnd": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "example": 3,
+            "description": "Null means an open-ended range (e.g. \"World 7+\")."
+          },
+          "artUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Short-lived signed URL to the mentor's art, or null if none uploaded yet."
+          }
+        },
+        "required": [
+          "key",
+          "order",
+          "name",
+          "bio",
+          "worldRangeStart",
+          "worldRangeEnd",
+          "artUrl"
+        ]
+      },
+      "MentorResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Mentor"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "MentorListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Mentor"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -1165,6 +1282,152 @@
                     "details": {
                       "retryAfterSeconds": 42
                     }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mentors": {
+      "get": {
+        "summary": "List published mentors",
+        "description": "The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, ordered by their display order. Only published mentors are returned.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published mentors, ordered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MentorListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mentors/{key}": {
+      "get": {
+        "summary": "Get a published mentor",
+        "description": "A single mentor stage by its stable key (e.g. \"baby\"). 404 if not published.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "example": "baby",
+              "description": "Stable slug identifying this mentor."
+            },
+            "required": true,
+            "description": "Stable slug identifying this mentor.",
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The published mentor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MentorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published mentor with this key",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published mentor with key \"baby\""
                   }
                 },
                 "schema": {
