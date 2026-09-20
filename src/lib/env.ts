@@ -74,6 +74,17 @@ const envSchema = z.object({
   // nothing to "get" from a dashboard, just generate and set it.
   CONSENT_PII_HMAC_KEY: z.string().optional(),
 
+  // Storage (Supabase Storage via its S3-compatible API, see docs/ARCHITECTURE.md D4) - optional
+  // until the bucket exists; src/lib/s3.ts fails closed with a clear error if used before these
+  // are set, same lazy pattern as the Resend/Clerk-webhook vars above. The bucket is **private**
+  // (Phase 2b decision, see docs/ARCHITECTURE.md) - lesson media, mentor art etc. are served only
+  // via short-lived signed URLs minted by getSignedDownloadUrl(), never a public bucket URL.
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),

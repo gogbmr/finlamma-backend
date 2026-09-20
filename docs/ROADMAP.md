@@ -60,7 +60,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
       **sequential only** (clearing the previous world's Boss Quiz) — no XP/level gate; Boss Quiz
       and Role Play reuse the same lesson-flow content shape as Quiz, not separate engines
-- [ ] Content CRUD in admin with draft → published flow and uploads to storage
+- [ ] Content CRUD in admin with draft → published flow and uploads to storage. `lessons.content`/
+      `questions.payload` are authored via a schema-validated JSON editor for v1 (human-readable
+      validation errors, a starter template per lesson/quiz format, a publish preview, and cue-
+      timestamp-order/video-length checks) — see "Later" section below for the visual builder
 - [ ] Translations for `en`, `hi`, `hx` on every content field
 - [ ] Scoring constants (speed-bonus 45% threshold, fever mode combo≥3 → 2×, combo bonus,
       all-correct bonus) as admin-editable `settings_kv`, seeded from the prototype's exact values
@@ -170,3 +173,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
       admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
       wasn't attempted in the sandbox this was built in over a slow connection
+
+## Later (non-blocking — no phase assigned)
+- [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's
+      schema-validated JSON editor for `lessons.content`/`questions.payload` (video scene/cue
+      timeline, drag-to-order question builder, etc.). Not launch-blocking — the JSON editor with
+      human-readable validation, starter templates and a publish preview covers v1's authoring
+      needs; revisit once content-team throughput becomes a bottleneck.

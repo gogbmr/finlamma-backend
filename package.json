@@ -23,6 +23,8 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^9.1.0",
+    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/s3-request-presigner": "^3.1136.0",
     "@clerk/backend": "^3.18.1",
     "@clerk/nextjs": "^7.9.4",
     "@hookform/resolvers": "^5.9.1",
