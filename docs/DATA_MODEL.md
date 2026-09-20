@@ -33,21 +33,24 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 - `consent_records` (user_id, parent_contact_id, method email_link — the only method in v1, kept
   as an enum for a future SMS method rather than hardcoded, status
   pending|consented|refused|withdrawn, legal_document_version, token_hash, token_expires_at,
-  used_at, acted_at, last_requested_at, request_count, request_count_date) — token is single-use
-  (rejected on a second `used_at`), stored **hashed**, valid **7 days**. Resending is
-  rate-limited **in the DB, no Redis yet**: `last_requested_at` backs a 60s cooldown,
-  `request_count`/`request_count_date` back a daily cap
+  used_at, withdraw_token_hash, acted_at, last_requested_at, request_count, request_count_date,
+  parent_email_hmac) — token is single-use (rejected on a second `used_at`), stored **hashed**,
+  valid **7 days**. Resending is rate-limited **in the DB, no Redis yet**: `last_requested_at`
+  backs a 60s cooldown, `request_count`/`request_count_date` back a daily cap
   (`settings_kv.consent_resend_daily_cap`) that resets on a new UTC day; the same cap applies
-  per `user_id` and, summed across every user sharing one parent email, per parent email too.
-  A **separate**, longer-lived withdrawal token is included in every email sent to
-  an already-verified parent; withdrawing sets status `withdrawn` and immediately drops the
-  account back to limited access. A minor (under 18 by `users.date_of_birth`) has limited app
-  access until status is `consented` **and** a matching self-acceptance exists in
-  `legal_acceptances` (see below) — parent consent alone is not enough.
+  per `user_id` and, summed across every user sharing one parent email, per parent email too
+  (both caps exclude deleted accounts). `withdraw_token_hash` is a **separate**, longer-lived
+  token included in every email sent to an already-verified parent; withdrawing sets status
+  `withdrawn` and immediately drops the account back to limited access. A minor (under 18 by
+  `users.date_of_birth`) has limited app access until status is `consented` **and** a matching
+  self-acceptance exists in `legal_acceptances` (see below) — parent consent alone is not
+  enough. `parent_email_hmac` is set only at account-deletion time (see below) - null otherwise.
 - `legal_documents` (type terms|privacy|risk_disclosure, version, content jsonb {en,hi,hx},
-  status draft|published, published_by staff_id, published_at) — only `super_admin` publishes
-  (permission `legal.manage`). **v1 seeds placeholder documents clearly marked DRAFT**; real text
-  is written after the outside legal review in `docs/ROADMAP.md`'s pre-launch checklist.
+  status draft|published, published_by staff_id, published_at, is_placeholder) — only
+  `super_admin` publishes (permission `legal.manage`). **v1 seeds placeholder documents
+  (`is_placeholder = true`) clearly marked DRAFT**; real text is written after the outside legal
+  review in `docs/ROADMAP.md`'s pre-launch checklist, and published as a version with
+  `is_placeholder = false`.
 - `legal_acceptances` (user_id, legal_document_id, accepted_by self|parent, accepted_at) — a new
   published version prompts re-acceptance from anyone who hasn't accepted it yet. For a minor,
   **both** an `accepted_by: 'parent'` row (written when the parent presses "I consent" on the
@@ -56,7 +59,20 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   ever needs the `self` row.
 - Staff access to this data is itself audited: the `consent.view` permission (read-only, granted
   to `user_manager`) lets staff see consent/legal-acceptance status without being able to bypass
-  it, and every view of a parent's contact details is written to `activity_logs`.
+  it, and every view of a parent's contact details is written to `activity_logs`. Deleted accounts
+  are hidden from the admin review view by default and never staff-revealable, even if shown via
+  the "show deleted" filter.
+- **Account deletion scrub** (`scrubConsentDataForDeletedUser`, called from both self-deletion and
+  the Clerk `user.deleted` webhook): `users.date_of_birth` is cleared; `consent_records` itself is
+  **kept** as durable proof of consent (status, timestamps, accepted legal-document versions), but
+  `parent_email_hmac` (HMAC-SHA256 of the normalized parent email, keyed by `CONSENT_PII_HMAC_KEY`)
+  is stored so "was it this parent email?" stays verifiable without retaining the raw address; the
+  `parent_contacts` row's name/email are anonymized in place **only if no other non-deleted
+  account currently shares that parent email** (a still-active sibling's own separate row already
+  holds the same information, so erasing this one would achieve nothing) - the row itself is never
+  deleted, since `consent_records.parent_contact_id` (`onDelete: cascade`) would take the
+  consent_records row down with it. The scrub is itself logged (`consent.data_scrubbed_on_deletion`,
+  no PII in the log).
 
 **Learning**
 - `worlds` (order, title, theme, display_xp_target — cosmetic progress indicator only; the real

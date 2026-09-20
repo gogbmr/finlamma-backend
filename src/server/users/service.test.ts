@@ -20,6 +20,11 @@ vi.mock("@/lib/auth", () => ({
   deleteConsumerClerkUser: (id: unknown) => mockDeleteConsumerClerkUser(id),
 }));
 
+const mockScrubConsentData = vi.fn();
+vi.mock("@/server/onboarding/service", () => ({
+  scrubConsentDataForDeletedUser: (userId: unknown, meta: unknown) => mockScrubConsentData(userId, meta),
+}));
+
 import { deleteMe, getMe, syncUserFromClerkEvent, updateMe } from "./service";
 
 function userEvent(
@@ -139,8 +144,9 @@ describe("syncUserFromClerkEvent", () => {
     expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({ email: null }));
   });
 
-  it("anonymizes and logs on user.deleted", async () => {
-    mockAnonymize.mockResolvedValueOnce(undefined);
+  it("anonymizes, scrubs consent data (no request meta from a webhook), and logs on user.deleted", async () => {
+    mockAnonymize.mockResolvedValueOnce({ id: "u1" });
+    mockScrubConsentData.mockResolvedValueOnce(undefined);
     mockLogActivity.mockResolvedValueOnce(undefined);
 
     const evt = {
@@ -153,12 +159,29 @@ describe("syncUserFromClerkEvent", () => {
     await syncUserFromClerkEvent(evt);
 
     expect(mockAnonymize).toHaveBeenCalledWith("user_123");
+    expect(mockScrubConsentData).toHaveBeenCalledWith("u1", { ip: null, userAgent: null });
     expect(mockLogActivity).toHaveBeenCalledWith({
       actorType: "system",
       action: "user.deleted_from_clerk",
       targetType: "user",
       targetId: "user_123",
     });
+  });
+
+  it("skips the consent-data scrub when anonymize is a no-op (redelivered/already-deleted event)", async () => {
+    mockAnonymize.mockResolvedValueOnce(null);
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    const evt = {
+      type: "user.deleted",
+      object: "event",
+      data: { id: "user_123", object: "user", deleted: true },
+      event_attributes: { http_request: { client_ip: "", user_agent: "" } },
+    } as unknown as WebhookEvent;
+
+    await syncUserFromClerkEvent(evt);
+
+    expect(mockScrubConsentData).not.toHaveBeenCalled();
   });
 
   it("ignores event types it doesn't act on", async () => {
@@ -227,15 +250,17 @@ describe("updateMe", () => {
 });
 
 describe("deleteMe", () => {
-  it("deletes from Clerk, then anonymizes the DB row, then logs it with request meta", async () => {
+  it("deletes from Clerk, anonymizes the DB row, scrubs consent data with request meta, then logs it", async () => {
     mockDeleteConsumerClerkUser.mockResolvedValueOnce(undefined);
-    mockAnonymize.mockResolvedValueOnce(undefined);
+    mockAnonymize.mockResolvedValueOnce({ id: "u1" });
+    mockScrubConsentData.mockResolvedValueOnce(undefined);
     mockLogActivity.mockResolvedValueOnce(undefined);
 
     await deleteMe(USER_ROW, META);
 
     expect(mockDeleteConsumerClerkUser).toHaveBeenCalledWith("clerk_123");
     expect(mockAnonymize).toHaveBeenCalledWith("clerk_123");
+    expect(mockScrubConsentData).toHaveBeenCalledWith("u1", META);
     expect(mockLogActivity).toHaveBeenCalledWith({
       actorType: "user",
       actorId: "u1",
@@ -247,12 +272,13 @@ describe("deleteMe", () => {
     });
   });
 
-  it("does not anonymize the DB row if the Clerk deletion fails", async () => {
+  it("does not anonymize or scrub consent data if the Clerk deletion fails", async () => {
     mockDeleteConsumerClerkUser.mockRejectedValueOnce(new Error("Clerk unavailable"));
 
     await expect(deleteMe(USER_ROW, META)).rejects.toThrow();
 
     expect(mockAnonymize).not.toHaveBeenCalled();
+    expect(mockScrubConsentData).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });

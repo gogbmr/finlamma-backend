@@ -72,9 +72,13 @@ export async function upsertUserFromClerk(input: ClerkUserSync) {
 // Driven by Clerk's user.deleted. Unconditional and idempotent: it always
 // wins over any concurrent update (no clerkUpdatedAt comparison - deletion
 // in Clerk is terminal), and re-applying it to an already-deleted row is a
-// harmless no-op restricted by the deletedAt IS NULL guard.
+// harmless no-op restricted by the deletedAt IS NULL guard. Returns the
+// anonymized row (or null on that no-op) so callers - both deleteMe() and
+// the user.deleted webhook handler - know whether to also run
+// scrubConsentDataForDeletedUser (src/server/onboarding/service.ts), which
+// needs the internal user id, not just the Clerk id.
 export async function anonymizeUserFromClerk(clerkUserId: string) {
-  await db
+  const [updated] = await db
     .update(users)
     .set({
       deletedAt: new Date(),
@@ -85,6 +89,11 @@ export async function anonymizeUserFromClerk(clerkUserId: string) {
       // there than a blank. It carries no personal data.
       firstName: "Deleted user",
       lastInitial: null,
+      // A minor's real birthdate is personal data too - cleared same as
+      // everything else here (see docs/STATUS.md's Phase 2a audit).
+      dateOfBirth: null,
     })
-    .where(and(eq(users.clerkUserId, clerkUserId), isNull(users.deletedAt)));
+    .where(and(eq(users.clerkUserId, clerkUserId), isNull(users.deletedAt)))
+    .returning();
+  return updated ?? null;
 }

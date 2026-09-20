@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { legalAcceptances, legalDocuments } from "@/db/schema";
+import { isUniqueViolation } from "@/lib/db-errors";
 import type { LegalDocumentContent } from "./schemas";
 
 export type LegalDocumentType = "terms" | "privacy" | "risk_disclosure";
@@ -40,6 +41,17 @@ export async function getDraftDocument(type: LegalDocumentType) {
 // Creates the type's first-ever draft (version = published version + 1, or
 // 1 if never published), or updates the content of an existing draft in
 // place - there is at most one draft per type at a time.
+//
+// Two concurrent calls (a double-click, or two legal.manage staff saving at
+// once) can both take the "no existing draft" branch and both insert the
+// same computed version - the unique index on (type, version) prevents
+// actual duplicate/corrupt data, but an audit found the loser used to
+// crash with a raw unhandled error instead of a clean retry, unlike the
+// equivalent race in claimConsentRequestSlot. The loser now re-fetches
+// (the winner's insert has already landed by the time this catch runs) and
+// updates that row's content instead - so the field the staff member typed
+// is never silently lost, it just ends up on the draft the other request
+// created a moment earlier.
 export async function upsertDraft(type: LegalDocumentType, content: LegalDocumentContent) {
   const existingDraft = await getDraftDocument(type);
   if (existingDraft) {
@@ -53,11 +65,23 @@ export async function upsertDraft(type: LegalDocumentType, content: LegalDocumen
 
   const published = await getPublishedDocument(type);
   const nextVersion = (published?.version ?? 0) + 1;
-  const [created] = await db
-    .insert(legalDocuments)
-    .values({ type, version: nextVersion, content, status: "draft" })
-    .returning();
-  return created;
+  try {
+    const [created] = await db
+      .insert(legalDocuments)
+      .values({ type, version: nextVersion, content, status: "draft" })
+      .returning();
+    return created;
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    const draftFromWinner = await getDraftDocument(type);
+    if (!draftFromWinner) throw err; // shouldn't happen, but don't hide the real error if it does
+    const [updated] = await db
+      .update(legalDocuments)
+      .set({ content })
+      .where(eq(legalDocuments.id, draftFromWinner.id))
+      .returning();
+    return updated;
+  }
 }
 
 // Flips the type's current draft to published. Returns null if there's no

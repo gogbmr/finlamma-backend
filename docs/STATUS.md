@@ -1,5 +1,74 @@
 # Status
 
+## 2026-09-20 — Phase 2a: full-phase audit findings fixed (account-deletion scrub, health version, editor race)
+
+Full-phase `/phase-audit 2a` found 1 High, 1 Medium, 1 Low security/robustness finding, plus a
+founder-requested observability addition and a doc-completeness nit. All fixed on
+`phase-2a-consent`:
+
+**(High, fixed) Account deletion didn't reach Phase 2a's compliance tables.** Deleting a user
+only ever scrubbed the `users` row - `parent_contacts` (the parent's real name/email),
+`users.date_of_birth`, and `consent_records` were untouched, and a staff member could still
+reveal a deleted child's real parent contact indefinitely. Fixed:
+- `anonymizeUserFromClerk` (`src/server/users/repo.ts`) now also nulls `date_of_birth`.
+- New `scrubConsentDataForDeletedUser` (`src/server/onboarding/service.ts`), called from both
+  self-deletion (`deleteMe`) and the Clerk `user.deleted` webhook, so it runs regardless of which
+  side triggers deletion:
+  - `consent_records` is **kept** as durable proof consent was once given (status, timestamps,
+    accepted legal-document versions) - never deleted.
+  - The parent's real email is replaced with **`parent_email_hmac`**, an HMAC-SHA256 keyed by a
+    new secret (`CONSENT_PII_HMAC_KEY`, generated with `openssl rand -hex 32` - not from any
+    dashboard, you generate and set this yourself in `.env.local` and Vercel), so "was it this
+    parent email?" stays verifiable without retaining the raw address. If the key isn't
+    configured, deletion still proceeds (never blocks a user's right to delete their account over
+    an ops gap) but logs that the HMAC couldn't be stored.
+  - The `parent_contacts` row's name/email are anonymized in place **only if no other
+    non-deleted account currently shares that parent email** - a still-active sibling's own
+    separate row already holds the same info, so erasing this one would achieve nothing. The row
+    itself is never deleted (would cascade-delete the `consent_records` row we're deliberately
+    keeping).
+  - `countChildrenForParentEmail`/`sumRequestsTodayForParentEmail` now exclude deleted accounts,
+    so a parent email that only backs deleted/test accounts doesn't stay permanently maxed out.
+  - `/admin/consent` hides deleted accounts by default (optional "show deleted" filter, rendered
+    as "Deleted, anonymised" with the reveal action disabled - `revealParentContact` now refuses
+    outright for a deleted account, even if some PII technically survived the sibling exception).
+  - The scrub is itself logged (`consent.data_scrubbed_on_deletion`, no PII in the metadata).
+- **Backfill**: checked before writing any backfill code - **zero rows currently need it** (the
+  one already-deleted user in this database predates Phase 2a's tables entirely). Plan/SQL kept
+  on file (not run) for whenever it's needed:
+  ```sql
+  -- 1. Null date_of_birth for already-deleted users who still have one
+  update users set date_of_birth = null
+    where deleted_at is not null and date_of_birth is not null;
+
+  -- 2. For each already-deleted user with a parent_contacts row, either
+  --    anonymize (no other active sibling shares the email) or leave as-is
+  --    (a sibling is still active) - this needs the same per-row logic as
+  --    scrubConsentDataForDeletedUser, so it should run as a one-off script
+  --    that calls that function per already-deleted user id, not raw SQL.
+  ```
+- Added "legal review: retention period for anonymised consent evidence" to `docs/ROADMAP.md`'s
+  pre-launch checklist, since `consent_records` (with its HMAC proof) is now kept indefinitely by
+  design - counsel should confirm whether that needs its own retention limit.
+
+**(Medium, design proposed, not yet built)** A minor's continued access isn't re-checked against
+the parent's approval when a legal document changes - only the minor's own re-acceptance is
+checked today. Proposal sent to the founder (a per-version `requires_parent_reapproval` flag set
+by staff at publish time); waiting on approval before implementing.
+
+**(Low, fixed)** `upsertDraft` (`src/server/legal/repo.ts`) now catches a concurrent-save race
+(two `legal.manage` staff saving the same new draft at once) and retries against the winner's
+row instead of crashing with a raw unhandled error - same pattern already used in
+`claimConsentRequestSlot`.
+
+**(Observability, founder-requested, added)** `GET /api/v1/health` gained a `version` field -
+Vercel's `VERCEL_GIT_COMMIT_SHA`, shortened to 7 characters (`"local"` outside Vercel) - so
+confirming what commit is actually deployed no longer requires the Vercel dashboard.
+
+**(Doc nit, fixed)** `docs/DATA_MODEL.md` now explicitly lists `is_placeholder`
+(`legal_documents`) and `withdraw_token_hash`/`parent_email_hmac` (`consent_records`), which
+existed in the schema but weren't spelled out in the field lists.
+
 ## 2026-09-20 — Phase 2a: parental-consent flow (request/confirm/decline/withdraw) + admin review
 
 Built and merged on `phase-2a-consent`: `PATCH /me/date-of-birth` (set-once),

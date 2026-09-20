@@ -12,6 +12,7 @@ type Row = {
   status: "pending" | "consented" | "refused" | "withdrawn";
   requestedAt: string;
   actedAt: string | null;
+  deleted: boolean;
 };
 
 const STATUS_VARIANT: Record<Row["status"], "default" | "success" | "muted"> = {
@@ -80,7 +81,11 @@ export function ConsentReviewTable({ rows }: { rows: Row[] }) {
           <TableRow key={row.userId}>
             <TableCell>{row.displayName}</TableCell>
             <TableCell>
-              <Badge variant={STATUS_VARIANT[row.status]}>{row.status}</Badge>
+              {row.deleted ? (
+                <Badge variant="muted">Deleted, anonymised</Badge>
+              ) : (
+                <Badge variant={STATUS_VARIANT[row.status]}>{row.status}</Badge>
+              )}
             </TableCell>
             <TableCell className="text-xs text-neutral-600">
               {new Date(row.requestedAt).toLocaleString()}
@@ -89,7 +94,11 @@ export function ConsentReviewTable({ rows }: { rows: Row[] }) {
               {row.actedAt ? new Date(row.actedAt).toLocaleString() : "—"}
             </TableCell>
             <TableCell>
-              <ParentContactCell userId={row.userId} />
+              {row.deleted ? (
+                <span className="text-xs text-neutral-400">Not available</span>
+              ) : (
+                <ParentContactCell userId={row.userId} />
+              )}
             </TableCell>
           </TableRow>
         ))}

@@ -151,6 +151,12 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 ## Pre-launch checklist
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
+- [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps
+      `consent_records` (status, timestamps, accepted legal-document versions, and a
+      `parent_email_hmac` proof) indefinitely as evidence consent was once given, even after the
+      account and the parent's raw contact details are scrubbed — see `docs/DATA_MODEL.md`'s
+      Compliance section. Outside counsel should confirm how long this evidence needs to be kept
+      and whether it needs its own retention/deletion policy, separate from the account itself.
 - [ ] SMS OTP for parent verification, in addition to Phase 2a's email-only flow — needs an
       Indian SMS provider (e.g. MSG91/Gupshup) and DLT template registration; not required to
       launch, deferred until that provider/registration work is done

@@ -162,6 +162,13 @@ export const consentRecords = pgTable(
     lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }),
     requestCount: integer("request_count").default(1).notNull(),
     requestCountDate: date("request_count_date"),
+    // Set once, at account-deletion time (src/server/onboarding/service.ts
+    // scrubConsentDataForDeletedUser), from the parent_contacts email that's
+    // about to be anonymized - HMAC-SHA256 keyed by CONSENT_PII_HMAC_KEY, so
+    // "was it this parent?" stays verifiable (compute the same HMAC over a
+    // candidate email and compare) without retaining the raw email once the
+    // account is deleted. Null for every account that hasn't been deleted.
+    parentEmailHmac: text("parent_email_hmac"),
   },
   (t) => [
     uniqueIndex("consent_records_user_id_idx").on(t.userId),

@@ -40,8 +40,24 @@ const HealthDataSchema = z.object({
       "types has no published version at all. Both must be resolved (a real version published " +
       "through the admin Legal document editor) before launch.",
   }),
+  version: z.string().openapi({
+    example: "2d303f6",
+    description:
+      "The deployed commit's short SHA (Vercel's VERCEL_GIT_COMMIT_SHA, first 7 characters), " +
+      "so confirming what's actually live doesn't require the Vercel dashboard. 'local' outside " +
+      "Vercel (local dev, tests).",
+  }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
+
+// Vercel sets VERCEL_GIT_COMMIT_SHA automatically on every deployment (the
+// full 40-char SHA) - not a secret, just the commit being built. Shortened
+// to match how commit SHAs are normally displayed (git log --oneline,
+// GitHub's UI). "local" outside Vercel, so this is never confused with a
+// real deployed commit.
+function currentVersion(): string {
+  return env.VERCEL_GIT_COMMIT_SHA ? env.VERCEL_GIT_COMMIT_SHA.slice(0, 7) : "local";
+}
 
 // Decodes a Clerk publishable key's embedded Frontend API host. Format is
 // pk_(test|live)_<base64(frontendApiHost + "$")> - see Clerk's publishable
@@ -201,6 +217,7 @@ export const GET = withErrors(async () => {
     migrations: "ok" as const,
     clerkKeys,
     legalDocuments,
+    version: currentVersion(),
     timestamp: new Date().toISOString(),
   });
 });

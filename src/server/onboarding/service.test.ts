@@ -6,6 +6,7 @@ const mockEnv = vi.hoisted(() => ({
   EMAIL_FROM: undefined as string | undefined,
   NODE_ENV: "test" as string,
   VERCEL_ENV: undefined as "production" | "preview" | "development" | undefined,
+  CONSENT_PII_HMAC_KEY: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -25,6 +26,8 @@ const mockListConsentRecordsForReview = vi.fn();
 const mockGetParentContactForReview = vi.fn();
 const mockGetUserFirstName = vi.fn();
 const mockIsUserDeleted = vi.fn();
+const mockAnonymizeParentContact = vi.fn();
+const mockSetConsentRecordParentEmailHmac = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
   getParentContact: (id: unknown) => mockGetParentContact(id),
@@ -40,10 +43,14 @@ vi.mock("./repo", () => ({
   confirmConsentAndRecordAcceptances: (input: unknown) => mockConfirmConsentAndRecordAcceptances(input),
   declineConsentRecord: (id: unknown, meta: unknown) => mockDeclineConsentRecord(id, meta),
   withdrawConsentRecord: (id: unknown, meta: unknown) => mockWithdrawConsentRecord(id, meta),
-  listConsentRecordsForReview: (limit: unknown) => mockListConsentRecordsForReview(limit),
+  listConsentRecordsForReview: (limit: unknown, includeDeleted: unknown) =>
+    mockListConsentRecordsForReview(limit, includeDeleted),
   getParentContactForReview: (userId: unknown) => mockGetParentContactForReview(userId),
   getUserFirstName: (id: unknown) => mockGetUserFirstName(id),
   isUserDeleted: (userId: unknown) => mockIsUserDeleted(userId),
+  anonymizeParentContact: (id: unknown) => mockAnonymizeParentContact(id),
+  setConsentRecordParentEmailHmac: (userId: unknown, hmac: unknown) =>
+    mockSetConsentRecordParentEmailHmac(userId, hmac),
 }));
 
 const mockLogActivity = vi.fn();
@@ -81,6 +88,7 @@ import {
   requestParentConsent,
   requireFullAccess,
   revealParentContact,
+  scrubConsentDataForDeletedUser,
   setDateOfBirth,
   withdrawParentConsent,
 } from "./service";
@@ -93,6 +101,7 @@ beforeEach(() => {
   mockEnv.EMAIL_FROM = undefined;
   mockEnv.NODE_ENV = "test";
   mockEnv.VERCEL_ENV = undefined;
+  mockEnv.CONSENT_PII_HMAC_KEY = undefined;
   mockGetSettingNumber.mockImplementation((_key, fallback) => Promise.resolve(fallback));
   mockIsUserDeleted.mockResolvedValue(false);
 });
@@ -763,11 +772,17 @@ describe("withdrawParentConsent", () => {
 });
 
 describe("getConsentReviewList / revealParentContact", () => {
-  it("getConsentReviewList passes the limit through to the repo", async () => {
+  it("getConsentReviewList excludes deleted accounts by default", async () => {
     mockListConsentRecordsForReview.mockResolvedValueOnce([{ userId: "u1" }]);
     const result = await getConsentReviewList(50);
-    expect(mockListConsentRecordsForReview).toHaveBeenCalledWith(50);
+    expect(mockListConsentRecordsForReview).toHaveBeenCalledWith(50, false);
     expect(result).toEqual([{ userId: "u1" }]);
+  });
+
+  it("getConsentReviewList passes includeDeleted through when asked", async () => {
+    mockListConsentRecordsForReview.mockResolvedValueOnce([]);
+    await getConsentReviewList(50, true);
+    expect(mockListConsentRecordsForReview).toHaveBeenCalledWith(50, true);
   });
 
   it("revealParentContact fetches the contact and logs the reveal under the staff actor", async () => {
@@ -784,5 +799,90 @@ describe("getConsentReviewList / revealParentContact", () => {
         targetId: "u1",
       }),
     );
+  });
+
+  it("revealParentContact refuses (and never logs a reveal) for a deleted account", async () => {
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+
+    await expect(revealParentContact({ id: "staff1" }, "u1", META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockGetParentContactForReview).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe("scrubConsentDataForDeletedUser", () => {
+  it("no-ops when the user never had a parent contact (adult, or minor who never requested consent)", async () => {
+    mockGetParentContact.mockResolvedValueOnce(null);
+
+    await scrubConsentDataForDeletedUser("u1", META);
+
+    expect(mockSetConsentRecordParentEmailHmac).not.toHaveBeenCalled();
+    expect(mockAnonymizeParentContact).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("anonymizes the parent contact and stores an HMAC when no other active child shares that email", async () => {
+    mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
+
+    await scrubConsentDataForDeletedUser("u1", META);
+
+    expect(mockSetConsentRecordParentEmailHmac).toHaveBeenCalledWith(
+      "u1",
+      expect.any(String),
+    );
+    expect(mockAnonymizeParentContact).toHaveBeenCalledWith("pc1");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.data_scrubbed_on_deletion",
+        targetId: "u1",
+        metadata: { parentContactAnonymized: true, hmacStored: true },
+      }),
+    );
+  });
+
+  it("computes the same HMAC for the same email (deterministic, keyed)", async () => {
+    mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+    mockGetParentContact.mockResolvedValue({ id: "pc1", email: "priya@example.com" });
+    mockCountChildrenForParentEmail.mockResolvedValue(0);
+
+    await scrubConsentDataForDeletedUser("u1", META);
+    const firstHmac = mockSetConsentRecordParentEmailHmac.mock.calls[0][1];
+
+    await scrubConsentDataForDeletedUser("u2", META);
+    const secondHmac = mockSetConsentRecordParentEmailHmac.mock.calls[1][1];
+
+    expect(firstHmac).toBe(secondHmac);
+  });
+
+  it("does NOT anonymize the parent contact when another active child shares that email", async () => {
+    mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockCountChildrenForParentEmail.mockResolvedValueOnce(1);
+
+    await scrubConsentDataForDeletedUser("u1", META);
+
+    expect(mockAnonymizeParentContact).not.toHaveBeenCalled();
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { parentContactAnonymized: false, hmacStored: true } }),
+    );
+  });
+
+  it("still deletes/scrubs when CONSENT_PII_HMAC_KEY isn't configured, storing a null HMAC and logging the gap", async () => {
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await scrubConsentDataForDeletedUser("u1", META);
+
+    expect(mockSetConsentRecordParentEmailHmac).toHaveBeenCalledWith("u1", null);
+    expect(mockAnonymizeParentContact).toHaveBeenCalledWith("pc1");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { parentContactAnonymized: true, hmacStored: false } }),
+    );
+    consoleErrorSpy.mockRestore();
   });
 });

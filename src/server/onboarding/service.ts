@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { ParentConsentConfirmedEmail } from "@/emails/parent-consent-confirmed";
 import { ParentConsentRequestEmail } from "@/emails/parent-consent-request";
@@ -12,6 +12,7 @@ import { getSettingNumber } from "@/lib/settings";
 import { listPublishedDocuments } from "@/server/legal/repo";
 import { getLegalStatus } from "@/server/legal/service";
 import {
+  anonymizeParentContact,
   claimConsentRequestSlot,
   confirmConsentAndRecordAcceptances,
   countChildrenForParentEmail,
@@ -24,6 +25,7 @@ import {
   getUserFirstName,
   isUserDeleted,
   listConsentRecordsForReview,
+  setConsentRecordParentEmailHmac,
   setDateOfBirthOnce,
   sumRequestsTodayForParentEmail,
   upsertParentContact,
@@ -488,22 +490,84 @@ export async function withdrawParentConsent(token: string, meta: RequestMeta) {
   return { childFirstName: childFirstName ?? "your child", alreadyWithdrawn: false };
 }
 
+// --- Account-deletion scrub (called from src/server/users/service.ts,
+// both self-deletion and the Clerk user.deleted webhook, so it runs no
+// matter which side triggers the deletion) ---
+//
+// A deletion audit found this data was never touched by account deletion:
+// the parent's real name/email in parent_contacts, and the minor's real
+// date of birth (now handled directly in anonymizeUserFromClerk). This is
+// the parent_contacts + consent_records half.
+export async function scrubConsentDataForDeletedUser(
+  userId: string,
+  meta: RequestMeta,
+): Promise<void> {
+  const parentContact = await getParentContact(userId);
+  if (!parentContact) return; // adult account, or a minor who never requested consent
+
+  const hmacKey = env.CONSENT_PII_HMAC_KEY;
+  const parentEmailHmac = hmacKey
+    ? createHmac("sha256", hmacKey).update(parentContact.email).digest("hex")
+    : null;
+  if (!hmacKey) {
+    logInternalError(
+      "consent.scrub_missing_hmac_key",
+      new Error(`CONSENT_PII_HMAC_KEY not configured - deleting user ${userId} without HMAC proof`),
+    );
+  }
+  await setConsentRecordParentEmailHmac(userId, parentEmailHmac);
+
+  // countChildrenForParentEmail excludes deleted accounts, and this user's
+  // own deletedAt is already set by the time this runs (see
+  // src/server/users/service.ts) - so this naturally counts *other* active
+  // children only, with no separate "exclude self" parameter needed.
+  const otherActiveChildren = await countChildrenForParentEmail(parentContact.email);
+  const anonymized = otherActiveChildren === 0;
+  if (anonymized) {
+    // Only erase the parent's contact info once no other current child
+    // depends on it - if the same email still backs another active child,
+    // it's still a live, legitimate contact for the platform (that
+    // sibling's own separate parent_contacts row already holds the same
+    // information anyway, so erasing this one row would achieve nothing).
+    await anonymizeParentContact(parentContact.id);
+  }
+
+  await logActivity({
+    actorType: "user",
+    actorId: userId,
+    action: "consent.data_scrubbed_on_deletion",
+    targetType: "user",
+    targetId: userId,
+    metadata: { parentContactAnonymized: anonymized, hmacStored: Boolean(parentEmailHmac) },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
 // --- Staff (admin, consent.view - read-only) ---
 
-export async function getConsentReviewList(limit = 100) {
-  return listConsentRecordsForReview(limit);
+// Excludes deleted accounts by default - see listConsentRecordsForReview.
+export async function getConsentReviewList(limit = 100, includeDeleted = false) {
+  return listConsentRecordsForReview(limit, includeDeleted);
 }
 
 // The one path that reveals a parent's name/email to staff - always logs
 // the reveal itself (actor = the staff member, target = the child account),
 // per the non-negotiable rule that staff access to parent contact details
 // is itself audited. Never called from a list render, only from an
-// explicit staff action (see the admin consent-review page).
+// explicit staff action (see the admin consent-review page). Refuses for a
+// deleted account - even if some PII survived (parentContactAnonymized was
+// false because a sibling is still active), a deleted child's own contact
+// details are never staff-revealable again.
 export async function revealParentContact(
   actor: { id: string },
   userId: string,
   meta: RequestMeta,
 ) {
+  if (await isUserDeleted(userId)) {
+    throw new AppError("NOT_FOUND", "This account has been deleted - contact details are no longer available");
+  }
+
   const contact = await getParentContactForReview(userId);
 
   await logActivity({

@@ -16,6 +16,7 @@ const CONSUMER_HOST = "consumer-app.clerk.accounts.dev";
 const mockEnv = vi.hoisted(() => ({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
+  VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -37,6 +38,7 @@ beforeEach(() => {
   // need to know about the Clerk-key check at all.
   mockEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = clerkKey(STAFF_HOST);
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
+  mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
   // All three types published, none placeholder - existing tests below
   // don't need to know about the legalDocuments warning field at all.
   mockListPublishedDocuments.mockReset().mockResolvedValue([
@@ -70,6 +72,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.migrations).toBe("ok");
     expect(body.data.clerkKeys).toBe("ok");
     expect(body.data.legalDocuments).toBe("ok");
+    expect(body.data.version).toBe("local");
     expect(typeof body.data.timestamp).toBe("string");
   });
 
@@ -179,5 +182,23 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.clerkKeys).toBe("unconfigured");
+  });
+
+  it("reports the deployed commit's short SHA as `version` when VERCEL_GIT_COMMIT_SHA is set", async () => {
+    mockEnv.VERCEL_GIT_COMMIT_SHA = "2d303f6a1b2c3d4e5f60718293a4b5c6d7e8f9a0";
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect((await res.json()).data.version).toBe("2d303f6");
+  });
+
+  it("reports version: 'local' when VERCEL_GIT_COMMIT_SHA is unset (local dev, tests)", async () => {
+    mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect((await res.json()).data.version).toBe("local");
   });
 });

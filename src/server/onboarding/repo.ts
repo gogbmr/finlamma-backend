@@ -59,11 +59,16 @@ export async function upsertParentContact(userId: string, name: string, email: s
   return created;
 }
 
+// Excludes deleted accounts, so a parent email that only backs since-deleted
+// (test/abandoned) accounts doesn't stay permanently maxed out - a deletion
+// audit found this wasn't excluded, which could lock a parent out of
+// consenting for a real, current child.
 export async function countChildrenForParentEmail(email: string): Promise<number> {
   const rows = await db
     .select({ userId: parentContacts.userId })
     .from(parentContacts)
-    .where(eq(parentContacts.email, email));
+    .innerJoin(users, eq(users.id, parentContacts.userId))
+    .where(and(eq(parentContacts.email, email), isNull(users.deletedAt)));
   return rows.length;
 }
 
@@ -90,6 +95,7 @@ export async function getConsentRecordByTokenHash(tokenHash: string) {
 // daily resend cap (the per-user half just reads the caller's own row).
 // Volumes here are tiny (a handful of children per email at most), so this
 // is a plain filter-in-JS rather than a date-filtered SQL aggregate.
+// Excludes deleted accounts, same reasoning as countChildrenForParentEmail.
 export async function sumRequestsTodayForParentEmail(
   email: string,
   todayUtc: string,
@@ -98,7 +104,8 @@ export async function sumRequestsTodayForParentEmail(
     .select({ requestCount: consentRecords.requestCount, requestCountDate: consentRecords.requestCountDate })
     .from(consentRecords)
     .innerJoin(parentContacts, eq(parentContacts.id, consentRecords.parentContactId))
-    .where(eq(parentContacts.email, email));
+    .innerJoin(users, eq(users.id, consentRecords.userId))
+    .where(and(eq(parentContacts.email, email), isNull(users.deletedAt)));
   return rows
     .filter((r) => r.requestCountDate === todayUtc)
     .reduce((sum, r) => sum + r.requestCount, 0);
@@ -328,6 +335,7 @@ export type ConsentReviewRow = {
   status: ConsentRecordRow["status"];
   createdAt: Date;
   actedAt: Date | null;
+  deletedAt: Date | null;
 };
 
 // Staff review list (consent.view) - deliberately never selects
@@ -335,7 +343,15 @@ export type ConsentReviewRow = {
 // getParentContactForReview below, one row at a time, on an explicit staff
 // action - see docs/PRODUCT_SPEC.md's Onboarding & parental consent
 // section: "every view of a parent's contact details is logged."
-export async function listConsentRecordsForReview(limit: number): Promise<ConsentReviewRow[]> {
+//
+// Excludes deleted accounts by default - a deletion audit found they'd
+// otherwise stay listed forever. `includeDeleted: true` shows them anyway
+// (the admin page renders these as "Deleted, anonymised" and disables the
+// reveal action for them - see revealParentContact in service.ts).
+export async function listConsentRecordsForReview(
+  limit: number,
+  includeDeleted = false,
+): Promise<ConsentReviewRow[]> {
   return db
     .select({
       userId: consentRecords.userId,
@@ -344,9 +360,11 @@ export async function listConsentRecordsForReview(limit: number): Promise<Consen
       status: consentRecords.status,
       createdAt: consentRecords.createdAt,
       actedAt: consentRecords.actedAt,
+      deletedAt: users.deletedAt,
     })
     .from(consentRecords)
     .innerJoin(users, eq(users.id, consentRecords.userId))
+    .where(includeDeleted ? undefined : isNull(users.deletedAt))
     .orderBy(consentRecords.createdAt)
     .limit(limit);
 }
@@ -354,7 +372,34 @@ export async function listConsentRecordsForReview(limit: number): Promise<Consen
 // The one place parent PII is read for a staff member - the caller
 // (src/server/onboarding/service.ts) logs this call every time, per the
 // non-negotiable rule that staff access to parent contact details is
-// itself audited.
+// itself audited. The caller also refuses this for a deleted account
+// before ever reaching here - see revealParentContact in service.ts.
 export async function getParentContactForReview(userId: string) {
   return getParentContact(userId);
+}
+
+// --- Account-deletion scrub (src/server/onboarding/service.ts
+// scrubConsentDataForDeletedUser) ---
+
+// Anonymizes a parent's name/email in place - never deletes the row, since
+// consent_records.parent_contact_id (onDelete: cascade) would take the
+// consent_records row down with it, and that row is deliberately kept as
+// durable proof of consent. The email is made unique per row (not a single
+// shared placeholder) so anonymized rows can never look like "the same
+// parent" to any future query keyed on email.
+export async function anonymizeParentContact(parentContactId: string): Promise<void> {
+  await db
+    .update(parentContacts)
+    .set({ name: "[deleted]", email: `deleted+${parentContactId}@anonymized.invalid` })
+    .where(eq(parentContacts.id, parentContactId));
+}
+
+// Stores the HMAC computed from the about-to-be-anonymized parent email (see
+// scrubConsentDataForDeletedUser) - null is a valid value (CONSENT_PII_HMAC_KEY
+// unset, or no consent_records row exists yet for this user).
+export async function setConsentRecordParentEmailHmac(
+  userId: string,
+  parentEmailHmac: string | null,
+): Promise<void> {
+  await db.update(consentRecords).set({ parentEmailHmac }).where(eq(consentRecords.userId, userId));
 }

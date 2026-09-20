@@ -1,0 +1,1 @@
+ALTER TABLE "consent_records" ADD COLUMN "parent_email_hmac" text;
