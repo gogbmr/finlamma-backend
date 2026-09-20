@@ -1,5 +1,29 @@
 # Status
 
+## 2026-09-20 — Phase 2a merged to `main` and verified in production. Next: Phase 2b.
+
+`phase-2a-consent` merged into `main` via merge commit `2d29847` (27 commits, kept the branch). Before
+merging: the `/phase-audit 2a` security finding below (non-transactional reapproval writes) was
+fixed with tests proving real rollback; the publish Yes/No re-approval choice was verified
+end-to-end (it was already correctly rejecting a missing/undefined/null choice - the gap was only
+in test coverage, now closed); the whole feature was documented in `PRODUCT_SPEC.md`/
+`DATA_MODEL.md`/`ARCHITECTURE.md` (new decision D16) where it had been missing; the two throwaway
+test accounts (Aarav, Diya) were deleted from the database and confirmed gone; and
+`pnpm typecheck`/`lint`/`test` (262 tests)/`build` were all green at the merge commit.
+
+**Production, verified post-merge against `https://finlamma-backend-rho.vercel.app`:**
+- `GET /api/v1/health`: `{"status":"ok","database":"ok","migrations":"ok","clerkKeys":"ok","legalDocuments":"placeholder","version":"2d29847","consentPiiHmacKey":"ok"}` -
+  `version` matches the merge commit exactly, `consentPiiHmacKey` is `ok` (not `missing`).
+  `legalDocuments: "placeholder"` is expected and tracked separately (real text pending outside
+  legal review, see the pre-launch checklist) - not a merge regression.
+- Every new Phase 2a authenticated endpoint returns 401 without a token, never 500:
+  `GET /me/legal-status`, `PATCH /me/date-of-birth`, `POST /me/legal/accept`,
+  `POST /me/parent-consent/request`, `POST /me/legal/reapproval/resend`. The intentionally-public
+  `GET /api/v1/legal/terms` still returns 200.
+- `/admin/legal` and `/admin/consent` both return 307 to `/admin/sign-in` for a signed-out visitor.
+
+**Phase 2a is fully verified end to end and closed. Next up: Phase 2b (learning content).**
+
 ## 2026-09-20 — Phase 2a: full-phase audit findings fixed (account-deletion scrub, health version, editor race)
 
 Full-phase `/phase-audit 2a` found 1 High, 1 Medium, 1 Low security/robustness finding, plus a
