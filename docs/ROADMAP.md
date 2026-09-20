@@ -30,13 +30,24 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [x] Admin shell: layout, sign-in, staff management page, activity log viewer
 - [x] `GET/PATCH /me`, account deletion (DB + Clerk)
 
-## Phase 2 — Learning content
-- [ ] **Onboarding & parental consent** (do this early — it gates everything else): date of birth
-      capture, `parent_contacts` + `consent_records` for under-18 users (parent verifies via
-      OTP/email), `legal_documents` + `legal_acceptances` (staff-editable, versioned,
-      super_admin-only publish, re-acceptance on new versions), limited feature access until
-      consent completes — see `docs/PRODUCT_SPEC.md` §7. School/institution accounts are v2, not
-      in v1's legal text.
+## Phase 2a — Onboarding, parental consent & legal documents
+Do this early — it gates everything else. **Audit and merge to main before starting Phase 2b.**
+- [ ] Date of birth capture at onboarding; determines under-18 status
+- [ ] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
+      publish, re-acceptance on new versions) for Terms/Privacy/Risk-disclosure, with an admin
+      legal-document editor. School/institution accounts are v2, not in v1's legal text.
+- [ ] `parent_contacts` + `consent_records` for under-18 users. **v1 parent verification is by
+      email only** (a verification link or a code sent to the parent's email) — no SMS. SMS OTP
+      for parents needs an Indian SMS provider + DLT template registration, so it's deferred (see
+      Pre-launch checklist).
+- [ ] Limited feature access for a minor's account until consent completes
+- [ ] Admin: consent/legal-acceptance review view (staff can see status, not bypass it)
+- See `docs/PRODUCT_SPEC.md` §7 for the exact flow and feature limits.
+
+## Phase 2b — Learning content
+- [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
+      from Phase 3 because worlds need a mentor; seed Baby/Father/Grandpa Lamma per the
+      prototype's world ranges
 - [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
       **sequential only** (clearing the previous world's Boss Quiz) — no XP/level gate; Boss Quiz
       and Role Play reuse the same lesson-flow content shape as Quiz, not separate engines
@@ -58,7 +69,6 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
       admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
       brand-partner rewards later without a schema change
-- [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language)
 - [ ] Certificates on world completion — PDF via a browser-free renderer (e.g.
       `@react-pdf/renderer`, not a headless browser — Vercel-compatible), stored in storage,
       shared as a signed URL via the device share sheet (the student sends it, we never do)
@@ -73,7 +83,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 - [ ] Twelve Data REST: quotes and candle history with Redis caching
 - [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks when the
       user reaches `settings_kv.trade_unlock_world_order` (default: Market Maidan/World 4) via
-      the same sequential world-clear rule as Phase 2, not an XP/level threshold — no starting
+      the same sequential world-clear rule as Phase 2b, not an XP/level threshold — no starting
       balance or unlock grant, ever (see `docs/ECONOMY.md`)
 - [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
 - [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
@@ -118,7 +128,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 ## Phase 7 — Notifications & Doubt Zone
 - [ ] Expo push tokens, notification preferences, streak/boss/news jobs
 - [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
-      rules — this is the live upgrade of Phase 2's scripted in-lesson "Doubt Zone"/"Lamma AI"
+      rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point
 
 ## Phase 8 — Monetisation
@@ -132,6 +142,9 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 ## Pre-launch checklist
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
+- [ ] SMS OTP for parent verification, in addition to Phase 2a's email-only flow — needs an
+      Indian SMS provider (e.g. MSG91/Gupshup) and DLT template registration; not required to
+      launch, deferred until that provider/registration work is done
 - [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
       `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
 - [ ] Create PostHog project, add `NEXT_PUBLIC_POSTHOG_KEY`/`NEXT_PUBLIC_POSTHOG_HOST`, wire up
