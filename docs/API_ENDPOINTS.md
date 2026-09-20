@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-19.
+> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-20.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -16,6 +16,12 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me` — Get my profile
 - `PATCH /api/v1/me` — Update my preferences
 - `DELETE /api/v1/me` — Delete my account
+
+**Legal**
+
+- `GET /api/v1/legal/{type}` — Get a published legal document
+- `GET /api/v1/me/legal-status` — Get my legal-document acceptance status
+- `POST /api/v1/me/legal/accept` — Accept the currently published legal documents
 
 **Webhooks**
 
@@ -212,6 +218,133 @@ Permanently deletes the Clerk identity and anonymizes the DB row in place (email
   "error": {
     "code": "SERVICE_UNAVAILABLE",
     "message": "Could not delete account right now"
+  }
+}
+```
+
+
+---
+
+## Legal
+
+### `GET /api/v1/legal/{type}`
+
+**Get a published legal document**
+
+Public - no authentication required, since a user needs to be able to read the Terms before signing up. Returns the currently published version of the Terms, Privacy or Risk-disclosure document.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `type` | path | string (terms, privacy, risk_disclosure) | yes | terms, privacy or risk_disclosure. |
+
+**Responses**
+
+- **200** — The currently published document
+
+```json
+{
+  "data": {
+    "type": "terms",
+    "version": 1,
+    "content": {
+      "en": "[DRAFT PLACEHOLDER - pending legal review] Terms of use...",
+      "hi": "[DRAFT PLACEHOLDER - pending legal review] उपयोग की शर्तें...",
+      "hx": "[DRAFT PLACEHOLDER - pending legal review] Terms of use..."
+    },
+    "publishedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **404** — No published version of this document type yet
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published terms document yet"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/legal-status`
+
+**Get my legal-document acceptance status**
+
+Whether the signed-in user has accepted the currently published Terms/Privacy/Risk-disclosure themselves. For a minor, full access also requires the parent's own consent (see the parent-consent endpoints), not just this - this endpoint only covers legal-document acceptance.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Acceptance status per currently published document
+
+```json
+{
+  "data": {
+    "documents": [
+      {
+        "type": "terms",
+        "currentVersion": 1,
+        "accepted": true,
+        "acceptedAt": "2026-01-01T00:00:00.000Z"
+      }
+    ],
+    "allAccepted": true
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/legal/accept`
+
+**Accept the currently published legal documents**
+
+Records the signed-in user's own acceptance of every currently published Terms/Privacy/Risk-disclosure version not already accepted. Used both by an adult accepting for themselves and by a minor's own required in-app acceptance, done once after their parent has separately consented.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Newly accepted document types (empty if everything was already accepted)
+
+```json
+{
+  "data": {
+    "accepted": [
+      "terms"
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
   }
 }
 ```

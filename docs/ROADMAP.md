@@ -33,7 +33,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 ## Phase 2a — Onboarding, parental consent & legal documents
 Do this early — it gates everything else. **Audit and merge to main before starting Phase 2b.**
 - [ ] Date of birth capture at onboarding; determines under-18 status
-- [ ] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
+- [x] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
       publish, re-acceptance on new versions) for Terms/Privacy/Risk-disclosure, with an admin
       legal-document editor. School/institution accounts are v2, not in v1's legal text.
 - [ ] `parent_contacts` + `consent_records` for under-18 users. **v1 parent verification is

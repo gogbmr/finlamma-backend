@@ -225,6 +225,166 @@
           "data"
         ]
       },
+      "LegalDocument": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy",
+              "risk_disclosure"
+            ],
+            "example": "terms",
+            "description": "terms, privacy or risk_disclosure."
+          },
+          "version": {
+            "type": "integer",
+            "example": 1
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "[DRAFT PLACEHOLDER - pending legal review] Terms of use...",
+              "hi": "[DRAFT PLACEHOLDER - pending legal review] उपयोग की शर्तें...",
+              "hx": "[DRAFT PLACEHOLDER - pending legal review] Terms of use..."
+            }
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "type",
+          "version",
+          "content",
+          "publishedAt"
+        ]
+      },
+      "LegalDocumentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LegalDocument"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "LegalStatus": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "terms",
+                    "privacy",
+                    "risk_disclosure"
+                  ],
+                  "example": "terms",
+                  "description": "terms, privacy or risk_disclosure."
+                },
+                "currentVersion": {
+                  "type": "integer",
+                  "example": 1
+                },
+                "accepted": {
+                  "type": "boolean",
+                  "description": "Whether the signed-in user has accepted the currently published version themselves."
+                },
+                "acceptedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "type",
+                "currentVersion",
+                "accepted",
+                "acceptedAt"
+              ]
+            }
+          },
+          "allAccepted": {
+            "type": "boolean",
+            "description": "True once every currently published document has been self-accepted."
+          }
+        },
+        "required": [
+          "documents",
+          "allAccepted"
+        ]
+      },
+      "LegalStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LegalStatus"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AcceptLegalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "accepted": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "terms",
+                    "privacy",
+                    "risk_disclosure"
+                  ],
+                  "example": "terms",
+                  "description": "terms, privacy or risk_disclosure."
+                }
+              }
+            },
+            "required": [
+              "accepted"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -467,6 +627,145 @@
                   "error": {
                     "code": "SERVICE_UNAVAILABLE",
                     "message": "Could not delete account right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/legal/{type}": {
+      "get": {
+        "summary": "Get a published legal document",
+        "description": "Public - no authentication required, since a user needs to be able to read the Terms before signing up. Returns the currently published version of the Terms, Privacy or Risk-disclosure document.",
+        "tags": [
+          "Legal"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "terms",
+                "privacy",
+                "risk_disclosure"
+              ],
+              "example": "terms",
+              "description": "terms, privacy or risk_disclosure."
+            },
+            "required": true,
+            "description": "terms, privacy or risk_disclosure.",
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The currently published document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalDocumentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published version of this document type yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published terms document yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal-status": {
+      "get": {
+        "summary": "Get my legal-document acceptance status",
+        "description": "Whether the signed-in user has accepted the currently published Terms/Privacy/Risk-disclosure themselves. For a minor, full access also requires the parent's own consent (see the parent-consent endpoints), not just this - this endpoint only covers legal-document acceptance.",
+        "tags": [
+          "Legal"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acceptance status per currently published document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal/accept": {
+      "post": {
+        "summary": "Accept the currently published legal documents",
+        "description": "Records the signed-in user's own acceptance of every currently published Terms/Privacy/Risk-disclosure version not already accepted. Used both by an adult accepting for themselves and by a minor's own required in-app acceptance, done once after their parent has separately consented.",
+        "tags": [
+          "Legal"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newly accepted document types (empty if everything was already accepted)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptLegalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
                   }
                 },
                 "schema": {

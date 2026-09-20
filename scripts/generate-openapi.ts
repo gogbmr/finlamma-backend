@@ -10,6 +10,9 @@ import { registry } from "../src/lib/openapi";
 // import per resource as new routes get built.
 import "../src/app/api/v1/health/route";
 import "../src/app/api/v1/me/route";
+import "../src/app/api/v1/legal/[type]/route";
+import "../src/app/api/v1/me/legal-status/route";
+import "../src/app/api/v1/me/legal/accept/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 
