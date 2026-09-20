@@ -6,20 +6,20 @@ import { logActivity } from "@/lib/activity-log";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { sendEmail } from "@/lib/email";
-import type { requestMeta } from "@/lib/http";
+import { logInternalError, type requestMeta } from "@/lib/http";
 import { getSettingNumber } from "@/lib/settings";
-import { insertAcceptance, listPublishedDocuments } from "@/server/legal/repo";
+import { listPublishedDocuments } from "@/server/legal/repo";
 import { getLegalStatus } from "@/server/legal/service";
 import {
+  claimConsentRequestSlot,
+  confirmConsentAndRecordAcceptances,
   countChildrenForParentEmail,
   getConsentRecord,
   getConsentRecordByTokenHash,
   getParentContact,
   getUserFirstName,
-  markConsentConfirmed,
   setDateOfBirthOnce,
   sumRequestsTodayForParentEmail,
-  upsertConsentRequest,
   upsertParentContact,
 } from "./repo";
 import type { RequestParentConsentInput, SetDateOfBirthInput } from "./schemas";
@@ -117,6 +117,15 @@ export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, m
 // a specific error code (see src/lib/errors.ts) the app can branch on -
 // e.g. show a resend countdown for RESEND_TOO_SOON vs. a flat "try
 // tomorrow" for RESEND_LIMIT_REACHED.
+//
+// The cooldown + per-user daily cap are enforced atomically by
+// claimConsentRequestSlot (a locked transaction) - a security audit found
+// an earlier check-then-write version of this could be raced by firing
+// concurrent requests. The parent-email-wide checks below (child count,
+// daily total) are still plain reads before the atomic claim - closing
+// that race too would need serializable isolation across every account
+// sharing an email, not just this user's row; tracked as a documented,
+// lower-severity residual risk rather than fixed here.
 export async function requestParentConsent(
   user: MeUser,
   input: RequestParentConsentInput,
@@ -128,7 +137,14 @@ export async function requestParentConsent(
   if (!isMinor(user.dateOfBirth)) {
     throw new AppError("CONSENT_NOT_NEEDED", "Parental consent isn't required for this account");
   }
-  if (user.email && input.parentEmail.toLowerCase() === user.email.toLowerCase()) {
+
+  // Normalized once, used everywhere below - an unnormalized email here
+  // previously let the child-count and daily-total caps be bypassed by
+  // varying casing (Parent@x.com vs parent@x.com), since virtually every
+  // real mailbox treats those as the same address.
+  const parentEmail = input.parentEmail.trim().toLowerCase();
+
+  if (user.email && parentEmail === user.email.trim().toLowerCase()) {
     throw new AppError("PARENT_EMAIL_INVALID", "The parent's email can't be your own account email");
   }
 
@@ -137,36 +153,17 @@ export async function requestParentConsent(
     throw new AppError("CONSENT_NOT_NEEDED", "Parental consent has already been given");
   }
 
-  const now = new Date();
   const today = todayUtc();
-
-  if (existingConsent?.lastRequestedAt) {
-    const secondsSinceLast = (now.getTime() - existingConsent.lastRequestedAt.getTime()) / 1000;
-    if (secondsSinceLast < RESEND_COOLDOWN_MS / 1000) {
-      throw new AppError("RESEND_TOO_SOON", "Please wait a bit before requesting another email", {
-        retryAfterSeconds: Math.ceil(RESEND_COOLDOWN_MS / 1000 - secondsSinceLast),
-      });
-    }
-  }
-
   const dailyCap = await getSettingNumber("consent_resend_daily_cap", DEFAULT_RESEND_DAILY_CAP);
-  const requestsTodayForUser =
-    existingConsent?.requestCountDate === today ? existingConsent.requestCount : 0;
-  if (requestsTodayForUser >= dailyCap) {
-    throw new AppError(
-      "RESEND_LIMIT_REACHED",
-      "Daily limit for consent emails reached for this account - try again tomorrow",
-    );
-  }
 
   const existingContact = await getParentContact(user.id);
-  const isNewParentEmail = existingContact?.email !== input.parentEmail;
+  const isNewParentEmail = existingContact?.email !== parentEmail;
   if (isNewParentEmail) {
     const maxChildren = await getSettingNumber(
       "parent_email_max_children",
       DEFAULT_PARENT_EMAIL_MAX_CHILDREN,
     );
-    const childCount = await countChildrenForParentEmail(input.parentEmail);
+    const childCount = await countChildrenForParentEmail(parentEmail);
     if (childCount >= maxChildren) {
       throw new AppError(
         "PARENT_EMAIL_LIMIT_REACHED",
@@ -175,7 +172,7 @@ export async function requestParentConsent(
     }
   }
 
-  const requestsTodayForEmail = await sumRequestsTodayForParentEmail(input.parentEmail, today);
+  const requestsTodayForEmail = await sumRequestsTodayForParentEmail(parentEmail, today);
   if (requestsTodayForEmail >= dailyCap) {
     throw new AppError(
       "RESEND_LIMIT_REACHED",
@@ -183,22 +180,35 @@ export async function requestParentConsent(
     );
   }
 
-  const parentContact = await upsertParentContact(user.id, input.parentName, input.parentEmail);
+  const parentContact = await upsertParentContact(user.id, input.parentName, parentEmail);
 
   const token = generateToken();
-  await upsertConsentRequest({
+  const claim = await claimConsentRequestSlot({
     userId: user.id,
     parentContactId: parentContact.id,
     tokenHash: hashToken(token),
-    tokenExpiresAt: new Date(now.getTime() + TOKEN_TTL_MS),
-    requestCount: requestsTodayForUser + 1,
-    requestCountDate: today,
+    tokenExpiresAt: new Date(Date.now() + TOKEN_TTL_MS),
+    todayUtc: today,
+    cooldownMs: RESEND_COOLDOWN_MS,
+    dailyCap,
   });
+
+  if (!claim.ok) {
+    if (claim.reason === "too_soon") {
+      throw new AppError("RESEND_TOO_SOON", "Please wait a bit before requesting another email", {
+        retryAfterSeconds: claim.retryAfterSeconds,
+      });
+    }
+    throw new AppError(
+      "RESEND_LIMIT_REACHED",
+      "Daily limit for consent emails reached for this account - try again tomorrow",
+    );
+  }
 
   const childFirstName = user.firstName ?? "Your child";
   const consentUrl = `${env.APP_URL}/consent/confirm?token=${token}`;
   await sendConsentEmailOrLog({
-    to: input.parentEmail,
+    to: parentEmail,
     subject: `${childFirstName} wants to use Finlamma - we need your OK`,
     react: ParentConsentRequestEmail({ childFirstName, consentUrl }),
     devLogLabel: `parent consent link for user ${user.id}`,
@@ -215,7 +225,7 @@ export async function requestParentConsent(
     userAgent: meta.userAgent,
   });
 
-  return { status: "pending" as const, parentEmail: input.parentEmail };
+  return { status: "pending" as const, parentEmail };
 }
 
 export type ConsentRequestView =
@@ -250,9 +260,13 @@ export async function getConsentRequestView(token: string): Promise<ConsentReque
 }
 
 // The actual mutation behind the consent page's "I consent" POST. Guarded
-// against a reused/raced token by markConsentConfirmed's `status = pending`
-// where-clause - a null result here means someone else (a concurrent
-// request, or the token simply being stale) already resolved it.
+// against a reused/raced token by confirmConsentAndRecordAcceptances'
+// `status = pending` where-clause - a null result here means someone else
+// (a concurrent request, or the token simply being stale) already resolved
+// it. Flipping the record and recording every legal_acceptances row happens
+// in one transaction (see repo.ts) - a security audit found an earlier
+// version did these as separate steps, risking a consented-but-missing-
+// acceptances state if something failed in between.
 export async function confirmParentConsent(token: string, meta: RequestMeta) {
   const record = await getConsentRecordByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This consent link is invalid");
@@ -267,7 +281,10 @@ export async function confirmParentConsent(token: string, meta: RequestMeta) {
   const legalDocumentVersions = Object.fromEntries(publishedDocs.map((d) => [d.type, d.version]));
 
   const withdrawToken = generateToken();
-  const updated = await markConsentConfirmed(record.id, {
+  const updated = await confirmConsentAndRecordAcceptances({
+    consentRecordId: record.id,
+    userId: record.userId,
+    legalDocumentIds: publishedDocs.map((d) => d.id),
     legalDocumentVersions,
     withdrawTokenHash: hashToken(withdrawToken),
     actorIp: meta.ip,
@@ -275,10 +292,6 @@ export async function confirmParentConsent(token: string, meta: RequestMeta) {
   });
   if (!updated) {
     throw new AppError("CONFLICT", "This consent link has already been used");
-  }
-
-  for (const doc of publishedDocs) {
-    await insertAcceptance(record.userId, doc.id, "parent");
   }
 
   await logActivity({
@@ -296,18 +309,25 @@ export async function confirmParentConsent(token: string, meta: RequestMeta) {
     getParentContact(record.userId),
   ]);
 
+  // Consent is already durably recorded above - a receipt-email delivery
+  // failure must never surface as an error to the parent (their token is
+  // single-use, so they'd have no way to retry). Best-effort only.
   if (parentContact) {
     const withdrawUrl = `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`;
-    await sendConsentEmailOrLog({
-      to: parentContact.email,
-      subject: "Your consent for Finlamma is recorded",
-      react: ParentConsentConfirmedEmail({
-        childFirstName: childFirstName ?? "your child",
-        withdrawUrl,
-      }),
-      devLogLabel: `withdraw link for user ${record.userId}`,
-      devLogDetail: withdrawUrl,
-    });
+    try {
+      await sendConsentEmailOrLog({
+        to: parentContact.email,
+        subject: "Your consent for Finlamma is recorded",
+        react: ParentConsentConfirmedEmail({
+          childFirstName: childFirstName ?? "your child",
+          withdrawUrl,
+        }),
+        devLogLabel: `withdraw link for user ${record.userId}`,
+        devLogDetail: withdrawUrl,
+      });
+    } catch (err) {
+      logInternalError("consent.receipt_email_failed", err);
+    }
   }
 
   return { childFirstName: childFirstName ?? "your child" };

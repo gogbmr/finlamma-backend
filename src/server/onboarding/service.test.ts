@@ -15,8 +15,8 @@ const mockCountChildrenForParentEmail = vi.fn();
 const mockGetConsentRecord = vi.fn();
 const mockGetConsentRecordByTokenHash = vi.fn();
 const mockSumRequestsTodayForParentEmail = vi.fn();
-const mockUpsertConsentRequest = vi.fn();
-const mockMarkConsentConfirmed = vi.fn();
+const mockClaimConsentRequestSlot = vi.fn();
+const mockConfirmConsentAndRecordAcceptances = vi.fn();
 const mockGetUserFirstName = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
@@ -28,8 +28,8 @@ vi.mock("./repo", () => ({
   getConsentRecordByTokenHash: (hash: unknown) => mockGetConsentRecordByTokenHash(hash),
   sumRequestsTodayForParentEmail: (email: unknown, today: unknown) =>
     mockSumRequestsTodayForParentEmail(email, today),
-  upsertConsentRequest: (input: unknown) => mockUpsertConsentRequest(input),
-  markConsentConfirmed: (id: unknown, input: unknown) => mockMarkConsentConfirmed(id, input),
+  claimConsentRequestSlot: (input: unknown) => mockClaimConsentRequestSlot(input),
+  confirmConsentAndRecordAcceptances: (input: unknown) => mockConfirmConsentAndRecordAcceptances(input),
   getUserFirstName: (id: unknown) => mockGetUserFirstName(id),
 }));
 
@@ -48,11 +48,8 @@ vi.mock("@/lib/settings", () => ({
   getSettingNumber: (key: unknown, fallback: unknown) => mockGetSettingNumber(key, fallback),
 }));
 
-const mockInsertAcceptance = vi.fn();
 const mockListPublishedDocuments = vi.fn();
 vi.mock("@/server/legal/repo", () => ({
-  insertAcceptance: (userId: unknown, docId: unknown, by: unknown) =>
-    mockInsertAcceptance(userId, docId, by),
   listPublishedDocuments: () => mockListPublishedDocuments(),
 }));
 
@@ -165,32 +162,51 @@ describe("requestParentConsent", () => {
     });
   });
 
-  it("throws RESEND_TOO_SOON within the 60s cooldown", async () => {
-    mockGetConsentRecord.mockResolvedValueOnce({
-      status: "pending",
-      lastRequestedAt: new Date(Date.now() - 1000),
-      requestCount: 1,
-      requestCountDate: new Date().toISOString().slice(0, 10),
+  it("throws RESEND_TOO_SOON when the atomic claim (see repo.ts) says the cooldown hasn't passed", async () => {
+    mockGetConsentRecord.mockResolvedValueOnce(null);
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com" }); // not a new email
+    mockGetSettingNumber.mockResolvedValueOnce(5); // consent_resend_daily_cap
+    mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
+    mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({
+      ok: false,
+      reason: "too_soon",
+      retryAfterSeconds: 42,
     });
 
     await expect(requestParentConsent(MINOR, INPUT, META)).rejects.toMatchObject({
       code: "RESEND_TOO_SOON",
+      details: { retryAfterSeconds: 42 },
     });
   });
 
-  it("throws RESEND_LIMIT_REACHED once the per-user daily cap is hit", async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    mockGetConsentRecord.mockResolvedValueOnce({
-      status: "pending",
-      lastRequestedAt: new Date(Date.now() - 1000 * 60 * 60),
-      requestCount: 5,
-      requestCountDate: today,
-    });
-    mockGetSettingNumber.mockResolvedValueOnce(5); // consent_resend_daily_cap
+  it("throws RESEND_LIMIT_REACHED once the atomic claim says the per-user daily cap is hit", async () => {
+    mockGetConsentRecord.mockResolvedValueOnce(null);
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com" });
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
+    mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({ ok: false, reason: "daily_cap" });
 
     await expect(requestParentConsent(MINOR, INPUT, META)).rejects.toMatchObject({
       code: "RESEND_LIMIT_REACHED",
     });
+  });
+
+  it("normalizes the parent email's casing before every check and before storing it", async () => {
+    mockGetConsentRecord.mockResolvedValueOnce(null);
+    mockGetParentContact.mockResolvedValueOnce(null);
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(5);
+    mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
+    mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
+    mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({ ok: true, record: {} });
+
+    await requestParentConsent(MINOR, { ...INPUT, parentEmail: " Priya@Example.com " }, META);
+
+    expect(mockCountChildrenForParentEmail).toHaveBeenCalledWith("priya@example.com");
+    expect(mockSumRequestsTodayForParentEmail).toHaveBeenCalledWith("priya@example.com", expect.any(String));
+    expect(mockUpsertParentContact).toHaveBeenCalledWith("u1", "Priya", "priya@example.com");
   });
 
   it("throws PARENT_EMAIL_LIMIT_REACHED when the parent email already backs the max number of children", async () => {
@@ -226,13 +242,14 @@ describe("requestParentConsent", () => {
     mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
     mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
     mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({ ok: true, record: {} });
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await requestParentConsent(MINOR, INPUT, META);
 
     expect(result).toEqual({ status: "pending", parentEmail: "priya@example.com" });
-    expect(mockUpsertConsentRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "u1", parentContactId: "pc1", requestCount: 1 }),
+    expect(mockClaimConsentRequestSlot).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "u1", parentContactId: "pc1", dailyCap: 5 }),
     );
     expect(mockSendEmail).not.toHaveBeenCalled();
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("parent consent link"));
@@ -252,6 +269,7 @@ describe("requestParentConsent", () => {
     mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
     mockSumRequestsTodayForParentEmail.mockResolvedValueOnce(0);
     mockUpsertParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockClaimConsentRequestSlot.mockResolvedValueOnce({ ok: true, record: {} });
     mockSendEmail.mockResolvedValueOnce(undefined);
 
     await requestParentConsent(MINOR, INPUT, META);
@@ -324,7 +342,7 @@ describe("confirmParentConsent", () => {
     await expect(confirmParentConsent("t", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("throws CONFLICT if markConsentConfirmed loses a race (already resolved concurrently)", async () => {
+  it("throws CONFLICT if confirmConsentAndRecordAcceptances loses a race (already resolved concurrently)", async () => {
     mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
       id: "cr1",
       userId: "u1",
@@ -333,12 +351,12 @@ describe("confirmParentConsent", () => {
       tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
     });
     mockListPublishedDocuments.mockResolvedValueOnce([]);
-    mockMarkConsentConfirmed.mockResolvedValueOnce(null);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce(null);
 
     await expect(confirmParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
-  it("on success: records parent acceptance for every published doc and logs it", async () => {
+  it("on success: records parent acceptance for every published doc (one transaction) and logs it", async () => {
     mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
       id: "cr1",
       userId: "u1",
@@ -350,7 +368,7 @@ describe("confirmParentConsent", () => {
       { id: "doc1", type: "terms", version: 1 },
       { id: "doc2", type: "privacy", version: 1 },
     ]);
-    mockMarkConsentConfirmed.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
     mockGetUserFirstName.mockResolvedValueOnce("Aarav");
     mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com" });
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -358,12 +376,41 @@ describe("confirmParentConsent", () => {
     const result = await confirmParentConsent("t", META);
 
     expect(result).toEqual({ childFirstName: "Aarav" });
-    expect(mockInsertAcceptance).toHaveBeenCalledWith("u1", "doc1", "parent");
-    expect(mockInsertAcceptance).toHaveBeenCalledWith("u1", "doc2", "parent");
+    expect(mockConfirmConsentAndRecordAcceptances).toHaveBeenCalledWith(
+      expect.objectContaining({
+        consentRecordId: "cr1",
+        userId: "u1",
+        legalDocumentIds: ["doc1", "doc2"],
+        legalDocumentVersions: { terms: 1, privacy: 1 },
+      }),
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "consent.given", targetId: "u1" }),
     );
     consoleSpy.mockRestore();
+  });
+
+  it("does not fail the whole request if the receipt email fails to send - consent is already recorded", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com" });
+    mockEnv.RESEND_API_KEY = "re_test";
+    mockEnv.EMAIL_FROM = "Finlamma <consent@mail.finlamma.in>";
+    mockSendEmail.mockRejectedValueOnce(new Error("Resend is down"));
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await confirmParentConsent("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav" });
+    consoleErrorSpy.mockRestore();
   });
 });
 
