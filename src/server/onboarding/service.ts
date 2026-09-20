@@ -14,13 +14,18 @@ import {
   claimConsentRequestSlot,
   confirmConsentAndRecordAcceptances,
   countChildrenForParentEmail,
+  declineConsentRecord,
   getConsentRecord,
   getConsentRecordByTokenHash,
+  getConsentRecordByWithdrawTokenHash,
   getParentContact,
+  getParentContactForReview,
   getUserFirstName,
+  listConsentRecordsForReview,
   setDateOfBirthOnce,
   sumRequestsTodayForParentEmail,
   upsertParentContact,
+  withdrawConsentRecord,
 } from "./repo";
 import type { RequestParentConsentInput, SetDateOfBirthInput } from "./schemas";
 
@@ -341,6 +346,134 @@ export async function confirmParentConsent(token: string, meta: RequestMeta) {
   }
 
   return { childFirstName: childFirstName ?? "your child" };
+}
+
+// The "I do not consent" counterpart to confirmParentConsent - same
+// single-use/expiry guards, no legal_acceptances rows, no receipt email
+// (nothing to withdraw later since consent was never given).
+export async function declineParentConsent(token: string, meta: RequestMeta) {
+  const record = await getConsentRecordByTokenHash(hashToken(token));
+  if (!record) throw new AppError("NOT_FOUND", "This consent link is invalid");
+  if (record.status !== "pending" || record.usedAt) {
+    throw new AppError("CONFLICT", "This consent link has already been used");
+  }
+  if (record.tokenExpiresAt.getTime() < Date.now()) {
+    throw new AppError("NOT_FOUND", "This consent link has expired - ask your child to request a new one");
+  }
+
+  const updated = await declineConsentRecord(record.id, {
+    actorIp: meta.ip,
+    actorUserAgent: meta.userAgent,
+  });
+  if (!updated) {
+    throw new AppError("CONFLICT", "This consent link has already been used");
+  }
+
+  await logActivity({
+    actorType: "system",
+    action: "consent.refused",
+    targetType: "user",
+    targetId: record.userId,
+    metadata: { actor: "parent", method: "email_link" },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const childFirstName = await getUserFirstName(record.userId);
+  return { childFirstName: childFirstName ?? "your child" };
+}
+
+export type WithdrawRequestView =
+  | { state: "invalid" }
+  | { state: "already_withdrawn" }
+  | { state: "not_applicable" }
+  | { state: "valid"; childFirstName: string };
+
+// Read-only, same GET-must-be-side-effect-free rule as
+// getConsentRequestView. "not_applicable" covers a withdraw token whose
+// consent_records row somehow isn't in the `consented` state (e.g. it was
+// never actually consented) - shouldn't happen in normal use since a
+// withdraw token is only ever minted by confirmParentConsent.
+export async function getWithdrawRequestView(token: string): Promise<WithdrawRequestView> {
+  const record = await getConsentRecordByWithdrawTokenHash(hashToken(token));
+  if (!record) return { state: "invalid" };
+  if (record.status === "withdrawn") return { state: "already_withdrawn" };
+  if (record.status !== "consented") return { state: "not_applicable" };
+
+  const childFirstName = await getUserFirstName(record.userId);
+  return { state: "valid", childFirstName: childFirstName ?? "your child" };
+}
+
+// Withdrawing is idempotent by design (unlike consent/decline, which are
+// strictly single-use): a parent re-clicking an old withdrawal email isn't
+// an attack or a race, just someone re-confirming what they already did, so
+// it's treated as a normal success rather than an error. requireFullAccess
+// picks up the access change immediately - it already treats any non-
+// 'consented' status as blocking, so there's no separate "revoke access"
+// step needed here.
+export async function withdrawParentConsent(token: string, meta: RequestMeta) {
+  const record = await getConsentRecordByWithdrawTokenHash(hashToken(token));
+  if (!record) throw new AppError("NOT_FOUND", "This withdrawal link is invalid");
+
+  if (record.status === "withdrawn") {
+    const childFirstName = await getUserFirstName(record.userId);
+    return { childFirstName: childFirstName ?? "your child", alreadyWithdrawn: true };
+  }
+  if (record.status !== "consented") {
+    throw new AppError("CONFLICT", "There's no active consent to withdraw for this request");
+  }
+
+  const updated = await withdrawConsentRecord(record.id, {
+    actorIp: meta.ip,
+    actorUserAgent: meta.userAgent,
+  });
+  if (!updated) {
+    throw new AppError("CONFLICT", "There's no active consent to withdraw for this request");
+  }
+
+  await logActivity({
+    actorType: "system",
+    action: "consent.withdrawn",
+    targetType: "user",
+    targetId: record.userId,
+    metadata: { actor: "parent", method: "email_link" },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const childFirstName = await getUserFirstName(record.userId);
+  return { childFirstName: childFirstName ?? "your child", alreadyWithdrawn: false };
+}
+
+// --- Staff (admin, consent.view - read-only) ---
+
+export async function getConsentReviewList(limit = 100) {
+  return listConsentRecordsForReview(limit);
+}
+
+// The one path that reveals a parent's name/email to staff - always logs
+// the reveal itself (actor = the staff member, target = the child account),
+// per the non-negotiable rule that staff access to parent contact details
+// is itself audited. Never called from a list render, only from an
+// explicit staff action (see the admin consent-review page).
+export async function revealParentContact(
+  actor: { id: string },
+  userId: string,
+  meta: RequestMeta,
+) {
+  const contact = await getParentContactForReview(userId);
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "consent.parent_contact_viewed",
+    targetType: "user",
+    targetId: userId,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  return contact;
 }
 
 // The access gate every XP/VM/trading/social endpoint from Phase 2b onward

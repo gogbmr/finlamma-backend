@@ -15,9 +15,14 @@ const mockUpsertParentContact = vi.fn();
 const mockCountChildrenForParentEmail = vi.fn();
 const mockGetConsentRecord = vi.fn();
 const mockGetConsentRecordByTokenHash = vi.fn();
+const mockGetConsentRecordByWithdrawTokenHash = vi.fn();
 const mockSumRequestsTodayForParentEmail = vi.fn();
 const mockClaimConsentRequestSlot = vi.fn();
 const mockConfirmConsentAndRecordAcceptances = vi.fn();
+const mockDeclineConsentRecord = vi.fn();
+const mockWithdrawConsentRecord = vi.fn();
+const mockListConsentRecordsForReview = vi.fn();
+const mockGetParentContactForReview = vi.fn();
 const mockGetUserFirstName = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
@@ -27,10 +32,15 @@ vi.mock("./repo", () => ({
   countChildrenForParentEmail: (email: unknown) => mockCountChildrenForParentEmail(email),
   getConsentRecord: (id: unknown) => mockGetConsentRecord(id),
   getConsentRecordByTokenHash: (hash: unknown) => mockGetConsentRecordByTokenHash(hash),
+  getConsentRecordByWithdrawTokenHash: (hash: unknown) => mockGetConsentRecordByWithdrawTokenHash(hash),
   sumRequestsTodayForParentEmail: (email: unknown, today: unknown) =>
     mockSumRequestsTodayForParentEmail(email, today),
   claimConsentRequestSlot: (input: unknown) => mockClaimConsentRequestSlot(input),
   confirmConsentAndRecordAcceptances: (input: unknown) => mockConfirmConsentAndRecordAcceptances(input),
+  declineConsentRecord: (id: unknown, meta: unknown) => mockDeclineConsentRecord(id, meta),
+  withdrawConsentRecord: (id: unknown, meta: unknown) => mockWithdrawConsentRecord(id, meta),
+  listConsentRecordsForReview: (limit: unknown) => mockListConsentRecordsForReview(limit),
+  getParentContactForReview: (userId: unknown) => mockGetParentContactForReview(userId),
   getUserFirstName: (id: unknown) => mockGetUserFirstName(id),
 }));
 
@@ -61,11 +71,16 @@ vi.mock("@/server/legal/service", () => ({
 
 import {
   confirmParentConsent,
+  declineParentConsent,
   getConsentRequestView,
+  getConsentReviewList,
+  getWithdrawRequestView,
   isMinor,
   requestParentConsent,
   requireFullAccess,
+  revealParentContact,
   setDateOfBirth,
+  withdrawParentConsent,
 } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -488,5 +503,145 @@ describe("requireFullAccess", () => {
     mockGetConsentRecord.mockResolvedValueOnce({ status: "consented" });
     mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true });
     await expect(requireFullAccess(MINOR)).resolves.toBeUndefined();
+  });
+});
+
+describe("declineParentConsent", () => {
+  it("throws NOT_FOUND for an unknown token", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce(null);
+    await expect(declineParentConsent("bad", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("throws CONFLICT if the record is no longer pending", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({ status: "consented", usedAt: new Date() });
+    await expect(declineParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("throws NOT_FOUND if the token has expired", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() - 1000),
+    });
+    await expect(declineParentConsent("t", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("throws CONFLICT if declineConsentRecord loses a race", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockDeclineConsentRecord.mockResolvedValueOnce(null);
+    await expect(declineParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("on success: records the refusal and logs it, without touching legal_acceptances", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockDeclineConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "refused" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await declineParentConsent("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav" });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "consent.refused", targetId: "u1" }),
+    );
+  });
+});
+
+describe("getWithdrawRequestView", () => {
+  it("returns invalid when no record matches the withdraw token", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce(null);
+    expect(await getWithdrawRequestView("bad")).toEqual({ state: "invalid" });
+  });
+
+  it("returns already_withdrawn when the record is already withdrawn", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "withdrawn" });
+    expect(await getWithdrawRequestView("t")).toEqual({ state: "already_withdrawn" });
+  });
+
+  it("returns not_applicable when the record was never consented", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "pending" });
+    expect(await getWithdrawRequestView("t")).toEqual({ state: "not_applicable" });
+  });
+
+  it("returns the valid view with the child's name for an active consent", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "consented", userId: "u1" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    expect(await getWithdrawRequestView("t")).toEqual({ state: "valid", childFirstName: "Aarav" });
+  });
+});
+
+describe("withdrawParentConsent", () => {
+  it("throws NOT_FOUND for an unknown withdraw token", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce(null);
+    await expect(withdrawParentConsent("bad", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("is idempotent - re-withdrawing an already-withdrawn record succeeds without writing again", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "withdrawn", userId: "u1" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await withdrawParentConsent("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyWithdrawn: true });
+    expect(mockWithdrawConsentRecord).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when there's no active consent to withdraw", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "pending", userId: "u1" });
+    await expect(withdrawParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("on success: records the withdrawal and logs it", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "consented",
+    });
+    mockWithdrawConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "withdrawn" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await withdrawParentConsent("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyWithdrawn: false });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "consent.withdrawn", targetId: "u1" }),
+    );
+  });
+});
+
+describe("getConsentReviewList / revealParentContact", () => {
+  it("getConsentReviewList passes the limit through to the repo", async () => {
+    mockListConsentRecordsForReview.mockResolvedValueOnce([{ userId: "u1" }]);
+    const result = await getConsentReviewList(50);
+    expect(mockListConsentRecordsForReview).toHaveBeenCalledWith(50);
+    expect(result).toEqual([{ userId: "u1" }]);
+  });
+
+  it("revealParentContact fetches the contact and logs the reveal under the staff actor", async () => {
+    mockGetParentContactForReview.mockResolvedValueOnce({ name: "Priya", email: "priya@example.com" });
+
+    const result = await revealParentContact({ id: "staff1" }, "u1", META);
+
+    expect(result).toEqual({ name: "Priya", email: "priya@example.com" });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: "staff",
+        actorId: "staff1",
+        action: "consent.parent_contact_viewed",
+        targetId: "u1",
+      }),
+    );
   });
 });

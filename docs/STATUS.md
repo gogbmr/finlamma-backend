@@ -1,5 +1,48 @@
 # Status
 
+## 2026-09-20 — Phase 2a: parental-consent flow (request/confirm/decline/withdraw) + admin review
+
+Built and merged on `phase-2a-consent`: `PATCH /me/date-of-birth` (set-once),
+`POST /me/parent-consent/request` (DB-backed rate limiting, atomic per-user cooldown/cap - see
+the security-audit fixes below), the public `/consent/confirm` and `/consent/withdraw` pages
+(GET is side-effect-free; separate "I consent"/"I do not consent"/"Withdraw consent" POSTs do
+the work), `requireFullAccess(user)` (the access gate future phases must call), and the admin
+`/admin/consent` review page (`consent.view`, `user_manager`, read-only - every reveal of a
+parent's contact details is logged). Both consent pages support English, Hindi and Hinglish via
+a language switcher, since a parent reads this page independent of the child's own app-language
+setting.
+
+**security-auditor reviewed Checkpoint A before it shipped** and found two real races (both
+fixed, commits on `phase-2a-consent`): the resend cooldown/daily-cap could be bypassed by firing
+concurrent requests (fixed with an atomic locked transaction), and the per-parent-email abuse
+caps compared emails case-sensitively, letting `Parent@x.com`/`parent@x.com` count as different
+addresses (fixed by normalizing before every check). Also fixed: the consent-confirm write and
+its legal-acceptance rows weren't transactional, and the "log the link instead of emailing it"
+dev fallback was keyed off `NODE_ENV`, which is always `"production"` on every Vercel deployment
+including preview - fixed to key off `VERCEL_ENV` instead, or preview testing would have been
+blocked with a confusing 503 whenever Resend isn't configured.
+
+### Test data - created for manual click-through review, not real users
+Two throwaway rows exist in the shared database purely for testing this flow, created directly
+(not through Clerk - no real sign-up happened):
+| Clerk user id (fake) | First name | Purpose | Status as of 2026-09-20 |
+|---|---|---|---|
+| `user_test_preview_checkpoint_a` | Aarav | Checkpoint A: test "I consent" | `consented` (test passed) |
+| `user_test_preview_checkpoint_b_decline` | Diya | Checkpoint B: test "I do not consent" | `pending` |
+
+Both have a fake parent contact (`test-parent-checkpoint-a@example.com` /
+`test-parent-checkpoint-b@example.com` - not real addresses, never emailed since Resend isn't
+configured yet). Safe to delete once you're done testing; nothing else references these rows.
+
+### Follow-ups (tracked, not fixed now)
+- **Delete the two test rows above** (`users`/`parent_contacts`/`consent_records`, cascades on
+  delete) once manual review of the consent flow is finished.
+- The per-parent-email daily-cap/child-count check still has a residual race across *different*
+  accounts racing in lockstep on the same email (documented in
+  `src/server/onboarding/repo.ts`'s comments) - the per-user race the audit demonstrated is
+  closed, this narrower one needs serializable isolation to close fully and wasn't judged worth
+  it yet.
+
 ## 2026-09-20 — Phase 2a: legal documents shipped, consent flow in progress
 
 Legal documents domain (SET-16, SET-17) built and merged: versioned Terms/Privacy/

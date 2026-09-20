@@ -18,6 +18,7 @@
     "db:verify-pool": "tsx scripts/verify-db-pool.ts",
     "seed:super-admin": "tsx scripts/seed-super-admin.ts",
     "seed:legal": "tsx scripts/seed-legal-documents.ts",
+    "seed:settings": "tsx scripts/seed-settings.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {

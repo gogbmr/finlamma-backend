@@ -256,3 +256,94 @@ export async function confirmConsentAndRecordAcceptances(input: ConfirmConsentIn
     return updated;
   });
 }
+
+// Only flips a row that's still `pending` (same reused-token guard as
+// confirmConsentAndRecordAcceptances) - a null return means the token was
+// already consumed by a concurrent request or is simply stale.
+export async function declineConsentRecord(
+  consentRecordId: string,
+  meta: { actorIp: string | null; actorUserAgent: string | null },
+) {
+  const now = new Date();
+  const [updated] = await db
+    .update(consentRecords)
+    .set({
+      status: "refused",
+      usedAt: now,
+      actedAt: now,
+      actorIp: meta.actorIp,
+      actorUserAgent: meta.actorUserAgent,
+    })
+    .where(and(eq(consentRecords.id, consentRecordId), eq(consentRecords.status, "pending")))
+    .returning();
+  return updated ?? null;
+}
+
+export async function getConsentRecordByWithdrawTokenHash(withdrawTokenHash: string) {
+  const [row] = await db
+    .select()
+    .from(consentRecords)
+    .where(eq(consentRecords.withdrawTokenHash, withdrawTokenHash))
+    .limit(1);
+  return row ?? null;
+}
+
+// Only flips a row that's still `consented` - withdrawing something that
+// was never consented (still pending, or already refused) doesn't make
+// sense, and re-withdrawing an already-withdrawn row is handled by the
+// caller as an idempotent no-op before this is ever called.
+export async function withdrawConsentRecord(
+  consentRecordId: string,
+  meta: { actorIp: string | null; actorUserAgent: string | null },
+) {
+  const now = new Date();
+  const [updated] = await db
+    .update(consentRecords)
+    .set({
+      status: "withdrawn",
+      actedAt: now,
+      actorIp: meta.actorIp,
+      actorUserAgent: meta.actorUserAgent,
+    })
+    .where(and(eq(consentRecords.id, consentRecordId), eq(consentRecords.status, "consented")))
+    .returning();
+  return updated ?? null;
+}
+
+export type ConsentReviewRow = {
+  userId: string;
+  firstName: string | null;
+  lastInitial: string | null;
+  status: ConsentRecordRow["status"];
+  createdAt: Date;
+  actedAt: Date | null;
+};
+
+// Staff review list (consent.view) - deliberately never selects
+// parent_contacts.name/email here. Those are only fetched (and logged) by
+// getParentContactForReview below, one row at a time, on an explicit staff
+// action - see docs/PRODUCT_SPEC.md's Onboarding & parental consent
+// section: "every view of a parent's contact details is logged."
+export async function listConsentRecordsForReview(limit: number): Promise<ConsentReviewRow[]> {
+  return db
+    .select({
+      userId: consentRecords.userId,
+      firstName: users.firstName,
+      lastInitial: users.lastInitial,
+      status: consentRecords.status,
+      createdAt: consentRecords.createdAt,
+      actedAt: consentRecords.actedAt,
+    })
+    .from(consentRecords)
+    .innerJoin(users, eq(users.id, consentRecords.userId))
+    .orderBy(consentRecords.createdAt)
+    .limit(limit);
+}
+
+// The one place parent PII is read for a staff member - the caller
+// (src/server/onboarding/service.ts) logs this call every time, per the
+// non-negotiable rule that staff access to parent contact details is
+// itself audited.
+export async function getParentContactForReview(userId: string) {
+  return getParentContact(userId);
+}
