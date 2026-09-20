@@ -32,7 +32,7 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 
 ## Phase 2a — Onboarding, parental consent & legal documents
 Do this early — it gates everything else. **Audit and merge to main before starting Phase 2b.**
-- [ ] Date of birth capture at onboarding; determines under-18 status
+- [x] Date of birth capture at onboarding; determines under-18 status
 - [x] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
       publish, re-acceptance on new versions) for Terms/Privacy/Risk-disclosure, with an admin
       legal-document editor. School/institution accounts are v2, not in v1's legal text.
@@ -44,7 +44,9 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       a withdraw-consent link (same GET-page/POST-action pattern). The minor also taps "I accept"
       once in-app after parent consent — both are recorded. SMS OTP for parents needs an Indian
       SMS provider + DLT template registration, so it's deferred (see Pre-launch checklist).
-- [ ] Limited feature access (onboarding, Settings, legal pages only) for an account with no DOB
+      **Progress: request + the public consent page's "I consent" confirm are done; decline and
+      withdraw are next.**
+- [x] Limited feature access (onboarding, Settings, legal pages only) for an account with no DOB
       yet or an unresolved minor consent — `requireFullAccess(user)`, which every XP/VM/trading/
       social endpoint from Phase 2b onward must call
 - [ ] Admin: consent/legal-acceptance review view (`consent.view`, `user_manager`, read-only;

@@ -13,6 +13,8 @@ import "../src/app/api/v1/me/route";
 import "../src/app/api/v1/legal/[type]/route";
 import "../src/app/api/v1/me/legal-status/route";
 import "../src/app/api/v1/me/legal/accept/route";
+import "../src/app/api/v1/me/date-of-birth/route";
+import "../src/app/api/v1/me/parent-consent/request/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

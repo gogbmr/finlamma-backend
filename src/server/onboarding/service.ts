@@ -1,0 +1,339 @@
+import { createHash, randomBytes } from "node:crypto";
+import type { ReactElement } from "react";
+import { ParentConsentConfirmedEmail } from "@/emails/parent-consent-confirmed";
+import { ParentConsentRequestEmail } from "@/emails/parent-consent-request";
+import { logActivity } from "@/lib/activity-log";
+import { env } from "@/lib/env";
+import { AppError } from "@/lib/errors";
+import { sendEmail } from "@/lib/email";
+import type { requestMeta } from "@/lib/http";
+import { getSettingNumber } from "@/lib/settings";
+import { insertAcceptance, listPublishedDocuments } from "@/server/legal/repo";
+import { getLegalStatus } from "@/server/legal/service";
+import {
+  countChildrenForParentEmail,
+  getConsentRecord,
+  getConsentRecordByTokenHash,
+  getParentContact,
+  getUserFirstName,
+  markConsentConfirmed,
+  setDateOfBirthOnce,
+  sumRequestsTodayForParentEmail,
+  upsertConsentRequest,
+  upsertParentContact,
+} from "./repo";
+import type { RequestParentConsentInput, SetDateOfBirthInput } from "./schemas";
+
+type RequestMeta = ReturnType<typeof requestMeta>;
+type MeUser = { id: string; email: string | null; firstName: string | null; dateOfBirth: string | null };
+
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const DEFAULT_RESEND_DAILY_CAP = 5;
+const DEFAULT_PARENT_EMAIL_MAX_CHILDREN = 5;
+
+function generateToken(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function todayUtc(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Calendar-accurate age from a YYYY-MM-DD date of birth - not a 365.25-day
+// approximation, since being off by even a day matters right around a
+// birthday. Both sides are plain calendar dates (no timezone in
+// `dateOfBirth`), so UTC field comparisons are the correct, unambiguous way
+// to do this regardless of the server's local timezone.
+export function isMinor(dateOfBirth: string): boolean {
+  const dob = new Date(`${dateOfBirth}T00:00:00Z`);
+  const now = new Date();
+  let age = now.getUTCFullYear() - dob.getUTCFullYear();
+  const hadBirthdayThisYear =
+    now.getUTCMonth() > dob.getUTCMonth() ||
+    (now.getUTCMonth() === dob.getUTCMonth() && now.getUTCDate() >= dob.getUTCDate());
+  if (!hadBirthdayThisYear) age -= 1;
+  return age < 18;
+}
+
+// Sends via Resend, except in a non-production environment with no
+// verified Resend domain configured yet - there, it logs the link to the
+// server console instead of throwing, so the consent flow stays testable
+// locally/in preview before Resend is set up. Production always sends for
+// real (or fails closed) - never silently skips a legally-required email.
+async function sendConsentEmailOrLog(params: {
+  to: string;
+  subject: string;
+  react: ReactElement;
+  devLogLabel: string;
+  devLogDetail: string;
+}) {
+  const emailConfigured = Boolean(env.RESEND_API_KEY && env.EMAIL_FROM);
+  if (!emailConfigured && env.NODE_ENV !== "production") {
+    console.log(`[dev] Email not configured - ${params.devLogLabel}: ${params.devLogDetail}`);
+    return;
+  }
+  await sendEmail({ to: params.to, subject: params.subject, react: params.react });
+}
+
+// Set-once: a second call always fails, even with the same value - see
+// docs/PRODUCT_SPEC.md's Onboarding & parental consent section. Only staff
+// can correct a mistake after this, with a logged reason (Checkpoint B/a
+// later admin action, not built here).
+export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, meta: RequestMeta) {
+  if (user.dateOfBirth) {
+    throw new AppError("CONFLICT", "Date of birth is already set - contact support to correct it");
+  }
+
+  const dob = new Date(`${input.dateOfBirth}T00:00:00Z`);
+  if (Number.isNaN(dob.getTime()) || dob.getTime() > Date.now()) {
+    throw new AppError("VALIDATION_FAILED", "Date of birth must be a valid date in the past");
+  }
+
+  const updated = await setDateOfBirthOnce(user.id, input.dateOfBirth);
+  if (!updated) {
+    throw new AppError("CONFLICT", "Date of birth is already set - contact support to correct it");
+  }
+
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "onboarding.date_of_birth_set",
+    targetType: "user",
+    targetId: user.id,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const minor = isMinor(input.dateOfBirth);
+  return { dateOfBirth: input.dateOfBirth, isMinor: minor, requiresParentConsent: minor };
+}
+
+// Requests (or re-requests) parental consent. Every rejection here maps to
+// a specific error code (see src/lib/errors.ts) the app can branch on -
+// e.g. show a resend countdown for RESEND_TOO_SOON vs. a flat "try
+// tomorrow" for RESEND_LIMIT_REACHED.
+export async function requestParentConsent(
+  user: MeUser,
+  input: RequestParentConsentInput,
+  meta: RequestMeta,
+) {
+  if (!user.dateOfBirth) {
+    throw new AppError("CONSENT_NOT_NEEDED", "Set your date of birth first");
+  }
+  if (!isMinor(user.dateOfBirth)) {
+    throw new AppError("CONSENT_NOT_NEEDED", "Parental consent isn't required for this account");
+  }
+  if (user.email && input.parentEmail.toLowerCase() === user.email.toLowerCase()) {
+    throw new AppError("PARENT_EMAIL_INVALID", "The parent's email can't be your own account email");
+  }
+
+  const existingConsent = await getConsentRecord(user.id);
+  if (existingConsent?.status === "consented") {
+    throw new AppError("CONSENT_NOT_NEEDED", "Parental consent has already been given");
+  }
+
+  const now = new Date();
+  const today = todayUtc();
+
+  if (existingConsent?.lastRequestedAt) {
+    const secondsSinceLast = (now.getTime() - existingConsent.lastRequestedAt.getTime()) / 1000;
+    if (secondsSinceLast < RESEND_COOLDOWN_MS / 1000) {
+      throw new AppError("RESEND_TOO_SOON", "Please wait a bit before requesting another email", {
+        retryAfterSeconds: Math.ceil(RESEND_COOLDOWN_MS / 1000 - secondsSinceLast),
+      });
+    }
+  }
+
+  const dailyCap = await getSettingNumber("consent_resend_daily_cap", DEFAULT_RESEND_DAILY_CAP);
+  const requestsTodayForUser =
+    existingConsent?.requestCountDate === today ? existingConsent.requestCount : 0;
+  if (requestsTodayForUser >= dailyCap) {
+    throw new AppError(
+      "RESEND_LIMIT_REACHED",
+      "Daily limit for consent emails reached for this account - try again tomorrow",
+    );
+  }
+
+  const existingContact = await getParentContact(user.id);
+  const isNewParentEmail = existingContact?.email !== input.parentEmail;
+  if (isNewParentEmail) {
+    const maxChildren = await getSettingNumber(
+      "parent_email_max_children",
+      DEFAULT_PARENT_EMAIL_MAX_CHILDREN,
+    );
+    const childCount = await countChildrenForParentEmail(input.parentEmail);
+    if (childCount >= maxChildren) {
+      throw new AppError(
+        "PARENT_EMAIL_LIMIT_REACHED",
+        "This parent email is already linked to the maximum number of accounts",
+      );
+    }
+  }
+
+  const requestsTodayForEmail = await sumRequestsTodayForParentEmail(input.parentEmail, today);
+  if (requestsTodayForEmail >= dailyCap) {
+    throw new AppError(
+      "RESEND_LIMIT_REACHED",
+      "Daily limit for consent emails reached for this parent email - try again tomorrow",
+    );
+  }
+
+  const parentContact = await upsertParentContact(user.id, input.parentName, input.parentEmail);
+
+  const token = generateToken();
+  await upsertConsentRequest({
+    userId: user.id,
+    parentContactId: parentContact.id,
+    tokenHash: hashToken(token),
+    tokenExpiresAt: new Date(now.getTime() + TOKEN_TTL_MS),
+    requestCount: requestsTodayForUser + 1,
+    requestCountDate: today,
+  });
+
+  const childFirstName = user.firstName ?? "Your child";
+  const consentUrl = `${env.APP_URL}/consent/confirm?token=${token}`;
+  await sendConsentEmailOrLog({
+    to: input.parentEmail,
+    subject: `${childFirstName} wants to use Finlamma - we need your OK`,
+    react: ParentConsentRequestEmail({ childFirstName, consentUrl }),
+    devLogLabel: `parent consent link for user ${user.id}`,
+    devLogDetail: consentUrl,
+  });
+
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "consent.requested",
+    targetType: "user",
+    targetId: user.id,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  return { status: "pending" as const, parentEmail: input.parentEmail };
+}
+
+export type ConsentRequestView =
+  | { state: "invalid" }
+  | { state: "expired" }
+  | { state: "already_resolved" }
+  | {
+      state: "valid";
+      childFirstName: string;
+      documents: { type: string; version: number; content: { en: string; hi: string; hx: string } }[];
+    };
+
+// Read-only lookup for the public consent page's GET render - never
+// records anything, since email security scanners prefetch links (see
+// docs/PRODUCT_SPEC.md's Onboarding & parental consent section).
+export async function getConsentRequestView(token: string): Promise<ConsentRequestView> {
+  const record = await getConsentRecordByTokenHash(hashToken(token));
+  if (!record) return { state: "invalid" };
+  if (record.status !== "pending" || record.usedAt) return { state: "already_resolved" };
+  if (record.tokenExpiresAt.getTime() < Date.now()) return { state: "expired" };
+
+  const [childFirstName, publishedDocs] = await Promise.all([
+    getUserFirstName(record.userId),
+    listPublishedDocuments(),
+  ]);
+
+  return {
+    state: "valid",
+    childFirstName: childFirstName ?? "your child",
+    documents: publishedDocs.map((d) => ({ type: d.type, version: d.version, content: d.content })),
+  };
+}
+
+// The actual mutation behind the consent page's "I consent" POST. Guarded
+// against a reused/raced token by markConsentConfirmed's `status = pending`
+// where-clause - a null result here means someone else (a concurrent
+// request, or the token simply being stale) already resolved it.
+export async function confirmParentConsent(token: string, meta: RequestMeta) {
+  const record = await getConsentRecordByTokenHash(hashToken(token));
+  if (!record) throw new AppError("NOT_FOUND", "This consent link is invalid");
+  if (record.status !== "pending" || record.usedAt) {
+    throw new AppError("CONFLICT", "This consent link has already been used");
+  }
+  if (record.tokenExpiresAt.getTime() < Date.now()) {
+    throw new AppError("NOT_FOUND", "This consent link has expired - ask your child to request a new one");
+  }
+
+  const publishedDocs = await listPublishedDocuments();
+  const legalDocumentVersions = Object.fromEntries(publishedDocs.map((d) => [d.type, d.version]));
+
+  const withdrawToken = generateToken();
+  const updated = await markConsentConfirmed(record.id, {
+    legalDocumentVersions,
+    withdrawTokenHash: hashToken(withdrawToken),
+    actorIp: meta.ip,
+    actorUserAgent: meta.userAgent,
+  });
+  if (!updated) {
+    throw new AppError("CONFLICT", "This consent link has already been used");
+  }
+
+  for (const doc of publishedDocs) {
+    await insertAcceptance(record.userId, doc.id, "parent");
+  }
+
+  await logActivity({
+    actorType: "system",
+    action: "consent.given",
+    targetType: "user",
+    targetId: record.userId,
+    metadata: { actor: "parent", method: "email_link", legalDocumentVersions },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const [childFirstName, parentContact] = await Promise.all([
+    getUserFirstName(record.userId),
+    getParentContact(record.userId),
+  ]);
+
+  if (parentContact) {
+    const withdrawUrl = `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`;
+    await sendConsentEmailOrLog({
+      to: parentContact.email,
+      subject: "Your consent for Finlamma is recorded",
+      react: ParentConsentConfirmedEmail({
+        childFirstName: childFirstName ?? "your child",
+        withdrawUrl,
+      }),
+      devLogLabel: `withdraw link for user ${record.userId}`,
+      devLogDetail: withdrawUrl,
+    });
+  }
+
+  return { childFirstName: childFirstName ?? "your child" };
+}
+
+// The access gate every XP/VM/trading/social endpoint from Phase 2b onward
+// must call (see docs/ROADMAP.md Phase 2a). No date of birth yet counts as
+// "onboarding incomplete", same bucket as an unresolved minor consent -
+// both mean "limited to onboarding, Settings and legal pages only".
+export async function requireFullAccess(user: MeUser): Promise<void> {
+  if (!user.dateOfBirth) {
+    throw new AppError("FORBIDDEN", "Complete onboarding before using this feature");
+  }
+
+  if (isMinor(user.dateOfBirth)) {
+    const consent = await getConsentRecord(user.id);
+    if (consent?.status !== "consented") {
+      throw new AppError("FORBIDDEN", "Parental consent is required before using this feature");
+    }
+  }
+
+  const legalStatus = await getLegalStatus(user);
+  if (!legalStatus.allAccepted) {
+    throw new AppError(
+      "FORBIDDEN",
+      "Accept the current Terms, Privacy and Risk-disclosure before using this feature",
+    );
+  }
+}

@@ -23,6 +23,11 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/legal-status` — Get my legal-document acceptance status
 - `POST /api/v1/me/legal/accept` — Accept the currently published legal documents
 
+**Onboarding**
+
+- `PATCH /api/v1/me/date-of-birth` — Set my date of birth (once)
+- `POST /api/v1/me/parent-consent/request` — Request parental consent
+
 **Webhooks**
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
@@ -347,6 +352,141 @@ Records the signed-in user's own acceptance of every currently published Terms/P
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+## Onboarding
+
+### `PATCH /api/v1/me/date-of-birth`
+
+**Set my date of birth (once)**
+
+Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dateOfBirth` | string | yes | YYYY-MM-DD. Can be set exactly once through this endpoint - contact support to correct a mistake after that. |
+
+```json
+{
+  "dateOfBirth": "2012-05-14"
+}
+```
+
+**Responses**
+
+- **200** — Date of birth recorded
+
+```json
+{
+  "data": {
+    "dateOfBirth": "2012-05-14",
+    "isMinor": true,
+    "requiresParentConsent": true
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **409** — Date of birth is already set
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Date of birth is already set - contact support to correct it"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/parent-consent/request`
+
+**Request parental consent**
+
+For an under-18 account: emails the given parent/guardian a magic link to a public consent page. Opening that link does nothing by itself - only the parent's own 'I consent' action there records anything. Safe to call again to resend (subject to a 60s cooldown and a daily cap, both per account and per parent email) or to change the parent's details before they've acted.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `parentName` | string | yes |  |
+| `parentEmail` | string | yes |  |
+
+```json
+{
+  "parentName": "Priya Sharma",
+  "parentEmail": "priya.sharma@example.com"
+}
+```
+
+**Responses**
+
+- **200** — Consent email sent (or queued)
+
+```json
+{
+  "data": {
+    "status": "pending",
+    "parentEmail": "priya.sharma@example.com"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **409** — Consent isn't needed (no date of birth yet, account is 18+, already consented), the parent email equals the account's own email, or that parent email is already linked to the maximum number of accounts
+
+```json
+{
+  "error": {
+    "code": "CONSENT_NOT_NEEDED",
+    "message": "Set your date of birth first"
+  }
+}
+```
+
+- **429** — Resend cooldown or daily cap reached
+
+```json
+{
+  "error": {
+    "code": "RESEND_TOO_SOON",
+    "message": "Please wait a bit before requesting another email",
+    "details": {
+      "retryAfterSeconds": 42
+    }
   }
 }
 ```

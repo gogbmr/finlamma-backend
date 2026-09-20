@@ -402,6 +402,104 @@
           "data"
         ]
       },
+      "SetDateOfBirthRequest": {
+        "type": "object",
+        "properties": {
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "example": "2012-05-14",
+            "description": "YYYY-MM-DD. Can be set exactly once through this endpoint - contact support to correct a mistake after that."
+          }
+        },
+        "required": [
+          "dateOfBirth"
+        ]
+      },
+      "DateOfBirthStatus": {
+        "type": "object",
+        "properties": {
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "example": "2012-05-14"
+          },
+          "isMinor": {
+            "type": "boolean",
+            "example": true
+          },
+          "requiresParentConsent": {
+            "type": "boolean",
+            "example": true,
+            "description": "True if isMinor and parental consent hasn't been completed yet."
+          }
+        },
+        "required": [
+          "dateOfBirth",
+          "isMinor",
+          "requiresParentConsent"
+        ]
+      },
+      "SetDateOfBirthResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DateOfBirthStatus"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RequestParentConsentRequest": {
+        "type": "object",
+        "properties": {
+          "parentName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Priya Sharma"
+          },
+          "parentEmail": {
+            "type": "string",
+            "format": "email",
+            "example": "priya.sharma@example.com"
+          }
+        },
+        "required": [
+          "parentName",
+          "parentEmail"
+        ]
+      },
+      "RequestParentConsentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ],
+                "example": "pending"
+              },
+              "parentEmail": {
+                "type": "string",
+                "format": "email",
+                "example": "priya.sharma@example.com"
+              }
+            },
+            "required": [
+              "status",
+              "parentEmail"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -783,6 +881,159 @@
                   "error": {
                     "code": "UNAUTHENTICATED",
                     "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/date-of-birth": {
+      "patch": {
+        "summary": "Set my date of birth (once)",
+        "description": "Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.",
+        "tags": [
+          "Onboarding"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDateOfBirthRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Date of birth recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetDateOfBirthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Date of birth is already set",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Date of birth is already set - contact support to correct it"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/parent-consent/request": {
+      "post": {
+        "summary": "Request parental consent",
+        "description": "For an under-18 account: emails the given parent/guardian a magic link to a public consent page. Opening that link does nothing by itself - only the parent's own 'I consent' action there records anything. Safe to call again to resend (subject to a 60s cooldown and a daily cap, both per account and per parent email) or to change the parent's details before they've acted.",
+        "tags": [
+          "Onboarding"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestParentConsentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consent email sent (or queued)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestParentConsentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Consent isn't needed (no date of birth yet, account is 18+, already consented), the parent email equals the account's own email, or that parent email is already linked to the maximum number of accounts",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONSENT_NOT_NEEDED",
+                    "message": "Set your date of birth first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Resend cooldown or daily cap reached",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RESEND_TOO_SOON",
+                    "message": "Please wait a bit before requesting another email",
+                    "details": {
+                      "retryAfterSeconds": 42
+                    }
                   }
                 },
                 "schema": {
