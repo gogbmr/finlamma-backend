@@ -91,18 +91,17 @@ dev fallback was keyed off `NODE_ENV`, which is always `"production"` on every V
 including preview - fixed to key off `VERCEL_ENV` instead, or preview testing would have been
 blocked with a confusing 503 whenever Resend isn't configured.
 
-### Test data - created for manual click-through review, not real users
-Two throwaway rows exist in the shared database purely for testing this flow, created directly
-(not through Clerk - no real sign-up happened):
-| Clerk user id (fake) | First name | Purpose | Status as of 2026-09-20 |
-|---|---|---|---|
-| `user_test_preview_checkpoint_a` | Aarav | Checkpoint A: test "I consent" | `consented` (test passed) |
-| `user_test_preview_checkpoint_b_decline` | Diya | Checkpoint B: test "I do not consent" | `pending` |
-
-Both have a fake parent contact (`test-parent-checkpoint-a@example.com` /
-`test-parent-checkpoint-b@example.com` - not real addresses, never emailed since Resend isn't
-configured yet). Kept in place at the founder's request while manual review is ongoing; not
-deleted yet.
+### Test data - created for manual click-through review, deleted 2026-09-20
+Two throwaway rows existed in the shared database purely for testing this flow, created directly
+(not through Clerk - no real sign-up happened): `user_test_preview_checkpoint_a` (Aarav,
+Checkpoint A - consented, then withdrawn during later manual testing) and
+`user_test_preview_checkpoint_b_decline` (Diya, Checkpoint B - declined). **Deleted** ahead of the
+Phase 2a merge to `main`: the founder ran the delete in the Supabase SQL Editor (my Supabase MCP
+connection is read-only), and it was verified read-only afterward that `users`, `parent_contacts`,
+`consent_records` and `legal_acceptances` all show zero rows for both ids - the FK `onDelete:
+cascade` on those three tables removed the dependent rows automatically. Their `activity_logs`
+entries (`consent.given`, `consent.withdrawn`, `consent.refused`) are kept, per the append-only
+rule - same as any real account deletion, they just reference a now-nonexistent user id.
 
 ### Withdraw-token lifetime - decided, recorded in ARCHITECTURE.md (D15)
 Withdraw links **never expire**, deliberately: DPDP requires withdrawing consent to be as easy
@@ -131,8 +130,6 @@ mints a fresh withdraw token that supersedes the old one on the same row).
   consent-confirmed receipts.
 
 ### Follow-ups (tracked, not fixed now)
-- **Delete the two test rows above** once manual review of the consent flow is finished (kept
-  for now at the founder's request).
 - The per-parent-email daily-cap/child-count check still has a residual race across *different*
   accounts racing in lockstep on the same email (documented in
   `src/server/onboarding/repo.ts`'s comments) - the per-user race the audit demonstrated is
