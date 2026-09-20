@@ -597,75 +597,6 @@ export async function claimReapprovalRequestSlot(
   });
 }
 
-// Only flips a row that's still `pending` - a null return means the token
-// was already consumed by a concurrent request or is simply stale, same
-// guard style as declineConsentRecord/withdrawConsentRecord.
-export async function markReapprovalApproved(
-  requestId: string,
-  meta: { actorIp: string | null; actorUserAgent: string | null },
-) {
-  const now = new Date();
-  const [updated] = await db
-    .update(legalReapprovalRequests)
-    .set({
-      status: "approved",
-      usedAt: now,
-      actedAt: now,
-      actorIp: meta.actorIp,
-      actorUserAgent: meta.actorUserAgent,
-    })
-    .where(
-      and(eq(legalReapprovalRequests.id, requestId), eq(legalReapprovalRequests.status, "pending")),
-    )
-    .returning();
-  return updated ?? null;
-}
-
-export async function markReapprovalDeclined(
-  requestId: string,
-  meta: { actorIp: string | null; actorUserAgent: string | null },
-) {
-  const now = new Date();
-  const [updated] = await db
-    .update(legalReapprovalRequests)
-    .set({
-      status: "declined",
-      usedAt: now,
-      actedAt: now,
-      actorIp: meta.actorIp,
-      actorUserAgent: meta.actorUserAgent,
-    })
-    .where(
-      and(eq(legalReapprovalRequests.id, requestId), eq(legalReapprovalRequests.status, "pending")),
-    )
-    .returning();
-  return updated ?? null;
-}
-
-// The reapproval-decline counterpart to declineConsentRecord - that
-// function only guards `status = pending` (the original, never-consented-
-// yet decline), but a reapproval decline is a parent withdrawing consent
-// they'd *already* given, so it must transition an already-`consented` row
-// instead. Guarding on `status = consented` keeps this from ever touching a
-// row that's pending, already refused, or already withdrawn.
-export async function refuseConsentedRecord(
-  consentRecordId: string,
-  meta: { actorIp: string | null; actorUserAgent: string | null },
-) {
-  const now = new Date();
-  const [updated] = await db
-    .update(consentRecords)
-    .set({
-      status: "refused",
-      actedAt: now,
-      actorIp: meta.actorIp,
-      actorUserAgent: meta.actorUserAgent,
-    })
-    .where(and(eq(consentRecords.id, consentRecordId), eq(consentRecords.status, "consented")))
-    .returning();
-  return updated ?? null;
-}
-
 // Rotates the withdraw token on a minor's existing consent_records row -
 // used when a reapproval-request email is (re)sent, so every email to an
 // already-verified parent always carries a currently-valid withdraw link
@@ -681,23 +612,118 @@ export async function setConsentRecordWithdrawTokenHash(
     .where(eq(consentRecords.userId, userId));
 }
 
-// Shallow-merges { [type]: version } into the user's consent_records.
-// legal_document_versions - jsonb `||` overwrites only the matching
-// top-level key, leaving every other type's previously-recorded version
-// untouched. Done as a single atomic UPDATE (not read-modify-write) so two
-// concurrent approvals for different document types on the same user can't
-// clobber each other.
-export async function mergeConsentRecordLegalVersion(
-  userId: string,
-  type: string,
-  version: number,
-): Promise<void> {
-  await db
-    .update(consentRecords)
-    .set({
-      legalDocumentVersions: sql`coalesce(${consentRecords.legalDocumentVersions}, '{}'::jsonb) || ${JSON.stringify(
-        { [type]: version },
-      )}::jsonb`,
-    })
-    .where(eq(consentRecords.userId, userId));
+type ApproveReapprovalInput = {
+  requestId: string;
+  userId: string;
+  legalDocumentId: string;
+  documentType: string;
+  documentVersion: number;
+  actorIp: string | null;
+  actorUserAgent: string | null;
+};
+
+// Flips the reapproval row to `approved` (consuming its single-use token),
+// records the parent's fresh acceptance of this exact document, and folds
+// the version into consent_records.legal_document_versions - all in one
+// transaction. A security audit found an earlier version did these as three
+// separate, non-transactional writes: if the process died between them, the
+// single-use token was already permanently burned (the guard is
+// `status = pending`, so a burned token can never be resent or retried) but
+// the parent's acceptance was never actually recorded, silently and
+// permanently stranding that minor's account. Same fix shape as
+// confirmConsentAndRecordAcceptances above. Returns null (whole transaction
+// rolled back) if the token was already consumed by a concurrent request or
+// is simply stale.
+export async function approveReapprovalAndRecordAcceptance(input: ApproveReapprovalInput) {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [updated] = await tx
+      .update(legalReapprovalRequests)
+      .set({
+        status: "approved",
+        usedAt: now,
+        actedAt: now,
+        actorIp: input.actorIp,
+        actorUserAgent: input.actorUserAgent,
+      })
+      .where(
+        and(eq(legalReapprovalRequests.id, input.requestId), eq(legalReapprovalRequests.status, "pending")),
+      )
+      .returning();
+
+    if (!updated) return null;
+
+    await tx.insert(legalAcceptances).values({
+      userId: input.userId,
+      legalDocumentId: input.legalDocumentId,
+      acceptedBy: "parent",
+    });
+
+    // Shallow-merges { [type]: version } into legal_document_versions -
+    // jsonb `||` overwrites only the matching top-level key, leaving every
+    // other type's previously-recorded version untouched.
+    await tx
+      .update(consentRecords)
+      .set({
+        legalDocumentVersions: sql`coalesce(${consentRecords.legalDocumentVersions}, '{}'::jsonb) || ${JSON.stringify(
+          { [input.documentType]: input.documentVersion },
+        )}::jsonb`,
+      })
+      .where(eq(consentRecords.userId, input.userId));
+
+    return updated;
+  });
+}
+
+type DeclineReapprovalInput = {
+  requestId: string;
+  userId: string;
+  actorIp: string | null;
+  actorUserAgent: string | null;
+};
+
+// Flips the reapproval row to `declined` and, in the same transaction,
+// revokes the parent's original consent entirely (status consented ->
+// refused) - condition 5 of the re-approval design: declining is the same
+// outcome as the original decline flow, not just "this one document stays
+// unapproved". The consent_records update is guarded on `status =
+// 'consented'` and unconditional otherwise (no separate read-then-write),
+// so it's a safe no-op if the record somehow isn't `consented` anymore.
+// Same non-transactional bug shape and fix as
+// approveReapprovalAndRecordAcceptance above: a mid-flight crash used to be
+// able to burn the token while leaving consent_records still `consented`,
+// contradicting the "consent fully revoked" record the reapproval row and
+// the parent's email both claim. Returns null (rolled back) if the token
+// was already consumed or is stale.
+export async function declineReapprovalAndRefuseConsent(input: DeclineReapprovalInput) {
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const [updated] = await tx
+      .update(legalReapprovalRequests)
+      .set({
+        status: "declined",
+        usedAt: now,
+        actedAt: now,
+        actorIp: input.actorIp,
+        actorUserAgent: input.actorUserAgent,
+      })
+      .where(
+        and(eq(legalReapprovalRequests.id, input.requestId), eq(legalReapprovalRequests.status, "pending")),
+      )
+      .returning();
+
+    if (!updated) return null;
+
+    await tx
+      .update(consentRecords)
+      .set({
+        status: "refused",
+        actedAt: now,
+        actorIp: input.actorIp,
+        actorUserAgent: input.actorUserAgent,
+      })
+      .where(and(eq(consentRecords.userId, input.userId), eq(consentRecords.status, "consented")));
+
+    return updated;
+  });
 }

@@ -234,6 +234,30 @@ delete account.
   re-acceptance from everyone who hasn't accepted it yet. **v1 launches with placeholder
   documents clearly marked DRAFT** — the real text is written after the outside legal review
   below, then published for real.
+- **Parent re-approval on a material legal-document change**: when staff publish a new version,
+  they must explicitly choose **Yes/No** (no default — the Publish button stays disabled until
+  they pick) for whether it materially changes something a minor's parent already agreed to. A
+  placeholder version can never require re-approval, regardless of what staff pick.
+  - **On Yes**, every already-consented, non-deleted minor's parent gets a fresh re-approval
+    email: a **new 7-day single-use link** to a public page (`/consent/reapprove?token=...`,
+    same GET-is-side-effect-free / separate-POST-per-choice pattern as the original consent page,
+    with the same language switcher) showing the updated document, plus the parent's **current
+    withdraw-consent link** (every email to a verified parent must carry one — see below).
+    Resending reuses the exact same 60s-cooldown/daily-cap rate limiting as the original
+    consent-request flow.
+  - **While pending, the minor drops back to limited access** via `requireFullAccess` — same
+    bucket as before their parent's first consent, but a distinct error
+    (`PARENT_REAPPROVAL_REQUIRED`) so the app can show "your parent needs to approve an update"
+    rather than "your parent hasn't consented yet."
+  - **Approving** records a fresh `legal_acceptances` row (`accepted_by: 'parent'`) for that exact
+    document version and folds the version into `consent_records.legal_document_versions`, so
+    access is restored immediately.
+  - **Declining is the same outcome as the original decline flow** — it revokes the parent's
+    consent entirely (not just this one document), returning the account to limited access.
+  - The token flip and its follow-up write(s) happen in one database transaction, so a crash
+    mid-request can never burn a parent's one-time link without actually recording the outcome.
+  - A signed-in minor can ask for their own pending re-approval email(s) again via
+    `POST /me/legal/reapproval/resend`.
 - **Staff access to parent contact details is itself logged.** The `consent.view` permission
   (granted to `user_manager`) is read-only — staff can see consent/legal-acceptance status and
   cannot bypass or force it — and every time a staff member views a parent's contact details, that

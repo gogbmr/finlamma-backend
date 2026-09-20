@@ -32,11 +32,9 @@ const mockListCandidatesForReapproval = vi.fn();
 const mockClaimReapprovalRequestSlot = vi.fn();
 const mockGetReapprovalRequestByTokenHash = vi.fn();
 const mockListPendingReapprovalRequestsForUser = vi.fn();
-const mockMarkReapprovalApproved = vi.fn();
-const mockMarkReapprovalDeclined = vi.fn();
-const mockRefuseConsentedRecord = vi.fn();
+const mockApproveReapprovalAndRecordAcceptance = vi.fn();
+const mockDeclineReapprovalAndRefuseConsent = vi.fn();
 const mockSetConsentRecordWithdrawTokenHash = vi.fn();
-const mockMergeConsentRecordLegalVersion = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
   getParentContact: (id: unknown) => mockGetParentContact(id),
@@ -66,13 +64,10 @@ vi.mock("./repo", () => ({
   getReapprovalRequestByTokenHash: (hash: unknown) => mockGetReapprovalRequestByTokenHash(hash),
   listPendingReapprovalRequestsForUser: (userId: unknown) =>
     mockListPendingReapprovalRequestsForUser(userId),
-  markReapprovalApproved: (id: unknown, meta: unknown) => mockMarkReapprovalApproved(id, meta),
-  markReapprovalDeclined: (id: unknown, meta: unknown) => mockMarkReapprovalDeclined(id, meta),
-  refuseConsentedRecord: (id: unknown, meta: unknown) => mockRefuseConsentedRecord(id, meta),
+  approveReapprovalAndRecordAcceptance: (input: unknown) => mockApproveReapprovalAndRecordAcceptance(input),
+  declineReapprovalAndRefuseConsent: (input: unknown) => mockDeclineReapprovalAndRefuseConsent(input),
   setConsentRecordWithdrawTokenHash: (userId: unknown, hash: unknown) =>
     mockSetConsentRecordWithdrawTokenHash(userId, hash),
-  mergeConsentRecordLegalVersion: (userId: unknown, type: unknown, version: unknown) =>
-    mockMergeConsentRecordLegalVersion(userId, type, version),
 }));
 
 const mockLogActivity = vi.fn();
@@ -92,12 +87,9 @@ vi.mock("@/lib/settings", () => ({
 
 const mockListPublishedDocuments = vi.fn();
 const mockGetLegalDocumentById = vi.fn();
-const mockInsertAcceptance = vi.fn();
 vi.mock("@/server/legal/repo", () => ({
   listPublishedDocuments: () => mockListPublishedDocuments(),
   getLegalDocumentById: (id: unknown) => mockGetLegalDocumentById(id),
-  insertAcceptance: (userId: unknown, docId: unknown, by: unknown) =>
-    mockInsertAcceptance(userId, docId, by),
 }));
 
 const mockGetLegalStatus = vi.fn();
@@ -1116,26 +1108,33 @@ describe("approveReapproval", () => {
   it("records the parent acceptance, merges the version onto the consent record, and logs it", async () => {
     mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
     mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
-    mockMarkReapprovalApproved.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    mockApproveReapprovalAndRecordAcceptance.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
     mockGetUserFirstName.mockResolvedValueOnce("Aarav");
 
     const result = await approveReapproval("t", META);
 
     expect(result).toEqual({ childFirstName: "Aarav" });
-    expect(mockInsertAcceptance).toHaveBeenCalledWith("u1", "doc_2", "parent");
-    expect(mockMergeConsentRecordLegalVersion).toHaveBeenCalledWith("u1", "terms", 2);
+    expect(mockApproveReapprovalAndRecordAcceptance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "rr1",
+        userId: "u1",
+        legalDocumentId: "doc_2",
+        documentType: "terms",
+        documentVersion: 2,
+      }),
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "legal.reapproval_approved", targetId: "u1" }),
     );
   });
 
-  it("throws CONFLICT when markReapprovalApproved loses a race (already resolved concurrently)", async () => {
+  it("throws CONFLICT when the atomic approve loses a race (already resolved concurrently) - the whole transaction rolls back, nothing partial to clean up", async () => {
     mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
     mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
-    mockMarkReapprovalApproved.mockResolvedValueOnce(null);
+    mockApproveReapprovalAndRecordAcceptance.mockResolvedValueOnce(null);
 
     await expect(approveReapproval("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(mockInsertAcceptance).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 
@@ -1154,30 +1153,28 @@ describe("declineReapproval", () => {
     await expect(declineReapproval("t", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("revokes the parent's original consent entirely (refuseConsentedRecord), not just this document version", async () => {
+  it("revokes the parent's original consent entirely in one atomic call, not just this document version", async () => {
     mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
-    mockMarkReapprovalDeclined.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "declined" });
-    mockGetConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockDeclineReapprovalAndRefuseConsent.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "declined" });
     mockGetUserFirstName.mockResolvedValueOnce("Aarav");
 
     const result = await declineReapproval("t", META);
 
     expect(result).toEqual({ childFirstName: "Aarav" });
-    expect(mockRefuseConsentedRecord).toHaveBeenCalledWith("cr1", expect.any(Object));
+    expect(mockDeclineReapprovalAndRefuseConsent).toHaveBeenCalledWith(
+      expect.objectContaining({ requestId: "rr1", userId: "u1" }),
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "legal.reapproval_declined", targetId: "u1" }),
     );
   });
 
-  it("doesn't touch the consent record if it somehow isn't 'consented' anymore", async () => {
+  it("throws CONFLICT when the atomic decline loses a race (already resolved concurrently)", async () => {
     mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
-    mockMarkReapprovalDeclined.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "declined" });
-    mockGetConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "withdrawn" });
-    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockDeclineReapprovalAndRefuseConsent.mockResolvedValueOnce(null);
 
-    await declineReapproval("t", META);
-
-    expect(mockRefuseConsentedRecord).not.toHaveBeenCalled();
+    await expect(declineReapproval("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 

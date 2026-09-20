@@ -10,15 +10,17 @@ import { AppError } from "@/lib/errors";
 import { sendEmail } from "@/lib/email";
 import { logInternalError, type requestMeta } from "@/lib/http";
 import { getSettingNumber } from "@/lib/settings";
-import { getLegalDocumentById, insertAcceptance, listPublishedDocuments } from "@/server/legal/repo";
+import { getLegalDocumentById, listPublishedDocuments } from "@/server/legal/repo";
 import { getLegalStatus } from "@/server/legal/service";
 import {
   anonymizeParentContact,
+  approveReapprovalAndRecordAcceptance,
   claimConsentRequestSlot,
   claimReapprovalRequestSlot,
   confirmConsentAndRecordAcceptances,
   countChildrenForParentEmail,
   declineConsentRecord,
+  declineReapprovalAndRefuseConsent,
   getConsentRecord,
   getConsentRecordByTokenHash,
   getConsentRecordByWithdrawTokenHash,
@@ -30,10 +32,6 @@ import {
   listCandidatesForReapproval,
   listConsentRecordsForReview,
   listPendingReapprovalRequestsForUser,
-  markReapprovalApproved,
-  markReapprovalDeclined,
-  mergeConsentRecordLegalVersion,
-  refuseConsentedRecord,
   setConsentRecordParentEmailHmac,
   setConsentRecordWithdrawTokenHash,
   setDateOfBirthOnce,
@@ -781,6 +779,12 @@ export async function getReapprovalRequestView(token: string): Promise<Reapprova
 // folds its version into consent_records.legal_document_versions (condition
 // 6: "record which legal versions the parent approved on the consent
 // record"), so requireFullAccess's allParentApproved check passes again.
+// The token flip, the acceptance insert and the version merge all happen in
+// one transaction (approveReapprovalAndRecordAcceptance) - a security audit
+// found an earlier version did these as separate writes, so a crash between
+// them could permanently burn the single-use token while never actually
+// recording the parent's acceptance, stranding the minor's account with no
+// way to retry.
 export async function approveReapproval(token: string, meta: RequestMeta) {
   const record = await getReapprovalRequestByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This link is invalid");
@@ -794,14 +798,16 @@ export async function approveReapproval(token: string, meta: RequestMeta) {
   const doc = await getLegalDocumentById(record.legalDocumentId);
   if (!doc) throw new AppError("NOT_FOUND", "This link is invalid");
 
-  const updated = await markReapprovalApproved(record.id, {
+  const updated = await approveReapprovalAndRecordAcceptance({
+    requestId: record.id,
+    userId: record.userId,
+    legalDocumentId: record.legalDocumentId,
+    documentType: doc.type,
+    documentVersion: doc.version,
     actorIp: meta.ip,
     actorUserAgent: meta.userAgent,
   });
   if (!updated) throw new AppError("CONFLICT", "This link has already been used");
-
-  await insertAcceptance(record.userId, record.legalDocumentId, "parent");
-  await mergeConsentRecordLegalVersion(record.userId, doc.type, doc.version);
 
   await logActivity({
     actorType: "system",
@@ -819,10 +825,15 @@ export async function approveReapproval(token: string, meta: RequestMeta) {
 
 // The reapproval page's "I do not approve" counterpart - condition 5: same
 // outcome as the existing decline flow, which means the parent's *original*
-// consent is revoked entirely (refuseConsentedRecord), not just this one
-// document version staying unapproved. requireFullAccess already blocks a
-// minor on any non-'consented' status, so this alone returns the account to
-// limited access.
+// consent is revoked entirely, not just this one document version staying
+// unapproved. requireFullAccess already blocks a minor on any non-
+// 'consented' status, so this alone returns the account to limited access.
+// The token flip and the consent revocation happen in one transaction
+// (declineReapprovalAndRefuseConsent) - same non-transactional bug shape
+// and fix as approveReapproval above: a crash between them used to be able
+// to burn the token while leaving consent_records still `consented`,
+// contradicting the "consent fully revoked" outcome the parent was told
+// about and the reapproval row itself records.
 export async function declineReapproval(token: string, meta: RequestMeta) {
   const record = await getReapprovalRequestByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This link is invalid");
@@ -833,19 +844,13 @@ export async function declineReapproval(token: string, meta: RequestMeta) {
     throw new AppError("NOT_FOUND", "This link has expired - ask your child to request a new one");
   }
 
-  const updated = await markReapprovalDeclined(record.id, {
+  const updated = await declineReapprovalAndRefuseConsent({
+    requestId: record.id,
+    userId: record.userId,
     actorIp: meta.ip,
     actorUserAgent: meta.userAgent,
   });
   if (!updated) throw new AppError("CONFLICT", "This link has already been used");
-
-  const consentRecord = await getConsentRecord(record.userId);
-  if (consentRecord && consentRecord.status === "consented") {
-    await refuseConsentedRecord(consentRecord.id, {
-      actorIp: meta.ip,
-      actorUserAgent: meta.userAgent,
-    });
-  }
 
   await logActivity({
     actorType: "system",
