@@ -1,7 +1,11 @@
 // Seeds the fixed catalog of staff roles and permissions (see
 // docs/PRODUCT_SPEC.md "Staff roles"). Idempotent - upserts by key, so it's
-// safe to run again after adding a role/permission. Run via `pnpm db:seed`.
+// safe to run again after adding a role/permission. Never removes an
+// existing role, permission or grant, and never touches staff_members or
+// users - it only adds/updates rows in roles, permissions and
+// role_permissions. Run via `pnpm db:seed`.
 import "../envConfig";
+import { logActivity } from "../src/lib/activity-log";
 import { db } from "../src/db/client";
 import { permissions, rolePermissions, roles } from "../src/db/schema";
 
@@ -42,13 +46,24 @@ const PERMISSIONS = [
     key: "activity_log.view",
     description: "View the staff/user activity log.",
   },
+  {
+    key: "legal.manage",
+    description: "Draft and publish versioned Terms/Privacy/Risk-disclosure documents.",
+  },
+  {
+    key: "consent.view",
+    description:
+      "View parental-consent and legal-acceptance status for user accounts, read-only. " +
+      "Every view of a parent's contact details is logged.",
+  },
 ] as const;
 
-// Permissions granted to each role, by key. Only super_admin has any for
-// now - other roles get permissions as their domain (quizzes, content, ...)
-// is actually built in later phases.
+// Permissions granted to each role, by key. Only super_admin and
+// user_manager have any for now - other roles get permissions as their
+// domain (quizzes, content, ...) is actually built in later phases.
 const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
-  super_admin: ["staff.manage", "activity_log.view"],
+  super_admin: ["staff.manage", "activity_log.view", "legal.manage"],
+  user_manager: ["consent.view"],
 };
 
 async function seed() {
@@ -79,6 +94,7 @@ async function seed() {
   const roleIdByKey = new Map(allRoles.map((r) => [r.key, r.id]));
   const permissionIdByKey = new Map(allPermissions.map((p) => [p.key, p.id]));
 
+  let grantedCount = 0;
   for (const [roleKey, permissionKeys] of Object.entries(ROLE_PERMISSIONS)) {
     const roleId = roleIdByKey.get(roleKey);
     if (!roleId) throw new Error(`Unknown role key in ROLE_PERMISSIONS: ${roleKey}`);
@@ -87,16 +103,33 @@ async function seed() {
       if (!permissionId) {
         throw new Error(`Unknown permission key in ROLE_PERMISSIONS: ${permissionKey}`);
       }
-      await db
+      // .returning() comes back empty on a conflict (already granted), so
+      // this only fires - and only logs - for a grant that's actually new.
+      const inserted = await db
         .insert(rolePermissions)
         .values({ roleId, permissionId })
         .onConflictDoNothing({
           target: [rolePermissions.roleId, rolePermissions.permissionId],
+        })
+        .returning({ id: rolePermissions.id });
+
+      if (inserted.length > 0) {
+        grantedCount++;
+        await logActivity({
+          actorType: "system",
+          action: "role.permission_granted",
+          targetType: "role",
+          targetId: roleId,
+          metadata: { roleKey, permissionKey, source: "seed-roles" },
         });
+      }
     }
   }
 
-  console.log(`Seeded ${ROLES.length} roles, ${PERMISSIONS.length} permissions.`);
+  console.log(
+    `Seeded ${ROLES.length} roles, ${PERMISSIONS.length} permissions, ` +
+      `${grantedCount} new grant(s) logged.`,
+  );
 }
 
 seed()
