@@ -1,4 +1,5 @@
 import {
+  date,
   index,
   integer,
   jsonb,
@@ -145,6 +146,15 @@ export const consentRecords = pgTable(
     actedAt: timestamp("acted_at", { withTimezone: true }),
     actorIp: text("actor_ip"),
     actorUserAgent: text("actor_user_agent"),
+    // DB-backed resend rate limiting (no Redis yet in this codebase - see
+    // src/server/onboarding/service.ts): lastRequestedAt backs the 60s
+    // cooldown; requestCount/requestCountDate back the daily cap, reset
+    // whenever requestCountDate isn't today (UTC calendar day). The
+    // per-parent-email cap sums requestCount across every consent_records
+    // row joined to parent_contacts on email for today's date.
+    lastRequestedAt: timestamp("last_requested_at", { withTimezone: true }),
+    requestCount: integer("request_count").default(1).notNull(),
+    requestCountDate: date("request_count_date"),
   },
   (t) => [
     uniqueIndex("consent_records_user_id_idx").on(t.userId),

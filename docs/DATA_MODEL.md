@@ -33,10 +33,13 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 - `consent_records` (user_id, parent_contact_id, method email_link — the only method in v1, kept
   as an enum for a future SMS method rather than hardcoded, status
   pending|consented|refused|withdrawn, legal_document_version, token_hash, token_expires_at,
-  used_at, acted_at) — token is single-use (rejected on a second `used_at`), stored **hashed**,
-  valid **7 days**. Resending is rate-limited: a 60s cooldown plus a daily cap
-  (`settings_kv.consent_resend_daily_cap`), tracked per `user_id` and per parent email
-  independently. A **separate**, longer-lived withdrawal token is included in every email sent to
+  used_at, acted_at, last_requested_at, request_count, request_count_date) — token is single-use
+  (rejected on a second `used_at`), stored **hashed**, valid **7 days**. Resending is
+  rate-limited **in the DB, no Redis yet**: `last_requested_at` backs a 60s cooldown,
+  `request_count`/`request_count_date` back a daily cap
+  (`settings_kv.consent_resend_daily_cap`) that resets on a new UTC day; the same cap applies
+  per `user_id` and, summed across every user sharing one parent email, per parent email too.
+  A **separate**, longer-lived withdrawal token is included in every email sent to
   an already-verified parent; withdrawing sets status `withdrawn` and immediately drops the
   account back to limited access. A minor (under 18 by `users.date_of_birth`) has limited app
   access until status is `consented` **and** a matching self-acceptance exists in
