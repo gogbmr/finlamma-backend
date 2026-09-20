@@ -13,6 +13,22 @@ export const ErrorCode = {
   INVALID_SIGNATURE: "INVALID_SIGNATURE",
   INTERNAL: "INTERNAL",
   SERVICE_UNAVAILABLE: "SERVICE_UNAVAILABLE",
+
+  // Parental consent (src/server/onboarding) - the app needs to branch on
+  // these specifically (e.g. show a resend countdown vs. a "try tomorrow"
+  // message), unlike the consent page's own errors which just render a
+  // plain-English message and reuse NOT_FOUND/CONFLICT (see
+  // src/app/consent/actions.ts).
+  CONSENT_NOT_NEEDED: "CONSENT_NOT_NEEDED",
+  PARENT_EMAIL_INVALID: "PARENT_EMAIL_INVALID",
+  PARENT_EMAIL_LIMIT_REACHED: "PARENT_EMAIL_LIMIT_REACHED",
+  RESEND_TOO_SOON: "RESEND_TOO_SOON",
+  RESEND_LIMIT_REACHED: "RESEND_LIMIT_REACHED",
+  // Distinct from the initial-consent FORBIDDEN case in requireFullAccess -
+  // the app needs to tell "your parent hasn't consented yet at all" apart
+  // from "your parent already consented once, but a legal document changed
+  // and needs a fresh approval" so it can show the right screen.
+  PARENT_REAPPROVAL_REQUIRED: "PARENT_REAPPROVAL_REQUIRED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -28,6 +44,13 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   INVALID_SIGNATURE: 400,
   INTERNAL: 500,
   SERVICE_UNAVAILABLE: 503,
+
+  CONSENT_NOT_NEEDED: 409,
+  PARENT_EMAIL_INVALID: 400,
+  PARENT_EMAIL_LIMIT_REACHED: 409,
+  RESEND_TOO_SOON: 429,
+  RESEND_LIMIT_REACHED: 429,
+  PARENT_REAPPROVAL_REQUIRED: 403,
 };
 
 export class AppError extends Error {

@@ -82,6 +82,30 @@
                 "example": "ok",
                 "description": "Whether NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (staff app) and CONSUMER_CLERK_PUBLISHABLE_KEY (consumer app) resolve to two different Clerk applications, as they must - catches the two being silently swapped or both pointed at the same app in env vars."
               },
+              "legalDocuments": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "placeholder",
+                  "unpublished"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'placeholder' means at least one currently published Terms/Privacy/Risk-disclosure document is still the seeded pre-legal-review filler text (see scripts/seed-legal-documents.ts); 'unpublished' means one of the three types has no published version at all. Both must be resolved (a real version published through the admin Legal document editor) before launch."
+              },
+              "version": {
+                "type": "string",
+                "example": "2d303f6",
+                "description": "The deployed commit's short SHA (Vercel's VERCEL_GIT_COMMIT_SHA, first 7 characters), so confirming what's actually live doesn't require the Vercel dashboard. 'local' outside Vercel (local dev, tests)."
+              },
+              "consentPiiHmacKey": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "missing"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -93,6 +117,9 @@
               "database",
               "migrations",
               "clerkKeys",
+              "legalDocuments",
+              "version",
+              "consentPiiHmacKey",
               "timestamp"
             ]
           }
@@ -218,6 +245,308 @@
             },
             "required": [
               "deleted"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "LegalDocument": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy",
+              "risk_disclosure"
+            ],
+            "example": "terms",
+            "description": "terms, privacy or risk_disclosure."
+          },
+          "version": {
+            "type": "integer",
+            "example": 1
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "[DRAFT PLACEHOLDER - pending legal review] Terms of use...",
+              "hi": "[DRAFT PLACEHOLDER - pending legal review] उपयोग की शर्तें...",
+              "hx": "[DRAFT PLACEHOLDER - pending legal review] Terms of use..."
+            }
+          },
+          "publishedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "isPlaceholder": {
+            "type": "boolean",
+            "example": true,
+            "description": "True if this is pre-legal-review filler text seeded by scripts/seed-legal-documents.ts, not real legal text a staff member published."
+          }
+        },
+        "required": [
+          "type",
+          "version",
+          "content",
+          "publishedAt",
+          "isPlaceholder"
+        ]
+      },
+      "LegalDocumentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LegalDocument"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "LegalStatus": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "terms",
+                    "privacy",
+                    "risk_disclosure"
+                  ],
+                  "example": "terms",
+                  "description": "terms, privacy or risk_disclosure."
+                },
+                "currentVersion": {
+                  "type": "integer",
+                  "example": 1
+                },
+                "accepted": {
+                  "type": "boolean",
+                  "description": "Whether the signed-in user has accepted the currently published version themselves."
+                },
+                "acceptedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "requiresParentReapproval": {
+                  "type": "boolean",
+                  "example": false,
+                  "description": "True if this version was published with a material change that requires a minor's parent to re-approve it, even if the parent already consented to an earlier version."
+                },
+                "parentApproved": {
+                  "type": "boolean",
+                  "example": true,
+                  "description": "True if this document doesn't require parent re-approval, or a parent has already approved this specific version. Only relevant for a minor's account."
+                }
+              },
+              "required": [
+                "type",
+                "currentVersion",
+                "accepted",
+                "acceptedAt",
+                "requiresParentReapproval",
+                "parentApproved"
+              ]
+            }
+          },
+          "allAccepted": {
+            "type": "boolean",
+            "description": "True once every currently published document has been self-accepted."
+          },
+          "allParentApproved": {
+            "type": "boolean",
+            "description": "True once every currently published document that requires parent re-approval has been re-approved. Always true for an adult's account."
+          }
+        },
+        "required": [
+          "documents",
+          "allAccepted",
+          "allParentApproved"
+        ]
+      },
+      "LegalStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LegalStatus"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AcceptLegalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "accepted": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "terms",
+                    "privacy",
+                    "risk_disclosure"
+                  ],
+                  "example": "terms",
+                  "description": "terms, privacy or risk_disclosure."
+                }
+              }
+            },
+            "required": [
+              "accepted"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SetDateOfBirthRequest": {
+        "type": "object",
+        "properties": {
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "example": "2012-05-14",
+            "description": "YYYY-MM-DD. Can be set exactly once through this endpoint - contact support to correct a mistake after that."
+          }
+        },
+        "required": [
+          "dateOfBirth"
+        ]
+      },
+      "DateOfBirthStatus": {
+        "type": "object",
+        "properties": {
+          "dateOfBirth": {
+            "type": "string",
+            "format": "date",
+            "example": "2012-05-14"
+          },
+          "isMinor": {
+            "type": "boolean",
+            "example": true
+          },
+          "requiresParentConsent": {
+            "type": "boolean",
+            "example": true,
+            "description": "True if isMinor and parental consent hasn't been completed yet."
+          }
+        },
+        "required": [
+          "dateOfBirth",
+          "isMinor",
+          "requiresParentConsent"
+        ]
+      },
+      "SetDateOfBirthResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DateOfBirthStatus"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RequestParentConsentRequest": {
+        "type": "object",
+        "properties": {
+          "parentName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "example": "Priya Sharma"
+          },
+          "parentEmail": {
+            "type": "string",
+            "format": "email",
+            "example": "priya.sharma@example.com"
+          }
+        },
+        "required": [
+          "parentName",
+          "parentEmail"
+        ]
+      },
+      "RequestParentConsentResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending"
+                ],
+                "example": "pending"
+              },
+              "parentEmail": {
+                "type": "string",
+                "format": "email",
+                "example": "priya.sharma@example.com"
+              }
+            },
+            "required": [
+              "status",
+              "parentEmail"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ResendLegalReapprovalResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "resent": {
+                "type": "integer",
+                "example": 1,
+                "description": "How many pending re-approval emails were actually resent just now."
+              }
+            },
+            "required": [
+              "resent"
             ]
           }
         },
@@ -467,6 +796,375 @@
                   "error": {
                     "code": "SERVICE_UNAVAILABLE",
                     "message": "Could not delete account right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/legal/{type}": {
+      "get": {
+        "summary": "Get a published legal document",
+        "description": "Public - no authentication required, since a user needs to be able to read the Terms before signing up. Returns the currently published version of the Terms, Privacy or Risk-disclosure document.",
+        "tags": [
+          "Legal"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "terms",
+                "privacy",
+                "risk_disclosure"
+              ],
+              "example": "terms",
+              "description": "terms, privacy or risk_disclosure."
+            },
+            "required": true,
+            "description": "terms, privacy or risk_disclosure.",
+            "name": "type",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The currently published document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalDocumentResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published version of this document type yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published terms document yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal-status": {
+      "get": {
+        "summary": "Get my legal-document acceptance status",
+        "description": "Whether the signed-in user has accepted the currently published Terms/Privacy/Risk-disclosure themselves. For a minor, full access also requires the parent's own consent (see the parent-consent endpoints), not just this - this endpoint only covers legal-document acceptance.",
+        "tags": [
+          "Legal"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Acceptance status per currently published document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal/accept": {
+      "post": {
+        "summary": "Accept the currently published legal documents",
+        "description": "Records the signed-in user's own acceptance of every currently published Terms/Privacy/Risk-disclosure version not already accepted. Used both by an adult accepting for themselves and by a minor's own required in-app acceptance, done once after their parent has separately consented.",
+        "tags": [
+          "Legal"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Newly accepted document types (empty if everything was already accepted)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptLegalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/date-of-birth": {
+      "patch": {
+        "summary": "Set my date of birth (once)",
+        "description": "Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.",
+        "tags": [
+          "Onboarding"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDateOfBirthRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Date of birth recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetDateOfBirthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Date of birth is already set",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Date of birth is already set - contact support to correct it"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/parent-consent/request": {
+      "post": {
+        "summary": "Request parental consent",
+        "description": "For an under-18 account: emails the given parent/guardian a magic link to a public consent page. Opening that link does nothing by itself - only the parent's own 'I consent' action there records anything. Safe to call again to resend (subject to a 60s cooldown and a daily cap, both per account and per parent email) or to change the parent's details before they've acted.",
+        "tags": [
+          "Onboarding"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestParentConsentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Consent email sent (or queued)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequestParentConsentResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Consent isn't needed (no date of birth yet, account is 18+, already consented), the parent email equals the account's own email, or that parent email is already linked to the maximum number of accounts",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONSENT_NOT_NEEDED",
+                    "message": "Set your date of birth first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Resend cooldown or daily cap reached",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RESEND_TOO_SOON",
+                    "message": "Please wait a bit before requesting another email",
+                    "details": {
+                      "retryAfterSeconds": 42
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal/reapproval/resend": {
+      "post": {
+        "summary": "Resend pending parent re-approval email(s)",
+        "description": "For a minor whose parent already consented once, but a later material legal-document change now needs a fresh parent re-approval (see requiresParentReapproval on GET /api/v1/me/legal-status): resends the re-approval email(s), each with a fresh 7-day single-use link and a rotated withdraw link. Subject to the same 60s cooldown and daily cap as the original consent-request resend flow.",
+        "tags": [
+          "Legal"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Re-approval email(s) resent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResendLegalReapprovalResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "There's no pending re-approval for this account",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONSENT_NOT_NEEDED",
+                    "message": "There's no pending re-approval for this account"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Resend cooldown or daily cap reached",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RESEND_TOO_SOON",
+                    "message": "Please wait a bit before requesting another email",
+                    "details": {
+                      "retryAfterSeconds": 42
+                    }
                   }
                 },
                 "schema": {

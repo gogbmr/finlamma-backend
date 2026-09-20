@@ -7,6 +7,20 @@ const envSchema = z.object({
   NODE_ENV: z
     .enum(["development", "production", "test"])
     .default("development"),
+  // Vercel sets this automatically on every deployment - unlike NODE_ENV
+  // (which `next build` always sets to "production", preview deployments
+  // included), this is the actual signal for "is this the real production
+  // deployment". Absent outside Vercel (local dev, tests). See
+  // src/server/onboarding/service.ts's sendConsentEmailOrLog for why this
+  // distinction matters: a preview deployment must still be able to fall
+  // back to console-logging an email link when Resend isn't configured.
+  VERCEL_ENV: z.enum(["production", "preview", "development"]).optional(),
+  // Also set automatically by Vercel (the full 40-char commit SHA being
+  // built/deployed) - never set manually. Absent outside Vercel. Surfaced
+  // (shortened) as GET /api/v1/health's `version` field so confirming what's
+  // actually live doesn't require the Vercel dashboard - see
+  // docs/STATUS.md's Phase 2a audit for why this was added.
+  VERCEL_GIT_COMMIT_SHA: z.string().optional(),
   APP_URL: z.string().url(),
 
   // Supabase Postgres: pooled connection for the app at runtime, direct
@@ -39,6 +53,26 @@ const envSchema = z.object({
   // row on user.created, and deactivates one on user.deleted. Same
   // fail-closed-until-configured pattern as the consumer webhook above.
   STAFF_CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
+
+  // Email (parental-consent flow, Phase 2a) - optional until a Resend
+  // domain is verified and an API key exists; src/lib/email.ts fails closed
+  // with a clear error if a send is attempted before these are set, same
+  // pattern as the Clerk webhook secrets above. EMAIL_FROM must use a
+  // Resend-verified sending domain, e.g. "Finlamma <consent@mail.finlamma.in>".
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+
+  // HMAC key for scrubbing a deleted account's parent contact PII (see
+  // scrubConsentDataForDeletedUser in src/server/onboarding/service.ts) -
+  // lets us keep "was it this parent email?" verifiable in consent_records
+  // after the raw email is anonymized, without storing the raw email.
+  // Optional: if unset, deletion still proceeds (never blocks a user's
+  // right to delete their account over an ops config gap) but skips
+  // storing the HMAC and logs that gap server-side. Generate with
+  // `openssl rand -hex 32` or `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`.
+  // Not a Clerk/Resend/Supabase key - a value we invent ourselves, so there's
+  // nothing to "get" from a dashboard, just generate and set it.
+  CONSENT_PII_HMAC_KEY: z.string().optional(),
 
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),

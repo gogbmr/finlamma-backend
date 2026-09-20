@@ -37,7 +37,7 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
   screen shows a breakdown. These constants (speed-bonus %, fever threshold, fever multiplier,
   combo-bonus-per-step) are admin-editable config, not hardcoded — same mechanism as
   `reward_rules` (see §2).
-- **Doubt Zone** ("AI Chat" node): in **v1 (Phase 2) this is scripted** — a fixed Q&A written by
+- **Doubt Zone** ("AI Chat" node): in **v1 (Phase 2b) this is scripted** — a fixed Q&A written by
   the content team per lesson, no live AI call. The **real "Ask Lamma AI" live AI mentor ships in
   Phase 7**, with the safety and rate-limit rules a minors-facing AI feature needs; it then
   becomes what this node kind (and the standalone Doubt Zone entry point) actually calls.
@@ -182,18 +182,86 @@ How-to-use walkthrough, language, appearance, notifications, sound & haptics, da
 account (name, email, login), contact, rate app, terms/privacy/risk disclosure, about, log out,
 delete account.
 
-## Onboarding & parental consent (real, v1 scope)
-- Onboarding collects **date of birth**. Users under 18 require **verifiable parental consent**
-  before full app access: a parent/guardian is contacted (email or phone) and verifies via
-  OTP/email link. Every consent is recorded — who gave it, when, by what method, and which
-  version of the legal documents they accepted. **Until consent completes, the account has
-  limited features** (exact limits: TBD at Phase 2 kickoff — propose a plan then).
+## Onboarding & parental consent (real, v1 scope, decided at Phase 2a kickoff)
+- Onboarding collects **date of birth**, set once. After that, the user cannot change their own
+  date of birth — only staff can correct it, and only with a reason, which is logged
+  (`activity_logs`). A user with no date of birth yet is treated as "onboarding incomplete" by
+  `requireFullAccess` (see below), same as an unverified minor.
+- A user under 18 requires **verifiable parental consent** before full app access. **v1 is
+  email-link only — there is no code-based path**, because a code is trivially self-verifiable by
+  a child who controls a second email address. Flow:
+  1. The app collects a parent/guardian **email** (see constraints below) and calls
+     `POST /me/parent-consent/request`.
+  2. We email the parent a **magic link** to a public, unauthenticated page
+     (`/consent/confirm?token=...`) — no Finlamma account or app install needed. The page shows
+     the child's **first name only**, a plain-language summary of what data we collect, and the
+     current Terms/Privacy/Risk-disclosure summaries.
+  3. **Opening the link (GET) never verifies or records anything** — email security scanners
+     prefetch links, so a GET must be side-effect-free. The page has two buttons: **"I consent"**
+     and **"I do not consent"**, each a separate `POST`. Consenting records a `consent_records`
+     row (status `consented`) plus a `legal_acceptances` row (`accepted_by: 'parent'`) for every
+     currently published legal document. Declining records a `refused` status and nothing else.
+  4. **The minor must also accept in-app, once, after the parent has consented** — a second,
+     independent acceptance (`legal_acceptances`, `accepted_by: 'self'`). Full access requires
+     **both**: parent consent recorded *and* the minor's own in-app acceptance. (An adult, 18+,
+     only ever does the self-acceptance — there's no parent step.)
+  - **Token rules**: valid **7 days**, single-use (a second POST with the same token is
+    rejected), stored **hashed**, never in plaintext. Resending the consent email is rate-limited:
+    a **60-second cooldown** plus a **daily cap**, tracked **per user and per parent email**
+    independently (so one can't be used to exhaust the other).
+  - **Withdrawal**: every email sent to a verified parent (not just the initial request) includes
+    a separate "withdraw consent" link, following the exact same GET-shows-a-page /
+    POST-records-the-action pattern. Withdrawing immediately drops the account back to limited
+    access, records a `withdrawn` status in `consent_records`, and is logged. **Parent requests to
+    delete their child's data go through support for now** — no self-service deletion flow from
+    the consent page in v1.
+  - **Parent email constraints**: it cannot equal the child's own account email, and one parent
+    email can be linked to at most **5 children by default** (admin-configurable via
+    `settings_kv`), to limit abuse of a single inbox to farm consent for many accounts.
+  - Every consent event (request, consent, refusal, withdrawal) is recorded — who acted, when, by
+    what method, and which legal-document version was in effect.
+  - **Limited access, until both parent consent and the minor's own acceptance are complete**:
+    only onboarding, Settings, and the legal document pages are available. Every endpoint that
+    awards XP/V Money, or touches trading or Arena/social features — from Phase 2b onward — must
+    call `requireFullAccess(user)` before proceeding; this is not enforced retroactively, it's a
+    requirement on every new endpoint as it's built.
 - **School/institution accounts are out of scope for v1** (moved to a future v2) — the legal text
   no longer references them.
 - **Legal documents** (Terms, Privacy, Risk disclosure) are **staff-editable with versioning**.
-  Only **super_admin** can publish a new version. Every acceptance (by a user or, for a minor, by
-  their consenting parent) records which document version was accepted. Publishing a new version
-  prompts re-acceptance from everyone who hasn't accepted it yet.
+  Only **super_admin** can publish a new version (permission `legal.manage`). Every acceptance (by
+  a user, or for a minor by their consenting parent, plus the minor's own separate acceptance —
+  see above) records which document version was accepted. Publishing a new version prompts
+  re-acceptance from everyone who hasn't accepted it yet. **v1 launches with placeholder
+  documents clearly marked DRAFT** — the real text is written after the outside legal review
+  below, then published for real.
+- **Parent re-approval on a material legal-document change**: when staff publish a new version,
+  they must explicitly choose **Yes/No** (no default — the Publish button stays disabled until
+  they pick) for whether it materially changes something a minor's parent already agreed to. A
+  placeholder version can never require re-approval, regardless of what staff pick.
+  - **On Yes**, every already-consented, non-deleted minor's parent gets a fresh re-approval
+    email: a **new 7-day single-use link** to a public page (`/consent/reapprove?token=...`,
+    same GET-is-side-effect-free / separate-POST-per-choice pattern as the original consent page,
+    with the same language switcher) showing the updated document, plus the parent's **current
+    withdraw-consent link** (every email to a verified parent must carry one — see below).
+    Resending reuses the exact same 60s-cooldown/daily-cap rate limiting as the original
+    consent-request flow.
+  - **While pending, the minor drops back to limited access** via `requireFullAccess` — same
+    bucket as before their parent's first consent, but a distinct error
+    (`PARENT_REAPPROVAL_REQUIRED`) so the app can show "your parent needs to approve an update"
+    rather than "your parent hasn't consented yet."
+  - **Approving** records a fresh `legal_acceptances` row (`accepted_by: 'parent'`) for that exact
+    document version and folds the version into `consent_records.legal_document_versions`, so
+    access is restored immediately.
+  - **Declining is the same outcome as the original decline flow** — it revokes the parent's
+    consent entirely (not just this one document), returning the account to limited access.
+  - The token flip and its follow-up write(s) happen in one database transaction, so a crash
+    mid-request can never burn a parent's one-time link without actually recording the outcome.
+  - A signed-in minor can ask for their own pending re-approval email(s) again via
+    `POST /me/legal/reapproval/resend`.
+- **Staff access to parent contact details is itself logged.** The `consent.view` permission
+  (granted to `user_manager`) is read-only — staff can see consent/legal-acceptance status and
+  cannot bypass or force it — and every time a staff member views a parent's contact details, that
+  view is written to `activity_logs`.
 - **Before launch**: the consent flow and the terms/privacy/risk-disclosure text need an outside
   legal review — not something this codebase can self-certify (tracked in `docs/ROADMAP.md`).
 

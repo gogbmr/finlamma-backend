@@ -3,6 +3,7 @@ import { logActivity } from "@/lib/activity-log";
 import { deleteConsumerClerkUser } from "@/lib/auth";
 import type { requestMeta } from "@/lib/http";
 import type { users } from "@/db/schema";
+import { scrubConsentDataForDeletedUser } from "@/server/onboarding/service";
 import type { UpdateMeInput } from "./schemas";
 import { anonymizeUserFromClerk, updateUserPrefs, upsertUserFromClerk } from "./repo";
 
@@ -57,7 +58,10 @@ export async function updateMe(user: UserRow, input: UpdateMeInput, meta: Reques
 // user.deleted webhook eventually arriving. Revisit once Inngest exists.
 export async function deleteMe(user: UserRow, meta: RequestMeta) {
   await deleteConsumerClerkUser(user.clerkUserId);
-  await anonymizeUserFromClerk(user.clerkUserId);
+  const anonymized = await anonymizeUserFromClerk(user.clerkUserId);
+  if (anonymized) {
+    await scrubConsentDataForDeletedUser(anonymized.id, meta);
+  }
 
   await logActivity({
     actorType: "user",
@@ -124,7 +128,12 @@ export async function syncUserFromClerkEvent(evt: WebhookEvent) {
     const clerkUserId = evt.data.id;
     if (!clerkUserId) return;
 
-    await anonymizeUserFromClerk(clerkUserId);
+    const anonymized = await anonymizeUserFromClerk(clerkUserId);
+    if (anonymized) {
+      // No requestMeta for a webhook - same "no ip/userAgent" shape already
+      // used for every other webhook-driven logActivity call in this file.
+      await scrubConsentDataForDeletedUser(anonymized.id, { ip: null, userAgent: null });
+    }
 
     await logActivity({
       actorType: "system",

@@ -133,6 +133,12 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
     reaching production. Use `uniqueEmail()`/`uniqueClerkUserId()` from `src/test/fixtures.ts`
     (or another generated value) for anything with a unique constraint — never a hardcoded
     email or id, which can collide across parallel test runs.
+13. **Every email sent to a parent/guardian after their consent is recorded must include the
+    current withdraw-consent link** — not just the one-time consent receipt. This covers any
+    future parent-facing email (a weekly report-card email to a verified parent contact, a
+    re-acceptance notice on a new legal-document version, etc.), not only what exists today.
+    See `docs/ARCHITECTURE.md` decision D15 (DPDP requires withdrawal to stay as easy as giving
+    consent) for the reasoning.
 
 ## API endpoint documentation (required)
 `docs/API_ENDPOINTS.md` must always list **every** endpoint with method, path, summary, auth,

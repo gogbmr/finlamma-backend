@@ -32,17 +32,26 @@ Work top to bottom. Tick items as they are finished. Publish the API contract
 
 ## Phase 2a — Onboarding, parental consent & legal documents
 Do this early — it gates everything else. **Audit and merge to main before starting Phase 2b.**
-- [ ] Date of birth capture at onboarding; determines under-18 status
-- [ ] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
+- [x] Date of birth capture at onboarding; determines under-18 status
+- [x] `legal_documents` + `legal_acceptances` (staff-editable, versioned, super_admin-only
       publish, re-acceptance on new versions) for Terms/Privacy/Risk-disclosure, with an admin
       legal-document editor. School/institution accounts are v2, not in v1's legal text.
-- [ ] `parent_contacts` + `consent_records` for under-18 users. **v1 parent verification is by
-      email only** (a verification link or a code sent to the parent's email) — no SMS. SMS OTP
-      for parents needs an Indian SMS provider + DLT template registration, so it's deferred (see
-      Pre-launch checklist).
-- [ ] Limited feature access for a minor's account until consent completes
-- [ ] Admin: consent/legal-acceptance review view (staff can see status, not bypass it)
-- See `docs/PRODUCT_SPEC.md` §7 for the exact flow and feature limits.
+- [x] `parent_contacts` + `consent_records` for under-18 users. **v1 parent verification is
+      email-link only** (no code — a code is trivially self-verifiable by a child with a second
+      email — and no SMS). The magic link opens a public consent page (GET never records
+      anything; separate "I consent" / "I do not consent" POSTs do); tokens are single-use,
+      hashed, valid 7 days, rate-limited to resend. Every email to a verified parent also carries
+      a withdraw-consent link (same GET-page/POST-action pattern). The minor's own "I accept" is
+      `POST /api/v1/me/legal/accept` (built in the Legal domain) — the actual in-app screen for it
+      is a `finlamma-app` (mobile) concern, a separate project per docs/ARCHITECTURE.md, not this
+      backend. SMS OTP for parents needs an Indian SMS provider + DLT template registration, so
+      it's deferred (see Pre-launch checklist).
+- [x] Limited feature access (onboarding, Settings, legal pages only) for an account with no DOB
+      yet or an unresolved minor consent — `requireFullAccess(user)`, which every XP/VM/trading/
+      social endpoint from Phase 2b onward must call
+- [x] Admin: consent/legal-acceptance review view (`consent.view`, `user_manager`, read-only;
+      every staff view of a parent's contact details is logged)
+- See `docs/PRODUCT_SPEC.md`'s Onboarding & parental consent section for the exact flow.
 
 ## Phase 2b — Learning content
 - [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
@@ -130,6 +139,9 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point
+- [ ] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
+      publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
+      affected parent inline during the admin publish Server Action)
 
 ## Phase 8 — Monetisation
 - [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
@@ -142,6 +154,12 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 ## Pre-launch checklist
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
+- [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps
+      `consent_records` (status, timestamps, accepted legal-document versions, and a
+      `parent_email_hmac` proof) indefinitely as evidence consent was once given, even after the
+      account and the parent's raw contact details are scrubbed — see `docs/DATA_MODEL.md`'s
+      Compliance section. Outside counsel should confirm how long this evidence needs to be kept
+      and whether it needs its own retention/deletion policy, separate from the account itself.
 - [ ] SMS OTP for parent verification, in addition to Phase 2a's email-only flow — needs an
       Indian SMS provider (e.g. MSG91/Gupshup) and DLT template registration; not required to
       launch, deferred until that provider/registration work is done

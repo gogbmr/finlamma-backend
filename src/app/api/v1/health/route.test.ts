@@ -16,17 +16,38 @@ const CONSUMER_HOST = "consumer-app.clerk.accounts.dev";
 const mockEnv = vi.hoisted(() => ({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "",
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
+  VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
+  CONSENT_PII_HMAC_KEY: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
+const mockListPublishedDocuments = vi.fn();
+vi.mock("@/server/legal/repo", () => ({
+  LEGAL_DOCUMENT_TYPES: ["terms", "privacy", "risk_disclosure"],
+  listPublishedDocuments: () => mockListPublishedDocuments(),
+}));
+
 import { db } from "@/db/client";
 import { GET } from "./route";
+
+function publishedDoc(overrides: Partial<{ isPlaceholder: boolean }> = {}) {
+  return { type: "terms", version: 1, isPlaceholder: false, ...overrides };
+}
 
 beforeEach(() => {
   // Distinct staff/consumer hosts by default, so existing tests below don't
   // need to know about the Clerk-key check at all.
   mockEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = clerkKey(STAFF_HOST);
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
+  mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
+  mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+  // All three types published, none placeholder - existing tests below
+  // don't need to know about the legalDocuments warning field at all.
+  mockListPublishedDocuments.mockReset().mockResolvedValue([
+    publishedDoc(),
+    publishedDoc(),
+    publishedDoc(),
+  ]);
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -52,7 +73,44 @@ describe("GET /api/v1/health", () => {
     expect(body.data.database).toBe("ok");
     expect(body.data.migrations).toBe("ok");
     expect(body.data.clerkKeys).toBe("ok");
+    expect(body.data.legalDocuments).toBe("ok");
+    expect(body.data.version).toBe("local");
+    expect(body.data.consentPiiHmacKey).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
+  });
+
+  it("reports legalDocuments: placeholder without failing the check, when a published document is seeded filler text", async () => {
+    mockHealthyDb();
+    mockListPublishedDocuments.mockResolvedValue([
+      publishedDoc({ isPlaceholder: true }),
+      publishedDoc(),
+      publishedDoc(),
+    ]);
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.legalDocuments).toBe("placeholder");
+  });
+
+  it("reports legalDocuments: unpublished without failing the check, when a document type has never been published", async () => {
+    mockHealthyDb();
+    mockListPublishedDocuments.mockResolvedValue([publishedDoc(), publishedDoc()]); // only 2 of 3
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.legalDocuments).toBe("unpublished");
+  });
+
+  it("reports legalDocuments: unpublished (not a 503) if the check itself throws", async () => {
+    mockHealthyDb();
+    mockListPublishedDocuments.mockRejectedValue(new Error("boom"));
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.legalDocuments).toBe("unpublished");
   });
 
   it("returns 503 with SERVICE_UNAVAILABLE when the database is unreachable", async () => {
@@ -127,5 +185,33 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.clerkKeys).toBe("unconfigured");
+  });
+
+  it("reports the deployed commit's short SHA as `version` when VERCEL_GIT_COMMIT_SHA is set", async () => {
+    mockEnv.VERCEL_GIT_COMMIT_SHA = "2d303f6a1b2c3d4e5f60718293a4b5c6d7e8f9a0";
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect((await res.json()).data.version).toBe("2d303f6");
+  });
+
+  it("reports version: 'local' when VERCEL_GIT_COMMIT_SHA is unset (local dev, tests)", async () => {
+    mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect((await res.json()).data.version).toBe("local");
+  });
+
+  it("reports consentPiiHmacKey: 'missing' (not a 503) when CONSENT_PII_HMAC_KEY isn't configured", async () => {
+    mockEnv.CONSENT_PII_HMAC_KEY = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.consentPiiHmacKey).toBe("missing");
   });
 });

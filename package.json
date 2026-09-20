@@ -17,6 +17,8 @@
     "db:seed": "tsx scripts/seed-roles.ts",
     "db:verify-pool": "tsx scripts/verify-db-pool.ts",
     "seed:super-admin": "tsx scripts/seed-super-admin.ts",
+    "seed:legal": "tsx scripts/seed-legal-documents.ts",
+    "seed:settings": "tsx scripts/seed-settings.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {
@@ -29,6 +31,7 @@
     "@radix-ui/react-label": "^2.1.15",
     "@radix-ui/react-select": "^2.3.7",
     "@radix-ui/react-slot": "^1.3.3",
+    "@react-email/components": "^1.0.12",
     "@scalar/nextjs-api-reference": "^0.12.0",
     "@tanstack/react-table": "^8.21.3",
     "class-variance-authority": "^0.7.1",
@@ -40,6 +43,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.88.0",
+    "resend": "^6.28.1",
     "sonner": "^2.0.8",
     "svix": "^2.5.0",
     "tailwind-merge": "^3.7.0",

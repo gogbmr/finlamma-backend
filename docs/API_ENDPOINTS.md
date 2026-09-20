@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-19.
+> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-20.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -16,6 +16,18 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me` — Get my profile
 - `PATCH /api/v1/me` — Update my preferences
 - `DELETE /api/v1/me` — Delete my account
+
+**Legal**
+
+- `GET /api/v1/legal/{type}` — Get a published legal document
+- `GET /api/v1/me/legal-status` — Get my legal-document acceptance status
+- `POST /api/v1/me/legal/accept` — Accept the currently published legal documents
+- `POST /api/v1/me/legal/reapproval/resend` — Resend pending parent re-approval email(s)
+
+**Onboarding**
+
+- `PATCH /api/v1/me/date-of-birth` — Set my date of birth (once)
+- `POST /api/v1/me/parent-consent/request` — Request parental consent
 
 **Webhooks**
 
@@ -43,6 +55,9 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "database": "ok",
     "migrations": "ok",
     "clerkKeys": "ok",
+    "legalDocuments": "ok",
+    "version": "2d303f6",
+    "consentPiiHmacKey": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
@@ -212,6 +227,331 @@ Permanently deletes the Clerk identity and anonymizes the DB row in place (email
   "error": {
     "code": "SERVICE_UNAVAILABLE",
     "message": "Could not delete account right now"
+  }
+}
+```
+
+
+---
+
+## Legal
+
+### `GET /api/v1/legal/{type}`
+
+**Get a published legal document**
+
+Public - no authentication required, since a user needs to be able to read the Terms before signing up. Returns the currently published version of the Terms, Privacy or Risk-disclosure document.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `type` | path | string (terms, privacy, risk_disclosure) | yes | terms, privacy or risk_disclosure. |
+
+**Responses**
+
+- **200** — The currently published document
+
+```json
+{
+  "data": {
+    "type": "terms",
+    "version": 1,
+    "content": {
+      "en": "[DRAFT PLACEHOLDER - pending legal review] Terms of use...",
+      "hi": "[DRAFT PLACEHOLDER - pending legal review] उपयोग की शर्तें...",
+      "hx": "[DRAFT PLACEHOLDER - pending legal review] Terms of use..."
+    },
+    "publishedAt": "2026-01-01T00:00:00.000Z",
+    "isPlaceholder": true
+  }
+}
+```
+
+- **404** — No published version of this document type yet
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published terms document yet"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/legal-status`
+
+**Get my legal-document acceptance status**
+
+Whether the signed-in user has accepted the currently published Terms/Privacy/Risk-disclosure themselves. For a minor, full access also requires the parent's own consent (see the parent-consent endpoints), not just this - this endpoint only covers legal-document acceptance.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Acceptance status per currently published document
+
+```json
+{
+  "data": {
+    "documents": [
+      {
+        "type": "terms",
+        "currentVersion": 1,
+        "accepted": true,
+        "acceptedAt": "2026-01-01T00:00:00.000Z",
+        "requiresParentReapproval": false,
+        "parentApproved": true
+      }
+    ],
+    "allAccepted": true,
+    "allParentApproved": true
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/legal/accept`
+
+**Accept the currently published legal documents**
+
+Records the signed-in user's own acceptance of every currently published Terms/Privacy/Risk-disclosure version not already accepted. Used both by an adult accepting for themselves and by a minor's own required in-app acceptance, done once after their parent has separately consented.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Newly accepted document types (empty if everything was already accepted)
+
+```json
+{
+  "data": {
+    "accepted": [
+      "terms"
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/legal/reapproval/resend`
+
+**Resend pending parent re-approval email(s)**
+
+For a minor whose parent already consented once, but a later material legal-document change now needs a fresh parent re-approval (see requiresParentReapproval on GET /api/v1/me/legal-status): resends the re-approval email(s), each with a fresh 7-day single-use link and a rotated withdraw link. Subject to the same 60s cooldown and daily cap as the original consent-request resend flow.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Re-approval email(s) resent
+
+```json
+{
+  "data": {
+    "resent": 1
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **409** — There's no pending re-approval for this account
+
+```json
+{
+  "error": {
+    "code": "CONSENT_NOT_NEEDED",
+    "message": "There's no pending re-approval for this account"
+  }
+}
+```
+
+- **429** — Resend cooldown or daily cap reached
+
+```json
+{
+  "error": {
+    "code": "RESEND_TOO_SOON",
+    "message": "Please wait a bit before requesting another email",
+    "details": {
+      "retryAfterSeconds": 42
+    }
+  }
+}
+```
+
+
+---
+
+## Onboarding
+
+### `PATCH /api/v1/me/date-of-birth`
+
+**Set my date of birth (once)**
+
+Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dateOfBirth` | string | yes | YYYY-MM-DD. Can be set exactly once through this endpoint - contact support to correct a mistake after that. |
+
+```json
+{
+  "dateOfBirth": "2012-05-14"
+}
+```
+
+**Responses**
+
+- **200** — Date of birth recorded
+
+```json
+{
+  "data": {
+    "dateOfBirth": "2012-05-14",
+    "isMinor": true,
+    "requiresParentConsent": true
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **409** — Date of birth is already set
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Date of birth is already set - contact support to correct it"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/parent-consent/request`
+
+**Request parental consent**
+
+For an under-18 account: emails the given parent/guardian a magic link to a public consent page. Opening that link does nothing by itself - only the parent's own 'I consent' action there records anything. Safe to call again to resend (subject to a 60s cooldown and a daily cap, both per account and per parent email) or to change the parent's details before they've acted.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `parentName` | string | yes |  |
+| `parentEmail` | string | yes |  |
+
+```json
+{
+  "parentName": "Priya Sharma",
+  "parentEmail": "priya.sharma@example.com"
+}
+```
+
+**Responses**
+
+- **200** — Consent email sent (or queued)
+
+```json
+{
+  "data": {
+    "status": "pending",
+    "parentEmail": "priya.sharma@example.com"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **409** — Consent isn't needed (no date of birth yet, account is 18+, already consented), the parent email equals the account's own email, or that parent email is already linked to the maximum number of accounts
+
+```json
+{
+  "error": {
+    "code": "CONSENT_NOT_NEEDED",
+    "message": "Set your date of birth first"
+  }
+}
+```
+
+- **429** — Resend cooldown or daily cap reached
+
+```json
+{
+  "error": {
+    "code": "RESEND_TOO_SOON",
+    "message": "Please wait a bit before requesting another email",
+    "details": {
+      "retryAfterSeconds": 42
+    }
   }
 }
 ```

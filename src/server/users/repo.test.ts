@@ -124,7 +124,7 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     // pins that down instead of relying on it accidentally staying true.
     await expect(
       anonymizeUserFromClerk(uniqueClerkUserId("never-seen")),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
   });
 
   it("upserting a clerk_user_id we've never seen creates a new row, not an error", async () => {
@@ -171,12 +171,34 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     expect(row.firstName).toBe("Updated");
     expect(row.deletedAt).toBeNull();
 
-    await anonymizeUserFromClerk(clerkUserId);
+    const anonymized = await anonymizeUserFromClerk(clerkUserId);
     [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
     expect(row.firstName).toBe("Deleted user");
     expect(row.lastInitial).toBeNull();
     expect(row.email).toBeNull();
     expect(row.phone).toBeNull();
     expect(row.deletedAt).not.toBeNull();
+    expect(anonymized?.id).toBe(row.id);
+  });
+
+  it("clears date_of_birth on deletion - a minor's birthdate is personal data too", async () => {
+    const clerkUserId = uniqueClerkUserId("dob-scrub");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    await db
+      .update(users)
+      .set({ dateOfBirth: "2015-01-01" })
+      .where(eq(users.clerkUserId, clerkUserId));
+
+    await anonymizeUserFromClerk(clerkUserId);
+
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.dateOfBirth).toBeNull();
   });
 });

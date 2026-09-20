@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
+import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
 // drizzle/meta/_journal.json would risk not being traced into the bundle.
@@ -30,8 +31,41 @@ const HealthDataSchema = z.object({
       "(consumer app) resolve to two different Clerk applications, as they must - catches the " +
       "two being silently swapped or both pointed at the same app in env vars.",
   }),
+  legalDocuments: z.enum(["ok", "placeholder", "unpublished"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'placeholder' means at least one currently " +
+      "published Terms/Privacy/Risk-disclosure document is still the seeded pre-legal-review " +
+      "filler text (see scripts/seed-legal-documents.ts); 'unpublished' means one of the three " +
+      "types has no published version at all. Both must be resolved (a real version published " +
+      "through the admin Legal document editor) before launch.",
+  }),
+  version: z.string().openapi({
+    example: "2d303f6",
+    description:
+      "The deployed commit's short SHA (Vercel's VERCEL_GIT_COMMIT_SHA, first 7 characters), " +
+      "so confirming what's actually live doesn't require the Vercel dashboard. 'local' outside " +
+      "Vercel (local dev, tests).",
+  }),
+  consentPiiHmacKey: z.enum(["ok", "missing"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't " +
+      "configured, so account deletion still scrubs a minor's parent-contact PII but can't " +
+      "store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's " +
+      "scrubConsentDataForDeletedUser.",
+  }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
+
+// Vercel sets VERCEL_GIT_COMMIT_SHA automatically on every deployment (the
+// full 40-char SHA) - not a secret, just the commit being built. Shortened
+// to match how commit SHAs are normally displayed (git log --oneline,
+// GitHub's UI). "local" outside Vercel, so this is never confused with a
+// real deployed commit.
+function currentVersion(): string {
+  return env.VERCEL_GIT_COMMIT_SHA ? env.VERCEL_GIT_COMMIT_SHA.slice(0, 7) : "local";
+}
 
 // Decodes a Clerk publishable key's embedded Frontend API host. Format is
 // pk_(test|live)_<base64(frontendApiHost + "$")> - see Clerk's publishable
@@ -102,6 +136,23 @@ async function checkMigrationsApplied(): Promise<MigrationsCheck> {
   };
 }
 
+// Non-fatal: unlike checkMigrationsApplied, a bad result here never fails
+// the health check with a 503 (the API is still genuinely healthy) - it's
+// surfaced as a warning field so it's visible without needing DB access,
+// same reasoning as the clerkKeys check. Defaults to the most attention-
+// grabbing result ("unpublished") if the query itself fails, rather than
+// silently reporting "ok".
+async function checkLegalDocuments(): Promise<"ok" | "placeholder" | "unpublished"> {
+  try {
+    const published = await listPublishedDocuments();
+    if (published.length < LEGAL_DOCUMENT_TYPES.length) return "unpublished";
+    return published.some((d) => d.isPlaceholder) ? "placeholder" : "ok";
+  } catch (err) {
+    logInternalError("health.legal_documents_check_failed", err);
+    return "unpublished";
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -166,11 +217,16 @@ export const GET = withErrors(async () => {
     );
   }
 
+  const legalDocuments = await checkLegalDocuments();
+
   return ok({
     status: "ok" as const,
     database: "ok" as const,
     migrations: "ok" as const,
     clerkKeys,
+    legalDocuments,
+    version: currentVersion(),
+    consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     timestamp: new Date().toISOString(),
   });
 });

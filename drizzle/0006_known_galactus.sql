@@ -1,0 +1,1 @@
+ALTER TABLE "legal_documents" ADD COLUMN "is_placeholder" boolean DEFAULT false NOT NULL;
