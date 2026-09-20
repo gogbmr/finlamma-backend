@@ -40,6 +40,14 @@ const envSchema = z.object({
   // fail-closed-until-configured pattern as the consumer webhook above.
   STAFF_CLERK_WEBHOOK_SIGNING_SECRET: z.string().optional(),
 
+  // Email (parental-consent flow, Phase 2a) - optional until a Resend
+  // domain is verified and an API key exists; src/lib/email.ts fails closed
+  // with a clear error if a send is attempted before these are set, same
+  // pattern as the Clerk webhook secrets above. EMAIL_FROM must use a
+  // Resend-verified sending domain, e.g. "Finlamma <consent@mail.finlamma.in>".
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
+
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
