@@ -31,6 +31,12 @@ export const LegalDocumentDataSchema = registry.register(
       .datetime()
       .nullable()
       .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    isPlaceholder: z.boolean().openapi({
+      example: true,
+      description:
+        "True if this is pre-legal-review filler text seeded by scripts/seed-legal-documents.ts, " +
+        "not real legal text a staff member published.",
+    }),
   }),
 );
 

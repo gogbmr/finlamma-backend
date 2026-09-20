@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
+import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
 // drizzle/meta/_journal.json would risk not being traced into the bundle.
@@ -29,6 +30,15 @@ const HealthDataSchema = z.object({
       "Whether NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (staff app) and CONSUMER_CLERK_PUBLISHABLE_KEY " +
       "(consumer app) resolve to two different Clerk applications, as they must - catches the " +
       "two being silently swapped or both pointed at the same app in env vars.",
+  }),
+  legalDocuments: z.enum(["ok", "placeholder", "unpublished"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'placeholder' means at least one currently " +
+      "published Terms/Privacy/Risk-disclosure document is still the seeded pre-legal-review " +
+      "filler text (see scripts/seed-legal-documents.ts); 'unpublished' means one of the three " +
+      "types has no published version at all. Both must be resolved (a real version published " +
+      "through the admin Legal document editor) before launch.",
   }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
@@ -102,6 +112,23 @@ async function checkMigrationsApplied(): Promise<MigrationsCheck> {
   };
 }
 
+// Non-fatal: unlike checkMigrationsApplied, a bad result here never fails
+// the health check with a 503 (the API is still genuinely healthy) - it's
+// surfaced as a warning field so it's visible without needing DB access,
+// same reasoning as the clerkKeys check. Defaults to the most attention-
+// grabbing result ("unpublished") if the query itself fails, rather than
+// silently reporting "ok".
+async function checkLegalDocuments(): Promise<"ok" | "placeholder" | "unpublished"> {
+  try {
+    const published = await listPublishedDocuments();
+    if (published.length < LEGAL_DOCUMENT_TYPES.length) return "unpublished";
+    return published.some((d) => d.isPlaceholder) ? "placeholder" : "ok";
+  } catch (err) {
+    logInternalError("health.legal_documents_check_failed", err);
+    return "unpublished";
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -166,11 +193,14 @@ export const GET = withErrors(async () => {
     );
   }
 
+  const legalDocuments = await checkLegalDocuments();
+
   return ok({
     status: "ok" as const,
     database: "ok" as const,
     migrations: "ok" as const,
     clerkKeys,
+    legalDocuments,
     timestamp: new Date().toISOString(),
   });
 });

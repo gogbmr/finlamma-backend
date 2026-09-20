@@ -1,4 +1,5 @@
 import {
+  boolean,
   date,
   index,
   integer,
@@ -50,6 +51,12 @@ export const legalDocuments = pgTable(
       onDelete: "set null",
     }),
     publishedAt: timestamp("published_at", { withTimezone: true }),
+    // Set by scripts/seed-legal-documents.ts, never by the admin editor -
+    // marks a version as pre-legal-review filler text so GET /api/v1/health
+    // can surface it as a launch-blocking warning (see
+    // src/app/api/v1/health/route.ts). A real staff-authored publish always
+    // leaves this false.
+    isPlaceholder: boolean("is_placeholder").default(false).notNull(),
   },
   (t) => [
     index("legal_documents_type_idx").on(t.type),

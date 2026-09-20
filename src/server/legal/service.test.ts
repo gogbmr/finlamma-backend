@@ -44,6 +44,7 @@ function doc(overrides: Partial<Record<string, unknown>> = {}) {
     status: "published" as const,
     publishedBy: null,
     publishedAt: new Date("2026-01-01T00:00:00.000Z"),
+    isPlaceholder: false,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -65,6 +66,7 @@ describe("getPublicDocument", () => {
       version: 1,
       content: CONTENT,
       publishedAt: "2026-01-01T00:00:00.000Z",
+      isPlaceholder: false,
     });
   });
 

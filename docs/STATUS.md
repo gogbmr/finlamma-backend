@@ -1,5 +1,25 @@
 # Status
 
+## 2026-09-20 — Phase 2a: legal documents shipped, consent flow in progress
+
+Legal documents domain (SET-16, SET-17) built and merged: versioned Terms/Privacy/
+Risk-disclosure, admin Legal document editor (`legal.manage`, super_admin only), and
+`scripts/seed-legal-documents.ts` seeding v1 of each type as **published but clearly marked
+placeholder** (`legal_documents.is_placeholder = true`, content prefixed
+`[PLACEHOLDER — NOT FOR LAUNCH. Not reviewed by counsel...]`).
+
+`GET /api/v1/health`'s new `legalDocuments` field (`ok` / `placeholder` / `unpublished`) is a
+non-fatal warning (never a 503) that surfaces this without needing DB access - it will read
+`"placeholder"` until a super_admin publishes real reviewed text through the admin editor.
+
+### Follow-ups (tracked, not fixed now)
+- **Replace placeholder legal documents after legal review.** Once outside counsel has reviewed
+  real Terms/Privacy/Risk-disclosure text (see `docs/ROADMAP.md`'s pre-launch checklist), a
+  super_admin must draft and publish the real version through `/admin/legal` - this produces a
+  new version with `is_placeholder = false`, which is what flips `GET /api/v1/health`'s
+  `legalDocuments` field from `"placeholder"` to `"ok"`. Treat that field reading anything but
+  `"ok"` in production as a launch blocker.
+
 ## 2026-09-19 — Phase 0-1 audit (`/phase-audit 0-1`)
 
 Audited: Phase 0 (project setup), Phase 1 (identity, roles, activity log).

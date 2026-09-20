@@ -18,7 +18,12 @@ type LegalDocumentType = "terms" | "privacy" | "risk_disclosure";
 
 type DocumentState = {
   type: LegalDocumentType;
-  published: { version: number; content: LegalDocumentContent; publishedAt: string | null } | null;
+  published: {
+    version: number;
+    content: LegalDocumentContent;
+    publishedAt: string | null;
+    isPlaceholder: boolean;
+  } | null;
   draft: { version: number; content: LegalDocumentContent } | null;
 };
 
@@ -95,6 +100,11 @@ function DocumentEditor({ document }: { document: DocumentState }) {
           </span>
         ) : (
           <span>Not published yet</span>
+        )}
+        {document.published?.isPlaceholder && (
+          <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
+            PLACEHOLDER — NOT FOR LAUNCH
+          </span>
         )}
         {document.draft && (
           <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">

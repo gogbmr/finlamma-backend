@@ -82,6 +82,16 @@
                 "example": "ok",
                 "description": "Whether NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY (staff app) and CONSUMER_CLERK_PUBLISHABLE_KEY (consumer app) resolve to two different Clerk applications, as they must - catches the two being silently swapped or both pointed at the same app in env vars."
               },
+              "legalDocuments": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "placeholder",
+                  "unpublished"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'placeholder' means at least one currently published Terms/Privacy/Risk-disclosure document is still the seeded pre-legal-review filler text (see scripts/seed-legal-documents.ts); 'unpublished' means one of the three types has no published version at all. Both must be resolved (a real version published through the admin Legal document editor) before launch."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -93,6 +103,7 @@
               "database",
               "migrations",
               "clerkKeys",
+              "legalDocuments",
               "timestamp"
             ]
           }
@@ -273,13 +284,19 @@
             ],
             "format": "date-time",
             "example": "2026-01-01T00:00:00.000Z"
+          },
+          "isPlaceholder": {
+            "type": "boolean",
+            "example": true,
+            "description": "True if this is pre-legal-review filler text seeded by scripts/seed-legal-documents.ts, not real legal text a staff member published."
           }
         },
         "required": [
           "type",
           "version",
           "content",
-          "publishedAt"
+          "publishedAt",
+          "isPlaceholder"
         ]
       },
       "LegalDocumentResponse": {

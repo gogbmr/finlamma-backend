@@ -49,6 +49,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "database": "ok",
     "migrations": "ok",
     "clerkKeys": "ok",
+    "legalDocuments": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
@@ -255,7 +256,8 @@ Public - no authentication required, since a user needs to be able to read the T
       "hi": "[DRAFT PLACEHOLDER - pending legal review] उपयोग की शर्तें...",
       "hx": "[DRAFT PLACEHOLDER - pending legal review] Terms of use..."
     },
-    "publishedAt": "2026-01-01T00:00:00.000Z"
+    "publishedAt": "2026-01-01T00:00:00.000Z",
+    "isPlaceholder": true
   }
 }
 ```

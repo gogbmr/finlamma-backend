@@ -43,6 +43,13 @@
       "when": 1789875752595,
       "tag": "0005_aberrant_devos",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789876834692,
+      "tag": "0006_known_galactus",
+      "breakpoints": true
     }
   ]
 }

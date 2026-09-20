@@ -18,7 +18,7 @@ import { legalDocuments } from "../src/db/schema";
 import { logActivity } from "../src/lib/activity-log";
 
 const PLACEHOLDER_NOTICE =
-  "[DRAFT PLACEHOLDER - not reviewed by counsel yet. Do not treat as final legal text.]";
+  "[PLACEHOLDER — NOT FOR LAUNCH. Not reviewed by counsel. Do not treat as final legal text.]";
 
 const DOCUMENTS = [
   {
@@ -71,6 +71,7 @@ async function seed() {
         content: doc.content,
         status: "published",
         publishedAt: new Date(),
+        isPlaceholder: true,
         // No staff actor - this is a script-seeded placeholder, not a real
         // staff publish action. publishedBy stays null (nullable column).
       })
@@ -78,7 +79,7 @@ async function seed() {
 
     await logActivity({
       actorType: "system",
-      action: "legal.published",
+      action: "legal.published_placeholder",
       targetType: "legal_document",
       targetId: created.id,
       metadata: { type: doc.type, version: created.version, source: "seed-legal-documents" },

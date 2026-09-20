@@ -21,6 +21,7 @@ export default async function LegalPage() {
               version: published.version,
               content: published.content,
               publishedAt: published.publishedAt?.toISOString() ?? null,
+              isPlaceholder: published.isPlaceholder,
             }
           : null,
         draft: draft ? { version: draft.version, content: draft.content } : null,

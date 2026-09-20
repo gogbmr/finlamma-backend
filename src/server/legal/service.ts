@@ -22,6 +22,7 @@ function toPublicDocument(doc: LegalDocumentRow) {
     version: doc.version,
     content: doc.content,
     publishedAt: doc.publishedAt?.toISOString() ?? null,
+    isPlaceholder: doc.isPlaceholder,
   };
 }
 

@@ -19,14 +19,31 @@ const mockEnv = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
+const mockListPublishedDocuments = vi.fn();
+vi.mock("@/server/legal/repo", () => ({
+  LEGAL_DOCUMENT_TYPES: ["terms", "privacy", "risk_disclosure"],
+  listPublishedDocuments: () => mockListPublishedDocuments(),
+}));
+
 import { db } from "@/db/client";
 import { GET } from "./route";
+
+function publishedDoc(overrides: Partial<{ isPlaceholder: boolean }> = {}) {
+  return { type: "terms", version: 1, isPlaceholder: false, ...overrides };
+}
 
 beforeEach(() => {
   // Distinct staff/consumer hosts by default, so existing tests below don't
   // need to know about the Clerk-key check at all.
   mockEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = clerkKey(STAFF_HOST);
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
+  // All three types published, none placeholder - existing tests below
+  // don't need to know about the legalDocuments warning field at all.
+  mockListPublishedDocuments.mockReset().mockResolvedValue([
+    publishedDoc(),
+    publishedDoc(),
+    publishedDoc(),
+  ]);
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -52,7 +69,42 @@ describe("GET /api/v1/health", () => {
     expect(body.data.database).toBe("ok");
     expect(body.data.migrations).toBe("ok");
     expect(body.data.clerkKeys).toBe("ok");
+    expect(body.data.legalDocuments).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
+  });
+
+  it("reports legalDocuments: placeholder without failing the check, when a published document is seeded filler text", async () => {
+    mockHealthyDb();
+    mockListPublishedDocuments.mockResolvedValue([
+      publishedDoc({ isPlaceholder: true }),
+      publishedDoc(),
+      publishedDoc(),
+    ]);
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.legalDocuments).toBe("placeholder");
+  });
+
+  it("reports legalDocuments: unpublished without failing the check, when a document type has never been published", async () => {
+    mockHealthyDb();
+    mockListPublishedDocuments.mockResolvedValue([publishedDoc(), publishedDoc()]); // only 2 of 3
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.legalDocuments).toBe("unpublished");
+  });
+
+  it("reports legalDocuments: unpublished (not a 503) if the check itself throws", async () => {
+    mockHealthyDb();
+    mockListPublishedDocuments.mockRejectedValue(new Error("boom"));
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.legalDocuments).toBe("unpublished");
   });
 
   it("returns 503 with SERVICE_UNAVAILABLE when the database is unreachable", async () => {
