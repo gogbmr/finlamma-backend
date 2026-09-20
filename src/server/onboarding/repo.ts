@@ -23,6 +23,17 @@ export async function getUserFirstName(userId: string): Promise<string | null> {
   return row?.firstName ?? null;
 }
 
+// Account deletion (src/server/users/service.ts deleteMe()) soft-deletes
+// in place - it never removes the users row itself, so a stale consent/
+// decline/withdraw token's consent_records row survives untouched and
+// would otherwise still work. Every public consent-page entry point checks
+// this so a deleted account's tokens go dead the same way an
+// already-resolved one does, rather than staying silently actionable.
+export async function isUserDeleted(userId: string): Promise<boolean> {
+  const [row] = await db.select({ deletedAt: users.deletedAt }).from(users).where(eq(users.id, userId)).limit(1);
+  return row ? row.deletedAt !== null : true; // no row at all is treated the same as deleted
+}
+
 export async function getParentContact(userId: string) {
   const [row] = await db
     .select()

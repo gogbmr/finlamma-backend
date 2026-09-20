@@ -32,11 +32,38 @@ Two throwaway rows exist in the shared database purely for testing this flow, cr
 
 Both have a fake parent contact (`test-parent-checkpoint-a@example.com` /
 `test-parent-checkpoint-b@example.com` - not real addresses, never emailed since Resend isn't
-configured yet). Safe to delete once you're done testing; nothing else references these rows.
+configured yet). Kept in place at the founder's request while manual review is ongoing; not
+deleted yet.
+
+### Withdraw-token lifetime - decided, recorded in ARCHITECTURE.md (D15)
+Withdraw links **never expire**, deliberately: DPDP requires withdrawing consent to be as easy
+as giving it, and a leaked withdraw link is low-harm (it can only flip a `consented` row to
+`withdrawn` - grants no access, reveals no data - and a parent can simply re-consent, which
+mints a fresh withdraw token that supersedes the old one on the same row).
+
+### Guardrails confirmed/added around the withdraw flow (2026-09-20, founder review)
+- Withdraw tokens are the same strength as consent tokens (`randomBytes(32)`, SHA-256 hashed)
+  and can only ever call `withdrawConsentRecord` (flip `consented` → `withdrawn`) - no other code
+  path accepts one, so it grants no access and reveals no data beyond the child's first name
+  (already shown throughout the app).
+- **New:** a deleted account's still-lingering `consent_records` row (soft-delete never removes
+  the `users` row) now makes every consent/decline/withdraw token for that account "dead" -
+  `isUserDeleted()` is checked on every lookup, so a stale link post-deletion behaves exactly
+  like an already-resolved/already-withdrawn one, without revealing that the account was deleted.
+- Re-consenting after a withdrawal mints a fresh withdraw token that overwrites the old one in
+  place (`consent_records` is one row per user) - confirmed by a new test in
+  `src/server/onboarding/service.test.ts`; an old withdraw link can never revoke a newer consent.
+- Confirm/decline/withdraw have no *additional* per-click rate limit beyond what they already
+  had - the same token-entropy + atomic single-use (or idempotent-for-withdraw) guarantees apply
+  uniformly across all three, nothing new added or missing.
+- **New:** a withdrawal-confirmation email now sends on a genuine withdrawal (never on the
+  idempotent re-click path) via the same Resend-or-console-log fallback as every other email
+  here - **also pending the verified Resend domain**, same as the consent-request and
+  consent-confirmed receipts.
 
 ### Follow-ups (tracked, not fixed now)
-- **Delete the two test rows above** (`users`/`parent_contacts`/`consent_records`, cascades on
-  delete) once manual review of the consent flow is finished.
+- **Delete the two test rows above** once manual review of the consent flow is finished (kept
+  for now at the founder's request).
 - The per-parent-email daily-cap/child-count check still has a residual race across *different*
   accounts racing in lockstep on the same email (documented in
   `src/server/onboarding/repo.ts`'s comments) - the per-user race the audit demonstrated is

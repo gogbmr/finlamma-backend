@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import type { ReactElement } from "react";
 import { ParentConsentConfirmedEmail } from "@/emails/parent-consent-confirmed";
 import { ParentConsentRequestEmail } from "@/emails/parent-consent-request";
+import { ParentConsentWithdrawnEmail } from "@/emails/parent-consent-withdrawn";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
@@ -21,6 +22,7 @@ import {
   getParentContact,
   getParentContactForReview,
   getUserFirstName,
+  isUserDeleted,
   listConsentRecordsForReview,
   setDateOfBirthOnce,
   sumRequestsTodayForParentEmail,
@@ -259,7 +261,12 @@ export type ConsentRequestView =
 export async function getConsentRequestView(token: string): Promise<ConsentRequestView> {
   const record = await getConsentRecordByTokenHash(hashToken(token));
   if (!record) return { state: "invalid" };
-  if (record.status !== "pending" || record.usedAt) return { state: "already_resolved" };
+  // A deleted account's consent_records row survives the soft-delete (see
+  // isUserDeleted's comment in repo.ts) - treat its tokens as already
+  // resolved rather than leaving them silently actionable.
+  if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
+    return { state: "already_resolved" };
+  }
   if (record.tokenExpiresAt.getTime() < Date.now()) return { state: "expired" };
 
   const [childFirstName, publishedDocs] = await Promise.all([
@@ -285,7 +292,7 @@ export async function getConsentRequestView(token: string): Promise<ConsentReque
 export async function confirmParentConsent(token: string, meta: RequestMeta) {
   const record = await getConsentRecordByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This consent link is invalid");
-  if (record.status !== "pending" || record.usedAt) {
+  if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
     throw new AppError("CONFLICT", "This consent link has already been used");
   }
   if (record.tokenExpiresAt.getTime() < Date.now()) {
@@ -354,7 +361,7 @@ export async function confirmParentConsent(token: string, meta: RequestMeta) {
 export async function declineParentConsent(token: string, meta: RequestMeta) {
   const record = await getConsentRecordByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This consent link is invalid");
-  if (record.status !== "pending" || record.usedAt) {
+  if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
     throw new AppError("CONFLICT", "This consent link has already been used");
   }
   if (record.tokenExpiresAt.getTime() < Date.now()) {
@@ -393,11 +400,16 @@ export type WithdrawRequestView =
 // getConsentRequestView. "not_applicable" covers a withdraw token whose
 // consent_records row somehow isn't in the `consented` state (e.g. it was
 // never actually consented) - shouldn't happen in normal use since a
-// withdraw token is only ever minted by confirmParentConsent.
+// withdraw token is only ever minted by confirmParentConsent. A deleted
+// account is treated the same as already-withdrawn (see isUserDeleted's
+// comment in repo.ts), not as a distinct error - the account being gone
+// isn't something this page should reveal to whoever holds the link.
 export async function getWithdrawRequestView(token: string): Promise<WithdrawRequestView> {
   const record = await getConsentRecordByWithdrawTokenHash(hashToken(token));
   if (!record) return { state: "invalid" };
-  if (record.status === "withdrawn") return { state: "already_withdrawn" };
+  if (record.status === "withdrawn" || (await isUserDeleted(record.userId))) {
+    return { state: "already_withdrawn" };
+  }
   if (record.status !== "consented") return { state: "not_applicable" };
 
   const childFirstName = await getUserFirstName(record.userId);
@@ -415,7 +427,9 @@ export async function withdrawParentConsent(token: string, meta: RequestMeta) {
   const record = await getConsentRecordByWithdrawTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This withdrawal link is invalid");
 
-  if (record.status === "withdrawn") {
+  // Same "treat a deleted account's token as already resolved, don't
+  // reveal why" reasoning as getWithdrawRequestView.
+  if (record.status === "withdrawn" || (await isUserDeleted(record.userId))) {
     const childFirstName = await getUserFirstName(record.userId);
     return { childFirstName: childFirstName ?? "your child", alreadyWithdrawn: true };
   }
@@ -448,7 +462,29 @@ export async function withdrawParentConsent(token: string, meta: RequestMeta) {
     userAgent: meta.userAgent,
   });
 
-  const childFirstName = await getUserFirstName(record.userId);
+  const [childFirstName, parentContact] = await Promise.all([
+    getUserFirstName(record.userId),
+    getParentContact(record.userId),
+  ]);
+
+  // Withdrawal is already durably recorded above - same best-effort
+  // reasoning as the consent receipt email in confirmParentConsent. Only
+  // sent on a genuine new withdrawal, never on the idempotent
+  // already-withdrawn path, so re-clicking an old link doesn't re-send it.
+  if (parentContact) {
+    try {
+      await sendConsentEmailOrLog({
+        to: parentContact.email,
+        subject: "Your consent for Finlamma has been withdrawn",
+        react: ParentConsentWithdrawnEmail({ childFirstName: childFirstName ?? "your child" }),
+        devLogLabel: `withdrawal confirmed for user ${record.userId}`,
+        devLogDetail: "(no link - confirmation only)",
+      });
+    } catch (err) {
+      logInternalError("consent.withdrawal_email_failed", err);
+    }
+  }
+
   return { childFirstName: childFirstName ?? "your child", alreadyWithdrawn: false };
 }
 

@@ -24,6 +24,7 @@ const mockWithdrawConsentRecord = vi.fn();
 const mockListConsentRecordsForReview = vi.fn();
 const mockGetParentContactForReview = vi.fn();
 const mockGetUserFirstName = vi.fn();
+const mockIsUserDeleted = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
   getParentContact: (id: unknown) => mockGetParentContact(id),
@@ -42,6 +43,7 @@ vi.mock("./repo", () => ({
   listConsentRecordsForReview: (limit: unknown) => mockListConsentRecordsForReview(limit),
   getParentContactForReview: (userId: unknown) => mockGetParentContactForReview(userId),
   getUserFirstName: (id: unknown) => mockGetUserFirstName(id),
+  isUserDeleted: (userId: unknown) => mockIsUserDeleted(userId),
 }));
 
 const mockLogActivity = vi.fn();
@@ -92,6 +94,7 @@ beforeEach(() => {
   mockEnv.NODE_ENV = "test";
   mockEnv.VERCEL_ENV = undefined;
   mockGetSettingNumber.mockImplementation((_key, fallback) => Promise.resolve(fallback));
+  mockIsUserDeleted.mockResolvedValue(false);
 });
 
 describe("isMinor", () => {
@@ -360,6 +363,19 @@ describe("getConsentRequestView", () => {
     expect(await getConsentRequestView("t")).toEqual({ state: "expired" });
   });
 
+  it("returns already_resolved when the account has been deleted, even though the record is still pending", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      userId: "u1",
+    });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+
+    expect(await getConsentRequestView("t")).toEqual({ state: "already_resolved" });
+    expect(mockIsUserDeleted).toHaveBeenCalledWith("u1");
+  });
+
   it("returns the valid view with child name and published documents", async () => {
     mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
       status: "pending",
@@ -414,6 +430,61 @@ describe("confirmParentConsent", () => {
     mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce(null);
 
     await expect(confirmParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("throws CONFLICT (not a distinct message) when the account has been deleted", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+
+    await expect(confirmParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mockConfirmConsentAndRecordAcceptances).not.toHaveBeenCalled();
+  });
+
+  it("mints a fresh withdraw token on every confirm - re-consenting after a withdrawal invalidates the old link", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+
+    await confirmParentConsent("t", META);
+
+    const firstCallArgs = mockConfirmConsentAndRecordAcceptances.mock.calls[0][0];
+    expect(typeof firstCallArgs.withdrawTokenHash).toBe("string");
+    expect(firstCallArgs.withdrawTokenHash.length).toBeGreaterThan(0);
+
+    // A second confirm (e.g. after a withdrawal + fresh consent request)
+    // must mint a different hash - confirmConsentAndRecordAcceptances
+    // (repo.ts) overwrites withdraw_token_hash unconditionally on the same
+    // row, so the old value stops matching any lookup.
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+
+    await confirmParentConsent("t2", META);
+
+    const secondCallArgs = mockConfirmConsentAndRecordAcceptances.mock.calls[1][0];
+    expect(secondCallArgs.withdrawTokenHash).not.toBe(firstCallArgs.withdrawTokenHash);
   });
 
   it("on success: records parent acceptance for every published doc (one transaction) and logs it", async () => {
@@ -538,6 +609,20 @@ describe("declineParentConsent", () => {
     await expect(declineParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
+  it("throws CONFLICT when the account has been deleted", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+
+    await expect(declineParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mockDeclineConsentRecord).not.toHaveBeenCalled();
+  });
+
   it("on success: records the refusal and logs it, without touching legal_acceptances", async () => {
     mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
       id: "cr1",
@@ -579,6 +664,13 @@ describe("getWithdrawRequestView", () => {
     mockGetUserFirstName.mockResolvedValueOnce("Aarav");
     expect(await getWithdrawRequestView("t")).toEqual({ state: "valid", childFirstName: "Aarav" });
   });
+
+  it("returns already_withdrawn when the account has been deleted, even though consent is still 'consented'", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "consented", userId: "u1" });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+
+    expect(await getWithdrawRequestView("t")).toEqual({ state: "already_withdrawn" });
+  });
 });
 
 describe("withdrawParentConsent", () => {
@@ -603,7 +695,18 @@ describe("withdrawParentConsent", () => {
     await expect(withdrawParentConsent("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
-  it("on success: records the withdrawal and logs it", async () => {
+  it("reports alreadyWithdrawn:true (not an error) when the account has been deleted", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "consented", userId: "u1" });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await withdrawParentConsent("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyWithdrawn: true });
+    expect(mockWithdrawConsentRecord).not.toHaveBeenCalled();
+  });
+
+  it("on success: records the withdrawal, logs it, and sends a withdrawal-confirmation email", async () => {
     mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({
       id: "cr1",
       userId: "u1",
@@ -611,6 +714,8 @@ describe("withdrawParentConsent", () => {
     });
     mockWithdrawConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "withdrawn" });
     mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com" });
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const result = await withdrawParentConsent("t", META);
 
@@ -618,6 +723,23 @@ describe("withdrawParentConsent", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "consent.withdrawn", targetId: "u1" }),
     );
+    // Not configured/production in this test, so it falls back to the
+    // console-log path rather than a real Resend call - same as every
+    // other email in this suite.
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("withdrawal confirmed"));
+    consoleSpy.mockRestore();
+  });
+
+  it("does not send a withdrawal-confirmation email on the idempotent already-withdrawn path", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "withdrawn", userId: "u1" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await withdrawParentConsent("t", META);
+
+    expect(consoleSpy).not.toHaveBeenCalled();
+    expect(mockGetParentContact).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 
   it("reports alreadyWithdrawn:true (not an error) when a concurrent request wins the withdraw race", async () => {
