@@ -139,6 +139,9 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point
+- [ ] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
+      publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
+      affected parent inline during the admin publish Server Action)
 
 ## Phase 8 — Monetisation
 - [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
