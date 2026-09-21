@@ -126,6 +126,19 @@ export async function getLessonEditorData(worldId: string) {
   return listAllLessonsForWorld(worldId);
 }
 
+// Staff-only (see the admin Server Action's permission gate, not this
+// function). Works on a lesson of ANY status - that's the whole point, so a
+// draft can be previewed before publishing - but calls the exact same
+// toDetail() projection getPublicLesson uses, so what staff see in preview
+// can never structurally drift from what the app actually receives once
+// published. The caller adds the en/hi/hx toggle on top client-side; this
+// always returns every language, same as the app's own response.
+export async function getLessonPreview(id: string) {
+  const row = await getLessonById(id);
+  if (!row) throw new AppError("NOT_FOUND", "Lesson not found");
+  return toDetail(row);
+}
+
 async function assertWorldExists(worldId: string): Promise<void> {
   const world = await getWorldById(worldId);
   if (!world) throw new AppError("NOT_FOUND", "World not found");

@@ -2,8 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
 const mockRequireStaff = vi.fn();
+const mockGetStaffMember = vi.fn();
 vi.mock("@/lib/auth", () => ({
   requireStaff: (permission: unknown) => mockRequireStaff(permission),
+  getStaffMember: () => mockGetStaffMember(),
+}));
+
+const mockRoleHasPermission = vi.fn();
+vi.mock("@/server/staff/repo", () => ({
+  roleHasPermission: (roleId: unknown, permission: unknown) =>
+    mockRoleHasPermission(roleId, permission),
 }));
 
 vi.mock("next/headers", () => ({
@@ -19,6 +27,7 @@ const mockCreateLessonDraft = vi.fn();
 const mockUpdateLessonDraft = vi.fn();
 const mockPublishLesson = vi.fn();
 const mockUnpublishLesson = vi.fn();
+const mockGetLessonPreview = vi.fn();
 vi.mock("@/server/lessons/service", () => ({
   createLessonDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockCreateLessonDraft(actor, input, meta),
@@ -27,10 +36,12 @@ vi.mock("@/server/lessons/service", () => ({
   publishLesson: (actor: unknown, id: unknown, meta: unknown) => mockPublishLesson(actor, id, meta),
   unpublishLesson: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishLesson(actor, id, meta),
+  getLessonPreview: (id: unknown) => mockGetLessonPreview(id),
 }));
 
 import {
   createLessonDraftAction,
+  previewLessonAction,
   publishLessonAction,
   unpublishLessonAction,
   updateLessonDraftAction,
@@ -119,8 +130,37 @@ describe("happy paths", () => {
     expect(mockCreateLessonDraft).not.toHaveBeenCalled();
   });
 
-  it("createLessonDraftAction rejects a doubt_zone kind (not creatable until Checkpoint 4b)", async () => {
-    const result = await createLessonDraftAction({ ...VALID_INPUT, kind: "doubt_zone" });
+  it("createLessonDraftAction creates a valid doubt_zone lesson", async () => {
+    mockCreateLessonDraft.mockResolvedValueOnce({ id: LESSON_ID });
+
+    const result = await createLessonDraftAction({
+      ...VALID_INPUT,
+      kind: "doubt_zone",
+      content: {
+        mentorKey: "baby",
+        educationalOnlyNote: { en: "Educational only.", hi: "x", hx: "x" },
+        chips: [
+          {
+            chipLabel: { en: "What is a stock?", hi: "x", hx: "x" },
+            reply: { en: "A share of a company.", hi: "x", hx: "x" },
+          },
+        ],
+      },
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockCreateLessonDraft).toHaveBeenCalled();
+  });
+
+  it("createLessonDraftAction rejects a doubt_zone lesson missing mentorKey, without calling the service", async () => {
+    const result = await createLessonDraftAction({
+      ...VALID_INPUT,
+      kind: "doubt_zone",
+      content: {
+        educationalOnlyNote: { en: "x", hi: "x", hx: "x" },
+        chips: [{ chipLabel: { en: "x", hi: "x", hx: "x" }, reply: { en: "x", hi: "x", hx: "x" } }],
+      },
+    });
 
     expect(result.ok).toBe(false);
     expect(mockCreateLessonDraft).not.toHaveBeenCalled();
@@ -156,5 +196,64 @@ describe("happy paths", () => {
 
     expect(result).toEqual({ ok: true });
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/lessons");
+  });
+});
+
+const STAFF = { id: "staff_1", roleId: "role_1" };
+
+describe("previewLessonAction - read-only, gated on EITHER lesson.manage or lesson.publish", () => {
+  beforeEach(() => {
+    mockGetStaffMember.mockReset();
+    mockRoleHasPermission.mockReset();
+    mockGetLessonPreview.mockReset();
+  });
+
+  it("rejects when not signed in as staff at all", async () => {
+    mockGetStaffMember.mockResolvedValueOnce(null);
+
+    const result = await previewLessonAction({ id: LESSON_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockGetLessonPreview).not.toHaveBeenCalled();
+  });
+
+  it("rejects a staff member with neither lesson.manage nor lesson.publish", async () => {
+    mockGetStaffMember.mockResolvedValueOnce(STAFF);
+    mockRoleHasPermission.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+
+    const result = await previewLessonAction({ id: LESSON_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockGetLessonPreview).not.toHaveBeenCalled();
+  });
+
+  it("allows a staff member with only lesson.manage (no lesson.publish)", async () => {
+    mockGetStaffMember.mockResolvedValueOnce(STAFF);
+    mockRoleHasPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    mockGetLessonPreview.mockResolvedValueOnce({ id: LESSON_ID, kind: "quiz" });
+
+    const result = await previewLessonAction({ id: LESSON_ID });
+
+    expect(result).toEqual({ ok: true, data: { id: LESSON_ID, kind: "quiz" } });
+  });
+
+  it("allows a staff member with only lesson.publish (no lesson.manage)", async () => {
+    mockGetStaffMember.mockResolvedValueOnce(STAFF);
+    mockRoleHasPermission.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockGetLessonPreview.mockResolvedValueOnce({ id: LESSON_ID, kind: "quiz" });
+
+    const result = await previewLessonAction({ id: LESSON_ID });
+
+    expect(result).toEqual({ ok: true, data: { id: LESSON_ID, kind: "quiz" } });
+  });
+
+  it("surfaces a NOT_FOUND from the service as a clean error", async () => {
+    mockGetStaffMember.mockResolvedValueOnce(STAFF);
+    mockRoleHasPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    mockGetLessonPreview.mockRejectedValueOnce(new AppError("NOT_FOUND", "Lesson not found"));
+
+    const result = await previewLessonAction({ id: LESSON_ID });
+
+    expect(result).toEqual({ ok: false, error: "Lesson not found" });
   });
 });

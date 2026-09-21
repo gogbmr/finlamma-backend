@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
+import { getMentorEditorData } from "@/server/mentors/service";
 import { getWorldEditorData } from "@/server/worlds/service";
 import { getLessonEditorData } from "@/server/lessons/service";
 import { LessonEditor } from "./lesson-editor";
@@ -43,7 +44,14 @@ export default async function LessonsPage({
     );
   }
 
-  const lessons = await getLessonEditorData(selectedWorld.id);
+  const [lessons, mentors] = await Promise.all([
+    getLessonEditorData(selectedWorld.id),
+    getMentorEditorData(),
+  ]);
+  // The world's *current* mentor - compared in the editor against each
+  // doubt_zone lesson's own content.mentorKey (fixed at authoring time) to
+  // warn staff when they've drifted apart. See docs/ARCHITECTURE.md D19.
+  const worldMentorKey = mentors.find((m) => m.id === selectedWorld.mentorId)?.key ?? null;
 
   return (
     <div className="space-y-6">
@@ -74,6 +82,7 @@ export default async function LessonsPage({
 
       <LessonEditor
         worldId={selectedWorld.id}
+        worldMentorKey={worldMentorKey}
         lessons={lessons.map((l) => ({
           id: l.id,
           chapter: l.chapter,

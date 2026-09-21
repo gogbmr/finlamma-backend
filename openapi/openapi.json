@@ -1155,6 +1155,91 @@
                 "required": [
                   "questionIds"
                 ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mentorKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The mentor persona (see GET /api/v1/mentors) this script was written in the voice of."
+                  },
+                  "educationalOnlyNote": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "chips": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "chipLabel": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "reply": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "chipLabel",
+                        "reply"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "mentorKey",
+                  "educationalOnlyNote",
+                  "chips"
+                ]
               }
             ]
           }

@@ -2,23 +2,24 @@ import { z } from "zod";
 import { registry } from "@/lib/openapi";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 
-// 4a ships video/story/quiz/boss_quiz/role_play. doubt_zone is scripted
-// content that ships in Checkpoint 4b (mentor-persona Q&A, Phase-7-
-// swappable) - deliberately excluded from what can be *created* here so 4a
-// never has to half-support a content shape 4b hasn't designed yet. The DB
-// enum (src/db/schema/lessons.ts) already includes doubt_zone so no
-// migration is needed when 4b adds it.
+// All 6 kinds are creatable as of Checkpoint 4b (doubt_zone joined
+// video/story/quiz/boss_quiz/role_play from 4a). The DB enum
+// (src/db/schema/lessons.ts) already had doubt_zone from the start, so no
+// migration was needed when this list grew.
 export const LessonKindCreateSchema = z.enum([
   "video",
   "story",
   "quiz",
   "boss_quiz",
   "role_play",
+  "doubt_zone",
 ]);
 export type LessonKindCreate = z.infer<typeof LessonKindCreateSchema>;
 
-// All 6, for reading back a lesson of any kind (including a future
-// doubt_zone one once 4b ships).
+// Same 6 values as LessonKindCreateSchema today, kept as a separate schema
+// since it represents a different thing (every kind a lesson can ever have,
+// for reading) that could diverge from what's creatable again later (e.g. a
+// future system-generated kind).
 export const LessonKindSchema = z.enum([
   "video",
   "story",
@@ -74,6 +75,44 @@ export const QuizLikeContentSchema = z.object({
 });
 export type QuizLikeContent = z.infer<typeof QuizLikeContentSchema>;
 
+// Doubt Zone, Checkpoint 4b - scripted in v1 (PRODUCT_SPEC.md §1): a fixed
+// Q&A written by the content team, no live AI call. Learners pick from
+// `chips` only - there is deliberately no free-text field anywhere in this
+// shape, which is what actually enforces "no free-text input in this
+// phase", not a flag that could be toggled wrong. `mentorKey` records which
+// mentor persona the script was written in the voice of, fixed at
+// authoring time (see docs/ARCHITECTURE.md D19 for what happens if the
+// world's mentor changes later - a computed editor warning, not a
+// migration). Swappable for Phase 7: the node stays `kind: "doubt_zone"`
+// with this same content shape (chips keep working as suggested-question
+// shortcuts even with a live model behind them); only the *runtime
+// resolver* changes from "look up chip.reply" to "call the AI mentor",
+// which is Phase 7's concern, not this schema's.
+// chipLabel/reply/educationalOnlyNote are plain LocalizedTextSchema (no
+// .openapi() call directly on it) - matching every other content schema in
+// this file (SceneSchema's title/caption/mascotLine, etc.). Calling
+// .openapi() directly on the LocalizedTextSchema instance imported from
+// @/server/shared/schemas fails at module-load time in some import orders
+// (extendZodWithOpenApi patches the Zod prototype when @/lib/openapi is
+// first evaluated, and that hadn't happened yet for this instance in at
+// least one real test run) - so, like the rest of this file, the
+// description lives in a comment instead.
+const DoubtZoneChipSchema = z.object({
+  chipLabel: LocalizedTextSchema, // the suggested-question chip's own text
+  reply: LocalizedTextSchema, // the canned reply shown when this chip is tapped
+});
+
+export const DoubtZoneContentSchema = z.object({
+  mentorKey: z.string().min(1).openapi({
+    description: "The mentor persona (see GET /api/v1/mentors) this script was written in the voice of.",
+  }),
+  // Shown with every reply: this is educational content, never investment
+  // advice - non-negotiable rule 11.
+  educationalOnlyNote: LocalizedTextSchema,
+  chips: z.array(DoubtZoneChipSchema).min(1),
+});
+export type DoubtZoneContent = z.infer<typeof DoubtZoneContentSchema>;
+
 export function contentSchemaForKind(kind: LessonKindCreate) {
   switch (kind) {
     case "video":
@@ -84,6 +123,8 @@ export function contentSchemaForKind(kind: LessonKindCreate) {
     case "boss_quiz":
     case "role_play":
       return QuizLikeContentSchema;
+    case "doubt_zone":
+      return DoubtZoneContentSchema;
   }
 }
 
@@ -114,11 +155,21 @@ export const LESSON_CONTENT_TEMPLATES: Record<LessonKindCreate, unknown> = {
     questionIds: [],
     framing: { en: "", hi: "", hx: "" },
   } satisfies QuizLikeContent,
+  doubt_zone: {
+    mentorKey: "",
+    educationalOnlyNote: { en: "", hi: "", hx: "" },
+    chips: [{ chipLabel: { en: "", hi: "", hx: "" }, reply: { en: "", hi: "", hx: "" } }],
+  } satisfies DoubtZoneContent,
 };
 
 // --- App-facing (registered in OpenAPI) ---
 
-const LessonContentSchema = z.union([VideoContentSchema, StoryContentSchema, QuizLikeContentSchema]);
+const LessonContentSchema = z.union([
+  VideoContentSchema,
+  StoryContentSchema,
+  QuizLikeContentSchema,
+  DoubtZoneContentSchema,
+]);
 
 export const LessonSummarySchema = registry.register(
   "LessonSummary",

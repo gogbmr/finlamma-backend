@@ -17,12 +17,23 @@ import type { LocalizedText } from "@/server/shared/schemas";
 import { LESSON_CONTENT_TEMPLATES } from "@/server/lessons/schemas";
 import {
   createLessonDraftAction,
+  previewLessonAction,
   publishLessonAction,
   unpublishLessonAction,
   updateLessonDraftAction,
 } from "./actions";
+import { LessonPreview } from "./lesson-preview";
 
-const CREATABLE_KINDS = ["video", "story", "quiz", "boss_quiz", "role_play"] as const;
+type PreviewData = Extract<Awaited<ReturnType<typeof previewLessonAction>>, { ok: true }>["data"];
+
+const CREATABLE_KINDS = [
+  "video",
+  "story",
+  "quiz",
+  "boss_quiz",
+  "role_play",
+  "doubt_zone",
+] as const;
 type CreatableKind = (typeof CREATABLE_KINDS)[number];
 
 const KIND_LABELS: Record<string, string> = {
@@ -31,7 +42,7 @@ const KIND_LABELS: Record<string, string> = {
   quiz: "Quiz",
   boss_quiz: "Boss Quiz",
   role_play: "Role Play",
-  doubt_zone: "Doubt Zone (Checkpoint 4b)",
+  doubt_zone: "Doubt Zone",
 };
 
 type LessonRow = {
@@ -50,11 +61,13 @@ const EMPTY_LOCALIZED: LocalizedText = { en: "", hi: "", hx: "" };
 
 export function LessonEditor({
   worldId,
+  worldMentorKey,
   lessons,
   canManage,
   canPublish,
 }: {
   worldId: string;
+  worldMentorKey: string | null;
   lessons: LessonRow[];
   canManage: boolean;
   canPublish: boolean;
@@ -88,6 +101,7 @@ export function LessonEditor({
             <LessonForm
               key={lesson.id}
               worldId={worldId}
+              worldMentorKey={worldMentorKey}
               lesson={lesson}
               canManage={canManage}
               canPublish={canPublish}
@@ -236,11 +250,13 @@ function NewLessonForm({ worldId }: { worldId: string }) {
 
 function LessonForm({
   worldId,
+  worldMentorKey,
   lesson,
   canManage,
   canPublish,
 }: {
   worldId: string;
+  worldMentorKey: string | null;
   lesson: LessonRow;
   canManage: boolean;
   canPublish: boolean;
@@ -251,9 +267,23 @@ function LessonForm({
   const [title, setTitle] = useState<LocalizedText>(lesson.title);
   const [blurb, setBlurb] = useState<LocalizedText>(lesson.blurb);
   const [contentText, setContentText] = useState(JSON.stringify(lesson.content, null, 2));
+  const [preview, setPreview] = useState<PreviewData | null>(null);
 
   const isDraft = lesson.status === "draft";
   const editable = canManage && isDraft;
+
+  // Doubt Zone scripts are written in a specific mentor's voice
+  // (content.mentorKey, fixed at authoring time) - if the world's current
+  // mentor has since changed, warn rather than silently letting a
+  // mismatched script get published. See docs/ARCHITECTURE.md D19.
+  const scriptedMentorKey =
+    lesson.kind === "doubt_zone" && typeof lesson.content === "object" && lesson.content !== null
+      ? (lesson.content as { mentorKey?: unknown }).mentorKey
+      : undefined;
+  const mentorMismatch =
+    typeof scriptedMentorKey === "string" &&
+    worldMentorKey !== null &&
+    scriptedMentorKey !== worldMentorKey;
 
   function saveDraft() {
     const parsed = parseContentOrError(contentText);
@@ -301,8 +331,27 @@ function LessonForm({
     });
   }
 
+  function openPreview() {
+    startTransition(async () => {
+      const result = await previewLessonAction({ id: lesson.id });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setPreview(result.data);
+    });
+  }
+
   return (
     <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
+      {mentorMismatch && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          This Doubt Zone script was written for mentor &quot;{scriptedMentorKey}&quot;, but this
+          world&apos;s current mentor is &quot;{worldMentorKey}&quot;. Review the script before
+          publishing.
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
         <span
           className={
@@ -375,7 +424,12 @@ function LessonForm({
             Unpublish
           </Button>
         )}
+        <Button type="button" variant="outline" onClick={openPreview} disabled={isPending}>
+          Preview
+        </Button>
       </div>
+
+      {preview && <LessonPreview data={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

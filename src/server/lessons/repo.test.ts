@@ -14,9 +14,11 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   getLessonById,
+  getPublishedLesson,
   getPublishedLessonAtPosition,
   insertDraftLesson,
   listPublishedLessonsByWorldId,
+  listPublishedLessonsForWorld,
   publishLessonRow,
   unpublishLessonRow,
   updateDraftLesson,
@@ -236,5 +238,38 @@ describe("listPublishedLessonsByWorldId", () => {
     expect(result.map((l) => l.id)).toEqual([published.id]);
     expect(result.map((l) => l.id)).not.toContain(draft.id);
     expect(result.map((l) => l.id)).not.toContain(otherWorldLesson.id);
+  });
+});
+
+// Consolidated proof (Phase 2b Checkpoint 4b kickoff: "Drafts are never
+// reachable through any public/app endpoint. Test that.") that every
+// repo function the app-facing service layer actually calls
+// (getPublicLesson -> getPublishedLesson, getPublicLessonsForWorld ->
+// listPublishedLessonsForWorld, getCurrentLesson ->
+// getPublishedLessonAtPosition, already covered above) excludes a draft at
+// the database level, not just by service-layer convention. Staff-only
+// access to a draft (getLessonPreview -> getLessonById, unfiltered by
+// design) is covered separately in service.test.ts, contrasted directly
+// against getPublicLesson on the same draft id.
+describe("drafts are never reachable through any of the published-only repo functions", () => {
+  it("getPublishedLesson returns null for a lesson that's only a draft", async () => {
+    const created = await insertDraftLesson(await draftInput());
+
+    expect(await getPublishedLesson(created.id)).toBeNull();
+    // Sanity check: the id is real, just not published - getLessonById
+    // (the staff-only, unfiltered read) still finds it.
+    expect(await getLessonById(created.id)).not.toBeNull();
+  });
+
+  it("listPublishedLessonsForWorld excludes a draft lesson in the same world", async () => {
+    const worldId = (await makeWorld()).id;
+    const draft = await insertDraftLesson(await draftInput({ worldId, chapter: 1, step: 1 }));
+    const published = await insertDraftLesson(await draftInput({ worldId, chapter: 1, step: 2 }));
+    await publishLessonRow(published.id, staffId);
+
+    const result = await listPublishedLessonsForWorld(worldId);
+
+    expect(result.map((l) => l.id)).toEqual([published.id]);
+    expect(result.map((l) => l.id)).not.toContain(draft.id);
   });
 });

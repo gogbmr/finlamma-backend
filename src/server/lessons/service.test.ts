@@ -38,6 +38,7 @@ import {
   createLessonDraft,
   getCurrentLesson,
   getLessonEditorData,
+  getLessonPreview,
   getPublicLesson,
   getPublicLessonsForWorld,
   publishLesson,
@@ -420,6 +421,82 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
       expect.objectContaining({ action: "lesson.published", actorId: "staff_1" }),
     );
   });
+
+  // Checkpoint 4b: Doubt Zone's chips/educationalOnlyNote are ordinary
+  // nested LocalizedText leaves, so findMissingLocalizedText's generic walk
+  // already covers them - these tests prove that concretely for this kind
+  // rather than trusting the generic coverage carries over.
+  it("blocks publish when a doubt_zone chip's reply is missing a translation", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "doubt_zone",
+        content: {
+          mentorKey: "baby",
+          educationalOnlyNote: { en: "Educational only.", hi: "x", hx: "x" },
+          chips: [
+            {
+              chipLabel: { en: "What is a stock?", hi: "x", hx: "x" },
+              reply: { en: "A share of a company.", hi: "", hx: "x" },
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { missingFields: ["content.chips[0].reply.hi"] },
+    });
+    expect(mockPublishLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("blocks publish when the educational-only disclaimer itself is missing a translation", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "doubt_zone",
+        content: {
+          mentorKey: "baby",
+          educationalOnlyNote: { en: "Educational only.", hi: "", hx: "" },
+          chips: [
+            {
+              chipLabel: { en: "What is a stock?", hi: "x", hx: "x" },
+              reply: { en: "A share.", hi: "x", hx: "x" },
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      details: {
+        missingFields: ["content.educationalOnlyNote.hi", "content.educationalOnlyNote.hx"],
+      },
+    });
+  });
+
+  it("publishes a complete doubt_zone lesson", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "doubt_zone",
+        content: {
+          mentorKey: "baby",
+          educationalOnlyNote: { en: "Educational only, never investment advice.", hi: "x", hx: "x" },
+          chips: [
+            {
+              chipLabel: { en: "What is a stock?", hi: "x", hx: "x" },
+              reply: { en: "A share of a company.", hi: "x", hx: "x" },
+            },
+          ],
+        },
+      }),
+    );
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ kind: "doubt_zone", status: "published" }));
+
+    const result = await publishLesson(ACTOR, "lesson_1", META);
+
+    expect(result.status).toBe("published");
+  });
 });
 
 describe("unpublishLesson", () => {
@@ -449,5 +526,38 @@ describe("getLessonEditorData", () => {
 
     expect(result).toHaveLength(2);
     expect(mockListAllLessonsForWorld).toHaveBeenCalledWith(WORLD_ID);
+  });
+});
+
+describe("getLessonPreview", () => {
+  it("returns the same answer-free projection as getPublicLesson, for a draft the public endpoint can't see", async () => {
+    const draft = lessonRow({ status: "draft" });
+    mockGetLessonById.mockResolvedValueOnce(draft);
+    mockGetPublishedLesson.mockResolvedValueOnce(null); // the public repo call finds nothing - it's a draft
+
+    const preview = await getLessonPreview("lesson_1");
+    await expect(getPublicLesson("lesson_1")).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    expect(preview).toEqual({
+      id: "lesson_1",
+      worldId: WORLD_ID,
+      chapter: 1,
+      step: 1,
+      kind: "quiz",
+      title: draft.title,
+      blurb: draft.blurb,
+      content: draft.content,
+    });
+    // Exactly the fields getPublicLesson would return for the same row once
+    // published - no `status`/`publishedAt`/`publishedBy` leaking through.
+    expect(Object.keys(preview).sort()).toEqual(
+      ["id", "worldId", "chapter", "step", "kind", "title", "blurb", "content"].sort(),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown lesson id", async () => {
+    mockGetLessonById.mockResolvedValueOnce(null);
+
+    await expect(getLessonPreview("nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
