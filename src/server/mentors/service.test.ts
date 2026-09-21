@@ -26,6 +26,11 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
+const mockListPublishedWorldsByMentorId = vi.fn();
+vi.mock("@/server/worlds/repo", () => ({
+  listPublishedWorldsByMentorId: (mentorId: unknown) => mockListPublishedWorldsByMentorId(mentorId),
+}));
+
 const mockGetSignedDownloadUrl = vi.fn();
 const mockUploadObject = vi.fn();
 vi.mock("@/lib/s3", () => ({
@@ -69,6 +74,9 @@ function mentorRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // No published worlds reference this mentor by default - existing tests
+  // below don't need to know about the world-reference block at all.
+  mockListPublishedWorldsByMentorId.mockResolvedValue([]);
 });
 
 describe("getPublicMentors / getPublicMentorByKey", () => {
@@ -223,6 +231,42 @@ describe("unpublishMentor", () => {
     mockUnpublishMentorRow.mockResolvedValueOnce(null);
 
     await expect(unpublishMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // The rule this checkpoint added: a mentor can't be unpublished while any
+  // published world still references it, naming the world in the error.
+  it("blocks unpublish and names the referencing world when a published world still uses this mentor", async () => {
+    mockListPublishedWorldsByMentorId.mockResolvedValueOnce([
+      { id: "world_1", title: { en: "Money World", hi: "x", hx: "x" } },
+    ]);
+
+    await expect(unpublishMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/Money World/),
+      details: { worldIds: ["world_1"] },
+    });
+    expect(mockUnpublishMentorRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("names every referencing world when more than one published world uses this mentor", async () => {
+    mockListPublishedWorldsByMentorId.mockResolvedValueOnce([
+      { id: "world_1", title: { en: "Money World", hi: "x", hx: "x" } },
+      { id: "world_2", title: { en: "Savings Valley", hi: "x", hx: "x" } },
+    ]);
+
+    await expect(unpublishMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({
+      message: expect.stringMatching(/Money World.*Savings Valley/),
+    });
+  });
+
+  it("allows unpublish once no published world references the mentor anymore", async () => {
+    mockListPublishedWorldsByMentorId.mockResolvedValueOnce([]);
+    mockUnpublishMentorRow.mockResolvedValueOnce(mentorRow({ status: "draft" }));
+
+    const result = await unpublishMentor(ACTOR, "mentor_1", META);
+
+    expect(result.status).toBe("draft");
   });
 });
 

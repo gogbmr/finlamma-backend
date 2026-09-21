@@ -33,6 +33,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 
 - `GET /api/v1/mentors` — List published mentors
 - `GET /api/v1/mentors/{key}` — Get a published mentor
+- `GET /api/v1/worlds` — List published worlds
 
 **Webhooks**
 
@@ -697,6 +698,67 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
   "error": {
     "code": "NOT_FOUND",
     "message": "No published mentor with key \"baby\""
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/worlds`
+
+**List published worlds**
+
+The 7 worlds, ordered. Only published worlds are returned. Per-user lock/progress state (sequential unlock - clearing a world's Boss Quiz unlocks the next) is added once lesson_progress exists (Phase 2b Checkpoint 6) - for now this is the master world list only.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Published worlds, ordered
+
+```json
+{
+  "data": [
+    {
+      "order": 1,
+      "title": {
+        "en": "Money World",
+        "hi": "मनी वर्ल्ड",
+        "hx": "Money World"
+      },
+      "tagline": {
+        "en": "From barter to UPI — the whole story of money",
+        "hi": "बार्टर से UPI तक — पैसे की पूरी कहानी",
+        "hx": "Barter se UPI tak — paise ki poori kahani"
+      },
+      "theme": "#7C3AED",
+      "displayXpTarget": 5,
+      "artUrl": "https://example.com",
+      "mentorKey": "baby"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

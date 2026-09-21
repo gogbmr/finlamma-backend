@@ -1,0 +1,50 @@
+import { requireUser } from "@/lib/auth";
+import { ok, withErrors } from "@/lib/http";
+import { ErrorResponseSchema, registry } from "@/lib/openapi";
+import { requireFullAccess } from "@/server/onboarding/service";
+import { WorldListResponseSchema } from "@/server/worlds/schemas";
+import { getPublicWorlds } from "@/server/worlds/service";
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/worlds",
+  summary: "List published worlds",
+  description:
+    "The 7 worlds, ordered. Only published worlds are returned. Per-user lock/progress state " +
+    "(sequential unlock - clearing a world's Boss Quiz unlocks the next) is added once " +
+    "lesson_progress exists (Phase 2b Checkpoint 6) - for now this is the master world list only.",
+  tags: ["Learning"],
+  security: [{ bearerAuth: [] }],
+  responses: {
+    200: {
+      description: "Published worlds, ordered",
+      content: { "application/json": { schema: WorldListResponseSchema } },
+    },
+    401: {
+      description: "Not signed in",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "UNAUTHENTICATED", message: "Sign-in required" } },
+        },
+      },
+    },
+    403: {
+      description: "Onboarding, parental consent or legal acceptance is incomplete",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: {
+            error: { code: "FORBIDDEN", message: "Complete onboarding before using this feature" },
+          },
+        },
+      },
+    },
+  },
+});
+
+export const GET = withErrors(async (req: Request) => {
+  const user = await requireUser(req);
+  await requireFullAccess(user);
+  return ok(await getPublicWorlds());
+});

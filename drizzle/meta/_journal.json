@@ -78,6 +78,13 @@
       "when": 1789916302680,
       "tag": "0010_messy_robbie_robertson",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789966230759,
+      "tag": "0011_wandering_ghost_rider",
+      "breakpoints": true
     }
   ]
 }

@@ -18,6 +18,7 @@ import "../src/app/api/v1/me/parent-consent/request/route";
 import "../src/app/api/v1/me/legal/reapproval/resend/route";
 import "../src/app/api/v1/mentors/route";
 import "../src/app/api/v1/mentors/[key]/route";
+import "../src/app/api/v1/worlds/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

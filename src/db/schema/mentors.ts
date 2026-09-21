@@ -1,14 +1,8 @@
 import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
-import { idAndTimestamps } from "./_helpers";
+import { idAndTimestamps, type LocalizedText } from "./_helpers";
 import { staffMembers } from "./staff";
 
 export const mentorStatusEnum = pgEnum("mentor_status", ["draft", "published"]);
-
-// A trilingual text field: {en, hi, hx}. Leaf-level localization (not a
-// whole duplicated content tree, not a separate translations-table key) -
-// see docs/ARCHITECTURE.md's Phase 2b kickoff discussion and
-// docs/DATA_MODEL.md's Learning section.
-export type LocalizedText = { en: string; hi: string; hx: string };
 
 // Mentor evolution (PRODUCT_SPEC.md §1): the user's mentor changes as they
 // clear worlds - Baby Lamma (World 1-3), Father Lamma (World 4-6), Grandpa

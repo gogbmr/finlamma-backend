@@ -681,6 +681,110 @@
           "data"
         ]
       },
+      "World": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "example": 1
+          },
+          "title": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "Money World",
+              "hi": "मनी वर्ल्ड",
+              "hx": "Money World"
+            }
+          },
+          "tagline": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "From barter to UPI — the whole story of money",
+              "hi": "बार्टर से UPI तक — पैसे की पूरी कहानी",
+              "hx": "Barter se UPI tak — paise ki poori kahani"
+            }
+          },
+          "theme": {
+            "type": "string",
+            "example": "#7C3AED",
+            "description": "Cosmetic accent color/key for the world card - never affects unlock logic."
+          },
+          "displayXpTarget": {
+            "type": "integer",
+            "example": 5,
+            "description": "Cosmetic progress indicator only, shown on a locked world's card - never the actual unlock gate. The real rule is sequential (clearing the previous world's Boss Quiz)."
+          },
+          "artUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Short-lived signed URL to the world's art, or null if none uploaded yet."
+          },
+          "mentorKey": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "example": "baby",
+            "description": "The mentor covering this world (see GET /api/v1/mentors for their details)."
+          }
+        },
+        "required": [
+          "order",
+          "title",
+          "tagline",
+          "theme",
+          "displayXpTarget",
+          "artUrl",
+          "mentorKey"
+        ]
+      },
+      "WorldListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/World"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -1438,6 +1542,64 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No published mentor with key \"baby\""
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/worlds": {
+      "get": {
+        "summary": "List published worlds",
+        "description": "The 7 worlds, ordered. Only published worlds are returned. Per-user lock/progress state (sequential unlock - clearing a world's Boss Quiz unlocks the next) is added once lesson_progress exists (Phase 2b Checkpoint 6) - for now this is the master world list only.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published worlds, ordered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
                   }
                 },
                 "schema": {

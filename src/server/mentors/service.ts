@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
+import { listPublishedWorldsByMentorId } from "@/server/worlds/repo";
 import {
   getMentorById,
   getPublishedMentorByKey,
@@ -210,6 +211,20 @@ export async function publishMentor(actor: { id: string }, id: string, meta: Req
 }
 
 export async function unpublishMentor(actor: { id: string }, id: string, meta: RequestMeta) {
+  // Blocked while any published world still references this mentor - a
+  // learner in that world must always have a real mentor to meet. Checked
+  // before the unpublish itself, not as a post-hoc rollback, so a mentor
+  // that's actually in use is never even briefly unpublished.
+  const referencingWorlds = await listPublishedWorldsByMentorId(id);
+  if (referencingWorlds.length > 0) {
+    const titles = referencingWorlds.map((w) => w.title.en).join(", ");
+    throw new AppError(
+      "CONFLICT",
+      `Cannot unpublish: still referenced by published world(s): ${titles}`,
+      { worldIds: referencingWorlds.map((w) => w.id) },
+    );
+  }
+
   const unpublished = await unpublishMentorRow(id);
   if (!unpublished) throw new AppError("CONFLICT", "Mentor not found, or it's not published");
 

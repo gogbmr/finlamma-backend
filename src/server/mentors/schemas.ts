@@ -1,16 +1,13 @@
 import { z } from "zod";
 import { registry } from "@/lib/openapi";
+import { LocalizedTextSchema } from "@/server/shared/schemas";
 
-// Leaf-level trilingual text - see docs/DATA_MODEL.md's Learning section and
-// docs/ARCHITECTURE.md's Phase 2b kickoff discussion for why this is one
-// shared structure with localized leaves, not three duplicated content
-// trees or a separate translations-table key.
-export const LocalizedTextSchema = z.object({
-  en: z.string(),
-  hi: z.string(),
-  hx: z.string(),
-});
-export type LocalizedText = z.infer<typeof LocalizedTextSchema>;
+// Re-exported so existing imports of `LocalizedText`/`LocalizedTextSchema`
+// from this module (e.g. the admin mentor editor) keep working unchanged -
+// see src/server/shared/schemas.ts for the actual definition, now shared
+// with the worlds domain too.
+export { LocalizedTextSchema };
+export type { LocalizedText } from "@/server/shared/schemas";
 
 export const MentorKeySchema = z
   .string()
