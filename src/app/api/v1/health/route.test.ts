@@ -18,6 +18,11 @@ const mockEnv = vi.hoisted(() => ({
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
   VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
   CONSENT_PII_HMAC_KEY: undefined as string | undefined,
+  S3_ENDPOINT: undefined as string | undefined,
+  S3_REGION: undefined as string | undefined,
+  S3_BUCKET: undefined as string | undefined,
+  S3_ACCESS_KEY_ID: undefined as string | undefined,
+  S3_SECRET_ACCESS_KEY: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -41,6 +46,11 @@ beforeEach(() => {
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
   mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
   mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+  mockEnv.S3_ENDPOINT = "https://xxx.supabase.co/storage/v1/s3";
+  mockEnv.S3_REGION = "ap-south-1";
+  mockEnv.S3_BUCKET = "finlamma";
+  mockEnv.S3_ACCESS_KEY_ID = "test-key";
+  mockEnv.S3_SECRET_ACCESS_KEY = "test-secret";
   // All three types published, none placeholder - existing tests below
   // don't need to know about the legalDocuments warning field at all.
   mockListPublishedDocuments.mockReset().mockResolvedValue([
@@ -76,6 +86,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.legalDocuments).toBe("ok");
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
+    expect(body.data.storage).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
   });
 
@@ -213,5 +224,29 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.consentPiiHmacKey).toBe("missing");
+  });
+
+  it.each([
+    ["S3_ENDPOINT"],
+    ["S3_REGION"],
+    ["S3_BUCKET"],
+    ["S3_ACCESS_KEY_ID"],
+    ["S3_SECRET_ACCESS_KEY"],
+  ] as const)("reports storage: 'missing' (not a 503) when %s isn't configured", async (varName) => {
+    mockEnv[varName] = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.storage).toBe("missing");
+  });
+
+  it("reports storage: 'ok' when every S3_* var is configured", async () => {
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect((await res.json()).data.storage).toBe("ok");
   });
 });

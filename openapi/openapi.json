@@ -106,6 +106,15 @@
                 "example": "ok",
                 "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
               },
+              "storage": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "missing"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'missing' means at least one of the S3_ENDPOINT/S3_REGION/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY env vars isn't configured, so src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage plumbing with no way to notice a missing key from outside the deployment's env vars."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -120,6 +129,7 @@
               "legalDocuments",
               "version",
               "consentPiiHmacKey",
+              "storage",
               "timestamp"
             ]
           }

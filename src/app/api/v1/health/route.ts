@@ -55,6 +55,15 @@ const HealthDataSchema = z.object({
       "store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's " +
       "scrubConsentDataForDeletedUser.",
   }),
+  storage: z.enum(["ok", "missing"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'missing' means at least one of the S3_ENDPOINT/" +
+      "S3_REGION/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY env vars isn't configured, so " +
+      "src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - " +
+      "e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage " +
+      "plumbing with no way to notice a missing key from outside the deployment's env vars.",
+  }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
 
@@ -79,6 +88,22 @@ function clerkInstanceHost(publishableKey: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Non-fatal: a missing S3 var doesn't fail the health check (the API and
+// database are still genuinely healthy), it's surfaced as a warning so a
+// missing storage key is visible from the outside instead of only
+// discovered the first time someone tries an upload in production - see
+// src/lib/s3.ts's getS3Config(), which fails closed the same way
+// getResendConfig() does for email.
+function checkStorageConfigured(): "ok" | "missing" {
+  const configured =
+    env.S3_ENDPOINT &&
+    env.S3_REGION &&
+    env.S3_BUCKET &&
+    env.S3_ACCESS_KEY_ID &&
+    env.S3_SECRET_ACCESS_KEY;
+  return configured ? "ok" : "missing";
 }
 
 // Catches the STAFF and CONSUMER Clerk applications' publishable keys
@@ -227,6 +252,7 @@ export const GET = withErrors(async () => {
     legalDocuments,
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
+    storage: checkStorageConfigured(),
     timestamp: new Date().toISOString(),
   });
 });
