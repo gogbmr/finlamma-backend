@@ -2,6 +2,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
+import { getLessonEditorData } from "@/server/lessons/service";
 import { getWorldEditorData } from "@/server/worlds/service";
 import { WorldEditor } from "./world-editor";
 
@@ -20,6 +21,28 @@ export default async function WorldsPage() {
   }
 
   const [worlds, mentors] = await Promise.all([getWorldEditorData(), getMentorEditorData()]);
+
+  // Doubt Zone lessons per world, for the mentor-change warning below (see
+  // docs/ARCHITECTURE.md D19) - each world's lesson count is small (up to
+  // 40), so fetching all 7 worlds' lists up front is cheap and avoids a
+  // separate on-demand Server Action just for this.
+  const lessonsByWorld = await Promise.all(worlds.map((w) => getLessonEditorData(w.id)));
+  const doubtZoneLessonsByWorldId: Record<
+    string,
+    { id: string; title: { en: string; hi: string; hx: string }; mentorKey: string }[]
+  > = {};
+  worlds.forEach((w, i) => {
+    doubtZoneLessonsByWorldId[w.id] = lessonsByWorld[i]!.filter((l) => l.kind === "doubt_zone").map(
+      (l) => ({
+        id: l.id,
+        title: l.title,
+        mentorKey:
+          typeof l.content === "object" && l.content !== null
+            ? String((l.content as Record<string, unknown>).mentorKey ?? "")
+            : "",
+      }),
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -45,6 +68,7 @@ export default async function WorldsPage() {
           artUrl: w.artUrl,
         }))}
         mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
+        doubtZoneLessonsByWorldId={doubtZoneLessonsByWorldId}
         canManage={canManage}
         canPublish={canPublish}
       />

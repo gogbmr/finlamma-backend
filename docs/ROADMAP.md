@@ -159,6 +159,16 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       questions, emails, consent pages) — the seed/draft copy written during development (e.g.
       `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
       reviewed by a native speaker.
+- [ ] **Real-Postgres concurrency test for world reorder**, once a separate dev database exists.
+      `src/server/worlds/repo.test.ts`'s concurrent-move tests run against PGlite
+      (`src/test/db.ts`), which is a single connection - two "concurrent" `db.transaction()` calls
+      there are actually serialized by the driver, not genuinely interleaved, so those tests can
+      prove "no corruption" but not "a real race loses cleanly" (see the reorder-fix commit and
+      `src/lib/db-errors.ts`'s `isTransactionConflict`). Once a real multi-connection Postgres is
+      available outside the shared production database (e.g. a Supabase branch/dev project), add a
+      test that fires two genuinely concurrent overlapping `moveWorldToPosition` calls from two
+      separate connections and confirms one gets a clean `isTransactionConflict` and neither
+      leaves a negative sentinel order behind.
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
 - [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps

@@ -36,6 +36,7 @@ type WorldRow = {
 };
 
 type MentorOption = { id: string; key: string; name: LocalizedText; status: "draft" | "published" };
+type DoubtZoneLessonRef = { id: string; title: LocalizedText; mentorKey: string };
 
 const LANGUAGES = ["en", "hi", "hx"] as const;
 const EMPTY_LOCALIZED: LocalizedText = { en: "", hi: "", hx: "" };
@@ -43,11 +44,13 @@ const EMPTY_LOCALIZED: LocalizedText = { en: "", hi: "", hx: "" };
 export function WorldEditor({
   worlds,
   mentors,
+  doubtZoneLessonsByWorldId,
   canManage,
   canPublish,
 }: {
   worlds: WorldRow[];
   mentors: MentorOption[];
+  doubtZoneLessonsByWorldId: Record<string, DoubtZoneLessonRef[]>;
   canManage: boolean;
   canPublish: boolean;
 }) {
@@ -82,6 +85,7 @@ export function WorldEditor({
               key={world.id}
               world={world}
               mentors={mentors}
+              doubtZoneLessons={doubtZoneLessonsByWorldId[world.id] ?? []}
               canManage={canManage}
               canPublish={canPublish}
             />
@@ -225,11 +229,13 @@ function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
 function WorldForm({
   world,
   mentors,
+  doubtZoneLessons,
   canManage,
   canPublish,
 }: {
   world: WorldRow;
   mentors: MentorOption[];
+  doubtZoneLessons: DoubtZoneLessonRef[];
   canManage: boolean;
   canPublish: boolean;
 }) {
@@ -246,7 +252,28 @@ function WorldForm({
   const isDraft = world.status === "draft";
   const editable = canManage && isDraft;
 
+  // Changing the mentor away from what it was when this form loaded doesn't
+  // retroactively update any Doubt Zone script's own content.mentorKey
+  // (fixed at authoring time - see docs/ARCHITECTURE.md D19), so warn with
+  // exactly which scripts are now written for a mentor this world is about
+  // to stop using, before the change is saved - not just as an editor
+  // banner that could be scrolled past.
+  const originalMentorKey = mentors.find((m) => m.id === world.mentorId)?.key ?? null;
+  const mentorChanged = mentorId !== world.mentorId;
+  const affectedDoubtZoneLessons =
+    mentorChanged && originalMentorKey
+      ? doubtZoneLessons.filter((l) => l.mentorKey === originalMentorKey)
+      : [];
+
   function saveDraft() {
+    if (affectedDoubtZoneLessons.length > 0) {
+      const titles = affectedDoubtZoneLessons.map((l) => l.title.en || l.id).join(", ");
+      const confirmed = window.confirm(
+        `Changing the mentor will leave these Doubt Zone lessons scripted for the old mentor: ` +
+          `${titles}. Review/update their scripts after saving. Continue?`,
+      );
+      if (!confirmed) return;
+    }
     startTransition(async () => {
       const result = await updateWorldDraftAction({
         id: world.id,
@@ -332,6 +359,20 @@ function WorldForm({
           </span>
         )}
       </div>
+
+      {affectedDoubtZoneLessons.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Changing the mentor will leave {affectedDoubtZoneLessons.length} Doubt Zone lesson
+          {affectedDoubtZoneLessons.length > 1 ? "s" : ""} scripted for the old mentor (
+          {originalMentorKey}):
+          <ul className="ml-4 list-disc">
+            {affectedDoubtZoneLessons.map((l) => (
+              <li key={l.id}>{l.title.en || l.id}</li>
+            ))}
+          </ul>
+          You&apos;ll be asked to confirm again when you save.
+        </div>
+      )}
 
       {canManage && (
         <div className="flex items-end gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
