@@ -5,8 +5,9 @@ import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
-import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
-import { getWorldIdsWithCompletedBossQuiz } from "@/server/lesson-progress/repo";
+import { hasBossQuizLesson, listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { getWorldIdsWithPassedBossQuiz } from "@/server/quiz-attempts/repo";
+import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   getWorldById,
@@ -46,18 +47,20 @@ async function toPublicWorld(row: WorldRow, mentorKeysById: Map<string, string>,
   };
 }
 
-// Sequential unlock only (PRODUCT_SPEC.md §1, docs/ARCHITECTURE.md D23):
+// Sequential unlock only (PRODUCT_SPEC.md §1, docs/ARCHITECTURE.md D23/D24):
 // the first (lowest-order) published world is always unlocked; every other
-// world is unlocked once the PREVIOUS world's Boss Quiz lesson has been
-// completed by this user - never an XP/level gate, and never based on
-// displayXpTarget (that field is a cosmetic progress indicator only, per
-// the worlds table's own comment). Worlds are already ordered ascending by
-// `order` (listPublishedWorlds), so "previous" is simply the prior element.
+// world is unlocked once the PREVIOUS world's Boss Quiz has been PASSED
+// (accuracyPct >= the admin-editable bossQuizPassMarkPct, D24) by this user
+// - never an XP/level gate, and never based on displayXpTarget (that field
+// is a cosmetic progress indicator only, per the worlds table's own
+// comment). Worlds are already ordered ascending by `order`
+// (listPublishedWorlds), so "previous" is simply the prior element.
 export async function getPublicWorlds(userId: string) {
+  const settings = await getLessonFlowScoringSettings();
   const [rows, keysById, clearedWorldIds] = await Promise.all([
     listPublishedWorlds(),
     mentorKeyById(),
-    getWorldIdsWithCompletedBossQuiz(userId),
+    getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct),
   ]);
   return Promise.all(
     rows.map((row, i) => {
@@ -271,6 +274,22 @@ export async function publishWorld(actor: { id: string }, id: string, meta: Requ
     throw new AppError("CONFLICT", "World is not a draft");
   }
   validateWorldForPublish(world);
+
+  // D24 (docs/ARCHITECTURE.md): a world needs at least a DRAFT boss_quiz
+  // lesson before it can publish - the lesson itself can't be published
+  // until AFTER its world is (see publishLesson's own world-published
+  // check), so requiring a published one here would be impossible. Staff
+  // publish the boss_quiz lesson right after the world. Applies going
+  // forward only - it's checked here at publish time, never retroactively
+  // against a world that's already published (see GET /api/v1/health's
+  // worldsMissingBossQuiz for those).
+  if (!(await hasBossQuizLesson(id))) {
+    throw new AppError(
+      "CONFLICT",
+      "Cannot publish: this world has no Boss Quiz lesson yet (a draft is enough) - " +
+        "create one before publishing the world",
+    );
+  }
 
   // Publishing a world requires its mentor to already be published - a
   // learner reaching this world must always have a real mentor to meet, per

@@ -16,6 +16,7 @@ const {
   getLessonById,
   getPublishedLesson,
   getPublishedLessonAtPosition,
+  hasBossQuizLesson,
   hotfixLessonRow,
   insertDraftLesson,
   listAllPublishedLessons,
@@ -334,5 +335,35 @@ describe("listAllPublishedLessons", () => {
     expect(resultIds).toContain(publishedA.id);
     expect(resultIds).toContain(publishedB.id);
     expect(resultIds).not.toContain(draft.id);
+  });
+});
+
+// D24 (docs/ARCHITECTURE.md): used by worlds/service.ts's publishWorld gate.
+describe("hasBossQuizLesson", () => {
+  it("returns false for a world with no lessons at all", async () => {
+    const world = await makeWorld();
+    expect(await hasBossQuizLesson(world.id)).toBe(false);
+  });
+
+  it("returns false when the world has lessons but none is kind boss_quiz", async () => {
+    const world = await makeWorld();
+    await insertDraftLesson(await draftInput({ worldId: world.id, kind: "quiz" }));
+
+    expect(await hasBossQuizLesson(world.id)).toBe(false);
+  });
+
+  it("returns true once a boss_quiz lesson exists, even as an unpublished draft", async () => {
+    const world = await makeWorld();
+    await insertDraftLesson(await draftInput({ worldId: world.id, kind: "boss_quiz" }));
+
+    expect(await hasBossQuizLesson(world.id)).toBe(true);
+  });
+
+  it("does not count a boss_quiz lesson belonging to a DIFFERENT world", async () => {
+    const worldA = await makeWorld();
+    const worldB = await makeWorld();
+    await insertDraftLesson(await draftInput({ worldId: worldA.id, kind: "boss_quiz" }));
+
+    expect(await hasBossQuizLesson(worldB.id)).toBe(false);
   });
 });

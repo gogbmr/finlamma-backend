@@ -275,7 +275,15 @@ export async function submitAnswer(
   if (stepIndex === questionIds.length) {
     const allAnswers = await listQuestionAnswersForAttempt(attempt.id);
     const sum = allAnswers.reduce((s, a) => s + (a.xpAwardedPreview ?? 0), 0);
-    const completed = await completeAttempt(attempt.id, sum);
+    // D24 (docs/ARCHITECTURE.md): what a Boss Quiz's pass/fail is judged
+    // against (src/server/worlds/service.ts's world-unlock check) - every
+    // step is guaranteed answered by this point (stepIndex === the last
+    // step, and every earlier step must already be answered to have
+    // reached it), so allAnswers.length is always > 0 here.
+    const accuracyPct = Math.round(
+      (allAnswers.filter((a) => a.isCorrect).length / allAnswers.length) * 100,
+    );
+    const completed = await completeAttempt(attempt.id, sum, accuracyPct);
     if (completed) {
       attemptAfter = completed;
       isAttemptComplete = true;

@@ -19,6 +19,7 @@ const {
   getLatestInProgressAttempt,
   getPreviousQuestionAnswer,
   getQuestionAnswer,
+  getWorldIdsWithPassedBossQuiz,
   gradeQuestionAnswer,
   insertAttempt,
   insertServedQuestionAnswer,
@@ -78,7 +79,7 @@ async function makeQuestion() {
   return question;
 }
 
-async function makeLesson() {
+async function makeLessonWithWorld(overrides: Partial<Record<string, unknown>> = {}) {
   const [mentor] = await db
     .insert(mentors)
     .values({
@@ -111,9 +112,14 @@ async function makeLesson() {
       title: { en: "Test Lesson", hi: "x", hx: "x" },
       blurb: { en: "x", hi: "x", hx: "x" },
       content: { questionIds: [] },
+      ...overrides,
     })
     .returning();
-  return lesson;
+  return { lesson, world };
+}
+
+async function makeLesson() {
+  return (await makeLessonWithWorld()).lesson;
 }
 
 describe("countAttemptsForUserLesson / insertAttempt / getLatestInProgressAttempt", () => {
@@ -137,7 +143,7 @@ describe("countAttemptsForUserLesson / insertAttempt / getLatestInProgressAttemp
       attemptNumber: 1,
       isFirstPass: true,
     });
-    await completeAttempt(completed.id, 100);
+    await completeAttempt(completed.id, 100, 80);
 
     expect(await getLatestInProgressAttempt(user.id, lesson.id)).toBeNull();
 
@@ -171,10 +177,11 @@ describe("completeAttempt", () => {
       isFirstPass: true,
     });
 
-    const completed = await completeAttempt(attempt.id, 42);
+    const completed = await completeAttempt(attempt.id, 42, 80);
 
     expect(completed?.status).toBe("completed");
     expect(completed?.totalXpPreview).toBe(42);
+    expect(completed?.accuracyPct).toBe(80);
     expect(completed?.completedAt).toBeInstanceOf(Date);
   });
 
@@ -187,13 +194,14 @@ describe("completeAttempt", () => {
       attemptNumber: 1,
       isFirstPass: true,
     });
-    await completeAttempt(attempt.id, 42);
+    await completeAttempt(attempt.id, 42, 80);
 
-    const second = await completeAttempt(attempt.id, 999);
+    const second = await completeAttempt(attempt.id, 999, 100);
 
     expect(second).toBeNull();
     const row = await getAttemptById(attempt.id);
     expect(row?.totalXpPreview).toBe(42); // untouched by the second call
+    expect(row?.accuracyPct).toBe(80);
   });
 });
 
@@ -388,5 +396,119 @@ describe("listQuestionAnswersForAttempt", () => {
     const result = await listQuestionAnswersForAttempt(attempt.id);
 
     expect(result.map((r) => r.stepIndex)).toEqual([1, 2]);
+  });
+});
+
+// D24 (docs/ARCHITECTURE.md): world-unlock is judged on PASSING a Boss
+// Quiz (accuracyPct >= passMarkPct), not just completing one.
+describe("getWorldIdsWithPassedBossQuiz", () => {
+  const PASS_MARK = 60;
+
+  it("does not clear the world for a completed attempt that failed the pass mark", async () => {
+    const user = await makeUser();
+    const { lesson: bossQuiz, world } = await makeLessonWithWorld({ kind: "boss_quiz" });
+    const attempt = await insertAttempt({
+      userId: user.id,
+      lessonId: bossQuiz.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await completeAttempt(attempt.id, 20, 40); // 40% - below the 60% pass mark
+
+    const result = await getWorldIdsWithPassedBossQuiz(user.id, PASS_MARK);
+
+    expect(result.has(world.id)).toBe(false);
+  });
+
+  it("clears the world once a completed attempt meets the pass mark exactly", async () => {
+    const user = await makeUser();
+    const { lesson: bossQuiz, world } = await makeLessonWithWorld({ kind: "boss_quiz" });
+    const attempt = await insertAttempt({
+      userId: user.id,
+      lessonId: bossQuiz.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await completeAttempt(attempt.id, 60, 60); // exactly the pass mark
+
+    const result = await getWorldIdsWithPassedBossQuiz(user.id, PASS_MARK);
+
+    expect(result.has(world.id)).toBe(true);
+  });
+
+  // The core "retry" rule: failing doesn't lock the learner out - a later,
+  // separate attempt that passes still clears the world.
+  it("clears the world after a failed attempt followed by a passing retry", async () => {
+    const user = await makeUser();
+    const { lesson: bossQuiz, world } = await makeLessonWithWorld({ kind: "boss_quiz" });
+    const firstAttempt = await insertAttempt({
+      userId: user.id,
+      lessonId: bossQuiz.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await completeAttempt(firstAttempt.id, 10, 20); // failed
+    expect(await getWorldIdsWithPassedBossQuiz(user.id, PASS_MARK)).not.toContain(world.id);
+
+    const secondAttempt = await insertAttempt({
+      userId: user.id,
+      lessonId: bossQuiz.id,
+      attemptNumber: 2,
+      isFirstPass: false,
+    });
+    await completeAttempt(secondAttempt.id, 80, 100); // retried, passed
+
+    const result = await getWorldIdsWithPassedBossQuiz(user.id, PASS_MARK);
+
+    expect(result.has(world.id)).toBe(true);
+  });
+
+  it("does not clear the world for an in_progress (not yet completed) attempt, even a high-scoring one", async () => {
+    const user = await makeUser();
+    const { lesson: bossQuiz, world } = await makeLessonWithWorld({ kind: "boss_quiz" });
+    await insertAttempt({
+      userId: user.id,
+      lessonId: bossQuiz.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    // never completed
+
+    const result = await getWorldIdsWithPassedBossQuiz(user.id, PASS_MARK);
+
+    expect(result.has(world.id)).toBe(false);
+  });
+
+  it("does not count a passed NON-boss_quiz lesson toward world clearance", async () => {
+    const user = await makeUser();
+    const { lesson: quizLesson, world } = await makeLessonWithWorld({ kind: "quiz" });
+    const attempt = await insertAttempt({
+      userId: user.id,
+      lessonId: quizLesson.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await completeAttempt(attempt.id, 100, 100);
+
+    const result = await getWorldIdsWithPassedBossQuiz(user.id, PASS_MARK);
+
+    expect(result.has(world.id)).toBe(false);
+  });
+
+  it("only reflects THIS user's own passing attempts, not another learner's", async () => {
+    const userA = await makeUser();
+    const userB = await makeUser();
+    const { lesson: bossQuiz } = await makeLessonWithWorld({ kind: "boss_quiz" });
+    const attempt = await insertAttempt({
+      userId: userA.id,
+      lessonId: bossQuiz.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await completeAttempt(attempt.id, 100, 100);
+
+    const result = await getWorldIdsWithPassedBossQuiz(userB.id, PASS_MARK);
+
+    expect(result.size).toBe(0);
   });
 });

@@ -32,6 +32,16 @@ vi.mock("@/server/legal/repo", () => ({
   listPublishedDocuments: () => mockListPublishedDocuments(),
 }));
 
+const mockListPublishedWorlds = vi.fn();
+vi.mock("@/server/worlds/repo", () => ({
+  listPublishedWorlds: () => mockListPublishedWorlds(),
+}));
+
+const mockListPublishedLessonsByWorldId = vi.fn();
+vi.mock("@/server/lessons/repo", () => ({
+  listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
+}));
+
 import { db } from "@/db/client";
 import { GET } from "./route";
 
@@ -58,6 +68,10 @@ beforeEach(() => {
     publishedDoc(),
     publishedDoc(),
   ]);
+  // No published worlds by default - existing tests below don't need to
+  // know about the worldsMissingBossQuiz warning field at all.
+  mockListPublishedWorlds.mockReset().mockResolvedValue([]);
+  mockListPublishedLessonsByWorldId.mockReset().mockResolvedValue([]);
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -87,7 +101,47 @@ describe("GET /api/v1/health", () => {
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
     expect(body.data.storage).toBe("ok");
+    expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(typeof body.data.timestamp).toBe("string");
+  });
+
+  it("lists a published world with no published Boss Quiz lesson, without failing the check", async () => {
+    mockHealthyDb();
+    mockListPublishedWorlds.mockResolvedValue([
+      { id: "world_1", title: { en: "Money World" } },
+      { id: "world_2", title: { en: "Savings Valley" } },
+    ]);
+    mockListPublishedLessonsByWorldId.mockImplementation((worldId: string) =>
+      Promise.resolve(
+        worldId === "world_1" ? [{ kind: "boss_quiz" }, { kind: "video" }] : [{ kind: "video" }],
+      ),
+    );
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.worldsMissingBossQuiz).toEqual([{ id: "world_2", title: "Savings Valley" }]);
+  });
+
+  it("reports worldsMissingBossQuiz: [] when every published world has one", async () => {
+    mockHealthyDb();
+    mockListPublishedWorlds.mockResolvedValue([{ id: "world_1", title: { en: "Money World" } }]);
+    mockListPublishedLessonsByWorldId.mockResolvedValue([{ kind: "boss_quiz" }]);
+
+    const res = await GET();
+
+    expect((await res.json()).data.worldsMissingBossQuiz).toEqual([]);
+  });
+
+  it("reports worldsMissingBossQuiz: [] (not a 503) if the check itself throws", async () => {
+    mockHealthyDb();
+    mockListPublishedWorlds.mockRejectedValue(new Error("boom"));
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.worldsMissingBossQuiz).toEqual([]);
   });
 
   it("reports legalDocuments: placeholder without failing the check, when a published document is seeded filler text", async () => {

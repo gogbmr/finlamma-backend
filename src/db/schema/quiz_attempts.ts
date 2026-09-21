@@ -12,8 +12,13 @@ export const quizAttemptStatusEnum = pgEnum("quiz_attempt_status", ["in_progress
 // src/server/lessons/service.ts's extractQuestionIds). `attemptNumber` and
 // `isFirstPass` exist purely for Phase 3's future anti-farming rules (D17,
 // docs/ARCHITECTURE.md) - this phase only computes/stores them, never
-// credits anything from them. `totalXpPreview` is filled once `status`
-// flips to "completed" - see src/server/quiz-attempts/service.ts.
+// credits anything from them. `totalXpPreview`/`accuracyPct` are filled
+// once `status` flips to "completed" - see
+// src/server/quiz-attempts/service.ts. `accuracyPct` (correct answers /
+// total steps, 0-100) is what a Boss Quiz's pass/fail is judged against
+// (D24, docs/ARCHITECTURE.md) - a learner can have several completed
+// attempts at the same lesson (retries), each independently scored; ANY
+// one of them clearing the pass mark is enough to unlock the next world.
 export const quizAttempts = pgTable(
   "quiz_attempts",
   {
@@ -30,6 +35,7 @@ export const quizAttempts = pgTable(
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     totalXpPreview: integer("total_xp_preview"),
+    accuracyPct: integer("accuracy_pct"),
   },
   (t) => [
     index("quiz_attempts_user_lesson_idx").on(t.userId, t.lessonId),

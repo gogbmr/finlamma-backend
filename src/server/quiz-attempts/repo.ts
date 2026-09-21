@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
-import { questionAnswers, quizAttempts } from "@/db/schema";
+import { lessons, questionAnswers, quizAttempts } from "@/db/schema";
 
 export async function countAttemptsForUserLesson(userId: string, lessonId: string): Promise<number> {
   const [row] = await db
@@ -48,11 +48,13 @@ export async function insertAttempt(input: {
 
 // Only completes an attempt that's currently in_progress - returns null
 // (not an error) otherwise, so a duplicate "last step answered" call (e.g.
-// a network retry) can't double-log a completion.
-export async function completeAttempt(attemptId: string, totalXpPreview: number) {
+// a network retry) can't double-log a completion. `accuracyPct` (0-100) is
+// what a Boss Quiz's pass/fail is judged against - see
+// getWorldIdsWithPassedBossQuiz below and D24, docs/ARCHITECTURE.md.
+export async function completeAttempt(attemptId: string, totalXpPreview: number, accuracyPct: number) {
   const [row] = await db
     .update(quizAttempts)
-    .set({ status: "completed", completedAt: new Date(), totalXpPreview })
+    .set({ status: "completed", completedAt: new Date(), totalXpPreview, accuracyPct })
     .where(and(eq(quizAttempts.id, attemptId), eq(quizAttempts.status, "in_progress")))
     .returning();
   return row ?? null;
@@ -127,4 +129,29 @@ export async function listQuestionAnswersForAttempt(attemptId: string) {
     .from(questionAnswers)
     .where(eq(questionAnswers.attemptId, attemptId))
     .orderBy(asc(questionAnswers.stepIndex));
+}
+
+// D24 (docs/ARCHITECTURE.md): every worldId where this user has at least
+// one COMPLETED attempt at that world's boss_quiz lesson with
+// accuracyPct >= passMarkPct - used by src/server/worlds/service.ts's
+// sequential world-unlock check. A learner can retry a failed Boss Quiz
+// freely (a fresh quiz_attempts row); this only requires ANY attempt to
+// have passed, not the most recent or the first one.
+export async function getWorldIdsWithPassedBossQuiz(
+  userId: string,
+  passMarkPct: number,
+): Promise<Set<string>> {
+  const rows = await db
+    .select({ worldId: lessons.worldId })
+    .from(quizAttempts)
+    .innerJoin(lessons, eq(lessons.id, quizAttempts.lessonId))
+    .where(
+      and(
+        eq(quizAttempts.userId, userId),
+        eq(quizAttempts.status, "completed"),
+        eq(lessons.kind, "boss_quiz"),
+        gte(quizAttempts.accuracyPct, passMarkPct),
+      ),
+    );
+  return new Set(rows.map((r) => r.worldId));
 }

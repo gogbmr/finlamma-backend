@@ -1,5 +1,24 @@
 # Status
 
+## 2026-09-21 — Pre-launch blocker: all 7 seeded worlds are missing a Boss Quiz
+
+Checkpoint 6 made sequential world-unlock real (`GET /api/v1/worlds`'s `locked` field,
+docs/ARCHITECTURE.md D23) and Checkpoint 6's pass-mark fix (D24) tightened it further - a world
+only unlocks the next one once its Boss Quiz lesson is actually **passed**
+(`settings_kv.lesson_flow_scoring.bossQuizPassMarkPct`, default 60%). Checked directly against the
+database: **all 7 seeded worlds (Money World through Elite Summit) are published but have zero
+lessons at all**, so none has a Boss Quiz - a real learner reaching World 2+ today would find it
+permanently locked, with no possible way to clear it. `GET /api/v1/health`'s new
+`worldsMissingBossQuiz` field surfaces exactly this (lists all 7 right now) so it's visible without
+a direct DB query.
+
+**Not fixed here, deliberately** - per instruction, the existing published worlds were left alone
+(not unpublished) rather than force a disruptive content-authoring pass into this checkpoint.
+**Before launch, every world that's meant to be reachable needs at least one published Boss Quiz
+lesson**, authored and published through `/admin/lessons` like any other content. Treat
+`GET /api/v1/health`'s `worldsMissingBossQuiz` reading non-empty in production as a launch blocker,
+same as `legalDocuments` reading anything but `"ok"`.
+
 ## 2026-09-20 — Process fix: Phase 2b's first 3 commits landed directly on `main`, corrected
 
 `/phase-kickoff 2b` had no branch-creation step, so Checkpoint 1 (S3 storage plumbing), Checkpoint 2

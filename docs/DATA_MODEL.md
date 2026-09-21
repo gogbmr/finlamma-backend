@@ -112,11 +112,14 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   — one row per (user, lesson), written entirely as a byproduct of the quiz-attempts flow below
   (`serveStep` starts it, `submitAnswer` completes it), so only lesson kinds with at least one
   graded step (video/quiz/boss_quiz/role_play) ever get a row yet — `story`/`doubt_zone` have no
-  "mark as done" endpoint at all today, a known gap. Drives `GET /api/v1/worlds`' sequential
-  world-unlock (the previous world's `boss_quiz` lesson must be `completed`) and the admin
-  unpublish-warning (in-progress learner counts) — see `docs/ARCHITECTURE.md` D23
+  "mark as done" endpoint at all today, a known gap. Drives the admin unpublish-warning
+  (in-progress learner counts) — see `docs/ARCHITECTURE.md` D23. World unlock itself is judged on
+  `quiz_attempts.accuracy_pct` (below), not this table — see D24.
 - `quiz_attempts` (user_id, lesson_id, attempt_number, is_first_pass, status `in_progress`|
-  `completed`, started_at, completed_at, total_xp_preview) and `question_answers` (attempt_id,
+  `completed`, started_at, completed_at, total_xp_preview, accuracy_pct — correct steps / total
+  steps, 0-100, computed once at completion; a Boss Quiz's pass/fail is judged against this vs.
+  the admin-editable `settings_kv.lesson_flow_scoring.bossQuizPassMarkPct`, default 60% — see
+  `docs/ARCHITECTURE.md` D24) and `question_answers` (attempt_id,
   question_id, step_index, served_at, timer_seconds, served_revision — the exact `questions`
   revision served, captured at serve time, never re-derived — answered_at, submitted_answer,
   is_correct, timed_out, speed_bonus_awarded, fever_active, xp_awarded_preview, combo_after) —

@@ -71,6 +71,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "version": "2d303f6",
     "consentPiiHmacKey": "ok",
     "storage": "ok",
+    "worldsMissingBossQuiz": [],
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }

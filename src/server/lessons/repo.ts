@@ -3,6 +3,21 @@ import { db } from "@/db/client";
 import { lessons } from "@/db/schema";
 import type { CreateLessonDraftInput, HotfixLessonInput, UpdateLessonDraftInput } from "./schemas";
 
+// D24 (docs/ARCHITECTURE.md): used by worlds/service.ts's publishWorld -
+// a world can't publish unless it already has a boss_quiz-kind lesson
+// (ANY status, draft is enough). The lesson itself can't be published
+// until AFTER its world is, so requiring a PUBLISHED one at world-publish
+// time would be impossible - this is the closest enforceable version of
+// "don't publish a world with no boss quiz plan."
+export async function hasBossQuizLesson(worldId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: lessons.id })
+    .from(lessons)
+    .where(and(eq(lessons.worldId, worldId), eq(lessons.kind, "boss_quiz")))
+    .limit(1);
+  return !!row;
+}
+
 export async function listPublishedLessonsForWorld(worldId: string) {
   return db
     .select()

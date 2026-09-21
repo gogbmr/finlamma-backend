@@ -15,7 +15,6 @@ const {
   completeLessonProgress,
   countInProgressLearners,
   countInProgressLearnersByLessonIds,
-  getWorldIdsWithCompletedBossQuiz,
   startLessonProgress,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
@@ -177,39 +176,5 @@ describe("countInProgressLearnersByLessonIds", () => {
 
   it("returns an empty map without querying for an empty id list", async () => {
     expect(await countInProgressLearnersByLessonIds([])).toEqual(new Map());
-  });
-});
-
-describe("getWorldIdsWithCompletedBossQuiz", () => {
-  it("returns the worldId once this user completes that world's boss_quiz lesson", async () => {
-    const user = await makeUser();
-    const { lesson: bossQuiz, world } = await makeLesson({ kind: "boss_quiz", chapter: 8, step: 1 });
-
-    expect(await getWorldIdsWithCompletedBossQuiz(user.id)).toEqual(new Set());
-
-    await startLessonProgress(user.id, bossQuiz.id);
-    expect(await getWorldIdsWithCompletedBossQuiz(user.id)).toEqual(new Set()); // in_progress isn't enough
-
-    await completeLessonProgress(user.id, bossQuiz.id);
-    expect(await getWorldIdsWithCompletedBossQuiz(user.id)).toEqual(new Set([world.id]));
-  });
-
-  it("does not count a completed NON-boss_quiz lesson toward world clearance", async () => {
-    const user = await makeUser();
-    const { lesson: quizLesson, world } = await makeLesson({ kind: "quiz", chapter: 1, step: 1 });
-    await startLessonProgress(user.id, quizLesson.id);
-    await completeLessonProgress(user.id, quizLesson.id);
-
-    expect(await getWorldIdsWithCompletedBossQuiz(user.id)).not.toContain(world.id);
-  });
-
-  it("only reflects THIS user's own completions, not another learner's", async () => {
-    const userA = await makeUser();
-    const userB = await makeUser();
-    const { lesson: bossQuiz } = await makeLesson({ kind: "boss_quiz", chapter: 8, step: 1 });
-    await startLessonProgress(userA.id, bossQuiz.id);
-    await completeLessonProgress(userA.id, bossQuiz.id);
-
-    expect(await getWorldIdsWithCompletedBossQuiz(userB.id)).toEqual(new Set());
   });
 });

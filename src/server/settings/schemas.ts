@@ -30,6 +30,12 @@ export const LessonFlowScoringSchema = z.object({
   comboBonusCap: z.number().int().positive(),
   feverComboThreshold: z.number().int().positive(),
   feverMultiplier: z.number().positive(),
+  // D24 (docs/ARCHITECTURE.md): the minimum accuracy (correct answers /
+  // total steps) a Boss Quiz attempt needs to count as a PASS - only a
+  // passing attempt clears the world's sequential-unlock gate
+  // (src/server/worlds/service.ts). Failing doesn't block anything else -
+  // the learner can simply retry (a fresh quiz_attempts row).
+  bossQuizPassMarkPct: z.number().nonnegative().max(100),
 });
 export type LessonFlowScoring = z.infer<typeof LessonFlowScoringSchema>;
 
@@ -48,6 +54,7 @@ export const DEFAULT_LESSON_FLOW_SCORING: LessonFlowScoring = {
   comboBonusCap: 5,
   feverComboThreshold: 3,
   feverMultiplier: 2,
+  bossQuizPassMarkPct: 60,
 };
 
 export const LESSON_FLOW_SCORING_SETTINGS_KEY = "lesson_flow_scoring";

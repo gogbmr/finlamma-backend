@@ -18,6 +18,7 @@ const SETTINGS: LessonFlowScoring = {
   comboBonusCap: 5,
   feverComboThreshold: 3,
   feverMultiplier: 2,
+  bossQuizPassMarkPct: 60,
 };
 
 describe("computeScore", () => {

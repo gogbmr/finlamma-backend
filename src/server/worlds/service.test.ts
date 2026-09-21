@@ -31,13 +31,21 @@ vi.mock("@/server/mentors/repo", () => ({
 }));
 
 const mockListPublishedLessonsByWorldId = vi.fn();
+const mockHasBossQuizLesson = vi.fn();
 vi.mock("@/server/lessons/repo", () => ({
   listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
+  hasBossQuizLesson: (worldId: unknown) => mockHasBossQuizLesson(worldId),
 }));
 
-const mockGetWorldIdsWithCompletedBossQuiz = vi.fn();
-vi.mock("@/server/lesson-progress/repo", () => ({
-  getWorldIdsWithCompletedBossQuiz: (userId: unknown) => mockGetWorldIdsWithCompletedBossQuiz(userId),
+const mockGetWorldIdsWithPassedBossQuiz = vi.fn();
+vi.mock("@/server/quiz-attempts/repo", () => ({
+  getWorldIdsWithPassedBossQuiz: (userId: unknown, passMarkPct: unknown) =>
+    mockGetWorldIdsWithPassedBossQuiz(userId, passMarkPct),
+}));
+
+const mockGetLessonFlowScoringSettings = vi.fn();
+vi.mock("@/server/settings/service", () => ({
+  getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
 }));
 
 const mockLogActivity = vi.fn();
@@ -106,7 +114,11 @@ beforeEach(() => {
   mockListPublishedLessonsByWorldId.mockResolvedValue([]);
   // No cleared worlds by default - existing getPublicWorlds tests below
   // don't need to know about the unlock check at all.
-  mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValue(new Set());
+  mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
+  mockGetLessonFlowScoringSettings.mockResolvedValue({ bossQuizPassMarkPct: 60 });
+  // A boss_quiz lesson already exists by default - existing publishWorld
+  // tests below don't need to know about the D24 publish-time gate at all.
+  mockHasBossQuizLesson.mockResolvedValue(true);
 });
 
 describe("getPublicWorlds", () => {
@@ -147,20 +159,20 @@ describe("getPublicWorlds", () => {
     it("the first (lowest-order) world is always unlocked, regardless of progress", async () => {
       mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ id: "world_1", order: 1 })]);
       mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
-      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set());
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
 
       const result = await getPublicWorlds(USER_ID);
 
       expect(result[0]!.locked).toBe(false);
     });
 
-    it("locks the second world until the first world's Boss Quiz is completed", async () => {
+    it("locks the second world until the first world's Boss Quiz is passed", async () => {
       mockListPublishedWorlds.mockResolvedValueOnce([
         worldRow({ id: "world_1", order: 1 }),
         worldRow({ id: "world_2", order: 2 }),
       ]);
       mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
-      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set()); // nothing cleared yet
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set()); // nothing cleared yet
 
       const result = await getPublicWorlds(USER_ID);
 
@@ -168,13 +180,13 @@ describe("getPublicWorlds", () => {
       expect(result[1]!.locked).toBe(true);
     });
 
-    it("unlocks the second world once the first world's Boss Quiz is completed", async () => {
+    it("unlocks the second world once the first world's Boss Quiz is passed", async () => {
       mockListPublishedWorlds.mockResolvedValueOnce([
         worldRow({ id: "world_1", order: 1 }),
         worldRow({ id: "world_2", order: 2 }),
       ]);
       mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
-      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
 
       const result = await getPublicWorlds(USER_ID);
 
@@ -189,7 +201,7 @@ describe("getPublicWorlds", () => {
         worldRow({ id: "world_3", order: 3 }),
       ]);
       mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
-      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
 
       const result = await getPublicWorlds(USER_ID);
 
@@ -197,13 +209,14 @@ describe("getPublicWorlds", () => {
       expect(result[2]!.locked).toBe(true); // world 3: previous (world 2) NOT cleared
     });
 
-    it("passes the caller's userId through to the progress check", async () => {
+    it("passes the caller's userId and the admin-editable pass mark through to the progress check", async () => {
       mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
       mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+      mockGetLessonFlowScoringSettings.mockResolvedValueOnce({ bossQuizPassMarkPct: 75 });
 
       await getPublicWorlds(USER_ID);
 
-      expect(mockGetWorldIdsWithCompletedBossQuiz).toHaveBeenCalledWith(USER_ID);
+      expect(mockGetWorldIdsWithPassedBossQuiz).toHaveBeenCalledWith(USER_ID, 75);
     });
   });
 });
@@ -405,6 +418,33 @@ describe("publishWorld", () => {
 
     await expect(publishWorld(ACTOR, "world_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockPublishWorldRow).not.toHaveBeenCalled();
+  });
+
+  // D24 (docs/ARCHITECTURE.md): a world can't publish without at least a
+  // DRAFT boss_quiz lesson - the lesson can't be published until AFTER its
+  // world is, so requiring a published one here would be impossible.
+  it("blocks publish when the world has no boss_quiz lesson at all yet, even a draft", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockHasBossQuizLesson.mockResolvedValueOnce(false);
+
+    await expect(publishWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/Boss Quiz/i),
+    });
+    expect(mockPublishWorldRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+    expect(mockGetMentorById).not.toHaveBeenCalled(); // fails before even checking the mentor
+  });
+
+  it("allows publish once a boss_quiz lesson exists as a draft (published isn't required)", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockHasBossQuizLesson.mockResolvedValueOnce(true); // exists, but not published - fine
+    mockGetMentorById.mockResolvedValueOnce(mentorRow());
+    mockPublishWorldRow.mockResolvedValueOnce(worldRow({ status: "published" }));
+
+    const result = await publishWorld(ACTOR, "world_1", META);
+
+    expect(result.status).toBe("published");
   });
 
   // The rule this checkpoint added: a world can't be published unless its

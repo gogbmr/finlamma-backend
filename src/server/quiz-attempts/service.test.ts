@@ -48,7 +48,8 @@ const mockInsertAttempt = vi.fn();
 const mockInsertServedQuestionAnswer = vi.fn();
 const mockListQuestionAnswersForAttempt = vi.fn();
 vi.mock("./repo", () => ({
-  completeAttempt: (id: unknown, xp: unknown) => mockCompleteAttempt(id, xp),
+  completeAttempt: (id: unknown, xp: unknown, accuracyPct: unknown) =>
+    mockCompleteAttempt(id, xp, accuracyPct),
   countAttemptsForUserLesson: (userId: unknown, lessonId: unknown) =>
     mockCountAttemptsForUserLesson(userId, lessonId),
   getAttemptById: (id: unknown) => mockGetAttemptById(id),
@@ -88,6 +89,7 @@ const SCORING_SETTINGS = {
   comboBonusCap: 5,
   feverComboThreshold: 3,
   feverMultiplier: 2,
+  bossQuizPassMarkPct: 60,
 };
 
 function quizLesson(overrides: Partial<Record<string, unknown>> = {}) {
@@ -566,14 +568,19 @@ describe("submitAnswer", () => {
       Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
     );
     mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
-      servedAnswerRow({ stepIndex: 1, xpAwardedPreview: 20 }),
-      servedAnswerRow({ stepIndex: 2, xpAwardedPreview: 33 }),
+      servedAnswerRow({ stepIndex: 1, xpAwardedPreview: 20, isCorrect: true }),
+      servedAnswerRow({ stepIndex: 2, xpAwardedPreview: 33, isCorrect: false }),
     ]);
-    mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", totalXpPreview: 53 }));
+    mockCompleteAttempt.mockResolvedValueOnce(
+      attemptRow({ status: "completed", totalXpPreview: 53, accuracyPct: 50 }),
+    );
 
     const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
 
-    expect(mockCompleteAttempt).toHaveBeenCalledWith(ATTEMPT_ID, 53);
+    // D24 (docs/ARCHITECTURE.md): 1 correct of 2 steps = 50% accuracy,
+    // computed from the graded question_answers rows, not trusted from
+    // anywhere else.
+    expect(mockCompleteAttempt).toHaveBeenCalledWith(ATTEMPT_ID, 53, 50);
     expect(result.isAttemptComplete).toBe(true);
     expect(result.totalXpPreview).toBe(53);
     expect(mockLogActivity).toHaveBeenCalledWith(
@@ -581,6 +588,46 @@ describe("submitAnswer", () => {
     );
     // D23 (docs/ARCHITECTURE.md): feeds the world-unlock check.
     expect(mockCompleteLessonProgress).toHaveBeenCalledWith(USER.id, LESSON_ID);
+  });
+
+  it("computes 100% accuracy when every step was correct", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+    mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+      Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+    );
+    mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+      servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+      servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+    ]);
+    mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+
+    await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+    expect(mockCompleteAttempt).toHaveBeenCalledWith(ATTEMPT_ID, expect.any(Number), 100);
+  });
+
+  it("computes 0% accuracy when every step was wrong", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+    mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+      Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+    );
+    mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+      servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+      servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+    ]);
+    mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 0 }));
+
+    await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+    expect(mockCompleteAttempt).toHaveBeenCalledWith(ATTEMPT_ID, expect.any(Number), 0);
   });
 
   it("does not complete the attempt when the answered step isn't the last one", async () => {

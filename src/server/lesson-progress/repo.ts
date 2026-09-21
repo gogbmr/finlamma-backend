@@ -1,6 +1,6 @@
 import { and, count, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { lessonProgress, lessons } from "@/db/schema";
+import { lessonProgress } from "@/db/schema";
 
 // Idempotent "ensure a row exists, in_progress" - called from
 // src/server/quiz-attempts/service.ts's serveStep on a lesson's first-ever
@@ -27,25 +27,6 @@ export async function completeLessonProgress(userId: string, lessonId: string) {
     .where(and(eq(lessonProgress.userId, userId), eq(lessonProgress.lessonId, lessonId)))
     .returning();
   return row ?? null;
-}
-
-// Used by src/server/worlds/service.ts's world-unlock check: every worldId
-// where this user has COMPLETED that world's boss_quiz lesson. A world can
-// have more than one boss_quiz lesson in principle (not DB-enforced) - any
-// one of them completing is enough to clear the world.
-export async function getWorldIdsWithCompletedBossQuiz(userId: string): Promise<Set<string>> {
-  const rows = await db
-    .select({ worldId: lessons.worldId })
-    .from(lessonProgress)
-    .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
-    .where(
-      and(
-        eq(lessonProgress.userId, userId),
-        eq(lessonProgress.status, "completed"),
-        eq(lessons.kind, "boss_quiz"),
-      ),
-    );
-  return new Set(rows.map((r) => r.worldId));
 }
 
 // Used by src/server/lessons/service.ts's unpublish-warning (not a hard

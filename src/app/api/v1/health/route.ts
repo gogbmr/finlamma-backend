@@ -6,6 +6,8 @@ import { AppError } from "@/lib/errors";
 import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
+import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { listPublishedWorlds } from "@/server/worlds/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
 // drizzle/meta/_journal.json would risk not being traced into the bundle.
@@ -64,6 +66,16 @@ const HealthDataSchema = z.object({
       "e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage " +
       "plumbing with no way to notice a missing key from outside the deployment's env vars.",
   }),
+  worldsMissingBossQuiz: z
+    .array(z.object({ id: z.string().uuid(), title: z.string() }))
+    .openapi({
+      example: [],
+      description:
+        "A non-fatal warning (never causes a 503): published worlds with no published Boss " +
+        "Quiz lesson. Sequential world-unlock (GET /api/v1/worlds) can never clear past one of " +
+        "these for any learner, since there's nothing to pass. See docs/ARCHITECTURE.md D24 " +
+        "and STATUS.md.",
+    }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
 
@@ -178,6 +190,31 @@ async function checkLegalDocuments(): Promise<"ok" | "placeholder" | "unpublishe
   }
 }
 
+// Non-fatal, same reasoning as checkLegalDocuments: a published world with
+// no published Boss Quiz lesson doesn't fail the health check (the API is
+// still genuinely healthy), but it's a real content gap - the sequential
+// world-unlock rule (src/server/worlds/service.ts's getPublicWorlds, D23/D24)
+// can never let any learner clear past it. Defaults to an empty array (no
+// warning) if the check itself throws, matching every other warning field's
+// fail-open shape here, except reported via logInternalError so a genuine
+// query failure is never silently indistinguishable from "all good".
+async function checkWorldsMissingBossQuiz(): Promise<{ id: string; title: string }[]> {
+  try {
+    const worlds = await listPublishedWorlds();
+    const missing: { id: string; title: string }[] = [];
+    for (const world of worlds) {
+      const lessons = await listPublishedLessonsByWorldId(world.id);
+      if (!lessons.some((l) => l.kind === "boss_quiz")) {
+        missing.push({ id: world.id, title: world.title.en });
+      }
+    }
+    return missing;
+  } catch (err) {
+    logInternalError("health.boss_quiz_check_failed", err);
+    return [];
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -243,6 +280,7 @@ export const GET = withErrors(async () => {
   }
 
   const legalDocuments = await checkLegalDocuments();
+  const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
 
   return ok({
     status: "ok" as const,
@@ -253,6 +291,7 @@ export const GET = withErrors(async () => {
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     storage: checkStorageConfigured(),
+    worldsMissingBossQuiz,
     timestamp: new Date().toISOString(),
   });
 });

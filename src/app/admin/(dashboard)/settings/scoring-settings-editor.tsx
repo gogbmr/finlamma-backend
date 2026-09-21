@@ -112,7 +112,16 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
           value={form.feverMultiplier}
           onChange={(v) => setForm({ ...form, feverMultiplier: v })}
         />
+        <NumberField
+          label="Boss Quiz pass mark (%)"
+          value={form.bossQuizPassMarkPct}
+          onChange={(v) => setForm({ ...form, bossQuizPassMarkPct: v })}
+        />
       </div>
+      <p className="text-xs text-neutral-500">
+        A Boss Quiz attempt below the pass mark doesn&apos;t unlock the next world - the learner
+        can simply retry.
+      </p>
 
       <Button type="button" onClick={save} disabled={isPending}>
         Save
