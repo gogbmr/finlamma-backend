@@ -276,6 +276,26 @@ describe("reorderWorld", () => {
     await expect(reorderWorld(ACTOR, "nope", 1, META)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
+
+  it.each([["serialization failure", "40001"], ["deadlock", "40P01"]])(
+    "maps a genuine concurrent-transaction conflict (%s) to a clean, retryable CONFLICT",
+    async (_label, code) => {
+      mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
+      mockMoveWorldToPosition.mockRejectedValueOnce({ code });
+
+      await expect(reorderWorld(ACTOR, "world_1", 2, META)).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(mockLogActivity).not.toHaveBeenCalled();
+    },
+  );
+
+  it("re-throws an unrelated error instead of misreporting it as a reorder conflict", async () => {
+    mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
+    mockMoveWorldToPosition.mockRejectedValueOnce(new Error("something else entirely"));
+
+    await expect(reorderWorld(ACTOR, "world_1", 2, META)).rejects.toThrow("something else entirely");
+  });
 });
 
 describe("publishWorld", () => {

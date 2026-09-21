@@ -1,5 +1,5 @@
 import { logActivity } from "@/lib/activity-log";
-import { isUniqueViolation } from "@/lib/db-errors";
+import { isTransactionConflict, isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
@@ -171,7 +171,26 @@ export async function reorderWorld(
     );
   }
 
-  const moved = await moveWorldToPosition(id, newOrder);
+  // moveWorldToPosition can lose a genuine concurrent race against another
+  // reorder touching an overlapping set of worlds - Postgres detects that
+  // itself (serialization failure or deadlock) and aborts the losing
+  // transaction, which also guarantees it never leaves a sentinel order
+  // value behind (the abort rolls back everything the transaction wrote,
+  // not just the final values - see repo.test.ts's rollback-safety test).
+  // Mapped to a clean, retryable CONFLICT here rather than surfacing as a
+  // raw 500.
+  let moved;
+  try {
+    moved = await moveWorldToPosition(id, newOrder);
+  } catch (err) {
+    if (isTransactionConflict(err)) {
+      throw new AppError(
+        "CONFLICT",
+        "Another reorder was happening at the same time - try again",
+      );
+    }
+    throw err;
+  }
   if (!moved) throw new AppError("NOT_FOUND", "World not found");
 
   await logActivity({

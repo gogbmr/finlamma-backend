@@ -6,8 +6,9 @@
 // src/server/worlds/service.test.ts covers the service layer with this repo
 // mocked out.
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { mentors, roles, staffMembers } from "@/db/schema";
+import { mentors, roles, staffMembers, worlds } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -360,5 +361,69 @@ describe("moveWorldToPosition", () => {
     expect(fresh[4]?.order).toBe(orders[3]);
     const finalOrders = fresh.map((w) => w!.order);
     expect(new Set(finalOrders).size).toBe(5);
+  });
+
+  // IMPORTANT CAVEAT, found while adding this test: PGlite (src/test/db.ts)
+  // is a single-connection embedded Postgres. Two db.transaction() calls
+  // fired concurrently from Node don't actually interleave at the database
+  // level - the single connection can only have one transaction in flight,
+  // so the driver serializes them: the second call's every statement
+  // (including its own initial read) only runs once the first has fully
+  // committed. That means this test can prove "two overlapping moves fired
+  // concurrently still leave the table in a valid, duplicate-free state" -
+  // which held, and is worth guarding - but it can NOT reproduce a genuine
+  // multi-connection race, and therefore can't demonstrate "one is cleanly
+  // rejected" the way two real concurrent connections against production
+  // Postgres (see docs/ARCHITECTURE.md D13, pool max:2) could. That
+  // rejection path is instead proven directly below (the "a transaction
+  // that fails partway never leaves a sentinel order behind" test) and
+  // handled in src/server/worlds/service.ts's reorderWorld, which maps a
+  // real serialization-failure/deadlock error to a clean CONFLICT.
+  it("two fully overlapping concurrent moves (both touch every world in range) leave a valid, duplicate-free result", async () => {
+    const worlds5 = await makeSequentialWorlds(5);
+    const orders = worlds5.map((w) => w.order);
+
+    const results = await Promise.allSettled([
+      moveWorldToPosition(worlds5[0]!.id, orders[4]!), // first -> last, touches everyone
+      moveWorldToPosition(worlds5[4]!.id, orders[0]!), // last -> first, touches everyone
+    ]);
+
+    const fresh = await Promise.all(worlds5.map((w) => getWorldById(w.id)));
+    const finalOrders = fresh.map((w) => w!.order);
+    // Whatever the driver's actual serialization did, the result must be
+    // internally valid: the same 5 order values, no duplicates, and -
+    // the specific guarantee this test exists for - none of them negative
+    // (no sentinel value ever left in committed data).
+    expect(finalOrders.slice().sort((a, b) => a - b)).toEqual([...orders].sort((a, b) => a - b));
+    expect(new Set(finalOrders).size).toBe(5);
+    expect(finalOrders.every((o) => o >= 1)).toBe(true);
+    // Neither call corrupted anything or threw unexpectedly in this
+    // serialized environment - see the caveat above for what this test can
+    // and can't prove about genuine multi-connection concurrency.
+    for (const r of results) expect(r.status).toBe("fulfilled");
+  });
+
+  // This is what actually makes "no negative sentinel ever persists" true
+  // in production, including under genuine concurrent conflicts PGlite
+  // can't reproduce (see the caveat above): a transaction that fails for
+  // ANY reason - a real deadlock/serialization failure between two
+  // connections, or anything else - rolls back every statement it made,
+  // not just the ones after the failure point. Proven directly here by
+  // forcing a failure after the sentinel write but before the real final
+  // value is written, independent of concurrency entirely.
+  it("a transaction that fails after parking a world at a sentinel order never leaves that sentinel behind", async () => {
+    const [w] = await makeSequentialWorlds(1);
+    const originalOrder = w!.order;
+
+    await expect(
+      db.transaction(async (tx) => {
+        await tx.update(worlds).set({ order: -1 }).where(eq(worlds.id, w!.id));
+        throw new Error("simulated failure between phase 1 and phase 2");
+      }),
+    ).rejects.toThrow("simulated failure between phase 1 and phase 2");
+
+    const fresh = await getWorldById(w!.id);
+    expect(fresh?.order).toBe(originalOrder);
+    expect(fresh?.order).toBeGreaterThanOrEqual(1);
   });
 });
