@@ -1,7 +1,11 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { questions } from "@/db/schema";
-import type { CreateQuestionDraftInput, UpdateQuestionDraftInput } from "./schemas";
+import type {
+  CreateQuestionDraftInput,
+  HotfixQuestionInput,
+  UpdateQuestionDraftInput,
+} from "./schemas";
 
 // Admin editor: every question regardless of status, ordered for display.
 export async function listAllQuestions() {
@@ -47,6 +51,21 @@ export async function publishQuestionRow(id: string, staffId: string) {
     .update(questions)
     .set({ status: "published", publishedAt: new Date(), publishedBy: staffId })
     .where(and(eq(questions.id, id), eq(questions.status, "draft")))
+    .returning();
+  return row ?? null;
+}
+
+// D20 (docs/ARCHITECTURE.md): only updates a question that's currently
+// PUBLISHED (the opposite guard from updateDraftQuestion) - returns null if
+// the row doesn't exist or is a draft, so the service layer can turn that
+// into a clear error rather than a silent no-op. Bumps `revision` in the
+// same statement so it's atomic with the content change it's tracking.
+export async function hotfixQuestionRow(input: HotfixQuestionInput) {
+  const { id, ...rest } = input;
+  const [row] = await db
+    .update(questions)
+    .set({ ...rest, revision: sql`${questions.revision} + 1` })
+    .where(and(eq(questions.id, id), eq(questions.status, "published")))
     .returning();
   return row ?? null;
 }

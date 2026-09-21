@@ -17,6 +17,7 @@ vi.mock("next/cache", () => ({
 
 const mockCreateQuestionDraft = vi.fn();
 const mockUpdateQuestionDraft = vi.fn();
+const mockHotfixQuestion = vi.fn();
 const mockPublishQuestion = vi.fn();
 const mockUnpublishQuestion = vi.fn();
 vi.mock("@/server/questions/service", () => ({
@@ -24,6 +25,8 @@ vi.mock("@/server/questions/service", () => ({
     mockCreateQuestionDraft(actor, input, meta),
   updateQuestionDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockUpdateQuestionDraft(actor, input, meta),
+  hotfixQuestion: (actor: unknown, input: unknown, meta: unknown) =>
+    mockHotfixQuestion(actor, input, meta),
   publishQuestion: (actor: unknown, id: unknown, meta: unknown) =>
     mockPublishQuestion(actor, id, meta),
   unpublishQuestion: (actor: unknown, id: unknown, meta: unknown) =>
@@ -32,6 +35,7 @@ vi.mock("@/server/questions/service", () => ({
 
 import {
   createQuestionDraftAction,
+  hotfixQuestionAction,
   publishQuestionAction,
   unpublishQuestionAction,
   updateQuestionDraftAction,
@@ -93,6 +97,24 @@ describe("wrong role is rejected", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUnpublishQuestion).not.toHaveBeenCalled();
+  });
+
+  it("hotfixQuestionAction: requires question.publish, not question.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: question.publish"),
+    );
+
+    const result = await hotfixQuestionAction({
+      id: QUESTION_ID,
+      prompt: VALID_INPUT.prompt,
+      explanation: VALID_INPUT.explanation,
+      payload: VALID_INPUT.payload,
+      answer: VALID_INPUT.answer,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("question.publish");
+    expect(mockHotfixQuestion).not.toHaveBeenCalled();
   });
 });
 
@@ -162,5 +184,56 @@ describe("happy paths", () => {
 
     expect(result).toEqual({ ok: true });
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/questions");
+  });
+
+  it("hotfixQuestionAction hotfixes and revalidates", async () => {
+    mockHotfixQuestion.mockResolvedValueOnce({ id: QUESTION_ID, status: "published" });
+
+    const result = await hotfixQuestionAction({
+      id: QUESTION_ID,
+      prompt: VALID_INPUT.prompt,
+      explanation: VALID_INPUT.explanation,
+      payload: VALID_INPUT.payload,
+      answer: VALID_INPUT.answer,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockHotfixQuestion).toHaveBeenCalledWith(
+      ACTOR,
+      {
+        id: QUESTION_ID,
+        prompt: VALID_INPUT.prompt,
+        explanation: VALID_INPUT.explanation,
+        payload: VALID_INPUT.payload,
+        answer: VALID_INPUT.answer,
+      },
+      expect.any(Object),
+    );
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/questions");
+  });
+
+  // Unlike CreateQuestionDraftSchema, HotfixQuestionSchema does no
+  // structural/bounds cross-checking at the Zod layer - that's the service's
+  // job (hotfixQuestion calls validatePayloadAndAnswer against the
+  // *existing* question's format, which the action can't know without
+  // fetching the row first). This test just proves a service-level
+  // rejection surfaces the same way every other action does.
+  it("hotfixQuestionAction surfaces a bounds-check error from the service to the caller", async () => {
+    mockHotfixQuestion.mockRejectedValueOnce(
+      new AppError("VALIDATION_FAILED", "Cannot save: answer.correctIndex (99) is out of range for 2 options"),
+    );
+
+    const result = await hotfixQuestionAction({
+      id: QUESTION_ID,
+      prompt: VALID_INPUT.prompt,
+      explanation: VALID_INPUT.explanation,
+      payload: VALID_INPUT.payload,
+      answer: { correctIndex: 99 },
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Cannot save: answer.correctIndex (99) is out of range for 2 options",
+    });
   });
 });

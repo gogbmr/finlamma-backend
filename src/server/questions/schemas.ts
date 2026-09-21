@@ -333,3 +333,18 @@ export type UpdateQuestionDraftInput = z.infer<typeof UpdateQuestionDraftSchema>
 
 export const QuestionIdSchema = z.object({ id: z.string().uuid() });
 export type QuestionIdInput = z.infer<typeof QuestionIdSchema>;
+
+// D20 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED question's
+// prompt/explanation/payload/answer, without unpublishing - the fix for the
+// circular problem where unpublishing a question is blocked while a
+// published lesson references it (src/server/questions/service.ts
+// unpublishQuestion). No `topic`/`format` - format is immutable (as with
+// UpdateQuestionDraftSchema) and topic isn't part of what a hotfix is for.
+export const HotfixQuestionSchema = z.object({
+  id: z.string().uuid(),
+  prompt: LocalizedTextSchema,
+  explanation: LocalizedTextSchema,
+  payload: z.record(z.string(), z.unknown()),
+  answer: z.unknown(),
+});
+export type HotfixQuestionInput = z.infer<typeof HotfixQuestionSchema>;

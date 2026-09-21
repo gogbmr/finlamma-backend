@@ -8,6 +8,7 @@ import { listPublishedWorldsByMentorId } from "@/server/worlds/repo";
 import {
   getMentorById,
   getPublishedMentorByKey,
+  hotfixMentorRow,
   insertDraftMentor,
   listAllMentors,
   listPublishedMentors,
@@ -18,6 +19,7 @@ import {
 } from "./repo";
 import type {
   CreateMentorDraftInput,
+  HotfixMentorInput,
   LocalizedText,
   UpdateMentorDraftInput,
 } from "./schemas";
@@ -208,6 +210,42 @@ export async function publishMentor(actor: { id: string }, id: string, meta: Req
     userAgent: meta.userAgent,
   });
   return published;
+}
+
+// D20 (docs/ARCHITECTURE.md): fixes a typo on an already-PUBLISHED mentor's
+// name/bio directly, without the unpublish -> edit draft -> republish cycle
+// - which is impossible here anyway once any published world references the
+// mentor (unpublishMentor above blocks it). Requires mentor.publish (not
+// just mentor.manage), same trust bar as publishing. Re-runs the same
+// translation-completeness gate publish itself uses, so a hotfix can never
+// leave a published mentor less complete than publish would have allowed.
+export async function hotfixMentor(
+  actor: { id: string },
+  input: HotfixMentorInput,
+  meta: RequestMeta,
+) {
+  const existing = await getMentorById(input.id);
+  if (!existing) throw new AppError("NOT_FOUND", "Mentor not found");
+  if (existing.status !== "published") {
+    throw new AppError("CONFLICT", "Mentor is not published - edit its draft instead");
+  }
+
+  validateMentorForPublish({ ...existing, ...input });
+
+  const updated = await hotfixMentorRow(input);
+  if (!updated) throw new AppError("CONFLICT", "Mentor is not published - edit its draft instead");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "mentor.hotfixed",
+    targetType: "mentor",
+    targetId: updated.id,
+    metadata: { key: updated.key },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
 }
 
 export async function unpublishMentor(actor: { id: string }, id: string, meta: RequestMeta) {

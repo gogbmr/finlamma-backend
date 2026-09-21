@@ -14,6 +14,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   getMentorById,
+  hotfixMentorRow,
   insertDraftMentor,
   publishMentorRow,
   unpublishMentorRow,
@@ -158,6 +159,41 @@ describe("publishMentorRow / unpublishMentorRow", () => {
 
     const result = await unpublishMentorRow(created.id);
 
+    expect(result).toBeNull();
+  });
+});
+
+describe("hotfixMentorRow", () => {
+  it("updates a published mentor's name/bio", async () => {
+    const created = await insertDraftMentor(draftInput());
+    await publishMentorRow(created.id, staffId);
+
+    const fixed = await hotfixMentorRow({
+      id: created.id,
+      name: { en: "Fixed", hi: "x", hx: "x" },
+      bio: created.bio,
+    });
+
+    expect(fixed?.name.en).toBe("Fixed");
+    expect(fixed?.status).toBe("published");
+  });
+
+  it("returns null (does not update) when the mentor is currently a draft", async () => {
+    const created = await insertDraftMentor(draftInput());
+
+    const result = await hotfixMentorRow({
+      id: created.id,
+      name: { en: "Should not apply", hi: "x", hx: "x" },
+      bio: created.bio,
+    });
+
+    expect(result).toBeNull();
+    const row = await getMentorById(created.id);
+    expect(row?.name.en).not.toBe("Should not apply");
+  });
+
+  it("returns null for a nonexistent mentor", async () => {
+    const result = await hotfixMentorRow({ id: randomUUID(), name: NAME, bio: BIO });
     expect(result).toBeNull();
   });
 });

@@ -5,6 +5,7 @@ import { listPublishedLessonsReferencingQuestion } from "@/server/lessons/servic
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
   getQuestionById,
+  hotfixQuestionRow,
   insertDraftQuestion,
   listAllQuestions,
   publishQuestionRow,
@@ -16,6 +17,7 @@ import {
   payloadSchemaForFormat,
   validateAnswerBounds,
   type CreateQuestionDraftInput,
+  type HotfixQuestionInput,
   type QuestionFormat,
   type UpdateQuestionDraftInput,
 } from "./schemas";
@@ -151,6 +153,47 @@ export async function publishQuestion(actor: { id: string }, id: string, meta: R
     userAgent: meta.userAgent,
   });
   return published;
+}
+
+// D20 (docs/ARCHITECTURE.md): fixes a typo or a wrong correct answer on an
+// already-PUBLISHED question directly, without the unpublish -> edit draft
+// -> republish cycle - which is impossible here anyway once any published
+// lesson references the question (unpublishQuestion above blocks it).
+// Requires question.publish (not just question.manage) - the same trust bar
+// as publishing, since this changes what's live immediately with no draft
+// review step. Re-runs every check a normal edit+publish would: structural
+// shape, answer bounds, and translation completeness - a hotfix must never
+// leave published content in a worse state than publish's own gate allows.
+export async function hotfixQuestion(
+  actor: { id: string },
+  input: HotfixQuestionInput,
+  meta: RequestMeta,
+) {
+  const existing = await getQuestionById(input.id);
+  if (!existing) throw new AppError("NOT_FOUND", "Question not found");
+  if (existing.status !== "published") {
+    throw new AppError("CONFLICT", "Question is not published - edit its draft instead");
+  }
+
+  validatePayloadAndAnswer(existing.format as QuestionFormat, input.payload, input.answer);
+  validateQuestionForPublish({ ...existing, ...input });
+
+  const answerChanged = JSON.stringify(existing.answer) !== JSON.stringify(input.answer);
+
+  const updated = await hotfixQuestionRow(input);
+  if (!updated) throw new AppError("CONFLICT", "Question is not published - edit its draft instead");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "question.hotfixed",
+    targetType: "question",
+    targetId: updated.id,
+    metadata: { format: updated.format, revision: updated.revision, answerChanged },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
 }
 
 export async function unpublishQuestion(actor: { id: string }, id: string, meta: RequestMeta) {

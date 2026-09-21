@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetWorldById = vi.fn();
+const mockHotfixWorldRow = vi.fn();
 const mockInsertDraftWorld = vi.fn();
 const mockListAllWorlds = vi.fn();
 const mockListPublishedWorlds = vi.fn();
@@ -11,6 +12,7 @@ const mockUnpublishWorldRow = vi.fn();
 const mockUpdateDraftWorld = vi.fn();
 vi.mock("./repo", () => ({
   getWorldById: (id: unknown) => mockGetWorldById(id),
+  hotfixWorldRow: (input: unknown) => mockHotfixWorldRow(input),
   insertDraftWorld: (input: unknown) => mockInsertDraftWorld(input),
   listAllWorlds: () => mockListAllWorlds(),
   listPublishedWorlds: () => mockListPublishedWorlds(),
@@ -50,6 +52,7 @@ import {
   createWorldDraft,
   getPublicWorlds,
   getWorldEditorData,
+  hotfixWorld,
   publishWorld,
   reorderWorld,
   unpublishWorld,
@@ -354,6 +357,64 @@ describe("publishWorld", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "world.published", actorId: "staff_1" }),
     );
+  });
+});
+
+// D20 (docs/ARCHITECTURE.md): direct edit of a PUBLISHED world's
+// title/tagline, without unpublishing.
+describe("hotfixWorld", () => {
+  const HOTFIX_INPUT = {
+    id: "world_1",
+    title: { en: "Fixed title", hi: "x", hx: "x" },
+    tagline: { en: "Fixed tagline.", hi: "x", hx: "x" },
+  };
+
+  it("updates a published world and logs it", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+    mockHotfixWorldRow.mockResolvedValueOnce(worldRow({ status: "published", ...HOTFIX_INPUT }));
+
+    const result = await hotfixWorld(ACTOR, HOTFIX_INPUT, META);
+
+    expect(result.title.en).toBe("Fixed title");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "world.hotfixed", actorId: "staff_1" }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown world", async () => {
+    mockGetWorldById.mockResolvedValueOnce(null);
+
+    await expect(hotfixWorld(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockHotfixWorldRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the world is a draft, not published", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
+
+    await expect(hotfixWorld(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(mockHotfixWorldRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fix that leaves a translation missing", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+
+    await expect(
+      hotfixWorld(ACTOR, { ...HOTFIX_INPUT, title: { en: "Fixed", hi: "", hx: "Fixed" } }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixWorldRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the repo returns null (concurrently unpublished)", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+    mockHotfixWorldRow.mockResolvedValueOnce(null);
+
+    await expect(hotfixWorld(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
   });
 });
 

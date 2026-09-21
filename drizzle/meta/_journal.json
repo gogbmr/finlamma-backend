@@ -99,6 +99,13 @@
       "when": 1789973377664,
       "tag": "0013_famous_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789985564571,
+      "tag": "0014_fearless_yellow_claw",
+      "breakpoints": true
     }
   ]
 }

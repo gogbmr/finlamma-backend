@@ -8,12 +8,14 @@ import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
   CreateWorldDraftSchema,
+  HotfixWorldSchema,
   MoveWorldSchema,
   UpdateWorldDraftSchema,
   WorldIdSchema,
 } from "@/server/worlds/schemas";
 import {
   createWorldDraft,
+  hotfixWorld,
   publishWorld,
   reorderWorld,
   unpublishWorld,
@@ -85,6 +87,15 @@ export async function unpublishWorldAction(input: unknown): Promise<ActionResult
     const actor = await requireStaff("world.publish");
     const { id } = WorldIdSchema.parse(input);
     await unpublishWorld(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/worlds");
+  });
+}
+
+export async function hotfixWorldAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("world.publish");
+    const parsed = HotfixWorldSchema.parse(input);
+    await hotfixWorld(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
   });
 }

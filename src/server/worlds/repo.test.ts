@@ -16,6 +16,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   getWorldById,
+  hotfixWorldRow,
   insertDraftWorld,
   listPublishedWorldsByMentorId,
   moveWorldToPosition,
@@ -242,6 +243,41 @@ describe("publishWorldRow / unpublishWorldRow", () => {
 
     const result = await unpublishWorldRow(created.id);
 
+    expect(result).toBeNull();
+  });
+});
+
+describe("hotfixWorldRow", () => {
+  it("updates a published world's title/tagline", async () => {
+    const created = await insertDraftWorld(await draftInput());
+    await publishWorldRow(created.id, staffId);
+
+    const fixed = await hotfixWorldRow({
+      id: created.id,
+      title: { en: "Fixed", hi: "x", hx: "x" },
+      tagline: created.tagline,
+    });
+
+    expect(fixed?.title.en).toBe("Fixed");
+    expect(fixed?.status).toBe("published");
+  });
+
+  it("returns null (does not update) when the world is currently a draft", async () => {
+    const created = await insertDraftWorld(await draftInput());
+
+    const result = await hotfixWorldRow({
+      id: created.id,
+      title: { en: "Should not apply", hi: "x", hx: "x" },
+      tagline: created.tagline,
+    });
+
+    expect(result).toBeNull();
+    const row = await getWorldById(created.id);
+    expect(row?.title.en).not.toBe("Should not apply");
+  });
+
+  it("returns null for a nonexistent world", async () => {
+    const result = await hotfixWorldRow({ id: randomUUID(), title: TITLE, tagline: TAGLINE });
     expect(result).toBeNull();
   });
 });

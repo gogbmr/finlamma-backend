@@ -74,3 +74,18 @@ export const MoveWorldSchema = z.object({
   newOrder: z.number().int().positive(),
 });
 export type MoveWorldInput = z.infer<typeof MoveWorldSchema>;
+
+// D20 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED world's
+// title/tagline, without unpublishing - the fix for the circular problem
+// where unpublishing a world is blocked while a published lesson belongs to
+// it (src/server/worlds/service.ts unpublishWorld). No `theme`/
+// `displayXpTarget`/`mentorId`/`order` - those are structural, not a typo
+// fix, and still go through the normal unpublish -> edit draft -> republish
+// cycle (a mentor change also still gets the D19 mismatch warning, which
+// only makes sense for a draft edit anyway).
+export const HotfixWorldSchema = z.object({
+  id: z.string().uuid(),
+  title: LocalizedTextSchema,
+  tagline: LocalizedTextSchema,
+});
+export type HotfixWorldInput = z.infer<typeof HotfixWorldSchema>;

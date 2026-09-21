@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LocalizedText } from "@/server/mentors/schemas";
 import {
   createMentorDraftAction,
+  hotfixMentorAction,
   publishMentorAction,
   unpublishMentorAction,
   updateMentorDraftAction,
@@ -211,6 +212,12 @@ function MentorForm({
 
   const isDraft = mentor.status === "draft";
   const editable = canManage && isDraft;
+  // D20 (docs/ARCHITECTURE.md): a published mentor's name/bio can still be
+  // hotfixed directly (typo/wording fix), separately from the
+  // draft-only structural fields below - requires mentor.publish, the same
+  // trust bar as publishing itself.
+  const hotfixable = canPublish && !isDraft;
+  const nameBioEditable = editable || hotfixable;
 
   function saveDraft() {
     startTransition(async () => {
@@ -227,6 +234,17 @@ function MentorForm({
         return;
       }
       toast.success("Draft saved");
+    });
+  }
+
+  function saveHotfix() {
+    startTransition(async () => {
+      const result = await hotfixMentorAction({ id: mentor.id, name, bio });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fix saved - live immediately");
     });
   }
 
@@ -281,7 +299,7 @@ function MentorForm({
         <span>Key: {mentor.key}</span>
         {!isDraft && (
           <span className="text-xs text-neutral-500">
-            Published mentors can&apos;t be edited - unpublish first.
+            Published - only name/bio can be fixed directly below. Everything else needs unpublish first.
           </span>
         )}
       </div>
@@ -317,8 +335,8 @@ function MentorForm({
         </div>
       </div>
 
-      <LocalizedFields label="Name" value={name} onChange={setName} disabled={!editable} />
-      <LocalizedFields label="Bio" value={bio} onChange={setBio} disabled={!editable} />
+      <LocalizedFields label="Name" value={name} onChange={setName} disabled={!nameBioEditable} />
+      <LocalizedFields label="Bio" value={bio} onChange={setBio} disabled={!nameBioEditable} />
 
       <div className="space-y-1">
         <Label>Art</Label>
@@ -344,6 +362,11 @@ function MentorForm({
         {editable && (
           <Button type="button" variant="outline" onClick={saveDraft} disabled={isPending}>
             Save draft
+          </Button>
+        )}
+        {hotfixable && (
+          <Button type="button" variant="outline" onClick={saveHotfix} disabled={isPending}>
+            Save fix
           </Button>
         )}
         {canPublish && isDraft && (

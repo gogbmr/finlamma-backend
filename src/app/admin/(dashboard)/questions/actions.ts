@@ -8,11 +8,13 @@ import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
   CreateQuestionDraftSchema,
+  HotfixQuestionSchema,
   QuestionIdSchema,
   UpdateQuestionDraftSchema,
 } from "@/server/questions/schemas";
 import {
   createQuestionDraft,
+  hotfixQuestion,
   publishQuestion,
   unpublishQuestion,
   updateQuestionDraft,
@@ -70,6 +72,15 @@ export async function unpublishQuestionAction(input: unknown): Promise<ActionRes
     const actor = await requireStaff("question.publish");
     const { id } = QuestionIdSchema.parse(input);
     await unpublishQuestion(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/questions");
+  });
+}
+
+export async function hotfixQuestionAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("question.publish");
+    const parsed = HotfixQuestionSchema.parse(input);
+    await hotfixQuestion(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/questions");
   });
 }

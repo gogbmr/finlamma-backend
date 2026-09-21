@@ -8,11 +8,13 @@ import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
   CreateMentorDraftSchema,
+  HotfixMentorSchema,
   MentorIdSchema,
   UpdateMentorDraftSchema,
 } from "@/server/mentors/schemas";
 import {
   createMentorDraft,
+  hotfixMentor,
   publishMentor,
   unpublishMentor,
   updateMentorDraft,
@@ -71,6 +73,15 @@ export async function unpublishMentorAction(input: unknown): Promise<ActionResul
     const actor = await requireStaff("mentor.publish");
     const { id } = MentorIdSchema.parse(input);
     await unpublishMentor(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/mentors");
+  });
+}
+
+export async function hotfixMentorAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("mentor.publish");
+    const parsed = HotfixMentorSchema.parse(input);
+    await hotfixMentor(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
   });
 }

@@ -9,6 +9,7 @@ import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   getWorldById,
+  hotfixWorldRow,
   insertDraftWorld,
   listAllWorlds,
   listPublishedWorlds,
@@ -18,7 +19,7 @@ import {
   unpublishWorldRow,
   updateDraftWorld,
 } from "./repo";
-import type { CreateWorldDraftInput, UpdateWorldDraftInput } from "./schemas";
+import type { CreateWorldDraftInput, HotfixWorldInput, UpdateWorldDraftInput } from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type WorldRow = NonNullable<Awaited<ReturnType<typeof getWorldById>>>;
@@ -279,6 +280,41 @@ export async function publishWorld(actor: { id: string }, id: string, meta: Requ
     userAgent: meta.userAgent,
   });
   return published;
+}
+
+// D20 (docs/ARCHITECTURE.md): fixes a typo on an already-PUBLISHED world's
+// title/tagline directly, without the unpublish -> edit draft -> republish
+// cycle - which is impossible here anyway once any published lesson belongs
+// to the world (unpublishWorld above blocks it). Requires world.publish
+// (not just world.manage), same trust bar as publishing. Re-runs the same
+// translation-completeness gate publish itself uses.
+export async function hotfixWorld(
+  actor: { id: string },
+  input: HotfixWorldInput,
+  meta: RequestMeta,
+) {
+  const existing = await getWorldById(input.id);
+  if (!existing) throw new AppError("NOT_FOUND", "World not found");
+  if (existing.status !== "published") {
+    throw new AppError("CONFLICT", "World is not published - edit its draft instead");
+  }
+
+  validateWorldForPublish({ ...existing, ...input });
+
+  const updated = await hotfixWorldRow(input);
+  if (!updated) throw new AppError("CONFLICT", "World is not published - edit its draft instead");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "world.hotfixed",
+    targetType: "world",
+    targetId: updated.id,
+    metadata: { title: updated.title.en },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
 }
 
 export async function unpublishWorld(actor: { id: string }, id: string, meta: RequestMeta) {

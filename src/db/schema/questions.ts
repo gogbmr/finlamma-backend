@@ -1,4 +1,4 @@
-import { index, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { idAndTimestamps, type LocalizedText } from "./_helpers";
 import { staffMembers } from "./staff";
 
@@ -35,6 +35,14 @@ export const questions = pgTable(
     explanation: jsonb("explanation").$type<LocalizedText>().notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     answer: jsonb("answer").$type<unknown>().notNull(),
+    // Bumped on every hotfix (src/server/questions/service.ts's
+    // hotfixQuestion) that changes payload/answer on an already-published
+    // question - never on a draft edit or publish itself. question_answers
+    // (Checkpoint 5b) stamps this value onto each graded answer so it's
+    // always known which revision a historical attempt was graded against,
+    // even after a later hotfix changes the answer key. See
+    // docs/ARCHITECTURE.md D20.
+    revision: integer("revision").default(1).notNull(),
     status: questionStatusEnum("status").default("draft").notNull(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishedBy: uuid("published_by").references(() => staffMembers.id, {

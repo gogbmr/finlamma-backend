@@ -15,6 +15,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 const {
   getQuestionById,
   getQuestionsByIds,
+  hotfixQuestionRow,
   insertDraftQuestion,
   publishQuestionRow,
   unpublishQuestionRow,
@@ -133,6 +134,76 @@ describe("publishQuestionRow / unpublishQuestionRow", () => {
     expect(unpublished?.status).toBe("draft");
     expect(unpublished?.publishedAt).toBeNull();
     expect(unpublished?.publishedBy).toBeNull();
+  });
+});
+
+describe("hotfixQuestionRow", () => {
+  it("updates a published question's fields and bumps revision", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    const published = await publishQuestionRow(created.id, staffId);
+    expect(published?.revision).toBe(1);
+
+    const fixed = await hotfixQuestionRow({
+      id: created.id,
+      prompt: { en: "Fixed", hi: "x", hx: "x" },
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: { correctIndex: 1 },
+    });
+
+    expect(fixed?.prompt.en).toBe("Fixed");
+    expect(fixed?.answer).toEqual({ correctIndex: 1 });
+    expect(fixed?.revision).toBe(2);
+  });
+
+  it("bumps revision again on a second hotfix", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    await publishQuestionRow(created.id, staffId);
+    await hotfixQuestionRow({
+      id: created.id,
+      prompt: created.prompt,
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: created.answer,
+    });
+
+    const second = await hotfixQuestionRow({
+      id: created.id,
+      prompt: created.prompt,
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: created.answer,
+    });
+
+    expect(second?.revision).toBe(3);
+  });
+
+  it("returns null (does not update) when the question is currently a draft", async () => {
+    const created = await insertDraftQuestion(draftInput());
+
+    const result = await hotfixQuestionRow({
+      id: created.id,
+      prompt: { en: "Should not apply", hi: "x", hx: "x" },
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: created.answer,
+    });
+
+    expect(result).toBeNull();
+    const row = await getQuestionById(created.id);
+    expect(row?.prompt.en).not.toBe("Should not apply");
+    expect(row?.revision).toBe(1);
+  });
+
+  it("returns null for a nonexistent question", async () => {
+    const result = await hotfixQuestionRow({
+      id: randomUUID(),
+      prompt: PROMPT,
+      explanation: EXPLANATION,
+      payload: draftInput().payload,
+      answer: draftInput().answer,
+    });
+    expect(result).toBeNull();
   });
 });
 

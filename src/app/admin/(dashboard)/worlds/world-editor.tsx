@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   createWorldDraftAction,
+  hotfixWorldAction,
   publishWorldAction,
   reorderWorldAction,
   unpublishWorldAction,
@@ -251,6 +252,11 @@ function WorldForm({
 
   const isDraft = world.status === "draft";
   const editable = canManage && isDraft;
+  // D20 (docs/ARCHITECTURE.md): a published world's title/tagline can still
+  // be hotfixed directly, separately from the draft-only structural fields
+  // below - requires world.publish, the same trust bar as publishing.
+  const hotfixable = canPublish && !isDraft;
+  const titleTaglineEditable = editable || hotfixable;
 
   // Changing the mentor away from what it was when this form loaded doesn't
   // retroactively update any Doubt Zone script's own content.mentorKey
@@ -289,6 +295,17 @@ function WorldForm({
         return;
       }
       toast.success("Draft saved");
+    });
+  }
+
+  function saveHotfix() {
+    startTransition(async () => {
+      const result = await hotfixWorldAction({ id: world.id, title, tagline });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fix saved - live immediately");
     });
   }
 
@@ -355,7 +372,8 @@ function WorldForm({
         </span>
         {!isDraft && (
           <span className="text-xs text-neutral-500">
-            Published worlds can&apos;t be edited - unpublish first.
+            Published - only title/tagline can be fixed directly below. Everything else needs
+            unpublish first.
           </span>
         )}
       </div>
@@ -422,8 +440,13 @@ function WorldForm({
         <MentorSelect mentors={mentors} value={mentorId} onChange={setMentorId} disabled={!editable} />
       </div>
 
-      <LocalizedFields label="Title" value={title} onChange={setTitle} disabled={!editable} />
-      <LocalizedFields label="Tagline" value={tagline} onChange={setTagline} disabled={!editable} />
+      <LocalizedFields label="Title" value={title} onChange={setTitle} disabled={!titleTaglineEditable} />
+      <LocalizedFields
+        label="Tagline"
+        value={tagline}
+        onChange={setTagline}
+        disabled={!titleTaglineEditable}
+      />
 
       <div className="space-y-1">
         <Label>Art</Label>
@@ -449,6 +472,11 @@ function WorldForm({
         {editable && (
           <Button type="button" variant="outline" onClick={saveDraft} disabled={isPending}>
             Save draft
+          </Button>
+        )}
+        {hotfixable && (
+          <Button type="button" variant="outline" onClick={saveHotfix} disabled={isPending}>
+            Save fix
           </Button>
         )}
         {canPublish && isDraft && (

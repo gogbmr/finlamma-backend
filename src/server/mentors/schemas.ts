@@ -75,3 +75,16 @@ export type UpdateMentorDraftInput = z.infer<typeof UpdateMentorDraftSchema>;
 
 export const MentorIdSchema = z.object({ id: z.string().uuid() });
 export type MentorIdInput = z.infer<typeof MentorIdSchema>;
+
+// D20 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED mentor's
+// name/bio, without unpublishing - the fix for the circular problem where
+// unpublishing a mentor is blocked while a published world references it
+// (src/server/mentors/service.ts unpublishMentor). No `worldRangeStart/End`/
+// `order`/`key` - those are structural, not a typo fix, and still go
+// through the normal unpublish -> edit draft -> republish cycle.
+export const HotfixMentorSchema = z.object({
+  id: z.string().uuid(),
+  name: LocalizedTextSchema,
+  bio: LocalizedTextSchema,
+});
+export type HotfixMentorInput = z.infer<typeof HotfixMentorSchema>;

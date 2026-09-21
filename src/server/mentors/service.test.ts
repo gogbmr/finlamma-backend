@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetMentorById = vi.fn();
 const mockGetPublishedMentorByKey = vi.fn();
+const mockHotfixMentorRow = vi.fn();
 const mockInsertDraftMentor = vi.fn();
 const mockListAllMentors = vi.fn();
 const mockListPublishedMentors = vi.fn();
@@ -12,6 +13,7 @@ const mockUpdateDraftMentor = vi.fn();
 vi.mock("./repo", () => ({
   getMentorById: (id: unknown) => mockGetMentorById(id),
   getPublishedMentorByKey: (key: unknown) => mockGetPublishedMentorByKey(key),
+  hotfixMentorRow: (input: unknown) => mockHotfixMentorRow(input),
   insertDraftMentor: (input: unknown) => mockInsertDraftMentor(input),
   listAllMentors: () => mockListAllMentors(),
   listPublishedMentors: () => mockListPublishedMentors(),
@@ -44,6 +46,7 @@ import {
   getMentorEditorData,
   getPublicMentorByKey,
   getPublicMentors,
+  hotfixMentor,
   publishMentor,
   unpublishMentor,
   updateMentorDraft,
@@ -212,6 +215,64 @@ describe("publishMentor - translation-completeness gate", () => {
 
     await expect(publishMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockPublishMentorRow).not.toHaveBeenCalled();
+  });
+});
+
+// D20 (docs/ARCHITECTURE.md): direct edit of a PUBLISHED mentor's name/bio,
+// without unpublishing.
+describe("hotfixMentor", () => {
+  const HOTFIX_INPUT = {
+    id: "mentor_1",
+    name: { en: "Fixed name", hi: "x", hx: "x" },
+    bio: { en: "Fixed bio.", hi: "x", hx: "x" },
+  };
+
+  it("updates a published mentor and logs it", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
+    mockHotfixMentorRow.mockResolvedValueOnce(mentorRow({ status: "published", ...HOTFIX_INPUT }));
+
+    const result = await hotfixMentor(ACTOR, HOTFIX_INPUT, META);
+
+    expect(result.name.en).toBe("Fixed name");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "mentor.hotfixed", actorId: "staff_1" }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown mentor", async () => {
+    mockGetMentorById.mockResolvedValueOnce(null);
+
+    await expect(hotfixMentor(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockHotfixMentorRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the mentor is a draft, not published", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "draft" }));
+
+    await expect(hotfixMentor(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(mockHotfixMentorRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fix that leaves a translation missing", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
+
+    await expect(
+      hotfixMentor(ACTOR, { ...HOTFIX_INPUT, name: { en: "Fixed", hi: "", hx: "Fixed" } }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixMentorRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the repo returns null (concurrently unpublished)", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
+    mockHotfixMentorRow.mockResolvedValueOnce(null);
+
+    await expect(hotfixMentor(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
   });
 });
 

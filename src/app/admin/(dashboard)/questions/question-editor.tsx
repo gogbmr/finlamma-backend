@@ -21,6 +21,7 @@ import {
 } from "@/server/questions/schemas";
 import {
   createQuestionDraftAction,
+  hotfixQuestionAction,
   publishQuestionAction,
   unpublishQuestionAction,
   updateQuestionDraftAction,
@@ -263,6 +264,12 @@ function QuestionForm({
 
   const isDraft = question.status === "draft";
   const editable = canManage && isDraft;
+  // D20 (docs/ARCHITECTURE.md): a published question's prompt/explanation/
+  // payload/answer can still be hotfixed directly (typo, or a wrong correct
+  // answer) - requires question.publish, the same trust bar as publishing.
+  // `topic` stays draft-only (not part of what a hotfix is for).
+  const hotfixable = canPublish && !isDraft;
+  const contentEditable = editable || hotfixable;
 
   function saveDraft() {
     const payload = parseJsonOrError(payloadText);
@@ -289,6 +296,33 @@ function QuestionForm({
         return;
       }
       toast.success("Draft saved");
+    });
+  }
+
+  function saveHotfix() {
+    const payload = parseJsonOrError(payloadText);
+    if (!payload.ok) {
+      toast.error(payload.error);
+      return;
+    }
+    const answer = parseJsonOrError(answerText);
+    if (!answer.ok) {
+      toast.error(answer.error);
+      return;
+    }
+    startTransition(async () => {
+      const result = await hotfixQuestionAction({
+        id: question.id,
+        prompt,
+        explanation,
+        payload: payload.value,
+        answer: answer.value,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fix saved - live immediately");
     });
   }
 
@@ -329,7 +363,8 @@ function QuestionForm({
         <span>Format: {FORMAT_LABELS[question.format]} (fixed, can&apos;t change after creation)</span>
         {!isDraft && (
           <span className="text-xs text-neutral-500">
-            Published questions can&apos;t be edited - unpublish first.
+            Published - prompt/explanation/payload/answer can be fixed directly below. Topic needs
+            unpublish first.
           </span>
         )}
       </div>
@@ -339,19 +374,19 @@ function QuestionForm({
         <Input value={topic} disabled={!editable} onChange={(e) => setTopic(e.target.value)} />
       </div>
 
-      <LocalizedFields label="Prompt" value={prompt} onChange={setPrompt} disabled={!editable} />
+      <LocalizedFields label="Prompt" value={prompt} onChange={setPrompt} disabled={!contentEditable} />
       <LocalizedFields
         label="Explanation"
         value={explanation}
         onChange={setExplanation}
-        disabled={!editable}
+        disabled={!contentEditable}
       />
 
       <div className="space-y-1">
         <Label>Payload (JSON)</Label>
         <Textarea
           value={payloadText}
-          disabled={!editable}
+          disabled={!contentEditable}
           onChange={(e) => setPayloadText(e.target.value)}
           className="min-h-40 font-mono text-xs"
         />
@@ -361,7 +396,7 @@ function QuestionForm({
         <Label>Answer (JSON) - language-independent</Label>
         <Textarea
           value={answerText}
-          disabled={!editable}
+          disabled={!contentEditable}
           onChange={(e) => setAnswerText(e.target.value)}
           className="min-h-20 font-mono text-xs"
         />
@@ -371,6 +406,11 @@ function QuestionForm({
         {editable && (
           <Button type="button" variant="outline" onClick={saveDraft} disabled={isPending}>
             Save draft
+          </Button>
+        )}
+        {hotfixable && (
+          <Button type="button" variant="outline" onClick={saveHotfix} disabled={isPending}>
+            Save fix
           </Button>
         )}
         {canPublish && isDraft && (

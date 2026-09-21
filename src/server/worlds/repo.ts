@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, gte, lt, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { worlds } from "@/db/schema";
-import type { CreateWorldDraftInput, UpdateWorldDraftInput } from "./schemas";
+import type { CreateWorldDraftInput, HotfixWorldInput, UpdateWorldDraftInput } from "./schemas";
 
 export async function listPublishedWorlds() {
   return db
@@ -129,6 +129,19 @@ export async function publishWorldRow(id: string, staffId: string) {
     .update(worlds)
     .set({ status: "published", publishedAt: new Date(), publishedBy: staffId })
     .where(and(eq(worlds.id, id), eq(worlds.status, "draft")))
+    .returning();
+  return row ?? null;
+}
+
+// D20 (docs/ARCHITECTURE.md): only updates a world that's currently
+// PUBLISHED - returns null if the row doesn't exist or is a draft, mirroring
+// updateDraftWorld's opposite-status guard.
+export async function hotfixWorldRow(input: HotfixWorldInput) {
+  const { id, ...rest } = input;
+  const [row] = await db
+    .update(worlds)
+    .set(rest)
+    .where(and(eq(worlds.id, id), eq(worlds.status, "published")))
     .returning();
   return row ?? null;
 }

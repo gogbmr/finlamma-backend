@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetQuestionById = vi.fn();
+const mockHotfixQuestionRow = vi.fn();
 const mockInsertDraftQuestion = vi.fn();
 const mockListAllQuestions = vi.fn();
 const mockPublishQuestionRow = vi.fn();
@@ -8,6 +9,7 @@ const mockUnpublishQuestionRow = vi.fn();
 const mockUpdateDraftQuestion = vi.fn();
 vi.mock("./repo", () => ({
   getQuestionById: (id: unknown) => mockGetQuestionById(id),
+  hotfixQuestionRow: (input: unknown) => mockHotfixQuestionRow(input),
   insertDraftQuestion: (input: unknown) => mockInsertDraftQuestion(input),
   listAllQuestions: () => mockListAllQuestions(),
   publishQuestionRow: (id: unknown, staffId: unknown) => mockPublishQuestionRow(id, staffId),
@@ -29,6 +31,7 @@ vi.mock("@/lib/activity-log", () => ({
 import {
   createQuestionDraft,
   getQuestionEditorData,
+  hotfixQuestion,
   publishQuestion,
   unpublishQuestion,
   updateQuestionDraft,
@@ -209,6 +212,108 @@ describe("publishQuestion - translation-completeness gate", () => {
 
     await expect(publishQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockPublishQuestionRow).not.toHaveBeenCalled();
+  });
+});
+
+// D20 (docs/ARCHITECTURE.md): direct edit of a PUBLISHED question's
+// prompt/explanation/payload/answer, without unpublishing.
+describe("hotfixQuestion", () => {
+  const HOTFIX_INPUT = {
+    id: "question_1",
+    prompt: { en: "Fixed prompt?", hi: "x", hx: "x" },
+    explanation: { en: "Fixed explanation.", hi: "x", hx: "x" },
+    payload: questionRow().payload,
+    answer: { correctIndex: 1 },
+  };
+
+  it("updates a published question and logs whether the answer changed", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "published" }));
+    mockHotfixQuestionRow.mockResolvedValueOnce(
+      questionRow({ status: "published", ...HOTFIX_INPUT, revision: 2 }),
+    );
+
+    const result = await hotfixQuestion(ACTOR, HOTFIX_INPUT, META);
+
+    expect(result.revision).toBe(2);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "question.hotfixed",
+        actorId: "staff_1",
+        metadata: expect.objectContaining({ answerChanged: true, revision: 2 }),
+      }),
+    );
+  });
+
+  it("logs answerChanged: false when only text fields changed", async () => {
+    const existing = questionRow({ status: "published" });
+    mockGetQuestionById.mockResolvedValueOnce(existing);
+    mockHotfixQuestionRow.mockResolvedValueOnce(
+      questionRow({ status: "published", ...HOTFIX_INPUT, answer: existing.answer, revision: 2 }),
+    );
+
+    await hotfixQuestion(ACTOR, { ...HOTFIX_INPUT, answer: existing.answer }, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ answerChanged: false }) }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown question", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(null);
+
+    await expect(hotfixQuestion(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockHotfixQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the question is a draft, not published", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "draft" }));
+
+    await expect(hotfixQuestion(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(mockHotfixQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a structurally invalid payload for the question's format", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "published", format: "spot_mistake" }));
+
+    await expect(
+      hotfixQuestion(ACTOR, { ...HOTFIX_INPUT, payload: { options: [] } }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-bounds answer even when the shape is structurally valid", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "published" }));
+
+    await expect(
+      hotfixQuestion(ACTOR, { ...HOTFIX_INPUT, answer: { correctIndex: 99 } }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fix that leaves a translation missing", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "published" }));
+
+    await expect(
+      hotfixQuestion(
+        ACTOR,
+        { ...HOTFIX_INPUT, prompt: { en: "Fixed", hi: "", hx: "Fixed" } },
+        META,
+      ),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the repo returns null (concurrently unpublished)", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "published" }));
+    mockHotfixQuestionRow.mockResolvedValueOnce(null);
+
+    await expect(hotfixQuestion(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
   });
 });
 

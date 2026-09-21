@@ -17,6 +17,7 @@ vi.mock("next/cache", () => ({
 
 const mockCreateWorldDraft = vi.fn();
 const mockUpdateWorldDraft = vi.fn();
+const mockHotfixWorld = vi.fn();
 const mockReorderWorld = vi.fn();
 const mockPublishWorld = vi.fn();
 const mockUnpublishWorld = vi.fn();
@@ -26,6 +27,7 @@ vi.mock("@/server/worlds/service", () => ({
     mockCreateWorldDraft(actor, input, meta),
   updateWorldDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockUpdateWorldDraft(actor, input, meta),
+  hotfixWorld: (actor: unknown, input: unknown, meta: unknown) => mockHotfixWorld(actor, input, meta),
   reorderWorld: (actor: unknown, id: unknown, newOrder: unknown, meta: unknown) =>
     mockReorderWorld(actor, id, newOrder, meta),
   publishWorld: (actor: unknown, id: unknown, meta: unknown) => mockPublishWorld(actor, id, meta),
@@ -37,6 +39,7 @@ vi.mock("@/server/worlds/service", () => ({
 
 import {
   createWorldDraftAction,
+  hotfixWorldAction,
   publishWorldAction,
   reorderWorldAction,
   unpublishWorldAction,
@@ -119,6 +122,20 @@ describe("wrong role is rejected", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUploadWorldArt).not.toHaveBeenCalled();
+  });
+
+  it("hotfixWorldAction: requires world.publish, not world.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.publish"));
+
+    const result = await hotfixWorldAction({
+      id: WORLD_ID,
+      title: VALID_INPUT.title,
+      tagline: VALID_INPUT.tagline,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.publish");
+    expect(mockHotfixWorld).not.toHaveBeenCalled();
   });
 });
 
@@ -225,5 +242,23 @@ describe("happy paths", () => {
       { body: Buffer.from(bytes) },
       expect.any(Object),
     );
+  });
+
+  it("hotfixWorldAction hotfixes and revalidates", async () => {
+    mockHotfixWorld.mockResolvedValueOnce({ id: WORLD_ID, status: "published" });
+
+    const result = await hotfixWorldAction({
+      id: WORLD_ID,
+      title: VALID_INPUT.title,
+      tagline: VALID_INPUT.tagline,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockHotfixWorld).toHaveBeenCalledWith(
+      ACTOR,
+      { id: WORLD_ID, title: VALID_INPUT.title, tagline: VALID_INPUT.tagline },
+      expect.any(Object),
+    );
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/worlds");
   });
 });
