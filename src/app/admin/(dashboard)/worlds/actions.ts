@@ -8,12 +8,14 @@ import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
   CreateWorldDraftSchema,
+  MoveWorldSchema,
   UpdateWorldDraftSchema,
   WorldIdSchema,
 } from "@/server/worlds/schemas";
 import {
   createWorldDraft,
   publishWorld,
+  reorderWorld,
   unpublishWorld,
   updateWorldDraft,
   uploadWorldArt,
@@ -53,6 +55,18 @@ export async function updateWorldDraftAction(input: unknown): Promise<ActionResu
     const actor = await requireStaff("world.manage");
     const parsed = UpdateWorldDraftSchema.parse(input);
     await updateWorldDraft(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/worlds");
+  });
+}
+
+// Gated on world.manage (not world.publish) - reordering is a structural
+// content operation, not a visibility/trust decision, same reasoning as
+// src/server/worlds/service.ts's reorderWorld.
+export async function reorderWorldAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("world.manage");
+    const { id, newOrder } = MoveWorldSchema.parse(input);
+    await reorderWorld(actor, id, newOrder, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
   });
 }

@@ -17,6 +17,7 @@ const {
   getWorldById,
   insertDraftWorld,
   listPublishedWorldsByMentorId,
+  moveWorldToPosition,
   publishWorldRow,
   unpublishWorldRow,
   updateDraftWorld,
@@ -74,6 +75,24 @@ async function draftInput(overrides: Partial<Record<string, unknown>> = {}) {
     mentorId,
     ...overrides,
   };
+}
+
+// Creates `count` worlds at consecutive order values (a fresh block from
+// uniqueOrder(), so distinct from any other test's rows in this shared
+// PGlite instance), returned in order-ascending sequence - i.e. result[0]
+// is at the lowest order, result[count-1] at the highest.
+async function makeSequentialWorlds(count: number) {
+  const mentorId = (await makeMentor()).id;
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    // draftInput() already assigns its own order: uniqueOrder() internally
+    // - don't also pass one here, or each iteration burns two counter
+    // values (one used, one silently discarded), leaving gaps between
+    // consecutive worlds instead of the back-to-back values this helper
+    // promises.
+    result.push(await insertDraftWorld(await draftInput({ mentorId })));
+  }
+  return result;
 }
 
 describe("insertDraftWorld", () => {
@@ -248,5 +267,98 @@ describe("listPublishedWorldsByMentorId", () => {
     const result = await listPublishedWorldsByMentorId(mentor.id);
 
     expect(result).toEqual([]);
+  });
+});
+
+describe("moveWorldToPosition", () => {
+  it("swaps two adjacent worlds (World 2 and World 3)", async () => {
+    const [w1, w2, w3] = await makeSequentialWorlds(3);
+    const [order1, order2, order3] = [w1!.order, w2!.order, w3!.order];
+
+    const moved = await moveWorldToPosition(w2!.id, order3);
+
+    expect(moved?.order).toBe(order3);
+    const [freshW1, freshW2, freshW3] = await Promise.all([
+      getWorldById(w1!.id),
+      getWorldById(w2!.id),
+      getWorldById(w3!.id),
+    ]);
+    expect(freshW1?.order).toBe(order1); // untouched
+    expect(freshW2?.order).toBe(order3); // moved into W3's old slot
+    expect(freshW3?.order).toBe(order2); // shifted back into W2's old slot
+  });
+
+  it("moves a world from the last position to the first, shifting everyone else back one", async () => {
+    const worlds7 = await makeSequentialWorlds(7);
+    const orders = worlds7.map((w) => w.order);
+    const last = worlds7[6]!;
+
+    const moved = await moveWorldToPosition(last.id, orders[0]!);
+
+    expect(moved?.order).toBe(orders[0]);
+    const fresh = await Promise.all(worlds7.map((w) => getWorldById(w.id)));
+    // World that moved is now at the old first position.
+    expect(fresh[6]?.order).toBe(orders[0]);
+    // Everyone originally at positions 1-6 shifted one slot later.
+    for (let i = 0; i < 6; i++) {
+      expect(fresh[i]?.order).toBe(orders[i + 1]);
+    }
+    // No duplicate orders anywhere in the result.
+    const finalOrders = fresh.map((w) => w!.order);
+    expect(new Set(finalOrders).size).toBe(finalOrders.length);
+  });
+
+  it("is a no-op when the world is already at the target position", async () => {
+    const [w1] = await makeSequentialWorlds(1);
+
+    const moved = await moveWorldToPosition(w1!.id, w1!.order);
+
+    expect(moved?.order).toBe(w1!.order);
+  });
+
+  it("returns null for a nonexistent world", async () => {
+    const result = await moveWorldToPosition(randomUUID(), 1);
+    expect(result).toBeNull();
+  });
+
+  it("works on a published world too - reordering isn't gated on draft status", async () => {
+    const [w1, w2] = await makeSequentialWorlds(2);
+    await publishWorldRow(w1!.id, staffId);
+    await publishWorldRow(w2!.id, staffId);
+    const order2 = w2!.order;
+
+    const moved = await moveWorldToPosition(w1!.id, order2);
+
+    expect(moved?.order).toBe(order2);
+    expect(moved?.status).toBe("published");
+  });
+
+  // Two concurrent moves on non-overlapping windows (swap 1<->2, swap
+  // 4<->5, in a 5-world list) - proves the shift-in-transaction approach
+  // doesn't corrupt the unique order index or spuriously fail under real
+  // concurrency, for the more complex multi-row operation. Deliberately
+  // disjoint windows (not a shared pair) so the expected end state is
+  // unambiguous regardless of interleaving - PGlite is a single-connection
+  // embedded Postgres, so two transactions touching the *same* rows would
+  // serialize on row locks in an order this test can't control and
+  // shouldn't need to assert on to prove the safety property that matters.
+  it("stays unique under two concurrent moves on non-overlapping worlds", async () => {
+    const worlds5 = await makeSequentialWorlds(5);
+    const orders = worlds5.map((w) => w.order);
+
+    const results = await Promise.allSettled([
+      moveWorldToPosition(worlds5[0]!.id, orders[1]!), // swap positions 1<->2
+      moveWorldToPosition(worlds5[3]!.id, orders[4]!), // swap positions 4<->5
+    ]);
+    for (const r of results) expect(r.status).toBe("fulfilled");
+
+    const fresh = await Promise.all(worlds5.map((w) => getWorldById(w.id)));
+    expect(fresh[0]?.order).toBe(orders[1]);
+    expect(fresh[1]?.order).toBe(orders[0]);
+    expect(fresh[2]?.order).toBe(orders[2]); // untouched middle world
+    expect(fresh[3]?.order).toBe(orders[4]);
+    expect(fresh[4]?.order).toBe(orders[3]);
+    const finalOrders = fresh.map((w) => w!.order);
+    expect(new Set(finalOrders).size).toBe(5);
   });
 });

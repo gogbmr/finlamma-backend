@@ -68,3 +68,9 @@ export type UpdateWorldDraftInput = z.infer<typeof UpdateWorldDraftSchema>;
 
 export const WorldIdSchema = z.object({ id: z.string().uuid() });
 export type WorldIdInput = z.infer<typeof WorldIdSchema>;
+
+export const MoveWorldSchema = z.object({
+  id: z.string().uuid(),
+  newOrder: z.number().int().positive(),
+});
+export type MoveWorldInput = z.infer<typeof MoveWorldSchema>;

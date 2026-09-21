@@ -11,6 +11,7 @@ import {
   insertDraftWorld,
   listAllWorlds,
   listPublishedWorlds,
+  moveWorldToPosition,
   publishWorldRow,
   setWorldArtKey,
   unpublishWorldRow,
@@ -147,6 +148,42 @@ export async function updateWorldDraft(
     userAgent: meta.userAgent,
   });
   return updated;
+}
+
+// A real reorder (swap two worlds, move one to a new position) - see
+// moveWorldToPosition in repo.ts for how it stays safe under the unique
+// order index. Deliberately not draft-gated like updateWorldDraft: order is
+// a structural sequencing property, not reviewed content, so staff can
+// reorder published worlds too (e.g. re-prioritizing after launch) without
+// an unpublish/republish cycle.
+export async function reorderWorld(
+  actor: { id: string },
+  id: string,
+  newOrder: number,
+  meta: RequestMeta,
+) {
+  const worldCount = (await listAllWorlds()).length;
+  if (newOrder < 1 || newOrder > worldCount) {
+    throw new AppError(
+      "VALIDATION_FAILED",
+      `newOrder must be between 1 and ${worldCount} (the current number of worlds)`,
+    );
+  }
+
+  const moved = await moveWorldToPosition(id, newOrder);
+  if (!moved) throw new AppError("NOT_FOUND", "World not found");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "world.reordered",
+    targetType: "world",
+    targetId: moved.id,
+    metadata: { title: moved.title.en, newOrder },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return moved;
 }
 
 export async function uploadWorldArt(

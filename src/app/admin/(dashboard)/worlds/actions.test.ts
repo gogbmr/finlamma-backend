@@ -17,6 +17,7 @@ vi.mock("next/cache", () => ({
 
 const mockCreateWorldDraft = vi.fn();
 const mockUpdateWorldDraft = vi.fn();
+const mockReorderWorld = vi.fn();
 const mockPublishWorld = vi.fn();
 const mockUnpublishWorld = vi.fn();
 const mockUploadWorldArt = vi.fn();
@@ -25,6 +26,8 @@ vi.mock("@/server/worlds/service", () => ({
     mockCreateWorldDraft(actor, input, meta),
   updateWorldDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockUpdateWorldDraft(actor, input, meta),
+  reorderWorld: (actor: unknown, id: unknown, newOrder: unknown, meta: unknown) =>
+    mockReorderWorld(actor, id, newOrder, meta),
   publishWorld: (actor: unknown, id: unknown, meta: unknown) => mockPublishWorld(actor, id, meta),
   unpublishWorld: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishWorld(actor, id, meta),
@@ -35,6 +38,7 @@ vi.mock("@/server/worlds/service", () => ({
 import {
   createWorldDraftAction,
   publishWorldAction,
+  reorderWorldAction,
   unpublishWorldAction,
   updateWorldDraftAction,
   uploadWorldArtAction,
@@ -74,6 +78,16 @@ describe("wrong role is rejected", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateWorldDraft).not.toHaveBeenCalled();
+  });
+
+  it("reorderWorldAction: requires world.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.manage"));
+
+    const result = await reorderWorldAction({ id: WORLD_ID, newOrder: 2 });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.manage");
+    expect(mockReorderWorld).not.toHaveBeenCalled();
   });
 
   it("publishWorldAction: requires world.publish, not world.manage", async () => {
@@ -160,6 +174,29 @@ describe("happy paths", () => {
 
     expect(result).toEqual({ ok: true });
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/worlds");
+  });
+
+  it("reorderWorldAction moves and revalidates", async () => {
+    mockReorderWorld.mockResolvedValueOnce({ id: WORLD_ID, order: 2 });
+
+    const result = await reorderWorldAction({ id: WORLD_ID, newOrder: 2 });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockReorderWorld).toHaveBeenCalledWith(ACTOR, WORLD_ID, 2, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/worlds");
+  });
+
+  it("reorderWorldAction surfaces an out-of-range error to the caller", async () => {
+    mockReorderWorld.mockRejectedValueOnce(
+      new AppError("VALIDATION_FAILED", "newOrder must be between 1 and 3 (the current number of worlds)"),
+    );
+
+    const result = await reorderWorldAction({ id: WORLD_ID, newOrder: 99 });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "newOrder must be between 1 and 3 (the current number of worlds)",
+    });
   });
 
   it("uploadWorldArtAction rejects when no file is provided, without calling the service", async () => {

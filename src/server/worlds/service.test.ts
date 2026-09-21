@@ -4,6 +4,7 @@ const mockGetWorldById = vi.fn();
 const mockInsertDraftWorld = vi.fn();
 const mockListAllWorlds = vi.fn();
 const mockListPublishedWorlds = vi.fn();
+const mockMoveWorldToPosition = vi.fn();
 const mockPublishWorldRow = vi.fn();
 const mockSetWorldArtKey = vi.fn();
 const mockUnpublishWorldRow = vi.fn();
@@ -13,6 +14,7 @@ vi.mock("./repo", () => ({
   insertDraftWorld: (input: unknown) => mockInsertDraftWorld(input),
   listAllWorlds: () => mockListAllWorlds(),
   listPublishedWorlds: () => mockListPublishedWorlds(),
+  moveWorldToPosition: (id: unknown, newOrder: unknown) => mockMoveWorldToPosition(id, newOrder),
   publishWorldRow: (id: unknown, staffId: unknown) => mockPublishWorldRow(id, staffId),
   setWorldArtKey: (id: unknown, artKey: unknown) => mockSetWorldArtKey(id, artKey),
   unpublishWorldRow: (id: unknown) => mockUnpublishWorldRow(id),
@@ -44,6 +46,7 @@ import {
   getPublicWorlds,
   getWorldEditorData,
   publishWorld,
+  reorderWorld,
   unpublishWorld,
   updateWorldDraft,
   uploadWorldArt,
@@ -223,6 +226,47 @@ describe("updateWorldDraft", () => {
       ),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockUpdateDraftWorld).not.toHaveBeenCalled();
+  });
+});
+
+describe("reorderWorld", () => {
+  it("moves the world and logs it, once newOrder is within range", async () => {
+    mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow(), worldRow()]); // count: 3
+    mockMoveWorldToPosition.mockResolvedValueOnce(worldRow({ order: 2 }));
+
+    const result = await reorderWorld(ACTOR, "world_1", 2, META);
+
+    expect(mockMoveWorldToPosition).toHaveBeenCalledWith("world_1", 2);
+    expect(result.order).toBe(2);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "world.reordered", actorId: "staff_1" }),
+    );
+  });
+
+  it("rejects newOrder below 1 without calling the repo", async () => {
+    mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow(), worldRow()]);
+
+    await expect(reorderWorld(ACTOR, "world_1", 0, META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+    });
+    expect(mockMoveWorldToPosition).not.toHaveBeenCalled();
+  });
+
+  it("rejects newOrder beyond the current world count without calling the repo", async () => {
+    mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow(), worldRow()]); // count: 3
+
+    await expect(reorderWorld(ACTOR, "world_1", 4, META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+    });
+    expect(mockMoveWorldToPosition).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND for an unknown world", async () => {
+    mockListAllWorlds.mockResolvedValueOnce([worldRow()]);
+    mockMoveWorldToPosition.mockResolvedValueOnce(null);
+
+    await expect(reorderWorld(ACTOR, "nope", 1, META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 

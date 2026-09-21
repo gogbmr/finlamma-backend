@@ -17,6 +17,7 @@ import type { LocalizedText } from "@/server/shared/schemas";
 import {
   createWorldDraftAction,
   publishWorldAction,
+  reorderWorldAction,
   unpublishWorldAction,
   updateWorldDraftAction,
   uploadWorldArtAction,
@@ -239,6 +240,7 @@ function WorldForm({
   const [mentorId, setMentorId] = useState(world.mentorId);
   const [title, setTitle] = useState<LocalizedText>(world.title);
   const [tagline, setTagline] = useState<LocalizedText>(world.tagline);
+  const [reorderTarget, setReorderTarget] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDraft = world.status === "draft";
@@ -299,6 +301,19 @@ function WorldForm({
     });
   }
 
+  function reorder() {
+    const target = Number(reorderTarget);
+    if (!target) return;
+    startTransition(async () => {
+      const result = await reorderWorldAction({ id: world.id, newOrder: target });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Moved to position ${target}`);
+    });
+  }
+
   return (
     <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
       <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
@@ -317,6 +332,28 @@ function WorldForm({
           </span>
         )}
       </div>
+
+      {canManage && (
+        <div className="flex items-end gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+          <div className="space-y-1">
+            <Label>Move to position</Label>
+            <Input
+              type="number"
+              className="w-24"
+              value={reorderTarget}
+              onChange={(e) => setReorderTarget(e.target.value)}
+              placeholder={String(world.order)}
+            />
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={reorder} disabled={isPending}>
+            Move
+          </Button>
+          <p className="text-xs text-neutral-500">
+            Works on published worlds too, and shifts everyone between the old and new position -
+            no unpublish needed.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
