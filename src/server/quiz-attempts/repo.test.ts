@@ -215,6 +215,7 @@ describe("insertServedQuestionAnswer / getQuestionAnswer / getPreviousQuestionAn
       stepIndex: 1,
       servedAt: new Date(),
       timerSeconds: 10,
+      servedRevision: 1,
     });
 
     const found = await getQuestionAnswer(attempt.id, 1);
@@ -238,6 +239,7 @@ describe("insertServedQuestionAnswer / getQuestionAnswer / getPreviousQuestionAn
       stepIndex: 1,
       servedAt: new Date(),
       timerSeconds: 10,
+      servedRevision: 1,
     });
 
     await expect(
@@ -247,6 +249,7 @@ describe("insertServedQuestionAnswer / getQuestionAnswer / getPreviousQuestionAn
         stepIndex: 1,
         servedAt: new Date(),
         timerSeconds: 10,
+        servedRevision: 1,
       }),
     ).rejects.toThrow();
   });
@@ -267,6 +270,7 @@ describe("insertServedQuestionAnswer / getQuestionAnswer / getPreviousQuestionAn
       stepIndex: 1,
       servedAt: new Date(),
       timerSeconds: 10,
+      servedRevision: 1,
     });
 
     const found = await getPreviousQuestionAnswer(attempt.id, 2);
@@ -292,6 +296,7 @@ describe("gradeQuestionAnswer", () => {
       stepIndex: 1,
       servedAt: new Date(),
       timerSeconds: 10,
+      servedRevision: 1,
     });
     return { attempt, question };
   }
@@ -309,7 +314,6 @@ describe("gradeQuestionAnswer", () => {
       feverActive: false,
       xpAwardedPreview: 30,
       comboAfter: 1,
-      questionRevision: 1,
       answeredAt: new Date(),
     });
 
@@ -330,7 +334,6 @@ describe("gradeQuestionAnswer", () => {
       feverActive: false,
       xpAwardedPreview: 30,
       comboAfter: 1,
-      questionRevision: 1,
       answeredAt: new Date(),
     });
 
@@ -344,7 +347,6 @@ describe("gradeQuestionAnswer", () => {
       feverActive: false,
       xpAwardedPreview: 999,
       comboAfter: 0,
-      questionRevision: 1,
       answeredAt: new Date(),
     });
 
@@ -372,6 +374,7 @@ describe("listQuestionAnswersForAttempt", () => {
       stepIndex: 2,
       servedAt: new Date(),
       timerSeconds: 10,
+      servedRevision: 1,
     });
     await insertServedQuestionAnswer({
       attemptId: attempt.id,
@@ -379,6 +382,7 @@ describe("listQuestionAnswersForAttempt", () => {
       stepIndex: 1,
       servedAt: new Date(),
       timerSeconds: 10,
+      servedRevision: 1,
     });
 
     const result = await listQuestionAnswersForAttempt(attempt.id);

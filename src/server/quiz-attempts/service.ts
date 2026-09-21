@@ -4,7 +4,7 @@ import type { requestMeta } from "@/lib/http";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { extractQuestionIds } from "@/server/lessons/service";
 import { VideoContentSchema } from "@/server/lessons/schemas";
-import { getQuestionById } from "@/server/questions/repo";
+import { getQuestionById, getQuestionRevision } from "@/server/questions/repo";
 import { answerSchemaForFormat, type QuestionFormat } from "@/server/questions/schemas";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import {
@@ -125,6 +125,11 @@ export async function serveStep(
       stepIndex,
       servedAt: new Date(),
       timerSeconds: await timerSecondsForStep(lesson, stepIndex, settings.practiceQuizTimerSeconds),
+      // Captured once, here, and never touched again (including on an
+      // idempotent re-serve of the same unanswered step below) - this is
+      // what grading uses, not the live `questions.revision`, so a hotfix
+      // landing after this moment can never affect this step (D22).
+      servedRevision: question.revision,
     });
   }
 
@@ -146,7 +151,7 @@ export async function serveStep(
 
 function buildAnswerResponse(
   row: QuestionAnswerRow,
-  question: { answer: unknown; explanation: unknown },
+  revision: { answer: unknown; explanation: unknown },
   totalSteps: number,
   attempt: { status: string; totalXpPreview: number | null },
 ) {
@@ -156,8 +161,8 @@ function buildAnswerResponse(
     totalSteps,
     isCorrect: row.isCorrect!,
     timedOut: row.timedOut!,
-    correctAnswer: question.answer,
-    explanation: question.explanation,
+    correctAnswer: revision.answer,
+    explanation: revision.explanation,
     xpAwardedPreview: row.xpAwardedPreview!,
     speedBonusAwarded: row.speedBonusAwarded!,
     feverActive: row.feverActive!,
@@ -174,6 +179,12 @@ function buildAnswerResponse(
 // graded; an unserved step (no row at all) is rejected. Answer/explanation
 // are revealed here, for this question only, never before this call and
 // never for any other step.
+//
+// D22: grading always uses `row.servedRevision` - the revision that was
+// actually SERVED to this learner (stamped once, at serve time) - never the
+// live `questions` row. A hotfix landing between serve and answer changes
+// nothing about this in-flight answer; it only affects the NEXT time this
+// question is served.
 export async function submitAnswer(
   user: { id: string },
   lessonId: string,
@@ -190,12 +201,20 @@ export async function submitAnswer(
   const row = await getQuestionAnswer(attempt.id, stepIndex);
   if (!row) throw new AppError("CONFLICT", "This step hasn't been served yet");
 
-  const question = await getQuestionById(row.questionId);
-  if (!question) throw new AppError("NOT_FOUND", "This step's question no longer exists");
+  const servedRevision = await getQuestionRevision(row.questionId, row.servedRevision);
+  if (!servedRevision) {
+    // Should never happen once every publish/hotfix snapshots (D22) - a
+    // data-integrity bug, not a normal "not found", but there's nothing
+    // safe to grade against without it.
+    throw new AppError("NOT_FOUND", "This question's served revision is no longer recoverable");
+  }
 
   if (row.answeredAt) {
-    return buildAnswerResponse(row, question, questionIds.length, attempt);
+    return buildAnswerResponse(row, servedRevision, questionIds.length, attempt);
   }
+
+  const question = await getQuestionById(row.questionId);
+  if (!question) throw new AppError("NOT_FOUND", "This step's question no longer exists");
 
   const format = question.format as QuestionFormat;
   const answerResult = answerSchemaForFormat(format).safeParse(rawAnswer);
@@ -215,7 +234,7 @@ export async function submitAnswer(
 
   const score = computeScore({
     quizKind: quizKindForLesson(lesson.kind),
-    answerMatches: answerMatches(format, answerResult.data, question.answer),
+    answerMatches: answerMatches(format, answerResult.data, servedRevision.answer),
     elapsedMs,
     timerSeconds: row.timerSeconds,
     comboBefore,
@@ -233,7 +252,6 @@ export async function submitAnswer(
     feverActive: score.feverActive,
     xpAwardedPreview: score.xpAwardedPreview,
     comboAfter: score.comboAfter,
-    questionRevision: question.revision,
     answeredAt,
   });
   if (!graded) {
@@ -301,5 +319,5 @@ export async function submitAnswer(
     });
   }
 
-  return buildAnswerResponse(graded, question, questionIds.length, attemptAfter);
+  return buildAnswerResponse(graded, servedRevision, questionIds.length, attemptAfter);
 }

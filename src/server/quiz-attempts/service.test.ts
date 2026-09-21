@@ -6,8 +6,11 @@ vi.mock("@/server/lessons/repo", () => ({
 }));
 
 const mockGetQuestionById = vi.fn();
+const mockGetQuestionRevision = vi.fn();
 vi.mock("@/server/questions/repo", () => ({
   getQuestionById: (id: unknown) => mockGetQuestionById(id),
+  getQuestionRevision: (questionId: unknown, revision: unknown) =>
+    mockGetQuestionRevision(questionId, revision),
   getQuestionsByIds: () => Promise.resolve([]),
 }));
 
@@ -122,6 +125,7 @@ function servedAnswerRow(overrides: Partial<Record<string, unknown>> = {}) {
     stepIndex: 1,
     servedAt: new Date("2026-01-01T00:00:00.000Z"),
     timerSeconds: 10,
+    servedRevision: 1,
     answeredAt: null,
     submittedAnswer: null,
     isCorrect: null,
@@ -130,7 +134,23 @@ function servedAnswerRow(overrides: Partial<Record<string, unknown>> = {}) {
     feverActive: null,
     xpAwardedPreview: null,
     comboAfter: null,
-    questionRevision: null,
+    ...overrides,
+  };
+}
+
+// D22 (docs/ARCHITECTURE.md): the question_revisions snapshot at one
+// specific revision - what grading actually reads, never the live
+// `questions` row. Defaults to matching questionRow()'s content at
+// revision 1.
+function questionRevisionRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "qrev_1",
+    questionId: Q1_ID,
+    revision: 1,
+    prompt: questionRow().prompt,
+    explanation: questionRow().explanation,
+    payload: questionRow().payload,
+    answer: questionRow().answer,
     ...overrides,
   };
 }
@@ -138,6 +158,10 @@ function servedAnswerRow(overrides: Partial<Record<string, unknown>> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetLessonFlowScoringSettings.mockResolvedValue(SCORING_SETTINGS);
+  // Default: the servedRevision requested always resolves to the matching
+  // snapshot - tests that specifically exercise a hotfix-between-serve-and-
+  // answer scenario override this per-call.
+  mockGetQuestionRevision.mockResolvedValue(questionRevisionRow());
   // Matches servedAnswerRow()'s default servedAt, so any test that doesn't
   // care about elapsed time gets elapsed=0 by default - tests that DO care
   // move the clock forward explicitly with vi.setSystemTime().
@@ -210,6 +234,23 @@ describe("serveStep", () => {
     );
     expect(result.attemptId).toBe(ATTEMPT_ID);
     expect(result.totalSteps).toBe(2);
+  });
+
+  // D22 (docs/ARCHITECTURE.md): the revision grading will later use is
+  // captured HERE, at serve time, from the live question's CURRENT
+  // revision - not re-derived later at answer time.
+  it("captures the question's current revision as servedRevision when a new step is served", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(null);
+    mockGetQuestionById.mockResolvedValue(questionRow({ revision: 4 }));
+    mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ servedRevision: 4 }));
+
+    await serveStep(USER, LESSON_ID, 1, META);
+
+    expect(mockInsertServedQuestionAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({ servedRevision: 4 }),
+    );
   });
 
   it("no-skip-ahead: rejects serving a step whose predecessor isn't answered yet", async () => {
@@ -378,8 +419,13 @@ describe("submitAnswer", () => {
     );
   });
 
-  it("a timeout grades as wrong even though the submitted answer was correct", async () => {
-    vi.setSystemTime(new Date("2026-01-01T00:00:25.000Z")); // 25s after servedAt
+  // D21 (docs/ARCHITECTURE.md): an answer arriving after the timer (plus the
+  // documented 300ms latency allowance) is ACCEPTED, not rejected with an
+  // error - submitAnswer resolves normally here, it never throws - but is
+  // graded as timed out: wrong regardless of content, no speed bonus, combo
+  // reset to 0.
+  it("accepts (does not reject) an answer that arrives after the timer + latency allowance, but grades it as timed out", async () => {
+    vi.setSystemTime(new Date("2026-01-01T00:00:25.000Z")); // 25s after servedAt, way past a 10s timer + 300ms allowance
     mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
     mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
     mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ timerSeconds: 10 })); // way over budget
@@ -387,10 +433,14 @@ describe("submitAnswer", () => {
     mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
     mockGradeQuestionAnswer.mockImplementationOnce((input) => Promise.resolve(servedAnswerRow(input)));
 
+    // The correct answer, submitted late - resolves successfully (not
+    // rejected/thrown), just graded as wrong.
     const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
 
     expect(result.timedOut).toBe(true);
     expect(result.isCorrect).toBe(false);
+    expect(result.speedBonusAwarded).toBe(false);
+    expect(result.comboAfter).toBe(0);
     // quizLesson()'s default kind is "quiz" -> practiceQuiz.wrongXp (5), not popQuiz's.
     expect(mockGradeQuestionAnswer).toHaveBeenCalledWith(
       expect.objectContaining({ isCorrect: false, timedOut: true, xpAwardedPreview: 5 }),
@@ -509,5 +559,70 @@ describe("submitAnswer", () => {
     const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
 
     expect(result.xpAwardedPreview).toBe(30);
+  });
+
+  // D22 (docs/ARCHITECTURE.md): grading must use the revision that was
+  // SERVED, never the current live one - a hotfix landing between serve and
+  // answer must not change what an in-flight answer is graded against.
+  describe("mid-flight hotfix (D22)", () => {
+    it("grades against the SERVED revision's answer, ignoring a hotfix applied after serving", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      // Served while question.revision was 1 (correctIndex: 0).
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ timerSeconds: 10, servedRevision: 1 }));
+      // A hotfix has since landed: the LIVE question is now revision 2 with
+      // a DIFFERENT correct answer (correctIndex: 1) - format is immutable
+      // so it's still fetched live for validating the submitted shape.
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ revision: 2, answer: { correctIndex: 1 } }));
+      // But the snapshot for the SERVED revision (1) still holds the
+      // ORIGINAL answer - this is what grading must use.
+      mockGetQuestionRevision.mockResolvedValueOnce(
+        questionRevisionRow({ revision: 1, answer: { correctIndex: 0 } }),
+      );
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) => Promise.resolve(servedAnswerRow(input)));
+
+      // The learner submits what was correct when THEY were served (0) -
+      // which is now "wrong" per the live, hotfixed question.
+      const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
+
+      expect(mockGetQuestionRevision).toHaveBeenCalledWith(Q1_ID, 1); // the served revision, not 2
+      expect(result.isCorrect).toBe(true); // graded against the OLD (served) answer
+      expect(result.correctAnswer).toEqual({ correctIndex: 0 }); // reveals the served revision's answer
+      expect(mockGradeQuestionAnswer).toHaveBeenCalledWith(expect.objectContaining({ isCorrect: true }));
+    });
+
+    it("an idempotent replay also uses the served revision's snapshot for correctAnswer/explanation, not the live question", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(
+        servedAnswerRow({ answeredAt: new Date(), isCorrect: true, xpAwardedPreview: 20, servedRevision: 1 }),
+      );
+      mockGetQuestionRevision.mockResolvedValueOnce(
+        questionRevisionRow({ revision: 1, answer: { correctIndex: 0 }, explanation: { en: "Original explanation", hi: "x", hx: "x" } }),
+      );
+
+      const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
+
+      expect(result.correctAnswer).toEqual({ correctIndex: 0 });
+      expect(result.explanation).toEqual({ en: "Original explanation", hi: "x", hx: "x" });
+      expect(mockGetQuestionById).not.toHaveBeenCalled(); // never needed for a replay
+    });
+
+    // Item 1 (recoverability): this should never happen once every publish/
+    // hotfix snapshots a revision, but if a servedRevision somehow has no
+    // matching snapshot, grading must fail loudly rather than silently
+    // grade against the wrong (live) content.
+    it("throws NOT_FOUND when the served revision has no recoverable snapshot", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ servedRevision: 1 }));
+      mockGetQuestionRevision.mockResolvedValueOnce(null);
+
+      await expect(
+        submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(mockGradeQuestionAnswer).not.toHaveBeenCalled();
+    });
   });
 });

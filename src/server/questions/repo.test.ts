@@ -14,6 +14,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   getQuestionById,
+  getQuestionRevision,
   getQuestionsByIds,
   hotfixQuestionRow,
   insertDraftQuestion,
@@ -192,7 +193,7 @@ describe("hotfixQuestionRow", () => {
     expect(result).toBeNull();
     const row = await getQuestionById(created.id);
     expect(row?.prompt.en).not.toBe("Should not apply");
-    expect(row?.revision).toBe(1);
+    expect(row?.revision).toBe(0); // never published - no revision has ever gone live
   });
 
   it("returns null for a nonexistent question", async () => {
@@ -204,6 +205,89 @@ describe("hotfixQuestionRow", () => {
       answer: draftInput().answer,
     });
     expect(result).toBeNull();
+  });
+});
+
+// D22 (docs/ARCHITECTURE.md): every revision a question's content has ever
+// had must be recoverable, not just the current one - this is what lets
+// src/server/quiz-attempts/service.ts grade against the exact revision a
+// learner was actually SERVED, even after a later hotfix.
+describe("revision recoverability", () => {
+  it("snapshots revision 1 at publish time, matching the published content exactly", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    const published = await publishQuestionRow(created.id, staffId);
+
+    const snapshot = await getQuestionRevision(created.id, 1);
+
+    expect(published?.revision).toBe(1);
+    expect(snapshot).toMatchObject({
+      questionId: created.id,
+      revision: 1,
+      prompt: draftInput().prompt,
+      explanation: draftInput().explanation,
+      payload: draftInput().payload,
+      answer: draftInput().answer,
+    });
+  });
+
+  it("keeps the ORIGINAL revision's content recoverable after a hotfix changes the live row", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    await publishQuestionRow(created.id, staffId);
+
+    await hotfixQuestionRow({
+      id: created.id,
+      prompt: { en: "Fixed prompt", hi: "x", hx: "x" },
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: { correctIndex: 1 }, // the actual "wrong correct answer" fix
+    });
+
+    // The live row now reflects the fix...
+    const live = await getQuestionById(created.id);
+    expect(live?.answer).toEqual({ correctIndex: 1 });
+    expect(live?.revision).toBe(2);
+
+    // ...but revision 1's exact original content (including the OLD
+    // answer) is still fully recoverable, not overwritten or lost.
+    const original = await getQuestionRevision(created.id, 1);
+    expect(original?.prompt.en).toBe(draftInput().prompt.en);
+    expect(original?.answer).toEqual({ correctIndex: 0 });
+
+    // And revision 2's own snapshot matches the new, fixed content.
+    const fixed = await getQuestionRevision(created.id, 2);
+    expect(fixed?.prompt.en).toBe("Fixed prompt");
+    expect(fixed?.answer).toEqual({ correctIndex: 1 });
+  });
+
+  it("every past revision stays independently recoverable across several hotfixes", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    await publishQuestionRow(created.id, staffId);
+    await hotfixQuestionRow({
+      id: created.id,
+      prompt: created.prompt,
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: { correctIndex: 1 },
+    });
+    await hotfixQuestionRow({
+      id: created.id,
+      prompt: created.prompt,
+      explanation: created.explanation,
+      payload: created.payload,
+      answer: { correctIndex: 0 }, // fixed back
+    });
+
+    expect((await getQuestionRevision(created.id, 1))?.answer).toEqual({ correctIndex: 0 });
+    expect((await getQuestionRevision(created.id, 2))?.answer).toEqual({ correctIndex: 1 });
+    expect((await getQuestionRevision(created.id, 3))?.answer).toEqual({ correctIndex: 0 });
+  });
+
+  it("returns null for a revision that was never live", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    await publishQuestionRow(created.id, staffId);
+
+    expect(await getQuestionRevision(created.id, 99)).toBeNull();
+    expect(await getQuestionRevision(randomUUID(), 1)).toBeNull();
   });
 });
 

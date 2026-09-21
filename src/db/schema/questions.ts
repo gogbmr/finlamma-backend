@@ -1,4 +1,14 @@
-import { index, integer, jsonb, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 import { idAndTimestamps, type LocalizedText } from "./_helpers";
 import { staffMembers } from "./staff";
 
@@ -35,14 +45,14 @@ export const questions = pgTable(
     explanation: jsonb("explanation").$type<LocalizedText>().notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     answer: jsonb("answer").$type<unknown>().notNull(),
-    // Bumped on every hotfix (src/server/questions/service.ts's
-    // hotfixQuestion) that changes payload/answer on an already-published
-    // question - never on a draft edit or publish itself. question_answers
-    // (Checkpoint 5b) stamps this value onto each graded answer so it's
-    // always known which revision a historical attempt was graded against,
-    // even after a later hotfix changes the answer key. See
-    // docs/ARCHITECTURE.md D20.
-    revision: integer("revision").default(1).notNull(),
+    // Bumped by every publish (src/server/questions/service.ts's
+    // publishQuestion) and every hotfix (hotfixQuestion, D20) that changes
+    // payload/answer on an already-published question - never on a plain
+    // draft edit. Starts at 0 (a draft that's never gone live has no
+    // meaningful revision) and becomes 1 on first publish. Every value this
+    // column ever takes has a matching questionRevisions row below - see
+    // D21/D22, docs/ARCHITECTURE.md.
+    revision: integer("revision").default(0).notNull(),
     status: questionStatusEnum("status").default("draft").notNull(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishedBy: uuid("published_by").references(() => staffMembers.id, {
@@ -50,4 +60,29 @@ export const questions = pgTable(
     }),
   },
   (t) => [index("questions_status_idx").on(t.status)],
+).enableRLS();
+
+// Full-content snapshot of a question at one revision (D22,
+// docs/ARCHITECTURE.md): written every time `questions`' live content
+// changes (publishQuestionRow, hotfixQuestionRow) - never on a draft edit,
+// since a draft isn't live yet. This is what makes every revision a
+// `question_answers.servedRevision` might point to actually recoverable:
+// the live `questions` row only ever holds the CURRENT content, so without
+// this table a hotfix would silently make a past revision's exact
+// prompt/payload/answer unrecoverable. Append-only - a revision snapshot is
+// never updated or deleted once written.
+export const questionRevisions = pgTable(
+  "question_revisions",
+  {
+    ...idAndTimestamps(),
+    questionId: uuid("question_id")
+      .notNull()
+      .references(() => questions.id, { onDelete: "cascade" }),
+    revision: integer("revision").notNull(),
+    prompt: jsonb("prompt").$type<LocalizedText>().notNull(),
+    explanation: jsonb("explanation").$type<LocalizedText>().notNull(),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    answer: jsonb("answer").$type<unknown>().notNull(),
+  },
+  (t) => [uniqueIndex("question_revisions_question_id_revision_idx").on(t.questionId, t.revision)],
 ).enableRLS();

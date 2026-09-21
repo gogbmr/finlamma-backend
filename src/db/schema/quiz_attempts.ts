@@ -41,18 +41,21 @@ export const quizAttempts = pgTable(
 // server-stamped moment the question was actually handed to the client
 // (src/server/quiz-attempts/service.ts's serveStep) - the client's own
 // clock is never trusted for timing, see docs/ARCHITECTURE.md D21.
-// `submittedAnswer`/`isCorrect`/`timedOut`/`speedBonusAwarded`/
-// `feverActive`/`xpAwardedPreview`/`comboAfter` stay null until answered;
-// `answeredAt` null is exactly what makes a step "the current, answerable
-// one" (see the service layer's no-skip-ahead check). `timedOut`/
-// `speedBonusAwarded`/`feverActive` are stored (not just derived from
-// `xpAwardedPreview`) so a duplicate/idempotent resubmit can return the
-// exact original graded response even if admin-editable scoring settings
-// (settings_kv) changed in between - a replay must never look inconsistent
-// with what the learner actually saw the first time. `questionRevision` is
-// `questions.revision` (D20) at grading time, so a
-// later hotfix to the answer key never changes what a past attempt is
-// understood to have been graded against.
+// `servedRevision` is `questions.revision` at the moment THIS step was
+// first served (D22, docs/ARCHITECTURE.md) - grading always looks up
+// `questionRevisions` at this exact revision, never the live `questions`
+// row, so a hotfix landing between serve and answer can never change what
+// an in-flight answer is graded against. It's captured once, at serve time,
+// and never updated again (including on an idempotent re-serve of the same
+// unanswered step). `submittedAnswer`/`isCorrect`/`timedOut`/
+// `speedBonusAwarded`/`feverActive`/`xpAwardedPreview`/`comboAfter` stay
+// null until answered; `answeredAt` null is exactly what makes a step "the
+// current, answerable one" (see the service layer's no-skip-ahead check).
+// `timedOut`/`speedBonusAwarded`/`feverActive` are stored (not just derived
+// from `xpAwardedPreview`) so a duplicate/idempotent resubmit can return
+// the exact original graded response even if admin-editable scoring
+// settings (settings_kv) changed in between - a replay must never look
+// inconsistent with what the learner actually saw the first time.
 export const questionAnswers = pgTable(
   "question_answers",
   {
@@ -66,6 +69,7 @@ export const questionAnswers = pgTable(
     stepIndex: integer("step_index").notNull(), // 1-based position within the lesson's question sequence
     servedAt: timestamp("served_at", { withTimezone: true }).notNull(),
     timerSeconds: integer("timer_seconds").notNull(), // allotted time, captured at serve time
+    servedRevision: integer("question_revision").notNull(),
     answeredAt: timestamp("answered_at", { withTimezone: true }),
     submittedAnswer: jsonb("submitted_answer").$type<unknown>(),
     isCorrect: boolean("is_correct"),
@@ -74,7 +78,6 @@ export const questionAnswers = pgTable(
     feverActive: boolean("fever_active"),
     xpAwardedPreview: integer("xp_awarded_preview"),
     comboAfter: integer("combo_after"),
-    questionRevision: integer("question_revision"),
   },
   (t) => [
     uniqueIndex("question_answers_attempt_step_idx").on(t.attemptId, t.stepIndex),

@@ -79,6 +79,7 @@ export async function insertServedQuestionAnswer(input: {
   stepIndex: number;
   servedAt: Date;
   timerSeconds: number;
+  servedRevision: number;
 }) {
   const [row] = await db.insert(questionAnswers).values(input).returning();
   return row;
@@ -101,7 +102,6 @@ export async function gradeQuestionAnswer(input: {
   feverActive: boolean;
   xpAwardedPreview: number;
   comboAfter: number;
-  questionRevision: number;
   answeredAt: Date;
 }) {
   const { attemptId, stepIndex, ...rest } = input;

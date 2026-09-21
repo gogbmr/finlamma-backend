@@ -111,10 +111,17 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 - `lesson_progress` (not yet built)
 - `quiz_attempts` (user_id, lesson_id, attempt_number, is_first_pass, status `in_progress`|
   `completed`, started_at, completed_at, total_xp_preview) and `question_answers` (attempt_id,
-  question_id, step_index, served_at, timer_seconds, answered_at, submitted_answer, is_correct,
-  timed_out, speed_bonus_awarded, fever_active, xp_awarded_preview, combo_after,
-  question_revision — `questions.revision`, D20, at grading time) — Checkpoint 5b's server-timed,
-  idempotent quiz answering; see `docs/ARCHITECTURE.md` D21 for the full anti-cheat design
+  question_id, step_index, served_at, timer_seconds, served_revision — the exact `questions`
+  revision served, captured at serve time, never re-derived — answered_at, submitted_answer,
+  is_correct, timed_out, speed_bonus_awarded, fever_active, xp_awarded_preview, combo_after) —
+  Checkpoint 5b's server-timed, idempotent quiz answering; see `docs/ARCHITECTURE.md` D21 for the
+  full anti-cheat design
+- `question_revisions` (question_id, revision, prompt, explanation, payload, answer) — a full
+  content snapshot written every time a question's live content changes (every publish and every
+  D20 hotfix), never on a draft edit. This is what makes `question_answers.served_revision`
+  actually recoverable, and what grading reads instead of the live `questions` row, so a hotfix
+  landing between serve and answer never affects an in-flight answer — see `docs/ARCHITECTURE.md`
+  D22.
 - `certificates` (user_id, world_id, code, file_key) — PDFs are rendered server-side with a
   browser-free library (e.g. `@react-pdf/renderer`, not a headless browser — Vercel-compatible)
   and stored via `src/lib/s3.ts`; sharing is a signed URL the student sends themselves, never a
