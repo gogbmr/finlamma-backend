@@ -32,6 +32,7 @@ import {
   listCandidatesForReapproval,
   listConsentRecordsForReview,
   listPendingReapprovalRequestsForUser,
+  markOnboardingCompletedOnce,
   setConsentRecordParentEmailHmac,
   setConsentRecordWithdrawTokenHash,
   setDateOfBirthOnce,
@@ -48,7 +49,13 @@ const LEGAL_DOCUMENT_LABELS: Record<string, string> = {
 };
 
 type RequestMeta = ReturnType<typeof requestMeta>;
-type MeUser = { id: string; email: string | null; firstName: string | null; dateOfBirth: string | null };
+type MeUser = {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  dateOfBirth: string | null;
+  onboardingCompletedAt?: Date | null;
+};
 
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -144,6 +151,28 @@ export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, m
 
   const minor = isMinor(input.dateOfBirth);
   return { dateOfBirth: input.dateOfBirth, isMinor: minor, requiresParentConsent: minor };
+}
+
+// Idempotent, unlike setDateOfBirth above - see markOnboardingCompletedOnce
+// in repo.ts. Never a requireFullAccess gate; purely "have they seen the
+// World Home mentor-intro modal" (WH-11).
+export async function completeOnboarding(user: MeUser, meta: RequestMeta) {
+  const updated = await markOnboardingCompletedOnce(user.id);
+  if (!updated) throw new AppError("NOT_FOUND", "User not found");
+
+  if (!user.onboardingCompletedAt) {
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "onboarding.completed",
+      targetType: "user",
+      targetId: user.id,
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
+
+  return { onboardingCompletedAt: updated.onboardingCompletedAt!.toISOString() };
 }
 
 // Requests (or re-requests) parental consent. Every rejection here maps to

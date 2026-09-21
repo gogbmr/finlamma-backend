@@ -28,6 +28,11 @@ vi.mock("@/server/mentors/repo", () => ({
   listAllMentors: () => mockListAllMentors(),
 }));
 
+const mockListPublishedLessonsByWorldId = vi.fn();
+vi.mock("@/server/lessons/repo", () => ({
+  listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
+}));
+
 const mockLogActivity = vi.fn();
 vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
@@ -87,6 +92,9 @@ function mentorRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // No published lessons reference this world by default - existing tests
+  // below don't need to know about the lesson-reference block at all.
+  mockListPublishedLessonsByWorldId.mockResolvedValue([]);
 });
 
 describe("getPublicWorlds", () => {
@@ -345,6 +353,42 @@ describe("unpublishWorld", () => {
     mockUnpublishWorldRow.mockResolvedValueOnce(null);
 
     await expect(unpublishWorld(ACTOR, "world_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  // The rule this checkpoint added: a world can't be unpublished while any
+  // published lesson still belongs to it, naming the lesson(s) in the error.
+  it("blocks unpublish and names the referencing lesson when a published lesson still belongs to this world", async () => {
+    mockListPublishedLessonsByWorldId.mockResolvedValueOnce([
+      { id: "lesson_1", title: { en: "Money World Lesson", hi: "x", hx: "x" }, chapter: 1, step: 1 },
+    ]);
+
+    await expect(unpublishWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/Money World Lesson/),
+      details: { lessonIds: ["lesson_1"] },
+    });
+    expect(mockUnpublishWorldRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("names every referencing lesson when more than one published lesson belongs to this world", async () => {
+    mockListPublishedLessonsByWorldId.mockResolvedValueOnce([
+      { id: "lesson_1", title: { en: "First", hi: "x", hx: "x" }, chapter: 1, step: 1 },
+      { id: "lesson_2", title: { en: "Second", hi: "x", hx: "x" }, chapter: 1, step: 2 },
+    ]);
+
+    await expect(unpublishWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      message: expect.stringMatching(/First.*Second/),
+    });
+  });
+
+  it("allows unpublish once no published lesson references the world anymore", async () => {
+    mockListPublishedLessonsByWorldId.mockResolvedValueOnce([]);
+    mockUnpublishWorldRow.mockResolvedValueOnce(worldRow({ status: "draft" }));
+
+    const result = await unpublishWorld(ACTOR, "world_1", META);
+
+    expect(result.status).toBe("draft");
   });
 });
 

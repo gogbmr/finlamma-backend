@@ -21,6 +21,23 @@ export async function setDateOfBirthOnce(userId: string, dateOfBirth: string) {
   return updated ?? null;
 }
 
+// Idempotent (unlike setDateOfBirthOnce): the World Home mentor-intro modal
+// (WH-11) can fire more than once client-side without turning into a
+// CONFLICT error - it's a "have they seen it" flag, not sensitive data. The
+// `isNull` guard just avoids bumping the timestamp on a repeat call; a
+// second call is a harmless no-op, not a race to guard against.
+export async function markOnboardingCompletedOnce(userId: string) {
+  const [updated] = await db
+    .update(users)
+    .set({ onboardingCompletedAt: new Date() })
+    .where(and(eq(users.id, userId), isNull(users.onboardingCompletedAt)))
+    .returning();
+  if (updated) return updated;
+
+  const [existing] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return existing ?? null;
+}
+
 // Used to personalize the consent request/receipt emails and the public
 // consent page - never anything more sensitive than the same kid-safe
 // first name already shown throughout the app.

@@ -1,0 +1,92 @@
+import Link from "next/link";
+import { Forbidden } from "@/components/admin/forbidden";
+import { getStaffMember } from "@/lib/auth";
+import { roleHasPermission } from "@/server/staff/repo";
+import { getWorldEditorData } from "@/server/worlds/service";
+import { getLessonEditorData } from "@/server/lessons/service";
+import { LessonEditor } from "./lesson-editor";
+
+export default async function LessonsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ worldId?: string }>;
+}) {
+  const staff = await getStaffMember();
+  if (!staff) {
+    return <Forbidden message="Staff sign-in required." />;
+  }
+
+  const [canManage, canPublish] = await Promise.all([
+    roleHasPermission(staff.roleId, "lesson.manage"),
+    roleHasPermission(staff.roleId, "lesson.publish"),
+  ]);
+  if (!canManage && !canPublish) {
+    return <Forbidden message="You don't have permission to manage lessons." />;
+  }
+
+  const worlds = await getWorldEditorData();
+  const { worldId: requestedWorldId } = await searchParams;
+  const selectedWorld = worlds.find((w) => w.id === requestedWorldId) ?? worlds[0];
+
+  if (!selectedWorld) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold">Lessons</h1>
+        <p className="text-sm text-neutral-600">
+          No worlds exist yet - create one at{" "}
+          <Link href="/admin/worlds" className="underline">
+            Worlds
+          </Link>{" "}
+          first.
+        </p>
+      </div>
+    );
+  }
+
+  const lessons = await getLessonEditorData(selectedWorld.id);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-xl font-semibold">Lessons</h1>
+        <p className="text-sm text-neutral-600">
+          Each world is a trail of up to 8 chapters x 5 steps. Publish is blocked until every
+          en/hi/hx field (title, blurb, every localized field inside content) is filled, and until
+          the lesson&apos;s world is itself published.
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {worlds.map((w) => (
+          <Link
+            key={w.id}
+            href={`/admin/lessons?worldId=${w.id}`}
+            className={
+              w.id === selectedWorld.id
+                ? "rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white"
+                : "rounded-md border border-neutral-200 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            }
+          >
+            {w.order}. {w.title.en || "(untitled)"}
+          </Link>
+        ))}
+      </div>
+
+      <LessonEditor
+        worldId={selectedWorld.id}
+        lessons={lessons.map((l) => ({
+          id: l.id,
+          chapter: l.chapter,
+          step: l.step,
+          kind: l.kind,
+          title: l.title,
+          blurb: l.blurb,
+          content: l.content,
+          status: l.status,
+        }))}
+        canManage={canManage}
+        canPublish={canPublish}
+      />
+    </div>
+  );
+}

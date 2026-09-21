@@ -25,6 +25,12 @@ export const users = pgTable("users", {
   // activity_logs (see docs/PRODUCT_SPEC.md's Onboarding & parental consent
   // section).
   dateOfBirth: date("date_of_birth"),
+  // Set once, the first time the World Home mentor-intro modal finishes
+  // (WH-11) - not the same as legal acceptance or parental consent, which
+  // are tracked separately in src/server/legal and src/server/onboarding.
+  // Purely a "have they seen the intro" flag; never cleared, never a gate
+  // for requireFullAccess.
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   language: languageEnum("language").default("hx").notNull(),
   theme: themeEnum("theme").default("dark").notNull(),
   // Clerk's own updated_at for the last change we applied, so the Clerk

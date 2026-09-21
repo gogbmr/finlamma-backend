@@ -7,3 +7,4 @@ export * from "./compliance";
 export * from "./settings";
 export * from "./mentors";
 export * from "./worlds";
+export * from "./lessons";

@@ -31,6 +31,24 @@ export const SetDateOfBirthResponseSchema = registry.register(
   z.object({ data: DateOfBirthStatusDataSchema }),
 );
 
+export const OnboardingCompleteDataSchema = registry.register(
+  "OnboardingCompleteStatus",
+  z.object({
+    onboardingCompletedAt: z.iso.datetime().openapi({
+      example: "2026-01-01T00:00:00.000Z",
+      description:
+        "When the World Home mentor-intro modal (WH-11) first finished for this user. Calling " +
+        "this endpoint again after it's already set just returns the original timestamp - it " +
+        "never errors and never moves the timestamp forward.",
+    }),
+  }),
+);
+
+export const OnboardingCompleteResponseSchema = registry.register(
+  "OnboardingCompleteResponse",
+  z.object({ data: OnboardingCompleteDataSchema }),
+);
+
 export const RequestParentConsentRequestSchema = registry.register(
   "RequestParentConsentRequest",
   z.object({

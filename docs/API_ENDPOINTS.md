@@ -27,6 +27,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 **Onboarding**
 
 - `PATCH /api/v1/me/date-of-birth` — Set my date of birth (once)
+- `PATCH /api/v1/me/onboarding-complete` — Mark onboarding's mentor-intro modal as seen
 - `POST /api/v1/me/parent-consent/request` — Request parental consent
 
 **Learning**
@@ -34,6 +35,9 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/mentors` — List published mentors
 - `GET /api/v1/mentors/{key}` — Get a published mentor
 - `GET /api/v1/worlds` — List published worlds
+- `GET /api/v1/worlds/{id}/lessons` — List a world's published lessons
+- `GET /api/v1/lessons/{id}` — Get a published lesson
+- `GET /api/v1/me/current-lesson` — Get my current/resume lesson
 
 **Webhooks**
 
@@ -492,6 +496,40 @@ Collected once at onboarding - determines whether the account needs parental con
 
 ---
 
+### `PATCH /api/v1/me/onboarding-complete`
+
+**Mark onboarding's mentor-intro modal as seen**
+
+Idempotent, unlike /me/date-of-birth - a repeat call is a harmless no-op that returns the original timestamp. Not a requireFullAccess gate; purely a 'have they seen it' flag for World Home's first-open mentor-intro modal (WH-11).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Onboarding marked complete (or already was)
+
+```json
+{
+  "data": {
+    "onboardingCompletedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
 ### `POST /api/v1/me/parent-consent/request`
 
 **Request parental consent**
@@ -759,6 +797,228 @@ The 7 worlds, ordered. Only published worlds are returned. Per-user lock/progres
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/worlds/{id}/lessons`
+
+**List a world's published lessons**
+
+The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Per-user node state (done/current/next/locked) is added once lesson_progress exists (Checkpoint 5) - for now this is the world's lesson list only, ordered by chapter then step.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The world's published lessons, ordered
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "chapter": 1,
+      "step": 1,
+      "kind": "video",
+      "title": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "blurb": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      }
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/lessons/{id}`
+
+**Get a published lesson**
+
+Full content for a single published lesson - what the Lesson Flow engine renders. Never includes a question's correct answer, only a reference id (see docs/DATA_MODEL.md's single-source-of-truth rule for questions, Checkpoint 5).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The published lesson
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "worldId": "00000000-0000-0000-0000-000000000000",
+    "chapter": 1,
+    "step": 1,
+    "kind": "video",
+    "title": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "blurb": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "content": {
+      "lengthSeconds": 0,
+      "scenes": [],
+      "cues": []
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/current-lesson`
+
+**Get my current/resume lesson**
+
+Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's lesson_progress table exists**: always returns chapter 1, step 1 of the lowest-order published world, regardless of what the caller has actually done - not yet progress-aware. The response shape is the real contract (identical to GET /api/v1/lessons/{id}); only the selection logic upgrades once real progress tracking ships.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's current lesson (see description for today's placeholder logic)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "worldId": "00000000-0000-0000-0000-000000000000",
+    "chapter": 1,
+    "step": 1,
+    "kind": "video",
+    "title": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "blurb": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "content": {
+      "lengthSeconds": 0,
+      "scenes": [],
+      "cues": []
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published worlds or lessons yet
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published worlds yet"
   }
 }
 ```

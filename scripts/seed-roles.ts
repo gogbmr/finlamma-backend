@@ -78,6 +78,18 @@ const PERMISSIONS = [
       "Publish or unpublish a world, making it visible to (or hidden from) the app. Publishing " +
       "requires the world's mentor to already be published.",
   },
+  {
+    key: "lesson.manage",
+    description:
+      "Create lessons and edit a lesson's draft fields (title, blurb, content). Cannot edit a " +
+      "lesson that's currently published - unpublish it first.",
+  },
+  {
+    key: "lesson.publish",
+    description:
+      "Publish or unpublish a lesson, making it visible to (or hidden from) the app. Publishing " +
+      "requires the lesson's world to already be published.",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -94,10 +106,12 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "mentor.publish",
     "world.manage",
     "world.publish",
+    "lesson.manage",
+    "lesson.publish",
   ],
   user_manager: ["consent.view"],
-  content_uploader: ["mentor.manage", "world.manage"],
-  content_publisher: ["mentor.publish", "world.publish"],
+  content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],
+  content_publisher: ["mentor.publish", "world.publish", "lesson.publish"],
 };
 
 async function seed() {

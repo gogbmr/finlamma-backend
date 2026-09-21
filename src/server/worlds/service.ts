@@ -5,6 +5,7 @@ import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
+import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   getWorldById,
@@ -262,6 +263,22 @@ export async function publishWorld(actor: { id: string }, id: string, meta: Requ
 }
 
 export async function unpublishWorld(actor: { id: string }, id: string, meta: RequestMeta) {
+  // Blocked while any published lesson still belongs to this world - same
+  // reasoning and pattern as mentors/service.ts's unpublishMentor being
+  // blocked by a published world: checked before the unpublish itself, not
+  // a post-hoc rollback.
+  const referencingLessons = await listPublishedLessonsByWorldId(id);
+  if (referencingLessons.length > 0) {
+    const labels = referencingLessons
+      .map((l) => `${l.title.en} (ch${l.chapter}/step${l.step})`)
+      .join(", ");
+    throw new AppError(
+      "CONFLICT",
+      `Cannot unpublish: still has published lesson(s): ${labels}`,
+      { lessonIds: referencingLessons.map((l) => l.id) },
+    );
+  }
+
   const unpublished = await unpublishWorldRow(id);
   if (!unpublished) throw new AppError("CONFLICT", "World not found, or it's not published");
 
