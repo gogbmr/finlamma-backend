@@ -4,6 +4,7 @@ import type { requestMeta } from "@/lib/http";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { extractQuestionIds } from "@/server/lessons/service";
 import { VideoContentSchema } from "@/server/lessons/schemas";
+import { completeLessonProgress, startLessonProgress } from "@/server/lesson-progress/repo";
 import { getQuestionById, getQuestionRevision } from "@/server/questions/repo";
 import { answerSchemaForFormat, type QuestionFormat } from "@/server/questions/schemas";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
@@ -87,6 +88,11 @@ export async function serveStep(
       attemptNumber,
       isFirstPass: attemptNumber === 1,
     });
+    // Idempotent (onConflictDoNothing) - a no-op if this lesson already has
+    // a lesson_progress row (e.g. a replay attempt after already
+    // completing it once), never downgrading a completed row back to
+    // in_progress. See docs/ARCHITECTURE.md D23.
+    await startLessonProgress(user.id, lessonId);
     await logActivity({
       actorType: "user",
       actorId: user.id,
@@ -274,6 +280,10 @@ export async function submitAnswer(
       attemptAfter = completed;
       isAttemptComplete = true;
       totalXpPreview = sum;
+      // Feeds the world-unlock check (src/server/worlds/service.ts) and the
+      // admin unpublish-warning (src/server/lessons/service.ts) - see
+      // docs/ARCHITECTURE.md D23.
+      await completeLessonProgress(user.id, lessonId);
     } else {
       // Already completed by a concurrent duplicate last-step submit -
       // reflect the real, already-completed state rather than claiming

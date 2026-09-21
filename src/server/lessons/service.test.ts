@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockGetLessonById = vi.fn();
 const mockGetPublishedLesson = vi.fn();
 const mockGetPublishedLessonAtPosition = vi.fn();
+const mockHotfixLessonRow = vi.fn();
 const mockInsertDraftLesson = vi.fn();
 const mockListAllLessonsForWorld = vi.fn();
 const mockListAllPublishedLessons = vi.fn();
@@ -15,6 +16,7 @@ vi.mock("./repo", () => ({
   getPublishedLesson: (id: unknown) => mockGetPublishedLesson(id),
   getPublishedLessonAtPosition: (worldId: unknown, chapter: unknown, step: unknown) =>
     mockGetPublishedLessonAtPosition(worldId, chapter, step),
+  hotfixLessonRow: (input: unknown) => mockHotfixLessonRow(input),
   insertDraftLesson: (input: unknown) => mockInsertDraftLesson(input),
   listAllLessonsForWorld: (worldId: unknown) => mockListAllLessonsForWorld(worldId),
   listAllPublishedLessons: () => mockListAllPublishedLessons(),
@@ -36,6 +38,12 @@ vi.mock("@/server/questions/repo", () => ({
   getQuestionsByIds: (ids: unknown) => mockGetQuestionsByIds(ids),
 }));
 
+const mockCountInProgressLearnersByLessonIds = vi.fn();
+vi.mock("@/server/lesson-progress/repo", () => ({
+  countInProgressLearnersByLessonIds: (lessonIds: unknown) =>
+    mockCountInProgressLearnersByLessonIds(lessonIds),
+}));
+
 const mockLogActivity = vi.fn();
 vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
@@ -48,6 +56,7 @@ import {
   getLessonPreview,
   getPublicLesson,
   getPublicLessonsForWorld,
+  hotfixLesson,
   listPublishedLessonsReferencingQuestion,
   publishLesson,
   unpublishLesson,
@@ -89,6 +98,7 @@ beforeEach(() => {
   mockGetQuestionsByIds.mockResolvedValue([
     { id: "11111111-1111-4111-8111-111111111111", status: "published" },
   ]);
+  mockCountInProgressLearnersByLessonIds.mockResolvedValue(new Map());
 });
 
 describe("getPublicLessonsForWorld / getPublicLesson", () => {
@@ -656,6 +666,7 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
 
 describe("unpublishLesson", () => {
   it("unpublishes and logs it", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow());
     mockUnpublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "draft" }));
 
     const result = await unpublishLesson(ACTOR, "lesson_1", META);
@@ -666,21 +677,190 @@ describe("unpublishLesson", () => {
     );
   });
 
+  it("throws NOT_FOUND for an unknown lesson", async () => {
+    mockGetLessonById.mockResolvedValueOnce(null);
+
+    await expect(unpublishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
   it("throws CONFLICT when the lesson isn't published", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow());
     mockUnpublishLessonRow.mockResolvedValueOnce(null);
 
     await expect(unpublishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
   });
+
+  // D23 (docs/ARCHITECTURE.md): a Boss Quiz can never be unpublished - it
+  // gates every later world's unlock (worlds/service.ts's getPublicWorlds).
+  it("blocks unpublishing a boss_quiz lesson, unconditionally", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ kind: "boss_quiz" }));
+
+    await expect(unpublishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/Boss Quiz/i),
+    });
+    expect(mockUnpublishLessonRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("allows unpublishing every other kind (only boss_quiz is blocked)", async () => {
+    for (const kind of ["video", "story", "quiz", "role_play", "doubt_zone"] as const) {
+      mockGetLessonById.mockResolvedValueOnce(lessonRow({ kind }));
+      mockUnpublishLessonRow.mockResolvedValueOnce(lessonRow({ kind, status: "draft" }));
+
+      const result = await unpublishLesson(ACTOR, "lesson_1", META);
+
+      expect(result.status).toBe("draft");
+    }
+  });
+});
+
+// D20/D23 (docs/ARCHITECTURE.md): direct edit of a PUBLISHED lesson's
+// title/blurb/content, without unpublishing - the only fix path for a
+// boss_quiz lesson.
+describe("hotfixLesson", () => {
+  const HOTFIX_INPUT = {
+    id: "lesson_1",
+    title: { en: "Fixed title", hi: "x", hx: "x" },
+    blurb: { en: "Fixed blurb.", hi: "x", hx: "x" },
+    content: { questionIds: ["11111111-1111-4111-8111-111111111111"] },
+  };
+
+  it("updates a published lesson and logs it", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published" }));
+    mockHotfixLessonRow.mockResolvedValueOnce(lessonRow({ status: "published", ...HOTFIX_INPUT }));
+
+    const result = await hotfixLesson(ACTOR, HOTFIX_INPUT, META);
+
+    expect(result.title.en).toBe("Fixed title");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "lesson.hotfixed", actorId: "staff_1" }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown lesson", async () => {
+    mockGetLessonById.mockResolvedValueOnce(null);
+
+    await expect(hotfixLesson(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the lesson is a draft, not published", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "draft" }));
+
+    await expect(hotfixLesson(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects content that doesn't match the lesson's own (immutable) kind", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published", kind: "video" }));
+
+    await expect(
+      hotfixLesson(ACTOR, { ...HOTFIX_INPUT, content: { questionIds: [] } }, META), // quiz-shaped, not video-shaped
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fix that leaves a translation missing", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published" }));
+
+    await expect(
+      hotfixLesson(ACTOR, { ...HOTFIX_INPUT, title: { en: "Fixed", hi: "", hx: "Fixed" } }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fix that introduces a dangling question reference (D18)", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published" }));
+    mockGetQuestionsByIds.mockResolvedValueOnce([]); // the new reference doesn't exist
+
+    await expect(hotfixLesson(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+    });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  // Confirms hotfixLesson truly shares validateLessonForPublish's video
+  // cue-timing gate (not just translation completeness), same as
+  // publishLesson's own "rejects a video cue that fires after the video
+  // ends" test above.
+  it("rejects a fix that puts a video cue out of order", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published", kind: "video" }));
+
+    await expect(
+      hotfixLesson(
+        ACTOR,
+        {
+          ...HOTFIX_INPUT,
+          content: {
+            lengthSeconds: 48,
+            scenes: [],
+            cues: [
+              { at: 20, questionId: "11111111-1111-4111-8111-111111111111", timerSeconds: 8 },
+              { at: 10, questionId: "22222222-2222-4222-8222-222222222222", timerSeconds: 8 },
+            ],
+          },
+        },
+        META,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { structuralErrors: [expect.stringMatching(/out of order/)] },
+    });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fix that has a video cue firing after the video ends", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published", kind: "video" }));
+
+    await expect(
+      hotfixLesson(
+        ACTOR,
+        {
+          ...HOTFIX_INPUT,
+          content: {
+            lengthSeconds: 48,
+            scenes: [],
+            cues: [{ at: 60, questionId: "11111111-1111-4111-8111-111111111111", timerSeconds: 8 }],
+          },
+        },
+        META,
+      ),
+    ).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { structuralErrors: [expect.stringMatching(/after the video ends/)] },
+    });
+    expect(mockHotfixLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the repo returns null (concurrently unpublished)", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published" }));
+    mockHotfixLessonRow.mockResolvedValueOnce(null);
+
+    await expect(hotfixLesson(ACTOR, HOTFIX_INPUT, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+  });
 });
 
 describe("getLessonEditorData", () => {
-  it("returns every lesson in the world regardless of status", async () => {
+  it("returns every lesson in the world regardless of status, with its in-progress learner count from one grouped query", async () => {
     mockListAllLessonsForWorld.mockResolvedValueOnce([lessonRow(), lessonRow({ id: "lesson_2" })]);
+    mockCountInProgressLearnersByLessonIds.mockResolvedValueOnce(new Map([["lesson_1", 3]]));
 
     const result = await getLessonEditorData(WORLD_ID);
 
     expect(result).toHaveLength(2);
     expect(mockListAllLessonsForWorld).toHaveBeenCalledWith(WORLD_ID);
+    expect(mockCountInProgressLearnersByLessonIds).toHaveBeenCalledWith(["lesson_1", "lesson_2"]);
+    expect(result[0]!.inProgressLearnerCount).toBe(3);
+    expect(result[1]!.inProgressLearnerCount).toBe(0); // missing from the map - defaults to 0
   });
 });
 

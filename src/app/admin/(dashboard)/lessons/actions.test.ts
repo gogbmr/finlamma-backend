@@ -25,6 +25,7 @@ vi.mock("next/cache", () => ({
 
 const mockCreateLessonDraft = vi.fn();
 const mockUpdateLessonDraft = vi.fn();
+const mockHotfixLesson = vi.fn();
 const mockPublishLesson = vi.fn();
 const mockUnpublishLesson = vi.fn();
 const mockGetLessonPreview = vi.fn();
@@ -33,6 +34,8 @@ vi.mock("@/server/lessons/service", () => ({
     mockCreateLessonDraft(actor, input, meta),
   updateLessonDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockUpdateLessonDraft(actor, input, meta),
+  hotfixLesson: (actor: unknown, input: unknown, meta: unknown) =>
+    mockHotfixLesson(actor, input, meta),
   publishLesson: (actor: unknown, id: unknown, meta: unknown) => mockPublishLesson(actor, id, meta),
   unpublishLesson: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishLesson(actor, id, meta),
@@ -41,6 +44,7 @@ vi.mock("@/server/lessons/service", () => ({
 
 import {
   createLessonDraftAction,
+  hotfixLessonAction,
   previewLessonAction,
   publishLessonAction,
   unpublishLessonAction,
@@ -101,6 +105,21 @@ describe("wrong role is rejected", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUnpublishLesson).not.toHaveBeenCalled();
+  });
+
+  it("hotfixLessonAction: requires lesson.publish, not lesson.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.publish"));
+
+    const result = await hotfixLessonAction({
+      id: LESSON_ID,
+      title: VALID_INPUT.title,
+      blurb: VALID_INPUT.blurb,
+      content: VALID_INPUT.content,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.publish");
+    expect(mockHotfixLesson).not.toHaveBeenCalled();
   });
 });
 
@@ -195,6 +214,35 @@ describe("happy paths", () => {
     const result = await unpublishLessonAction({ id: LESSON_ID });
 
     expect(result).toEqual({ ok: true });
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/lessons");
+  });
+
+  it("unpublishLessonAction surfaces the boss_quiz block to the caller", async () => {
+    mockUnpublishLesson.mockRejectedValueOnce(
+      new AppError("CONFLICT", "Cannot unpublish: this is a world's Boss Quiz"),
+    );
+
+    const result = await unpublishLessonAction({ id: LESSON_ID });
+
+    expect(result).toEqual({ ok: false, error: "Cannot unpublish: this is a world's Boss Quiz" });
+  });
+
+  it("hotfixLessonAction hotfixes and revalidates", async () => {
+    mockHotfixLesson.mockResolvedValueOnce({ id: LESSON_ID, status: "published" });
+
+    const result = await hotfixLessonAction({
+      id: LESSON_ID,
+      title: VALID_INPUT.title,
+      blurb: VALID_INPUT.blurb,
+      content: VALID_INPUT.content,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockHotfixLesson).toHaveBeenCalledWith(
+      ACTOR,
+      { id: LESSON_ID, title: VALID_INPUT.title, blurb: VALID_INPUT.blurb, content: VALID_INPUT.content },
+      expect.any(Object),
+    );
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/lessons");
   });
 });

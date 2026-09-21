@@ -92,6 +92,7 @@ export default async function LessonsPage({
           blurb: l.blurb,
           content: l.content,
           status: l.status,
+          inProgressLearnerCount: l.inProgressLearnerCount,
         }))}
         canManage={canManage}
         canPublish={canPublish}

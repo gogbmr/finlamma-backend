@@ -16,6 +16,7 @@ const {
   getLessonById,
   getPublishedLesson,
   getPublishedLessonAtPosition,
+  hotfixLessonRow,
   insertDraftLesson,
   listAllPublishedLessons,
   listPublishedLessonsByWorldId,
@@ -201,6 +202,48 @@ describe("publishLessonRow / unpublishLessonRow", () => {
     expect(unpublished?.status).toBe("draft");
     expect(unpublished?.publishedAt).toBeNull();
     expect(unpublished?.publishedBy).toBeNull();
+  });
+});
+
+describe("hotfixLessonRow", () => {
+  it("updates a published lesson's title/blurb/content", async () => {
+    const created = await insertDraftLesson(await draftInput());
+    await publishLessonRow(created.id, staffId);
+
+    const fixed = await hotfixLessonRow({
+      id: created.id,
+      title: { en: "Fixed", hi: "x", hx: "x" },
+      blurb: created.blurb,
+      content: created.content,
+    });
+
+    expect(fixed?.title.en).toBe("Fixed");
+    expect(fixed?.status).toBe("published");
+  });
+
+  it("returns null (does not update) when the lesson is currently a draft", async () => {
+    const created = await insertDraftLesson(await draftInput());
+
+    const result = await hotfixLessonRow({
+      id: created.id,
+      title: { en: "Should not apply", hi: "x", hx: "x" },
+      blurb: created.blurb,
+      content: created.content,
+    });
+
+    expect(result).toBeNull();
+    const row = await getLessonById(created.id);
+    expect(row?.title.en).not.toBe("Should not apply");
+  });
+
+  it("returns null for a nonexistent lesson", async () => {
+    const result = await hotfixLessonRow({
+      id: randomUUID(),
+      title: TITLE,
+      blurb: BLURB,
+      content: QUIZ_CONTENT,
+    });
+    expect(result).toBeNull();
   });
 });
 

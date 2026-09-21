@@ -4,11 +4,13 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getWorldById, listPublishedWorlds } from "@/server/worlds/repo";
 import { getQuestionsByIds } from "@/server/questions/repo";
+import { countInProgressLearnersByLessonIds } from "@/server/lesson-progress/repo";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
   getLessonById,
   getPublishedLesson,
   getPublishedLessonAtPosition,
+  hotfixLessonRow,
   insertDraftLesson,
   listAllLessonsForWorld,
   listAllPublishedLessons,
@@ -18,7 +20,12 @@ import {
   updateDraftLesson,
 } from "./repo";
 import { contentSchemaForKind, QuizLikeContentSchema, VideoContentSchema } from "./schemas";
-import type { CreateLessonDraftInput, LessonKindCreate, UpdateLessonDraftInput } from "./schemas";
+import type {
+  CreateLessonDraftInput,
+  HotfixLessonInput,
+  LessonKindCreate,
+  UpdateLessonDraftInput,
+} from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type LessonRow = NonNullable<Awaited<ReturnType<typeof getLessonById>>>;
@@ -142,8 +149,41 @@ export function extractQuestionIds(kind: string, content: unknown): string[] {
   return [];
 }
 
+// Every question id `content` references must exist and be published -
+// shared by publishLesson (D18) and hotfixLesson (D20/D23), since a hotfix
+// can change `content` just as freely as a draft edit can. Named
+// per-reference, same "name it" pattern as every other gate here.
+async function assertQuestionReferencesValid(kind: string, content: unknown): Promise<void> {
+  const questionIds = extractQuestionIds(kind, content);
+  if (questionIds.length === 0) return;
+
+  const found = await getQuestionsByIds(questionIds);
+  const foundById = new Map(found.map((q) => [q.id, q]));
+  const questionProblems: string[] = [];
+  for (const qid of questionIds) {
+    const q = foundById.get(qid);
+    if (!q) questionProblems.push(`question ${qid} does not exist`);
+    else if (q.status !== "published") questionProblems.push(`question ${qid} is not published`);
+  }
+  if (questionProblems.length > 0) {
+    throw new AppError("VALIDATION_FAILED", `Cannot publish: ${questionProblems.join("; ")}`, {
+      questionProblems,
+    });
+  }
+}
+
+// D23 (docs/ARCHITECTURE.md): staff-facing lesson list for a world,
+// including how many learners are currently mid-lesson (lesson_progress
+// status "in_progress") on each - the admin editor uses this to warn
+// before an unpublish, the same "computed from data already loaded, no
+// dedicated warning endpoint" pattern as D19's mentor-change warning.
 export async function getLessonEditorData(worldId: string) {
-  return listAllLessonsForWorld(worldId);
+  const rows = await listAllLessonsForWorld(worldId);
+  const countsByLessonId = await countInProgressLearnersByLessonIds(rows.map((r) => r.id));
+  return rows.map((row) => ({
+    ...row,
+    inProgressLearnerCount: countsByLessonId.get(row.id) ?? 0,
+  }));
 }
 
 // Used by questions/service.ts's unpublishQuestion to block unpublishing a
@@ -273,24 +313,8 @@ export async function publishLesson(actor: { id: string }, id: string, meta: Req
   // D18: every question id this lesson's content references must exist and
   // be published - closes the gap Checkpoint 4 deliberately left open
   // (the questions table didn't exist yet, so only UUID *shape* could be
-  // checked then). Named per-reference, same "name it" pattern as every
-  // other gate here.
-  const questionIds = extractQuestionIds(lesson.kind, lesson.content);
-  if (questionIds.length > 0) {
-    const found = await getQuestionsByIds(questionIds);
-    const foundById = new Map(found.map((q) => [q.id, q]));
-    const questionProblems: string[] = [];
-    for (const qid of questionIds) {
-      const q = foundById.get(qid);
-      if (!q) questionProblems.push(`question ${qid} does not exist`);
-      else if (q.status !== "published") questionProblems.push(`question ${qid} is not published`);
-    }
-    if (questionProblems.length > 0) {
-      throw new AppError("VALIDATION_FAILED", `Cannot publish: ${questionProblems.join("; ")}`, {
-        questionProblems,
-      });
-    }
-  }
+  // checked then).
+  await assertQuestionReferencesValid(lesson.kind, lesson.content);
 
   // Publishing a lesson requires its world to already be published - a
   // learner can't reach a lesson through a world that doesn't exist to them
@@ -321,7 +345,25 @@ export async function publishLesson(actor: { id: string }, id: string, meta: Req
   return published;
 }
 
+// D23 (docs/ARCHITECTURE.md): a Boss Quiz lesson can never be unpublished,
+// full stop - it's a world's sequential-unlock gate (worlds/service.ts's
+// getPublicWorlds), so pulling it would both 404 any learner mid-attempt
+// AND strand every world after it, un-clearable, for every learner who
+// hasn't reached it yet. This is a hard block, unlike every other lesson
+// (see the in-progress-learner count on getLessonEditorData above, which is
+// a soft warning the admin UI surfaces before unpublishing those). Fixing a
+// boss_quiz lesson's content now goes through hotfixLesson below instead.
 export async function unpublishLesson(actor: { id: string }, id: string, meta: RequestMeta) {
+  const lesson = await getLessonById(id);
+  if (!lesson) throw new AppError("NOT_FOUND", "Lesson not found");
+  if (lesson.kind === "boss_quiz") {
+    throw new AppError(
+      "CONFLICT",
+      "Cannot unpublish: this is a world's Boss Quiz - it gates every later world's unlock. " +
+        "Use Save fix to edit it instead.",
+    );
+  }
+
   const unpublished = await unpublishLessonRow(id);
   if (!unpublished) throw new AppError("CONFLICT", "Lesson not found, or it's not published");
 
@@ -336,4 +378,54 @@ export async function unpublishLesson(actor: { id: string }, id: string, meta: R
     userAgent: meta.userAgent,
   });
   return unpublished;
+}
+
+// D20/D23 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED
+// lesson's title/blurb/content, without unpublishing - the only fix path
+// left for a boss_quiz lesson (unpublish is hard-blocked above), and a
+// lower-disruption option for any other lesson with learners mid-lesson.
+// Requires lesson.publish (not just lesson.manage), same trust bar as
+// publishing. Re-runs every check publish itself would: content shape
+// against the lesson's own immutable kind, translation completeness,
+// video cue timing, and D18's question-reference check.
+export async function hotfixLesson(
+  actor: { id: string },
+  input: HotfixLessonInput,
+  meta: RequestMeta,
+) {
+  const existing = await getLessonById(input.id);
+  if (!existing) throw new AppError("NOT_FOUND", "Lesson not found");
+  if (existing.status !== "published") {
+    throw new AppError("CONFLICT", "Lesson is not published - edit its draft instead");
+  }
+
+  const contentResult = contentSchemaForKind(existing.kind as LessonKindCreate).safeParse(
+    input.content,
+  );
+  if (!contentResult.success) {
+    throw new AppError(
+      "VALIDATION_FAILED",
+      `Invalid content for a "${existing.kind}" lesson: ${contentResult.error.issues
+        .map((i) => `content.${i.path.join(".")}: ${i.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  validateLessonForPublish({ ...existing, ...input });
+  await assertQuestionReferencesValid(existing.kind, input.content);
+
+  const updated = await hotfixLessonRow(input);
+  if (!updated) throw new AppError("CONFLICT", "Lesson is not published - edit its draft instead");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "lesson.hotfixed",
+    targetType: "lesson",
+    targetId: updated.id,
+    metadata: { title: updated.title.en, kind: updated.kind },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
 }

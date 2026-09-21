@@ -17,6 +17,7 @@ import type { LocalizedText } from "@/server/shared/schemas";
 import { LESSON_CONTENT_TEMPLATES } from "@/server/lessons/schemas";
 import {
   createLessonDraftAction,
+  hotfixLessonAction,
   previewLessonAction,
   publishLessonAction,
   unpublishLessonAction,
@@ -54,6 +55,7 @@ type LessonRow = {
   blurb: LocalizedText;
   content: unknown;
   status: "draft" | "published";
+  inProgressLearnerCount: number;
 };
 
 const LANGUAGES = ["en", "hi", "hx"] as const;
@@ -271,6 +273,13 @@ function LessonForm({
 
   const isDraft = lesson.status === "draft";
   const editable = canManage && isDraft;
+  // D20/D23 (docs/ARCHITECTURE.md): a published lesson's title/blurb/content
+  // can still be hotfixed directly - requires lesson.publish, the same
+  // trust bar as publishing. The ONLY fix path for a boss_quiz lesson,
+  // since unpublishing one is hard-blocked below.
+  const hotfixable = canPublish && !isDraft;
+  const contentEditable = editable || hotfixable;
+  const isBossQuiz = lesson.kind === "boss_quiz";
 
   // Doubt Zone scripts are written in a specific mentor's voice
   // (content.mentorKey, fixed at authoring time) - if the world's current
@@ -321,6 +330,19 @@ function LessonForm({
   }
 
   function unpublish() {
+    // D23 (docs/ARCHITECTURE.md): a soft warning, not a server-side block
+    // (unlike the boss_quiz block, which the Unpublish button isn't even
+    // shown for) - unpublishing a lesson learners are mid-way through will
+    // 404 them until it's republished or fixed. Save fix is the
+    // lower-disruption alternative.
+    if (lesson.inProgressLearnerCount > 0) {
+      const confirmed = window.confirm(
+        `${lesson.inProgressLearnerCount} learner${lesson.inProgressLearnerCount > 1 ? "s are" : " is"} ` +
+          `currently mid-lesson on this. Unpublishing will 404 them until it's fixed or republished - ` +
+          `consider "Save fix" instead if you're just correcting content. Unpublish anyway?`,
+      );
+      if (!confirmed) return;
+    }
     startTransition(async () => {
       const result = await unpublishLessonAction({ id: lesson.id });
       if (!result.ok) {
@@ -328,6 +350,22 @@ function LessonForm({
         return;
       }
       toast.success("Unpublished - back to draft");
+    });
+  }
+
+  function saveHotfix() {
+    const parsed = parseContentOrError(contentText);
+    if (!parsed.ok) {
+      toast.error(parsed.error);
+      return;
+    }
+    startTransition(async () => {
+      const result = await hotfixLessonAction({ id: lesson.id, title, blurb, content: parsed.value });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fix saved - live immediately");
     });
   }
 
@@ -365,10 +403,23 @@ function LessonForm({
         <span>Kind: {KIND_LABELS[lesson.kind] ?? lesson.kind} (fixed, can&apos;t change after creation)</span>
         {!isDraft && (
           <span className="text-xs text-neutral-500">
-            Published lessons can&apos;t be edited - unpublish first.
+            Published - title/blurb/content can be fixed directly below. Chapter/step need
+            unpublish first.
+          </span>
+        )}
+        {!isDraft && lesson.inProgressLearnerCount > 0 && (
+          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+            {lesson.inProgressLearnerCount} learner{lesson.inProgressLearnerCount > 1 ? "s" : ""} mid-lesson
           </span>
         )}
       </div>
+
+      {isBossQuiz && !isDraft && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          This is a world&apos;s Boss Quiz - it can never be unpublished (it gates every later
+          world&apos;s unlock). Use &quot;Save fix&quot; to correct it instead.
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
@@ -395,14 +446,14 @@ function LessonForm({
         </div>
       </div>
 
-      <LocalizedFields label="Title" value={title} onChange={setTitle} disabled={!editable} />
-      <LocalizedFields label="Blurb" value={blurb} onChange={setBlurb} disabled={!editable} />
+      <LocalizedFields label="Title" value={title} onChange={setTitle} disabled={!contentEditable} />
+      <LocalizedFields label="Blurb" value={blurb} onChange={setBlurb} disabled={!contentEditable} />
 
       <div className="space-y-1">
         <Label>Content (JSON)</Label>
         <Textarea
           value={contentText}
-          disabled={!editable}
+          disabled={!contentEditable}
           onChange={(e) => setContentText(e.target.value)}
           className="min-h-64 font-mono text-xs"
         />
@@ -414,12 +465,17 @@ function LessonForm({
             Save draft
           </Button>
         )}
+        {hotfixable && (
+          <Button type="button" variant="outline" onClick={saveHotfix} disabled={isPending}>
+            Save fix
+          </Button>
+        )}
         {canPublish && isDraft && (
           <Button type="button" onClick={publish} disabled={isPending}>
             Publish
           </Button>
         )}
-        {canPublish && !isDraft && (
+        {canPublish && !isDraft && !isBossQuiz && (
           <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
             Unpublish
           </Button>

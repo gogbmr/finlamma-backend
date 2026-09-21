@@ -6,6 +6,7 @@ import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } fro
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { getWorldIdsWithCompletedBossQuiz } from "@/server/lesson-progress/repo";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   getWorldById,
@@ -32,7 +33,7 @@ async function mentorKeyById(): Promise<Map<string, string>> {
   return new Map(mentors.map((m) => [m.id, m.key]));
 }
 
-async function toPublicWorld(row: WorldRow, mentorKeysById: Map<string, string>) {
+async function toPublicWorld(row: WorldRow, mentorKeysById: Map<string, string>, locked: boolean) {
   return {
     order: row.order,
     title: row.title,
@@ -41,12 +42,29 @@ async function toPublicWorld(row: WorldRow, mentorKeysById: Map<string, string>)
     displayXpTarget: row.displayXpTarget,
     artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
     mentorKey: mentorKeysById.get(row.mentorId) ?? "",
+    locked,
   };
 }
 
-export async function getPublicWorlds() {
-  const [rows, keysById] = await Promise.all([listPublishedWorlds(), mentorKeyById()]);
-  return Promise.all(rows.map((row) => toPublicWorld(row, keysById)));
+// Sequential unlock only (PRODUCT_SPEC.md §1, docs/ARCHITECTURE.md D23):
+// the first (lowest-order) published world is always unlocked; every other
+// world is unlocked once the PREVIOUS world's Boss Quiz lesson has been
+// completed by this user - never an XP/level gate, and never based on
+// displayXpTarget (that field is a cosmetic progress indicator only, per
+// the worlds table's own comment). Worlds are already ordered ascending by
+// `order` (listPublishedWorlds), so "previous" is simply the prior element.
+export async function getPublicWorlds(userId: string) {
+  const [rows, keysById, clearedWorldIds] = await Promise.all([
+    listPublishedWorlds(),
+    mentorKeyById(),
+    getWorldIdsWithCompletedBossQuiz(userId),
+  ]);
+  return Promise.all(
+    rows.map((row, i) => {
+      const locked = i > 0 && !clearedWorldIds.has(rows[i - 1]!.id);
+      return toPublicWorld(row, keysById, locked);
+    }),
+  );
 }
 
 // --- Staff (admin) ---

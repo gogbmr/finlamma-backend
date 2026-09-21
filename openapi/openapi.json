@@ -784,6 +784,11 @@
             "pattern": "^[a-z][a-z0-9_]*$",
             "example": "baby",
             "description": "The mentor covering this world (see GET /api/v1/mentors for their details)."
+          },
+          "locked": {
+            "type": "boolean",
+            "example": false,
+            "description": "This signed-in user's own unlock state - sequential only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always false."
           }
         },
         "required": [
@@ -793,7 +798,8 @@
           "theme",
           "displayXpTarget",
           "artUrl",
-          "mentorKey"
+          "mentorKey",
+          "locked"
         ]
       },
       "WorldListResponse": {
@@ -2272,7 +2278,7 @@
     "/api/v1/worlds": {
       "get": {
         "summary": "List published worlds",
-        "description": "The 7 worlds, ordered. Only published worlds are returned. Per-user lock/progress state (sequential unlock - clearing a world's Boss Quiz unlocks the next) is added once lesson_progress exists (Phase 2b Checkpoint 6) - for now this is the master world list only.",
+        "description": "The 7 worlds, ordered. Only published worlds are returned. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
         "tags": [
           "Learning"
         ],

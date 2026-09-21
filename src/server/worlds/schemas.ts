@@ -33,6 +33,12 @@ export const WorldPublicSchema = registry.register(
     mentorKey: MentorKeySchema.openapi({
       description: "The mentor covering this world (see GET /api/v1/mentors for their details).",
     }),
+    locked: z.boolean().openapi({
+      example: false,
+      description:
+        "This signed-in user's own unlock state - sequential only (clearing the previous " +
+        "world's Boss Quiz), never an XP/level gate. The first world is always false.",
+    }),
   }),
 );
 

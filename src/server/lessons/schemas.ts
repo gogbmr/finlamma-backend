@@ -248,3 +248,20 @@ export type UpdateLessonDraftInput = z.infer<typeof UpdateLessonDraftSchema>;
 
 export const LessonIdSchema = z.object({ id: z.string().uuid() });
 export type LessonIdInput = z.infer<typeof LessonIdSchema>;
+
+// D20/D23 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED
+// lesson's title/blurb/content, without unpublishing - the fix for a
+// boss_quiz lesson specifically, which can no longer be unpublished at all
+// (D23), and a lower-disruption option for any other lesson (unpublishing
+// still works for those, but briefly 404s any learner mid-lesson - see the
+// unpublish-warning in src/server/lessons/service.ts). No `worldId`/
+// `chapter`/`step`/`kind` - those stay structural, draft-only fields, same
+// as every other domain's hotfix. `content`'s shape is still validated
+// against the lesson's own (immutable) `kind`.
+export const HotfixLessonSchema = z.object({
+  id: z.string().uuid(),
+  title: LocalizedTextSchema,
+  blurb: LocalizedTextSchema,
+  content: z.record(z.string(), z.unknown()),
+});
+export type HotfixLessonInput = z.infer<typeof HotfixLessonSchema>;

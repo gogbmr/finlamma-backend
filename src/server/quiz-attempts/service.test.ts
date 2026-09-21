@@ -28,6 +28,15 @@ vi.mock("@/server/settings/service", () => ({
   getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
 }));
 
+const mockStartLessonProgress = vi.fn();
+const mockCompleteLessonProgress = vi.fn();
+vi.mock("@/server/lesson-progress/repo", () => ({
+  startLessonProgress: (userId: unknown, lessonId: unknown) =>
+    mockStartLessonProgress(userId, lessonId),
+  completeLessonProgress: (userId: unknown, lessonId: unknown) =>
+    mockCompleteLessonProgress(userId, lessonId),
+}));
+
 const mockCompleteAttempt = vi.fn();
 const mockCountAttemptsForUserLesson = vi.fn();
 const mockGetAttemptById = vi.fn();
@@ -236,6 +245,33 @@ describe("serveStep", () => {
     expect(result.totalSteps).toBe(2);
   });
 
+  // D23 (docs/ARCHITECTURE.md): feeds the world-unlock check
+  // (worlds/service.ts) and the admin unpublish-warning (lessons/service.ts).
+  it("starts lesson_progress for this lesson when a new attempt begins", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(null);
+    mockCountAttemptsForUserLesson.mockResolvedValueOnce(0);
+    mockInsertAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(null);
+    mockGetQuestionById.mockResolvedValue(questionRow());
+    mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+
+    await serveStep(USER, LESSON_ID, 1, META);
+
+    expect(mockStartLessonProgress).toHaveBeenCalledWith(USER.id, LESSON_ID);
+  });
+
+  it("does not re-start lesson_progress when resuming an already-in-progress attempt", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+    mockGetQuestionById.mockResolvedValue(questionRow());
+
+    await serveStep(USER, LESSON_ID, 1, META);
+
+    expect(mockStartLessonProgress).not.toHaveBeenCalled();
+  });
+
   // D22 (docs/ARCHITECTURE.md): the revision grading will later use is
   // captured HERE, at serve time, from the live question's CURRENT
   // revision - not re-derived later at answer time.
@@ -309,6 +345,22 @@ describe("serveStep", () => {
 
     expect(JSON.stringify(result)).not.toMatch(/"answer"/i);
     expect(JSON.stringify(result)).not.toMatch(/"explanation"/i);
+  });
+
+  // Cross-question leak: serving step 1 of a 2-question lesson must only
+  // ever touch step 1's own question, never step 2's - a structural
+  // guarantee (only one questionId is ever looked up), proven directly
+  // rather than trusted from the code shape alone.
+  it("only fetches THIS step's question when serving - never another step's, in a multi-question lesson", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson()); // questionIds: [Q1_ID, Q2_ID]
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ questionId: Q1_ID }));
+    mockGetQuestionById.mockResolvedValue(questionRow({ id: Q1_ID }));
+
+    await serveStep(USER, LESSON_ID, 1, META);
+
+    expect(mockGetQuestionById).toHaveBeenCalledWith(Q1_ID);
+    expect(mockGetQuestionById).not.toHaveBeenCalledWith(Q2_ID);
   });
 
   it("uses the video cue's own timerSeconds for a pop-quiz step, not the practice-quiz default", async () => {
@@ -527,6 +579,8 @@ describe("submitAnswer", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "quiz_attempt.completed" }),
     );
+    // D23 (docs/ARCHITECTURE.md): feeds the world-unlock check.
+    expect(mockCompleteLessonProgress).toHaveBeenCalledWith(USER.id, LESSON_ID);
   });
 
   it("does not complete the attempt when the answered step isn't the last one", async () => {
@@ -542,6 +596,7 @@ describe("submitAnswer", () => {
     expect(mockCompleteAttempt).not.toHaveBeenCalled();
     expect(result.isAttemptComplete).toBe(false);
     expect(result.totalXpPreview).toBeNull();
+    expect(mockCompleteLessonProgress).not.toHaveBeenCalled();
   });
 
   it("falls back to the concurrent winner's stored row when gradeQuestionAnswer loses a race", async () => {
@@ -559,6 +614,29 @@ describe("submitAnswer", () => {
     const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
 
     expect(result.xpAwardedPreview).toBe(30);
+  });
+
+  // Cross-question leak: grading step 1 of a 2-question lesson must only
+  // ever reveal step 1's own answer/explanation, never step 2's - proven by
+  // checking which question/revision was actually fetched, not just the
+  // response shape.
+  it("only fetches and reveals THIS step's question/revision when grading - never another step's", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson()); // questionIds: [Q1_ID, Q2_ID]
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(
+      servedAnswerRow({ questionId: Q1_ID, timerSeconds: 10 }),
+    );
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q1_ID }));
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+    mockGradeQuestionAnswer.mockImplementationOnce((input) => Promise.resolve(servedAnswerRow(input)));
+
+    const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
+
+    expect(mockGetQuestionById).toHaveBeenCalledWith(Q1_ID);
+    expect(mockGetQuestionById).not.toHaveBeenCalledWith(Q2_ID);
+    expect(mockGetQuestionRevision).toHaveBeenCalledWith(Q1_ID, expect.any(Number));
+    expect(mockGetQuestionRevision).not.toHaveBeenCalledWith(Q2_ID, expect.any(Number));
+    expect(result.correctAnswer).toEqual(questionRevisionRow().answer);
   });
 
   // D22 (docs/ARCHITECTURE.md): grading must use the revision that was

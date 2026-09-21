@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { lessons } from "@/db/schema";
-import type { CreateLessonDraftInput, UpdateLessonDraftInput } from "./schemas";
+import type { CreateLessonDraftInput, HotfixLessonInput, UpdateLessonDraftInput } from "./schemas";
 
 export async function listPublishedLessonsForWorld(worldId: string) {
   return db
@@ -97,6 +97,21 @@ export async function publishLessonRow(id: string, staffId: string) {
     .update(lessons)
     .set({ status: "published", publishedAt: new Date(), publishedBy: staffId })
     .where(and(eq(lessons.id, id), eq(lessons.status, "draft")))
+    .returning();
+  return row ?? null;
+}
+
+// D23 (docs/ARCHITECTURE.md): only updates a lesson that's currently
+// PUBLISHED - returns null if the row doesn't exist or is a draft,
+// mirroring updateDraftLesson's opposite-status guard. `worldId`/`chapter`/
+// `step`/`kind` are deliberately not part of `input` - those stay
+// structural/draft-only, same reasoning as every other domain's hotfix (D20).
+export async function hotfixLessonRow(input: HotfixLessonInput) {
+  const { id, ...rest } = input;
+  const [row] = await db
+    .update(lessons)
+    .set(rest)
+    .where(and(eq(lessons.id, id), eq(lessons.status, "published")))
     .returning();
   return row ?? null;
 }

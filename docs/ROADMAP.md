@@ -54,22 +54,24 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - See `docs/PRODUCT_SPEC.md`'s Onboarding & parental consent section for the exact flow.
 
 ## Phase 2b — Learning content
-- [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
+- [x] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
       from Phase 3 because worlds need a mentor; seed Baby/Father/Grandpa Lamma per the
       prototype's world ranges
-- [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
+- [x] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
       **sequential only** (clearing the previous world's Boss Quiz) — no XP/level gate; Boss Quiz
       and Role Play reuse the same lesson-flow content shape as Quiz, not separate engines
-- [ ] Content CRUD in admin with draft → published flow and uploads to storage. `lessons.content`/
+- [x] Content CRUD in admin with draft → published flow and uploads to storage. `lessons.content`/
       `questions.payload` are authored via a schema-validated JSON editor for v1 (human-readable
       validation errors, a starter template per lesson/quiz format, a publish preview, and cue-
       timestamp-order/video-length checks) — see "Later" section below for the visual builder
-- [ ] Translations for `en`, `hi`, `hx` on every content field
-- [ ] Scoring constants (speed-bonus 45% threshold, fever mode combo≥3 → 2×, combo bonus,
-      all-correct bonus) as admin-editable `settings_kv`, seeded from the prototype's exact values
-- [ ] "Doubt Zone" node kind ships **scripted** in v1 — fixed Q&A written by the content team per
+- [x] Translations for `en`, `hi`, `hx` on every content field
+- [x] Scoring constants (speed-bonus 45% threshold, fever mode combo≥3 → 2×, combo bonus) as
+      admin-editable `settings_kv`, seeded from the prototype's exact values. "All-correct bonus"
+      is Pulse Check's own mechanic (News, Phase 5), not part of Lesson Flow's LF-12/LF-22
+      formula — deferred to that phase, not built here
+- [x] "Doubt Zone" node kind ships **scripted** in v1 — fixed Q&A written by the content team per
       lesson, no live AI call. The live AI mentor upgrade is Phase 7.
-- [ ] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
+- [x] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
 
 ## Phase 3 — Progress economy
 - [ ] XP events, levels, world unlocks

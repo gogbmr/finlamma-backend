@@ -10,9 +10,9 @@ registry.registerPath({
   path: "/api/v1/worlds",
   summary: "List published worlds",
   description:
-    "The 7 worlds, ordered. Only published worlds are returned. Per-user lock/progress state " +
-    "(sequential unlock - clearing a world's Boss Quiz unlocks the next) is added once " +
-    "lesson_progress exists (Phase 2b Checkpoint 6) - for now this is the master world list only.",
+    "The 7 worlds, ordered. Only published worlds are returned. Each world's `locked` field " +
+    "reflects this signed-in user's own progress - sequential unlock only (clearing the " +
+    "previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {
@@ -46,5 +46,5 @@ registry.registerPath({
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  return ok(await getPublicWorlds());
+  return ok(await getPublicWorlds(user.id));
 });

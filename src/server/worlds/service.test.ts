@@ -35,6 +35,11 @@ vi.mock("@/server/lessons/repo", () => ({
   listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
 }));
 
+const mockGetWorldIdsWithCompletedBossQuiz = vi.fn();
+vi.mock("@/server/lesson-progress/repo", () => ({
+  getWorldIdsWithCompletedBossQuiz: (userId: unknown) => mockGetWorldIdsWithCompletedBossQuiz(userId),
+}));
+
 const mockLogActivity = vi.fn();
 vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
@@ -63,6 +68,7 @@ import {
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
 const ACTOR = { id: "staff_1" };
 const MENTOR_ID = "mentor_1";
+const USER_ID = "user_1";
 
 function worldRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -98,6 +104,9 @@ beforeEach(() => {
   // No published lessons reference this world by default - existing tests
   // below don't need to know about the lesson-reference block at all.
   mockListPublishedLessonsByWorldId.mockResolvedValue([]);
+  // No cleared worlds by default - existing getPublicWorlds tests below
+  // don't need to know about the unlock check at all.
+  mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValue(new Set());
 });
 
 describe("getPublicWorlds", () => {
@@ -106,7 +115,7 @@ describe("getPublicWorlds", () => {
     mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
     mockGetSignedDownloadUrl.mockResolvedValueOnce("https://signed.example/art.png");
 
-    const result = await getPublicWorlds();
+    const result = await getPublicWorlds(USER_ID);
 
     expect(result).toEqual([
       {
@@ -117,6 +126,7 @@ describe("getPublicWorlds", () => {
         displayXpTarget: 5,
         artUrl: "https://signed.example/art.png",
         mentorKey: "baby",
+        locked: false,
       },
     ]);
   });
@@ -125,10 +135,76 @@ describe("getPublicWorlds", () => {
     mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
     mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
 
-    const result = await getPublicWorlds();
+    const result = await getPublicWorlds(USER_ID);
 
     expect(result[0]!.artUrl).toBeNull();
     expect(mockGetSignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  // Sequential unlock only (docs/ARCHITECTURE.md D23) - never an XP/level
+  // gate, never based on displayXpTarget.
+  describe("sequential unlock", () => {
+    it("the first (lowest-order) world is always unlocked, regardless of progress", async () => {
+      mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ id: "world_1", order: 1 })]);
+      mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set());
+
+      const result = await getPublicWorlds(USER_ID);
+
+      expect(result[0]!.locked).toBe(false);
+    });
+
+    it("locks the second world until the first world's Boss Quiz is completed", async () => {
+      mockListPublishedWorlds.mockResolvedValueOnce([
+        worldRow({ id: "world_1", order: 1 }),
+        worldRow({ id: "world_2", order: 2 }),
+      ]);
+      mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set()); // nothing cleared yet
+
+      const result = await getPublicWorlds(USER_ID);
+
+      expect(result[0]!.locked).toBe(false);
+      expect(result[1]!.locked).toBe(true);
+    });
+
+    it("unlocks the second world once the first world's Boss Quiz is completed", async () => {
+      mockListPublishedWorlds.mockResolvedValueOnce([
+        worldRow({ id: "world_1", order: 1 }),
+        worldRow({ id: "world_2", order: 2 }),
+      ]);
+      mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+
+      const result = await getPublicWorlds(USER_ID);
+
+      expect(result[0]!.locked).toBe(false);
+      expect(result[1]!.locked).toBe(false);
+    });
+
+    it("stays sequential: clearing world 1 does not unlock world 3 while world 2 is still uncleared", async () => {
+      mockListPublishedWorlds.mockResolvedValueOnce([
+        worldRow({ id: "world_1", order: 1 }),
+        worldRow({ id: "world_2", order: 2 }),
+        worldRow({ id: "world_3", order: 3 }),
+      ]);
+      mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+      mockGetWorldIdsWithCompletedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+
+      const result = await getPublicWorlds(USER_ID);
+
+      expect(result[1]!.locked).toBe(false); // world 2: previous (world 1) cleared
+      expect(result[2]!.locked).toBe(true); // world 3: previous (world 2) NOT cleared
+    });
+
+    it("passes the caller's userId through to the progress check", async () => {
+      mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
+      mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+
+      await getPublicWorlds(USER_ID);
+
+      expect(mockGetWorldIdsWithCompletedBossQuiz).toHaveBeenCalledWith(USER_ID);
+    });
   });
 });
 

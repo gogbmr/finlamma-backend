@@ -9,12 +9,14 @@ import { requestMeta } from "@/lib/http";
 import { roleHasPermission } from "@/server/staff/repo";
 import {
   CreateLessonDraftSchema,
+  HotfixLessonSchema,
   LessonIdSchema,
   UpdateLessonDraftSchema,
 } from "@/server/lessons/schemas";
 import {
   createLessonDraft,
   getLessonPreview,
+  hotfixLesson,
   publishLesson,
   unpublishLesson,
   updateLessonDraft,
@@ -75,6 +77,15 @@ export async function unpublishLessonAction(input: unknown): Promise<ActionResul
     const actor = await requireStaff("lesson.publish");
     const { id } = LessonIdSchema.parse(input);
     await unpublishLesson(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/lessons");
+  });
+}
+
+export async function hotfixLessonAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("lesson.publish");
+    const parsed = HotfixLessonSchema.parse(input);
+    await hotfixLesson(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/lessons");
   });
 }
