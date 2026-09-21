@@ -3,6 +3,7 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getWorldById, listPublishedWorlds } from "@/server/worlds/repo";
+import { getQuestionsByIds } from "@/server/questions/repo";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
   getLessonById,
@@ -15,7 +16,7 @@ import {
   unpublishLessonRow,
   updateDraftLesson,
 } from "./repo";
-import { contentSchemaForKind, VideoContentSchema } from "./schemas";
+import { contentSchemaForKind, QuizLikeContentSchema, VideoContentSchema } from "./schemas";
 import type { CreateLessonDraftInput, LessonKindCreate, UpdateLessonDraftInput } from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
@@ -120,6 +121,22 @@ function validateLessonForPublish(lesson: LessonRow): void {
     `Cannot publish: ${parts.join("; ")}`,
     { missingFields, structuralErrors },
   );
+}
+
+// Which question ids a lesson's content references, by kind - video's
+// in-video pop-quiz cues, or a quiz/boss_quiz/role_play's question list.
+// Story and doubt_zone never reference a question at all. See
+// docs/ARCHITECTURE.md D18.
+function extractQuestionIds(kind: string, content: unknown): string[] {
+  if (kind === "video") {
+    const parsed = VideoContentSchema.safeParse(content);
+    return parsed.success ? parsed.data.cues.map((c) => c.questionId) : [];
+  }
+  if (kind === "quiz" || kind === "boss_quiz" || kind === "role_play") {
+    const parsed = QuizLikeContentSchema.safeParse(content);
+    return parsed.success ? parsed.data.questionIds : [];
+  }
+  return [];
 }
 
 export async function getLessonEditorData(worldId: string) {
@@ -238,6 +255,28 @@ export async function publishLesson(actor: { id: string }, id: string, meta: Req
     throw new AppError("CONFLICT", "Lesson is not a draft");
   }
   validateLessonForPublish(lesson);
+
+  // D18: every question id this lesson's content references must exist and
+  // be published - closes the gap Checkpoint 4 deliberately left open
+  // (the questions table didn't exist yet, so only UUID *shape* could be
+  // checked then). Named per-reference, same "name it" pattern as every
+  // other gate here.
+  const questionIds = extractQuestionIds(lesson.kind, lesson.content);
+  if (questionIds.length > 0) {
+    const found = await getQuestionsByIds(questionIds);
+    const foundById = new Map(found.map((q) => [q.id, q]));
+    const questionProblems: string[] = [];
+    for (const qid of questionIds) {
+      const q = foundById.get(qid);
+      if (!q) questionProblems.push(`question ${qid} does not exist`);
+      else if (q.status !== "published") questionProblems.push(`question ${qid} is not published`);
+    }
+    if (questionProblems.length > 0) {
+      throw new AppError("VALIDATION_FAILED", `Cannot publish: ${questionProblems.join("; ")}`, {
+        questionProblems,
+      });
+    }
+  }
 
   // Publishing a lesson requires its world to already be published - a
   // learner can't reach a lesson through a world that doesn't exist to them

@@ -29,6 +29,11 @@ vi.mock("@/server/worlds/repo", () => ({
   listPublishedWorlds: () => mockListPublishedWorlds(),
 }));
 
+const mockGetQuestionsByIds = vi.fn();
+vi.mock("@/server/questions/repo", () => ({
+  getQuestionsByIds: (ids: unknown) => mockGetQuestionsByIds(ids),
+}));
+
 const mockLogActivity = vi.fn();
 vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
@@ -75,6 +80,12 @@ function worldRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The default lessonRow() (kind: "quiz") references question id
+  // "11111111-...", already published - existing publish-success tests
+  // below don't need to know about the D18 question-reference gate at all.
+  mockGetQuestionsByIds.mockResolvedValue([
+    { id: "11111111-1111-4111-8111-111111111111", status: "published" },
+  ]);
 });
 
 describe("getPublicLessonsForWorld / getPublicLesson", () => {
@@ -374,6 +385,16 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
         },
       }),
     );
+    // Overrides the file's default (only "11111111...") - this test's own
+    // second cue references "22222222...", which must also resolve as
+    // published or the new D18 gate rejects before ever reaching
+    // getWorldById/publishLessonRow below, leaving those two queued mocks
+    // unconsumed and leaking into later tests (exactly what happened before
+    // this override was added - see git history for the diagnosis).
+    mockGetQuestionsByIds.mockResolvedValueOnce([
+      { id: "11111111-1111-4111-8111-111111111111", status: "published" },
+      { id: "22222222-2222-4222-8222-222222222222", status: "published" },
+    ]);
     mockGetWorldById.mockResolvedValueOnce(worldRow());
     mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "published" }));
 
@@ -496,6 +517,137 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
     const result = await publishLesson(ACTOR, "lesson_1", META);
 
     expect(result.status).toBe("published");
+  });
+
+  // D18 (docs/ARCHITECTURE.md): a lesson can't publish while it references
+  // a question that doesn't exist or isn't published - the gap Checkpoint 4
+  // deliberately left open until the questions table existed (Checkpoint 5a).
+  describe("D18 - question-reference gate", () => {
+    it("blocks publish when a quiz-like lesson references a nonexistent question", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({ kind: "quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
+      );
+      mockGetQuestionsByIds.mockResolvedValueOnce([]); // nothing found
+
+      await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+        code: "VALIDATION_FAILED",
+        details: {
+          questionProblems: [
+            "question 11111111-1111-4111-8111-111111111111 does not exist",
+          ],
+        },
+      });
+      expect(mockPublishLessonRow).not.toHaveBeenCalled();
+      expect(mockGetWorldById).not.toHaveBeenCalled(); // fails before even checking the world
+    });
+
+    it("blocks publish when a quiz-like lesson references an unpublished question", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({ kind: "boss_quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
+      );
+      mockGetQuestionsByIds.mockResolvedValueOnce([
+        { id: "11111111-1111-4111-8111-111111111111", status: "draft" },
+      ]);
+
+      await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+        code: "VALIDATION_FAILED",
+        details: {
+          questionProblems: [
+            "question 11111111-1111-4111-8111-111111111111 is not published",
+          ],
+        },
+      });
+      expect(mockPublishLessonRow).not.toHaveBeenCalled();
+    });
+
+    it("names every dangling/unpublished reference, not just the first", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({
+          kind: "role_play",
+          content: {
+            questionIds: [
+              "11111111-1111-4111-8111-111111111111",
+              "22222222-2222-4222-8222-222222222222",
+            ],
+            framing: { en: "x", hi: "x", hx: "x" },
+          },
+        }),
+      );
+      mockGetQuestionsByIds.mockResolvedValueOnce([
+        { id: "22222222-2222-4222-8222-222222222222", status: "draft" },
+        // 11111111... is missing entirely
+      ]);
+
+      await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+        details: {
+          questionProblems: [
+            "question 11111111-1111-4111-8111-111111111111 does not exist",
+            "question 22222222-2222-4222-8222-222222222222 is not published",
+          ],
+        },
+      });
+    });
+
+    it("blocks publish when a video lesson's in-video cue references an unpublished question", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({
+          kind: "video",
+          content: {
+            lengthSeconds: 48,
+            scenes: [],
+            cues: [
+              {
+                at: 10,
+                questionId: "11111111-1111-4111-8111-111111111111",
+                timerSeconds: 8,
+              },
+            ],
+          },
+        }),
+      );
+      mockGetQuestionsByIds.mockResolvedValueOnce([
+        { id: "11111111-1111-4111-8111-111111111111", status: "draft" },
+      ]);
+
+      await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+        code: "VALIDATION_FAILED",
+        details: {
+          questionProblems: [
+            "question 11111111-1111-4111-8111-111111111111 is not published",
+          ],
+        },
+      });
+    });
+
+    it("never calls getQuestionsByIds for a story lesson (no question references possible)", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({
+          kind: "story",
+          content: { lengthSeconds: 60, pages: [{ text: { en: "x", hi: "x", hx: "x" } }] },
+        }),
+      );
+      mockGetWorldById.mockResolvedValueOnce(worldRow());
+      mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ kind: "story", status: "published" }));
+
+      await publishLesson(ACTOR, "lesson_1", META);
+
+      expect(mockGetQuestionsByIds).not.toHaveBeenCalled();
+    });
+
+    it("publishes once every referenced question exists and is published", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({ kind: "quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
+      );
+      mockGetQuestionsByIds.mockResolvedValueOnce([
+        { id: "11111111-1111-4111-8111-111111111111", status: "published" },
+      ]);
+      mockGetWorldById.mockResolvedValueOnce(worldRow());
+      mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "published" }));
+
+      const result = await publishLesson(ACTOR, "lesson_1", META);
+
+      expect(result.status).toBe("published");
+    });
   });
 });
 

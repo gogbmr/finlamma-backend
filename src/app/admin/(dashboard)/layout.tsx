@@ -56,6 +56,9 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <Link href="/admin/lessons" className="rounded-md px-3 py-2 hover:bg-neutral-200">
             Lessons
           </Link>
+          <Link href="/admin/questions" className="rounded-md px-3 py-2 hover:bg-neutral-200">
+            Questions
+          </Link>
           <Link href="/admin/consent" className="rounded-md px-3 py-2 hover:bg-neutral-200">
             Consent
           </Link>

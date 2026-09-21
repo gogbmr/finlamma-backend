@@ -90,6 +90,18 @@ const PERMISSIONS = [
       "Publish or unpublish a lesson, making it visible to (or hidden from) the app. Publishing " +
       "requires the lesson's world to already be published.",
   },
+  {
+    key: "question.manage",
+    description:
+      "Create questions and edit a question's draft fields (prompt, explanation, payload, " +
+      "answer). Cannot edit a question that's currently published - unpublish it first.",
+  },
+  {
+    key: "question.publish",
+    description:
+      "Publish or unpublish a question. A lesson can't be published while it references a " +
+      "missing or unpublished question (docs/ARCHITECTURE.md D18).",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -108,10 +120,13 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "world.publish",
     "lesson.manage",
     "lesson.publish",
+    "question.manage",
+    "question.publish",
   ],
   user_manager: ["consent.view"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],
-  content_publisher: ["mentor.publish", "world.publish", "lesson.publish"],
+  content_publisher: ["mentor.publish", "world.publish", "lesson.publish", "question.publish"],
+  quiz_maker: ["question.manage"],
 };
 
 async function seed() {
