@@ -17,6 +17,7 @@ const {
   getPublishedLesson,
   getPublishedLessonAtPosition,
   insertDraftLesson,
+  listAllPublishedLessons,
   listPublishedLessonsByWorldId,
   listPublishedLessonsForWorld,
   publishLessonRow,
@@ -271,5 +272,24 @@ describe("drafts are never reachable through any of the published-only repo func
 
     expect(result.map((l) => l.id)).toEqual([published.id]);
     expect(result.map((l) => l.id)).not.toContain(draft.id);
+  });
+});
+
+describe("listAllPublishedLessons", () => {
+  it("returns published lessons across every world, excluding drafts", async () => {
+    const worldA = (await makeWorld()).id;
+    const worldB = (await makeWorld()).id;
+    const publishedA = await insertDraftLesson(await draftInput({ worldId: worldA, chapter: 1, step: 1 }));
+    await publishLessonRow(publishedA.id, staffId);
+    const publishedB = await insertDraftLesson(await draftInput({ worldId: worldB, chapter: 1, step: 1 }));
+    await publishLessonRow(publishedB.id, staffId);
+    const draft = await insertDraftLesson(await draftInput({ worldId: worldA, chapter: 1, step: 2 }));
+
+    const result = await listAllPublishedLessons();
+    const resultIds = result.map((l) => l.id);
+
+    expect(resultIds).toContain(publishedA.id);
+    expect(resultIds).toContain(publishedB.id);
+    expect(resultIds).not.toContain(draft.id);
   });
 });

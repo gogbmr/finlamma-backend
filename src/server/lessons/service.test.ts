@@ -5,6 +5,7 @@ const mockGetPublishedLesson = vi.fn();
 const mockGetPublishedLessonAtPosition = vi.fn();
 const mockInsertDraftLesson = vi.fn();
 const mockListAllLessonsForWorld = vi.fn();
+const mockListAllPublishedLessons = vi.fn();
 const mockListPublishedLessonsForWorld = vi.fn();
 const mockPublishLessonRow = vi.fn();
 const mockUnpublishLessonRow = vi.fn();
@@ -16,6 +17,7 @@ vi.mock("./repo", () => ({
     mockGetPublishedLessonAtPosition(worldId, chapter, step),
   insertDraftLesson: (input: unknown) => mockInsertDraftLesson(input),
   listAllLessonsForWorld: (worldId: unknown) => mockListAllLessonsForWorld(worldId),
+  listAllPublishedLessons: () => mockListAllPublishedLessons(),
   listPublishedLessonsForWorld: (worldId: unknown) => mockListPublishedLessonsForWorld(worldId),
   publishLessonRow: (id: unknown, staffId: unknown) => mockPublishLessonRow(id, staffId),
   unpublishLessonRow: (id: unknown) => mockUnpublishLessonRow(id),
@@ -46,6 +48,7 @@ import {
   getLessonPreview,
   getPublicLesson,
   getPublicLessonsForWorld,
+  listPublishedLessonsReferencingQuestion,
   publishLesson,
   unpublishLesson,
   updateLessonDraft,
@@ -678,6 +681,56 @@ describe("getLessonEditorData", () => {
 
     expect(result).toHaveLength(2);
     expect(mockListAllLessonsForWorld).toHaveBeenCalledWith(WORLD_ID);
+  });
+});
+
+describe("listPublishedLessonsReferencingQuestion", () => {
+  const TARGET_QID = "11111111-1111-4111-8111-111111111111";
+  const OTHER_QID = "22222222-2222-4222-8222-222222222222";
+
+  it("returns only published lessons whose content references the given question id", async () => {
+    const referencing = lessonRow({
+      id: "lesson_referencing",
+      kind: "quiz",
+      content: { questionIds: [TARGET_QID] },
+    });
+    const notReferencing = lessonRow({
+      id: "lesson_not_referencing",
+      kind: "quiz",
+      content: { questionIds: [OTHER_QID] },
+    });
+    mockListAllPublishedLessons.mockResolvedValueOnce([referencing, notReferencing]);
+
+    const result = await listPublishedLessonsReferencingQuestion(TARGET_QID);
+
+    expect(result.map((l) => l.id)).toEqual(["lesson_referencing"]);
+  });
+
+  it("also matches a video lesson's in-video cue referencing the question", async () => {
+    const referencing = lessonRow({
+      id: "lesson_video",
+      kind: "video",
+      content: {
+        lengthSeconds: 48,
+        scenes: [],
+        cues: [{ at: 10, questionId: TARGET_QID, timerSeconds: 8 }],
+      },
+    });
+    mockListAllPublishedLessons.mockResolvedValueOnce([referencing]);
+
+    const result = await listPublishedLessonsReferencingQuestion(TARGET_QID);
+
+    expect(result.map((l) => l.id)).toEqual(["lesson_video"]);
+  });
+
+  it("returns an empty array when no published lesson references the question", async () => {
+    mockListAllPublishedLessons.mockResolvedValueOnce([
+      lessonRow({ content: { questionIds: [OTHER_QID] } }),
+    ]);
+
+    const result = await listPublishedLessonsReferencingQuestion(TARGET_QID);
+
+    expect(result).toEqual([]);
   });
 });
 

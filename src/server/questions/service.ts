@@ -1,6 +1,7 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { listPublishedLessonsReferencingQuestion } from "@/server/lessons/service";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
   getQuestionById,
@@ -153,6 +154,23 @@ export async function publishQuestion(actor: { id: string }, id: string, meta: R
 }
 
 export async function unpublishQuestion(actor: { id: string }, id: string, meta: RequestMeta) {
+  // Blocked while any published lesson still references this question -
+  // the reverse of D18's publish-time check, same pattern and reasoning as
+  // mentors/service.ts's unpublishMentor and worlds/service.ts's
+  // unpublishWorld: checked before the unpublish itself, not a post-hoc
+  // rollback.
+  const referencingLessons = await listPublishedLessonsReferencingQuestion(id);
+  if (referencingLessons.length > 0) {
+    const labels = referencingLessons
+      .map((l) => `${l.title.en} (ch${l.chapter}/step${l.step})`)
+      .join(", ");
+    throw new AppError(
+      "CONFLICT",
+      `Cannot unpublish: still referenced by published lesson(s): ${labels}`,
+      { lessonIds: referencingLessons.map((l) => l.id) },
+    );
+  }
+
   const unpublished = await unpublishQuestionRow(id);
   if (!unpublished) throw new AppError("CONFLICT", "Question not found, or it's not published");
 

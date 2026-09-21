@@ -15,6 +15,12 @@ vi.mock("./repo", () => ({
   updateDraftQuestion: (input: unknown) => mockUpdateDraftQuestion(input),
 }));
 
+const mockListPublishedLessonsReferencingQuestion = vi.fn();
+vi.mock("@/server/lessons/service", () => ({
+  listPublishedLessonsReferencingQuestion: (questionId: unknown) =>
+    mockListPublishedLessonsReferencingQuestion(questionId),
+}));
+
 const mockLogActivity = vi.fn();
 vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
@@ -51,6 +57,10 @@ function questionRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no published lesson references the question - existing
+  // unpublish-success tests below don't need to know about the
+  // reverse-D18 gate at all.
+  mockListPublishedLessonsReferencingQuestion.mockResolvedValue([]);
 });
 
 describe("createQuestionDraft", () => {
@@ -220,6 +230,34 @@ describe("unpublishQuestion", () => {
     await expect(unpublishQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({
       code: "CONFLICT",
     });
+  });
+
+  // Reverse of D18's publish-time check: a question can't be unpublished
+  // while a published lesson still references it, same pattern as
+  // mentors/service.ts's unpublishMentor and worlds/service.ts's
+  // unpublishWorld.
+  it("blocks unpublish and names every referencing published lesson, without touching the row", async () => {
+    mockListPublishedLessonsReferencingQuestion.mockResolvedValueOnce([
+      { id: "lesson_1", title: { en: "Intro to Stocks" }, chapter: 1, step: 2 },
+      { id: "lesson_2", title: { en: "Bonds Basics" }, chapter: 2, step: 1 },
+    ]);
+
+    await expect(unpublishQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/Intro to Stocks[\s\S]*Bonds Basics/),
+      details: { lessonIds: ["lesson_1", "lesson_2"] },
+    });
+    expect(mockUnpublishQuestionRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("allows unpublish once no published lesson references the question anymore", async () => {
+    mockListPublishedLessonsReferencingQuestion.mockResolvedValueOnce([]);
+    mockUnpublishQuestionRow.mockResolvedValueOnce(questionRow({ status: "draft" }));
+
+    const result = await unpublishQuestion(ACTOR, "question_1", META);
+
+    expect(result.status).toBe("draft");
   });
 });
 

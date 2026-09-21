@@ -11,6 +11,7 @@ import {
   getPublishedLessonAtPosition,
   insertDraftLesson,
   listAllLessonsForWorld,
+  listAllPublishedLessons,
   listPublishedLessonsForWorld,
   publishLessonRow,
   unpublishLessonRow,
@@ -141,6 +142,17 @@ function extractQuestionIds(kind: string, content: unknown): string[] {
 
 export async function getLessonEditorData(worldId: string) {
   return listAllLessonsForWorld(worldId);
+}
+
+// Used by questions/service.ts's unpublishQuestion to block unpublishing a
+// question that a published lesson still references - the reverse of D18's
+// publish-time check, same pattern as mentors<->worlds and worlds<->lessons.
+// Scans every published lesson's content (question ids are jsonb, not a
+// relational column, so there's no WHERE clause that can do this in SQL) -
+// bounded and cheap in v1 (7 worlds x up to 40 lessons).
+export async function listPublishedLessonsReferencingQuestion(questionId: string) {
+  const lessons = await listAllPublishedLessons();
+  return lessons.filter((l) => extractQuestionIds(l.kind, l.content).includes(questionId));
 }
 
 // Staff-only (see the admin Server Action's permission gate, not this

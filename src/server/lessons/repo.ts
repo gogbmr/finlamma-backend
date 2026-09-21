@@ -61,6 +61,15 @@ export async function listPublishedLessonsByWorldId(worldId: string) {
     .where(and(eq(lessons.worldId, worldId), eq(lessons.status, "published")));
 }
 
+// Every published lesson, across every world - used by
+// listPublishedLessonsReferencingQuestion (this file) to scan for a
+// question id inside lesson content, which is jsonb, not a relational
+// column, so there's no WHERE clause that can do this filtering in SQL.
+// Bounded and cheap in v1 (7 worlds x up to 40 lessons each).
+export async function listAllPublishedLessons() {
+  return db.select().from(lessons).where(eq(lessons.status, "published"));
+}
+
 export async function insertDraftLesson(input: CreateLessonDraftInput) {
   const [row] = await db.insert(lessons).values(input).returning();
   return row;
