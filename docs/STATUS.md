@@ -1,5 +1,25 @@
 # Status
 
+## 2026-09-20 — Process fix: Phase 2b's first 3 commits landed directly on `main`, corrected
+
+`/phase-kickoff 2b` had no branch-creation step, so Checkpoint 1 (S3 storage plumbing), Checkpoint 2
+(Mentors content type), and a follow-up hardening commit (mentor art upload magic-byte validation,
+OpenAPI-route-coverage guard test) were committed and **pushed directly to `main`** -
+`cb907fd`, `c3cfe81`, `a1bced1` - which auto-deploys to production. This violates the "one branch
+per phase, merged only after `/phase-audit`" rule.
+
+Corrected: `phase-2b-content` branch created from `main` at `a1bced1` and pushed
+(`origin/phase-2b-content`); all further Phase 2b work happens there. **`main` was not reset or
+rewritten** - those 3 commits stay on `main`'s history as-is, since rewriting a branch that already
+deployed to production would be worse than the original mistake. This means **`/phase-audit 2b`
+must explicitly cover `cb907fd`/`c3cfe81`/`a1bced1` too**, not just what lands on
+`phase-2b-content` afterward - they were never audited as part of a phase branch review before
+reaching `main`/production the way every other phase's work has been.
+
+Also fixed to prevent recurrence: `.claude/hooks/guard-bash.mjs` now hard-blocks `git commit`
+while on `main` and any `git push` targeting `main`, and `/phase-kickoff` now creates and switches
+to the phase branch as its first action, before any code change.
+
 ## 2026-09-20 — Phase 2a merged to `main` and verified in production. Next: Phase 2b.
 
 `phase-2a-consent` merged into `main` via merge commit `2d29847` (27 commits, kept the branch). Before
