@@ -37,6 +37,8 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/worlds` — List published worlds
 - `GET /api/v1/worlds/{id}/lessons` — List a world's published lessons
 - `GET /api/v1/lessons/{id}` — Get a published lesson
+- `POST /api/v1/lessons/{id}/steps/{n}/serve` — Serve the next graded step of a lesson (starts or resumes an attempt)
+- `POST /api/v1/lessons/{id}/steps/{n}/answer` — Submit an answer for the current step and grade it
 - `GET /api/v1/me/current-lesson` — Get my current/resume lesson
 
 **Webhooks**
@@ -944,6 +946,205 @@ Full content for a single published lesson - what the Lesson Flow engine renders
   "error": {
     "code": "NOT_FOUND",
     "message": "No published lesson with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/steps/{n}/serve`
+
+**Serve the next graded step of a lesson (starts or resumes an attempt)**
+
+Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this step's timer runs from, and is never trusted from the client on submit. Only the current, next-in-sequence step can be served - no skipping ahead. Starts a new attempt on step 1 if none is in progress, or resumes an already-served-but-unanswered step idempotently. Never includes this question's correct answer or explanation - see POST .../answer.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+| `n` | path | integer | yes |  |
+
+**Responses**
+
+- **200** — The step to render
+
+```json
+{
+  "data": {
+    "attemptId": "00000000-0000-0000-0000-000000000000",
+    "stepIndex": 1,
+    "totalSteps": 5,
+    "questionId": "00000000-0000-0000-0000-000000000000",
+    "format": "single_select",
+    "prompt": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "payload": {},
+    "timerSeconds": 12,
+    "servedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id, or its question is no longer available
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **409** — Not the current step (no skip-ahead), or the step is already answered
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Not the current step - answer earlier steps first"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/steps/{n}/answer`
+
+**Submit an answer for the current step and grade it**
+
+Server-graded and server-timed - the submitted answer is checked against the question's real answer server-side, and the elapsed time used for the speed bonus/timeout is measured from this step's serve time, never a client-reported value (docs/ARCHITECTURE.md D21). Idempotent: submitting again for an already-answered step returns the exact original graded result unchanged, no re-scoring. This is the ONLY response that reveals this question's correct answer and explanation - never for any other step. No `Idempotency-Key` header is needed (unlike trading orders): the (attempt, step) pair already is the natural idempotency key, since only one attempt is ever in progress per (user, lesson) and only one unanswered row can exist per step.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+| `n` | path | integer | yes |  |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `answer` | object | no | Shape depends on the question's format - see the matching *AnswerSchema in src/server/questions/schemas.ts (e.g. { correctIndex } for single_select). |
+
+```json
+{
+  "answer": null
+}
+```
+
+**Responses**
+
+- **200** — The graded result for this step
+
+```json
+{
+  "data": {
+    "attemptId": "00000000-0000-0000-0000-000000000000",
+    "stepIndex": 0,
+    "totalSteps": 0,
+    "isCorrect": true,
+    "timedOut": true,
+    "correctAnswer": null,
+    "explanation": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "xpAwardedPreview": 0,
+    "speedBonusAwarded": true,
+    "feverActive": true,
+    "comboAfter": 0,
+    "isAttemptComplete": true,
+    "totalXpPreview": 0
+  }
+}
+```
+
+- **400** — The submitted answer doesn't match this question's format shape
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid answer for a \"single_select\" question: answer.correctIndex: Required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id, or the question no longer exists
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **409** — No active attempt, or this step hasn't been served yet
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "This step hasn't been served yet"
   }
 }
 ```

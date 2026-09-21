@@ -9,3 +9,4 @@ export * from "./mentors";
 export * from "./worlds";
 export * from "./lessons";
 export * from "./questions";
+export * from "./quiz_attempts";

@@ -1,0 +1,305 @@
+import { logActivity } from "@/lib/activity-log";
+import { AppError } from "@/lib/errors";
+import type { requestMeta } from "@/lib/http";
+import { getPublishedLesson } from "@/server/lessons/repo";
+import { extractQuestionIds } from "@/server/lessons/service";
+import { VideoContentSchema } from "@/server/lessons/schemas";
+import { getQuestionById } from "@/server/questions/repo";
+import { answerSchemaForFormat, type QuestionFormat } from "@/server/questions/schemas";
+import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import {
+  completeAttempt,
+  countAttemptsForUserLesson,
+  getAttemptById,
+  getLatestInProgressAttempt,
+  getPreviousQuestionAnswer,
+  getQuestionAnswer,
+  gradeQuestionAnswer,
+  insertAttempt,
+  insertServedQuestionAnswer,
+  listQuestionAnswersForAttempt,
+} from "./repo";
+import { answerMatches, computeScore, type QuizKind } from "./scoring";
+
+type RequestMeta = ReturnType<typeof requestMeta>;
+type QuestionAnswerRow = NonNullable<Awaited<ReturnType<typeof getQuestionAnswer>>>;
+
+function quizKindForLesson(kind: string): QuizKind {
+  return kind === "video" ? "popQuiz" : "practiceQuiz";
+}
+
+async function assertGradedLesson(lessonId: string) {
+  const lesson = await getPublishedLesson(lessonId);
+  if (!lesson) throw new AppError("NOT_FOUND", "No published lesson with this id");
+
+  const questionIds = extractQuestionIds(lesson.kind, lesson.content);
+  if (questionIds.length === 0) {
+    throw new AppError("VALIDATION_FAILED", "This lesson has no graded steps");
+  }
+  return { lesson, questionIds };
+}
+
+function assertStepInRange(stepIndex: number, totalSteps: number) {
+  if (!Number.isInteger(stepIndex) || stepIndex < 1 || stepIndex > totalSteps) {
+    throw new AppError("VALIDATION_FAILED", `stepIndex must be between 1 and ${totalSteps}`);
+  }
+}
+
+async function timerSecondsForStep(
+  lesson: { kind: string; content: unknown },
+  stepIndex: number,
+  practiceQuizTimerSeconds: number,
+): Promise<number> {
+  if (lesson.kind === "video") {
+    const parsed = VideoContentSchema.safeParse(lesson.content);
+    const cueTimer = parsed.success ? parsed.data.cues[stepIndex - 1]?.timerSeconds : undefined;
+    if (cueTimer) return cueTimer;
+  }
+  return practiceQuizTimerSeconds;
+}
+
+// Server-timed anti-cheat (docs/ARCHITECTURE.md D21): this is the ONLY way
+// a client learns `servedAt` - it's stamped here, server-side, never
+// trusted from the client. No-skip-ahead is enforced by only ever allowing
+// a NEW step's row to be created when the immediately preceding step is
+// already answered (or this is step 1) - re-serving the current unanswered
+// step is idempotent (same servedAt/timerSeconds returned, timer doesn't
+// reset), and re-serving an already-answered step is rejected, since that
+// data belongs to the answer endpoint's own response, not this one.
+export async function serveStep(
+  user: { id: string },
+  lessonId: string,
+  stepIndex: number,
+  meta: RequestMeta,
+) {
+  const { lesson, questionIds } = await assertGradedLesson(lessonId);
+  assertStepInRange(stepIndex, questionIds.length);
+
+  let attempt = await getLatestInProgressAttempt(user.id, lessonId);
+  if (!attempt) {
+    if (stepIndex !== 1) {
+      throw new AppError("CONFLICT", "No active attempt for this lesson - start from step 1");
+    }
+    const attemptNumber = (await countAttemptsForUserLesson(user.id, lessonId)) + 1;
+    attempt = await insertAttempt({
+      userId: user.id,
+      lessonId,
+      attemptNumber,
+      isFirstPass: attemptNumber === 1,
+    });
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "quiz_attempt.started",
+      targetType: "quiz_attempt",
+      targetId: attempt.id,
+      metadata: { lessonId, attemptNumber, isFirstPass: attempt.isFirstPass },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
+
+  let served = await getQuestionAnswer(attempt.id, stepIndex);
+  if (served) {
+    if (served.answeredAt) {
+      throw new AppError("CONFLICT", "This step has already been answered");
+    }
+    // Idempotent resume (e.g. app reopened mid-question) - same servedAt/
+    // timerSeconds handed back, the timer does not restart.
+  } else {
+    if (stepIndex > 1) {
+      const previous = await getPreviousQuestionAnswer(attempt.id, stepIndex);
+      if (!previous || !previous.answeredAt) {
+        throw new AppError("CONFLICT", "Not the current step - answer earlier steps first");
+      }
+    }
+    const settings = await getLessonFlowScoringSettings();
+    const questionId = questionIds[stepIndex - 1]!;
+    const question = await getQuestionById(questionId);
+    if (!question || question.status !== "published") {
+      throw new AppError("NOT_FOUND", "This step's question is no longer available");
+    }
+    served = await insertServedQuestionAnswer({
+      attemptId: attempt.id,
+      questionId,
+      stepIndex,
+      servedAt: new Date(),
+      timerSeconds: await timerSecondsForStep(lesson, stepIndex, settings.practiceQuizTimerSeconds),
+    });
+  }
+
+  const question = await getQuestionById(served.questionId);
+  if (!question) throw new AppError("NOT_FOUND", "This step's question is no longer available");
+
+  return {
+    attemptId: attempt.id,
+    stepIndex,
+    totalSteps: questionIds.length,
+    questionId: question.id,
+    format: question.format,
+    prompt: question.prompt,
+    payload: question.payload,
+    timerSeconds: served.timerSeconds,
+    servedAt: served.servedAt.toISOString(),
+  };
+}
+
+function buildAnswerResponse(
+  row: QuestionAnswerRow,
+  question: { answer: unknown; explanation: unknown },
+  totalSteps: number,
+  attempt: { status: string; totalXpPreview: number | null },
+) {
+  return {
+    attemptId: row.attemptId,
+    stepIndex: row.stepIndex,
+    totalSteps,
+    isCorrect: row.isCorrect!,
+    timedOut: row.timedOut!,
+    correctAnswer: question.answer,
+    explanation: question.explanation,
+    xpAwardedPreview: row.xpAwardedPreview!,
+    speedBonusAwarded: row.speedBonusAwarded!,
+    feverActive: row.feverActive!,
+    comboAfter: row.comboAfter!,
+    isAttemptComplete: attempt.status === "completed",
+    totalXpPreview: attempt.totalXpPreview,
+  };
+}
+
+// One answer per question per attempt, idempotent (docs/ARCHITECTURE.md
+// D21): if this step is already answered, the exact stored result is
+// returned unchanged - no re-grading, no re-running the combo/XP math, no
+// double-counting. Only the current served-and-unanswered step can be
+// graded; an unserved step (no row at all) is rejected. Answer/explanation
+// are revealed here, for this question only, never before this call and
+// never for any other step.
+export async function submitAnswer(
+  user: { id: string },
+  lessonId: string,
+  stepIndex: number,
+  rawAnswer: unknown,
+  meta: RequestMeta,
+) {
+  const { lesson, questionIds } = await assertGradedLesson(lessonId);
+  assertStepInRange(stepIndex, questionIds.length);
+
+  const attempt = await getLatestInProgressAttempt(user.id, lessonId);
+  if (!attempt) throw new AppError("CONFLICT", "No active attempt for this lesson - call serve first");
+
+  const row = await getQuestionAnswer(attempt.id, stepIndex);
+  if (!row) throw new AppError("CONFLICT", "This step hasn't been served yet");
+
+  const question = await getQuestionById(row.questionId);
+  if (!question) throw new AppError("NOT_FOUND", "This step's question no longer exists");
+
+  if (row.answeredAt) {
+    return buildAnswerResponse(row, question, questionIds.length, attempt);
+  }
+
+  const format = question.format as QuestionFormat;
+  const answerResult = answerSchemaForFormat(format).safeParse(rawAnswer);
+  if (!answerResult.success) {
+    throw new AppError(
+      "VALIDATION_FAILED",
+      `Invalid answer for a "${format}" question: ${answerResult.error.issues
+        .map((i) => `answer.${i.path.join(".")}: ${i.message}`)
+        .join("; ")}`,
+    );
+  }
+
+  const settings = await getLessonFlowScoringSettings();
+  const previous = await getPreviousQuestionAnswer(attempt.id, stepIndex);
+  const comboBefore = previous?.isCorrect ? (previous.comboAfter ?? 0) : 0;
+  const elapsedMs = Date.now() - row.servedAt.getTime();
+
+  const score = computeScore({
+    quizKind: quizKindForLesson(lesson.kind),
+    answerMatches: answerMatches(format, answerResult.data, question.answer),
+    elapsedMs,
+    timerSeconds: row.timerSeconds,
+    comboBefore,
+    settings,
+  });
+
+  const answeredAt = new Date();
+  let graded = await gradeQuestionAnswer({
+    attemptId: attempt.id,
+    stepIndex,
+    submittedAnswer: answerResult.data,
+    isCorrect: score.isCorrect,
+    timedOut: score.timedOut,
+    speedBonusAwarded: score.speedBonusAwarded,
+    feverActive: score.feverActive,
+    xpAwardedPreview: score.xpAwardedPreview,
+    comboAfter: score.comboAfter,
+    questionRevision: question.revision,
+    answeredAt,
+  });
+  if (!graded) {
+    // Lost a genuine race against a concurrent duplicate submit for the
+    // same step - the winner's stored result is the one true answer here,
+    // same idempotent guarantee as the already-answered path above.
+    const winner = await getQuestionAnswer(attempt.id, stepIndex);
+    if (!winner?.answeredAt) throw new AppError("CONFLICT", "Could not grade this step - try again");
+    graded = winner;
+  }
+
+  let attemptAfter = attempt;
+  let isAttemptComplete = false;
+  let totalXpPreview: number | null = null;
+  if (stepIndex === questionIds.length) {
+    const allAnswers = await listQuestionAnswersForAttempt(attempt.id);
+    const sum = allAnswers.reduce((s, a) => s + (a.xpAwardedPreview ?? 0), 0);
+    const completed = await completeAttempt(attempt.id, sum);
+    if (completed) {
+      attemptAfter = completed;
+      isAttemptComplete = true;
+      totalXpPreview = sum;
+    } else {
+      // Already completed by a concurrent duplicate last-step submit -
+      // reflect the real, already-completed state rather than claiming
+      // "not complete".
+      const refreshed = await getAttemptById(attempt.id);
+      if (refreshed) attemptAfter = refreshed;
+      isAttemptComplete = attemptAfter.status === "completed";
+      totalXpPreview = attemptAfter.totalXpPreview;
+    }
+  }
+
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "quiz_attempt.step_answered",
+    targetType: "quiz_attempt",
+    targetId: attempt.id,
+    metadata: {
+      lessonId,
+      stepIndex,
+      isCorrect: score.isCorrect,
+      xpAwardedPreview: score.xpAwardedPreview,
+      attemptNumber: attempt.attemptNumber,
+    },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  if (isAttemptComplete) {
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "quiz_attempt.completed",
+      targetType: "quiz_attempt",
+      targetId: attempt.id,
+      metadata: {
+        lessonId,
+        totalXpPreview,
+        attemptNumber: attempt.attemptNumber,
+        isFirstPass: attempt.isFirstPass,
+      },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
+
+  return buildAnswerResponse(graded, question, questionIds.length, attemptAfter);
+}

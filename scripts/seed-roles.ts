@@ -102,6 +102,12 @@ const PERMISSIONS = [
       "Publish or unpublish a question. A lesson can't be published while it references a " +
       "missing or unpublished question (docs/ARCHITECTURE.md D18).",
   },
+  {
+    key: "settings.manage",
+    description:
+      "Edit admin-tunable settings_kv values that affect every learner immediately (e.g. Lesson " +
+      "Flow scoring constants). Narrower than content permissions - granted to super_admin only.",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -122,6 +128,7 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "lesson.publish",
     "question.manage",
     "question.publish",
+    "settings.manage",
   ],
   user_manager: ["consent.view"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],

@@ -127,8 +127,10 @@ function validateLessonForPublish(lesson: LessonRow): void {
 // Which question ids a lesson's content references, by kind - video's
 // in-video pop-quiz cues, or a quiz/boss_quiz/role_play's question list.
 // Story and doubt_zone never reference a question at all. See
-// docs/ARCHITECTURE.md D18.
-function extractQuestionIds(kind: string, content: unknown): string[] {
+// docs/ARCHITECTURE.md D18. Exported for src/server/quiz-attempts/service.ts
+// (Checkpoint 5b), which needs the same ordered id list to map a lesson's
+// step index to a question.
+export function extractQuestionIds(kind: string, content: unknown): string[] {
   if (kind === "video") {
     const parsed = VideoContentSchema.safeParse(content);
     return parsed.success ? parsed.data.cues.map((c) => c.questionId) : [];
