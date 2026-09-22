@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { ok, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
+import { checkRateLimit, LESSON_STEP_RATE_LIMIT } from "@/lib/redis";
 import { requireFullAccess } from "@/server/onboarding/service";
 import {
   LessonStepParamsSchema,
@@ -89,6 +90,15 @@ registry.registerPath({
         },
       },
     },
+    429: {
+      description: "Too many requests - slow down and try again shortly",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "RATE_LIMITED", message: "Too many requests - slow down and try again shortly" } },
+        },
+      },
+    },
   },
 });
 
@@ -96,6 +106,13 @@ export const POST = withErrors(
   async (req: Request, { params }: { params: Promise<{ id: string; n: string }> }) => {
     const user = await requireUser(req);
     await requireFullAccess(user);
+    // Fails OPEN (docs/ROADMAP.md Phase 3 checkpoint 1): if Redis is
+    // unreachable, this learning endpoint stays usable rather than blocking
+    // every learner over an ops config gap - see src/lib/redis.ts.
+    const { allowed } = await checkRateLimit(user.id, LESSON_STEP_RATE_LIMIT, true);
+    if (!allowed) {
+      throw new AppError("RATE_LIMITED", "Too many requests - slow down and try again shortly");
+    }
     const rawParams = await params;
     const parsedParams = LessonStepParamsSchema.safeParse(rawParams);
     if (!parsedParams.success) {

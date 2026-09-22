@@ -75,7 +75,7 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [x] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
 
 ## Phase 3 — Progress economy
-- [ ] **Rate limiting (Upstash Redis) on the quiz serve/answer endpoints** (`POST
+- [x] **Rate limiting (Upstash Redis) on the quiz serve/answer endpoints** (`POST
       /api/v1/lessons/{id}/steps/{n}/serve`, `.../answer`), before any real XP is credited to a
       ledger. Flagged by the Phase 2b security audit (`docs/STATUS.md`) - low-impact today since
       XP is preview-only (D17) and each step grades once, idempotently, but a real abuse/

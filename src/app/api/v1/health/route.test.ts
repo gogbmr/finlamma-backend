@@ -47,6 +47,11 @@ vi.mock("@/server/settings/service", () => ({
   getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
 }));
 
+const mockCheckRedisReachable = vi.fn();
+vi.mock("@/lib/redis", () => ({
+  checkRedisReachable: () => mockCheckRedisReachable(),
+}));
+
 import { db } from "@/db/client";
 import { DEFAULT_LESSON_FLOW_SCORING } from "@/server/settings/schemas";
 import { GET } from "./route";
@@ -81,6 +86,9 @@ beforeEach(() => {
   // Default position (3) - existing tests below don't need to know about
   // the tradingUnlockWorldMissing warning field at all.
   mockGetLessonFlowScoringSettings.mockReset().mockResolvedValue(DEFAULT_LESSON_FLOW_SCORING);
+  // "ok" by default - existing tests below don't need to know about the
+  // redis warning field at all.
+  mockCheckRedisReachable.mockReset().mockResolvedValue("ok");
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -110,6 +118,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
     expect(body.data.storage).toBe("ok");
+    expect(body.data.redis).toBe("ok");
     expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(typeof body.data.timestamp).toBe("string");
   });
@@ -311,6 +320,28 @@ describe("GET /api/v1/health", () => {
     const res = await GET();
 
     expect((await res.json()).data.storage).toBe("ok");
+  });
+
+  describe("redis", () => {
+    it("reports 'unconfigured' (not a 503) when Upstash env vars aren't set", async () => {
+      mockHealthyDb();
+      mockCheckRedisReachable.mockResolvedValue("unconfigured");
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.redis).toBe("unconfigured");
+    });
+
+    it("reports 'unreachable' (not a 503) when a live ping fails", async () => {
+      mockHealthyDb();
+      mockCheckRedisReachable.mockResolvedValue("unreachable");
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.redis).toBe("unreachable");
+    });
   });
 
   describe("tradingUnlockWorldMissing", () => {

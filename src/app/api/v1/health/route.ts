@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
+import { checkRedisReachable } from "@/lib/redis";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
@@ -66,6 +67,15 @@ const HealthDataSchema = z.object({
       "src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - " +
       "e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage " +
       "plumbing with no way to notice a missing key from outside the deployment's env vars.",
+  }),
+  redis: z.enum(["ok", "unreachable", "unconfigured"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'unconfigured' means UPSTASH_REDIS_REST_URL/" +
+      "TOKEN aren't set, 'unreachable' means they're set but a live PING failed. Unlike storage, " +
+      "src/lib/redis.ts's rate limiter fails OPEN when this isn't 'ok' (docs/ROADMAP.md Phase 3 " +
+      "checkpoint 1) - the lesson step serve/answer endpoints stay usable, but this field is how " +
+      "that gap is visible from outside the deployment's env vars.",
   }),
   worldsMissingBossQuiz: z
     .array(z.object({ id: z.string().uuid(), title: z.string() }))
@@ -307,6 +317,7 @@ export const GET = withErrors(async () => {
   const legalDocuments = await checkLegalDocuments();
   const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
   const tradingUnlockWorldMissing = await checkTradingUnlockWorldMissing();
+  const redis = await checkRedisReachable();
 
   return ok({
     status: "ok" as const,
@@ -317,6 +328,7 @@ export const GET = withErrors(async () => {
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     storage: checkStorageConfigured(),
+    redis,
     worldsMissingBossQuiz,
     tradingUnlockWorldMissing,
     timestamp: new Date().toISOString(),

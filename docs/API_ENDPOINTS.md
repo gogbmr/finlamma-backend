@@ -71,6 +71,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "version": "2d303f6",
     "consentPiiHmacKey": "ok",
     "storage": "ok",
+    "redis": "ok",
     "worldsMissingBossQuiz": [],
     "tradingUnlockWorldMissing": false,
     "timestamp": "2026-01-01T00:00:00.000Z"
@@ -1035,6 +1036,17 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
 }
 ```
 
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
 
 ---
 
@@ -1144,6 +1156,17 @@ Server-graded and server-timed - the submitted answer is checked against the que
   "error": {
     "code": "CONFLICT",
     "message": "This step hasn't been served yet"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
   }
 }
 ```
