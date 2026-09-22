@@ -7,6 +7,7 @@ import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { listPublishedWorlds } from "@/server/worlds/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
@@ -76,6 +77,14 @@ const HealthDataSchema = z.object({
         "these for any learner, since there's nothing to pass. See docs/ARCHITECTURE.md D24 " +
         "and STATUS.md.",
     }),
+  tradingUnlockWorldMissing: z.boolean().openapi({
+    example: false,
+    description:
+      "A non-fatal warning (never causes a 503): true when fewer published worlds exist than " +
+      "settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading " +
+      "stays locked for every learner until enough worlds are published. See " +
+      "docs/ARCHITECTURE.md D25.",
+  }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
 
@@ -215,6 +224,22 @@ async function checkWorldsMissingBossQuiz(): Promise<{ id: string; title: string
   }
 }
 
+// Non-fatal, same reasoning as checkWorldsMissingBossQuiz: fewer published
+// worlds than the configured trading-unlock position (D25,
+// docs/ARCHITECTURE.md) doesn't fail the health check, but it means
+// isTradingUnlocked() can never return true for anyone yet - a real content
+// gap worth surfacing before Phase 4 wires trading up to this rule.
+async function checkTradingUnlockWorldMissing(): Promise<boolean> {
+  try {
+    const settings = await getLessonFlowScoringSettings();
+    const worlds = await listPublishedWorlds();
+    return worlds.length < settings.tradingUnlockAfterWorldPosition;
+  } catch (err) {
+    logInternalError("health.trading_unlock_check_failed", err);
+    return false;
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -281,6 +306,7 @@ export const GET = withErrors(async () => {
 
   const legalDocuments = await checkLegalDocuments();
   const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
+  const tradingUnlockWorldMissing = await checkTradingUnlockWorldMissing();
 
   return ok({
     status: "ok" as const,
@@ -292,6 +318,7 @@ export const GET = withErrors(async () => {
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     storage: checkStorageConfigured(),
     worldsMissingBossQuiz,
+    tradingUnlockWorldMissing,
     timestamp: new Date().toISOString(),
   });
 });

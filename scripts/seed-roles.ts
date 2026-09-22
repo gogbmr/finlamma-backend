@@ -59,7 +59,7 @@ const PERMISSIONS = [
   {
     key: "mentor.manage",
     description:
-      "Create mentors and edit a mentor's draft fields (name, bio, world range, art). " +
+      "Create mentors and edit a mentor's draft fields (name, bio, persona, art). " +
       "Cannot edit a mentor that's currently published - unpublish it first.",
   },
   {
@@ -75,8 +75,9 @@ const PERMISSIONS = [
   {
     key: "world.publish",
     description:
-      "Publish or unpublish a world, making it visible to (or hidden from) the app. Publishing " +
-      "requires the world's mentor to already be published.",
+      "Publish or unpublish a world, making it visible to (or hidden from) the app, and " +
+      "permanently delete a world once it has no lessons. Publishing requires the world's " +
+      "mentor to already be published.",
   },
   {
     key: "lesson.manage",

@@ -58,8 +58,7 @@ async function makeWorld() {
       order: uniqueOrder(),
       name: { en: "Test Mentor", hi: "x", hx: "x" },
       bio: { en: "x", hi: "x", hx: "x" },
-      worldRangeStart: 1,
-      worldRangeEnd: 3,
+      persona: "test persona",
     })
     .returning();
   const [world] = await db

@@ -80,7 +80,9 @@ export async function listPublishedLessonsByWorldId(worldId: string) {
 // listPublishedLessonsReferencingQuestion (this file) to scan for a
 // question id inside lesson content, which is jsonb, not a relational
 // column, so there's no WHERE clause that can do this filtering in SQL.
-// Bounded and cheap in v1 (7 worlds x up to 40 lessons each).
+// Worlds/lessons are staff-created with no fixed count (D25,
+// docs/ARCHITECTURE.md), but the total stays small enough in practice for
+// this full-table scan to remain cheap.
 export async function listAllPublishedLessons() {
   return db.select().from(lessons).where(eq(lessons.status, "published"));
 }

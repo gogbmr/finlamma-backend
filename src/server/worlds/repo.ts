@@ -154,3 +154,58 @@ export async function unpublishWorldRow(id: string) {
     .returning();
   return row ?? null;
 }
+
+// Thrown by deleteWorldRow when a row it read at the start of the
+// transaction no longer matches that same (id, order) pair by the time the
+// shift loop tries to write it - i.e. a genuinely concurrent write (another
+// delete, a reorder, a draft update touching `order`) touched the same row
+// in between. worlds/service.ts's deleteWorld maps this to a clean,
+// retryable CONFLICT, the same way reorderWorld maps a real Postgres
+// serialization failure from moveWorldToPosition.
+export class WorldOrderConflictError extends Error {
+  constructor() {
+    super("World order changed concurrently during delete");
+  }
+}
+
+// Deletes a world and closes the resulting gap in `order` so sequencing
+// stays contiguous (required by the sequential-unlock rule, which walks
+// the published list by position, and D25's position-based trading-unlock
+// rule). Safe without moveWorldToPosition's negative-sentinel trick in the
+// SINGLE-transaction case: after the delete, every remaining order value
+// strictly after the deleted one is shifted down by exactly one, in
+// ascending order - each write lands in the slot the previous write (or the
+// delete itself) just vacated, so the unique index on `order` is never
+// violated mid-transaction. But unlike moveWorldToPosition, the shift loop
+// here is NOT concurrency-safe on its own: each UPDATE originally used the
+// row's `order` value as captured by the earlier SELECT, so a genuinely
+// concurrent write to that same row (another delete, a reorder, ...)
+// between the SELECT and this UPDATE would silently affect 0 rows under
+// READ COMMITTED - no error, just a quietly non-contiguous or duplicated
+// order sequence. Guarded against by re-checking `order` in the UPDATE's
+// WHERE clause and throwing WorldOrderConflictError if a row didn't match -
+// the whole transaction then rolls back, so nothing partial ever commits.
+// The caller (worlds/service.ts's deleteWorld) is responsible for
+// confirming the world has no lessons first.
+export async function deleteWorldRow(id: string) {
+  return db.transaction(async (tx) => {
+    const [deleted] = await tx.delete(worlds).where(eq(worlds.id, id)).returning();
+    if (!deleted) return null;
+
+    const after = await tx
+      .select()
+      .from(worlds)
+      .where(gt(worlds.order, deleted.order))
+      .orderBy(asc(worlds.order));
+    for (const row of after) {
+      const [updated] = await tx
+        .update(worlds)
+        .set({ order: row.order - 1 })
+        .where(and(eq(worlds.id, row.id), eq(worlds.order, row.order)))
+        .returning();
+      if (!updated) throw new WorldOrderConflictError();
+    }
+
+    return deleted;
+  });
+}

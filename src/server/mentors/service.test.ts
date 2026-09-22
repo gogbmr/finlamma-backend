@@ -29,8 +29,10 @@ vi.mock("@/lib/activity-log", () => ({
 }));
 
 const mockListPublishedWorldsByMentorId = vi.fn();
+const mockListAllWorlds = vi.fn();
 vi.mock("@/server/worlds/repo", () => ({
   listPublishedWorldsByMentorId: (mentorId: unknown) => mockListPublishedWorldsByMentorId(mentorId),
+  listAllWorlds: () => mockListAllWorlds(),
 }));
 
 const mockGetSignedDownloadUrl = vi.fn();
@@ -63,8 +65,7 @@ function mentorRow(overrides: Partial<Record<string, unknown>> = {}) {
     order: 1,
     name: { en: "Baby Lamma", hi: "बेबी लामा", hx: "Baby Lamma" },
     bio: { en: "en bio", hi: "hi bio", hx: "hx bio" },
-    worldRangeStart: 1,
-    worldRangeEnd: 3,
+    persona: "test persona",
     artKey: null,
     status: "draft" as const,
     publishedAt: null,
@@ -80,6 +81,7 @@ beforeEach(() => {
   // No published worlds reference this mentor by default - existing tests
   // below don't need to know about the world-reference block at all.
   mockListPublishedWorldsByMentorId.mockResolvedValue([]);
+  mockListAllWorlds.mockResolvedValue([]);
 });
 
 describe("getPublicMentors / getPublicMentorByKey", () => {
@@ -95,8 +97,6 @@ describe("getPublicMentors / getPublicMentorByKey", () => {
         order: 1,
         name: { en: "Baby Lamma", hi: "बेबी लामा", hx: "Baby Lamma" },
         bio: { en: "en bio", hi: "hi bio", hx: "hx bio" },
-        worldRangeStart: 1,
-        worldRangeEnd: 3,
         artUrl: "https://signed.example/art.png",
       },
     ]);
@@ -127,8 +127,7 @@ describe("createMentorDraft", () => {
       order: 1,
       name: mentorRow().name,
       bio: mentorRow().bio,
-      worldRangeStart: 1,
-      worldRangeEnd: 3,
+      persona: "test persona",
     };
     const result = await createMentorDraft(ACTOR, input, META);
 
@@ -144,7 +143,7 @@ describe("createMentorDraft", () => {
     await expect(
       createMentorDraft(
         ACTOR,
-        { key: "baby", order: 1, name: mentorRow().name, bio: mentorRow().bio, worldRangeStart: 1, worldRangeEnd: 3 },
+        { key: "baby", order: 1, name: mentorRow().name, bio: mentorRow().bio, persona: "test persona" },
         META,
       ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
@@ -159,7 +158,7 @@ describe("updateMentorDraft", () => {
     await expect(
       updateMentorDraft(
         ACTOR,
-        { id: "mentor_1", order: 1, name: mentorRow().name, bio: mentorRow().bio, worldRangeStart: 1, worldRangeEnd: 3 },
+        { id: "mentor_1", order: 1, name: mentorRow().name, bio: mentorRow().bio, persona: "test persona" },
         META,
       ),
     ).rejects.toMatchObject({ code: "CONFLICT" });
@@ -416,5 +415,55 @@ describe("getMentorEditorData", () => {
 
     expect(result[0]).toMatchObject({ id: "m1", artUrl: "https://signed.example/m1.png" });
     expect(result[1]).toMatchObject({ id: "m2", artUrl: null });
+  });
+
+  // D25 (docs/ARCHITECTURE.md): usedByWorlds is computed from worlds.mentorId,
+  // never a stored range on the mentor - a mentor can be used by any number
+  // of worlds, including more than one. Batched via one listAllWorlds() call
+  // + an in-memory group-by (not one query per mentor) - this test also
+  // covers that a mentor's worlds are correctly isolated from another
+  // mentor's, not just concatenated.
+  it("attaches usedByWorlds computed from worlds.mentorId, including when shared by several worlds", async () => {
+    mockListAllMentors.mockResolvedValueOnce([
+      mentorRow({ id: "m1" }),
+      mentorRow({ id: "m2", key: "other" }),
+    ]);
+    mockListAllWorlds.mockResolvedValueOnce([
+      { id: "w1", title: { en: "World One" }, status: "published", mentorId: "m1" },
+      { id: "w2", title: { en: "World Two" }, status: "draft", mentorId: "m1" },
+      { id: "w3", title: { en: "World Three" }, status: "published", mentorId: "m2" },
+    ]);
+
+    const result = await getMentorEditorData();
+
+    expect(result[0]!.usedByWorlds).toEqual([
+      { id: "w1", title: { en: "World One" }, status: "published" },
+      { id: "w2", title: { en: "World Two" }, status: "draft" },
+    ]);
+    expect(result[1]!.usedByWorlds).toEqual([
+      { id: "w3", title: { en: "World Three" }, status: "published" },
+    ]);
+  });
+
+  it("returns usedByWorlds: [] for a mentor no world references yet", async () => {
+    mockListAllMentors.mockResolvedValueOnce([mentorRow({ id: "m1" })]);
+    mockListAllWorlds.mockResolvedValueOnce([]);
+
+    const result = await getMentorEditorData();
+
+    expect(result[0]!.usedByWorlds).toEqual([]);
+  });
+
+  it("fetches worlds once regardless of how many mentors there are, not once per mentor", async () => {
+    mockListAllMentors.mockResolvedValueOnce([
+      mentorRow({ id: "m1" }),
+      mentorRow({ id: "m2", key: "b" }),
+      mentorRow({ id: "m3", key: "c" }),
+    ]);
+    mockListAllWorlds.mockResolvedValueOnce([]);
+
+    await getMentorEditorData();
+
+    expect(mockListAllWorlds).toHaveBeenCalledTimes(1);
   });
 });

@@ -5,15 +5,21 @@ import { staffMembers } from "./staff";
 
 export const worldStatusEnum = pgEnum("world_status", ["draft", "published"]);
 
-// The 7 worlds (Money World -> ... -> Elite Summit), PRODUCT_SPEC.md §1.
-// mentorId is a real FK, not a computed world-range lookup - publishing a
-// world requires its mentor to already be published, and a mentor can't be
-// unpublished while a published world still references it (see
-// src/server/mentors/service.ts unpublishMentor and
-// src/server/worlds/service.ts publishWorld). `order` is the only unlock
-// signal that matters (sequential: clearing a world's Boss Quiz unlocks the
-// next) - displayXpTarget is a cosmetic progress indicator only, never a
-// gate, per docs/DATA_MODEL.md.
+// D25 (docs/ARCHITECTURE.md): worlds are a fully data-driven, unbounded
+// content type - staff decide how many exist (5, 7, 10, 20, any number),
+// their names, order and art. The 7 prototype worlds seeded by
+// scripts/seed-worlds.ts are just initial seed data, fully editable,
+// reorderable and (if empty of lessons) deletable - nothing in this schema
+// or the code reading it assumes a fixed count. mentorId is a real FK, not
+// a computed world-range lookup - publishing a world requires its mentor to
+// already be published, and a mentor can't be unpublished while a published
+// world still references it (see src/server/mentors/service.ts
+// unpublishMentor and src/server/worlds/service.ts publishWorld). `order`
+// is the only unlock signal that matters (sequential: clearing a world's
+// Boss Quiz unlocks the next) - displayXpTarget is a cosmetic progress
+// indicator only, never a gate, per docs/DATA_MODEL.md. `theme` is a
+// staff-chosen hex color (validated in src/server/worlds/schemas.ts), not
+// an enum of fixed prototype themes.
 export const worlds = pgTable(
   "worlds",
   {

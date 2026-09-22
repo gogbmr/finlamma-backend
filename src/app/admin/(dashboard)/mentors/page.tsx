@@ -26,7 +26,7 @@ export default async function MentorsPage() {
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Mentors" }]}
         title="Mentors"
-        description="The mentor evolution stages (Baby/Father/Grandpa Lamma) shown as the learner clears worlds. Publish is blocked until every en/hi/hx field is filled."
+        description="Any number of Lamma mentors, assigned to worlds from the World editor (mentorId) - one mentor can cover many worlds. Publish is blocked until every en/hi/hx field is filled."
       />
 
       <MentorEditor
@@ -36,10 +36,10 @@ export default async function MentorsPage() {
           order: m.order,
           name: m.name,
           bio: m.bio,
-          worldRangeStart: m.worldRangeStart,
-          worldRangeEnd: m.worldRangeEnd,
+          persona: m.persona,
           status: m.status,
           artUrl: m.artUrl,
+          usedByWorlds: m.usedByWorlds,
         }))}
         canManage={canManage}
         canPublish={canPublish}

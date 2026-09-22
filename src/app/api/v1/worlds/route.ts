@@ -10,9 +10,10 @@ registry.registerPath({
   path: "/api/v1/worlds",
   summary: "List published worlds",
   description:
-    "The 7 worlds, ordered. Only published worlds are returned. Each world's `locked` field " +
-    "reflects this signed-in user's own progress - sequential unlock only (clearing the " +
-    "previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
+    "The published worlds, ordered - staff decide how many exist, no fixed count. Each " +
+    "world's `locked` field reflects this signed-in user's own progress - sequential unlock " +
+    "only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world " +
+    "is always unlocked.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {

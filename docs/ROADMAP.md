@@ -54,9 +54,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - See `docs/PRODUCT_SPEC.md`'s Onboarding & parental consent section for the exact flow.
 
 ## Phase 2b — Learning content
-- [x] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
-      from Phase 3 because worlds need a mentor; seed Baby/Father/Grandpa Lamma per the
-      prototype's world ranges
+- [x] Mentors content type (admin CRUD: name, bio, persona/voice notes, art, per language) —
+      unbounded, no fixed count (D25, `docs/ARCHITECTURE.md`); moved here from Phase 3 because
+      worlds need a mentor; seed Baby/Father/Grandpa Lamma as a starting set, assigned to worlds
+      via `worlds.mentorId`
 - [x] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
       **sequential only** (clearing the previous world's Boss Quiz) — no XP/level gate; Boss Quiz
       and Role Play reuse the same lesson-flow content shape as Quiz, not separate engines
@@ -95,10 +96,11 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 ## Phase 4 — Trading engine (needs the market relay for live prices)
 - [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
 - [ ] Twelve Data REST: quotes and candle history with Redis caching
-- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks when the
-      user reaches `settings_kv.trade_unlock_world_order` (default: Market Maidan/World 4) via
-      the same sequential world-clear rule as Phase 2b, not an XP/level threshold — no starting
-      balance or unlock grant, ever (see `docs/ECONOMY.md`)
+- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks per
+      `isTradingUnlocked()` (`src/server/worlds/service.ts`, already built in Phase 2b ahead of
+      this phase) — position-based (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`,
+      default 3rd published world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`),
+      not an XP/level threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`)
 - [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
 - [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
 - [ ] Limit-order matching job (Inngest)

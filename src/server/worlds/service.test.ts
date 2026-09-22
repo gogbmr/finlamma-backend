@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetWorldById = vi.fn();
+const mockDeleteWorldRow = vi.fn();
 const mockHotfixWorldRow = vi.fn();
 const mockInsertDraftWorld = vi.fn();
 const mockListAllWorlds = vi.fn();
@@ -10,8 +11,17 @@ const mockPublishWorldRow = vi.fn();
 const mockSetWorldArtKey = vi.fn();
 const mockUnpublishWorldRow = vi.fn();
 const mockUpdateDraftWorld = vi.fn();
+// A real class (not a mock fn) so `err instanceof WorldOrderConflictError`
+// in the service under test matches against the exact same reference this
+// mock hands back from a rejected deleteWorldRow() call. vi.hoisted() is
+// required (not a plain top-level class) since vi.mock()'s factory is
+// hoisted above normal module-body code, including class declarations.
+const { MockWorldOrderConflictError } = vi.hoisted(() => ({
+  MockWorldOrderConflictError: class extends Error {},
+}));
 vi.mock("./repo", () => ({
   getWorldById: (id: unknown) => mockGetWorldById(id),
+  deleteWorldRow: (id: unknown) => mockDeleteWorldRow(id),
   hotfixWorldRow: (input: unknown) => mockHotfixWorldRow(input),
   insertDraftWorld: (input: unknown) => mockInsertDraftWorld(input),
   listAllWorlds: () => mockListAllWorlds(),
@@ -21,6 +31,7 @@ vi.mock("./repo", () => ({
   setWorldArtKey: (id: unknown, artKey: unknown) => mockSetWorldArtKey(id, artKey),
   unpublishWorldRow: (id: unknown) => mockUnpublishWorldRow(id),
   updateDraftWorld: (input: unknown) => mockUpdateDraftWorld(input),
+  WorldOrderConflictError: MockWorldOrderConflictError,
 }));
 
 const mockGetMentorById = vi.fn();
@@ -31,9 +42,11 @@ vi.mock("@/server/mentors/repo", () => ({
 }));
 
 const mockListPublishedLessonsByWorldId = vi.fn();
+const mockListAllLessonsForWorld = vi.fn();
 const mockHasBossQuizLesson = vi.fn();
 vi.mock("@/server/lessons/repo", () => ({
   listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
+  listAllLessonsForWorld: (worldId: unknown) => mockListAllLessonsForWorld(worldId),
   hasBossQuizLesson: (worldId: unknown) => mockHasBossQuizLesson(worldId),
 }));
 
@@ -63,9 +76,11 @@ vi.mock("@/lib/s3", () => ({
 
 import {
   createWorldDraft,
+  deleteWorld,
   getPublicWorlds,
   getWorldEditorData,
   hotfixWorld,
+  isTradingUnlocked,
   publishWorld,
   reorderWorld,
   unpublishWorld,
@@ -112,10 +127,16 @@ beforeEach(() => {
   // No published lessons reference this world by default - existing tests
   // below don't need to know about the lesson-reference block at all.
   mockListPublishedLessonsByWorldId.mockResolvedValue([]);
+  // No lessons by default - existing tests below don't need to know about
+  // deleteWorld's lesson-block check at all.
+  mockListAllLessonsForWorld.mockResolvedValue([]);
   // No cleared worlds by default - existing getPublicWorlds tests below
   // don't need to know about the unlock check at all.
   mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
-  mockGetLessonFlowScoringSettings.mockResolvedValue({ bossQuizPassMarkPct: 60 });
+  mockGetLessonFlowScoringSettings.mockResolvedValue({
+    bossQuizPassMarkPct: 60,
+    tradingUnlockAfterWorldPosition: 3,
+  });
   // A boss_quiz lesson already exists by default - existing publishWorld
   // tests below don't need to know about the D24 publish-time gate at all.
   mockHasBossQuizLesson.mockResolvedValue(true);
@@ -650,5 +671,236 @@ describe("getWorldEditorData", () => {
 
     expect(result[0]).toMatchObject({ id: "w1", artUrl: "https://signed.example/w1.png" });
     expect(result[1]).toMatchObject({ id: "w2", artUrl: null });
+  });
+});
+
+// D25 (docs/ARCHITECTURE.md): nothing in getPublicWorlds may assume any
+// particular world count - it must work identically whether staff have
+// published 2 worlds or 12, and whether one mentor covers every world or
+// each has its own.
+describe("world count independence", () => {
+  function manyWorlds(count: number) {
+    return Array.from({ length: count }, (_, i) =>
+      worldRow({ id: `world_${i + 1}`, order: i + 1, title: { en: `World ${i + 1}`, hi: "x", hx: "x" } }),
+    );
+  }
+
+  it("sequentially unlocks correctly across only 2 published worlds", async () => {
+    mockListPublishedWorlds.mockResolvedValueOnce(manyWorlds(2));
+    mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+
+    const result = await getPublicWorlds(USER_ID);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]!.locked).toBe(false);
+    expect(result[1]!.locked).toBe(false);
+  });
+
+  it("sequentially unlocks correctly across 12 published worlds", async () => {
+    mockListPublishedWorlds.mockResolvedValueOnce(manyWorlds(12));
+    mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+    // Cleared worlds 1-5 only - world 7 (index 6) should be the first locked one.
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(
+      new Set(["world_1", "world_2", "world_3", "world_4", "world_5"]),
+    );
+
+    const result = await getPublicWorlds(USER_ID);
+
+    expect(result).toHaveLength(12);
+    for (let i = 0; i < 6; i++) expect(result[i]!.locked).toBe(false); // worlds 1-6 unlocked
+    for (let i = 6; i < 12; i++) expect(result[i]!.locked).toBe(true); // worlds 7-12 locked
+  });
+
+  it("one mentor can cover every world - mentorKey resolves the same for all of them", async () => {
+    mockListPublishedWorlds.mockResolvedValueOnce(
+      manyWorlds(5).map((w) => ({ ...w, mentorId: MENTOR_ID })),
+    );
+    mockListAllMentors.mockResolvedValueOnce([mentorRow({ key: "shared" })]);
+
+    const result = await getPublicWorlds(USER_ID);
+
+    expect(result.every((w) => w.mentorKey === "shared")).toBe(true);
+  });
+
+  it("resolves the correct mentorKey per world out of 5 distinct mentors, including one shared by several worlds", async () => {
+    const fiveMentors = [
+      mentorRow({ id: "m1", key: "mentor_1" }),
+      mentorRow({ id: "m2", key: "mentor_2" }),
+      mentorRow({ id: "m3", key: "shared_mentor" }),
+      mentorRow({ id: "m4", key: "mentor_4" }),
+      mentorRow({ id: "m5", key: "mentor_5" }),
+    ];
+    // world_1 and world_3 both use the shared mentor (m3); the rest each use
+    // their own distinct mentor.
+    const worldsWithMentors = [
+      worldRow({ id: "world_1", order: 1, mentorId: "m3" }),
+      worldRow({ id: "world_2", order: 2, mentorId: "m1" }),
+      worldRow({ id: "world_3", order: 3, mentorId: "m3" }),
+      worldRow({ id: "world_4", order: 4, mentorId: "m4" }),
+    ];
+    mockListPublishedWorlds.mockResolvedValueOnce(worldsWithMentors);
+    mockListAllMentors.mockResolvedValueOnce(fiveMentors);
+
+    const result = await getPublicWorlds(USER_ID);
+
+    expect(result.map((w) => w.mentorKey)).toEqual([
+      "shared_mentor",
+      "mentor_1",
+      "shared_mentor",
+      "mentor_4",
+    ]);
+  });
+});
+
+// D25 (docs/ARCHITECTURE.md): trading unlocks by POSITION in the published,
+// ordered world list, never a specific world id or name.
+describe("isTradingUnlocked", () => {
+  it("is locked when fewer published worlds exist than the configured position", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 3,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ id: "world_1", order: 1 }),
+      worldRow({ id: "world_2", order: 2 }),
+    ]);
+
+    const result = await isTradingUnlocked(USER_ID);
+
+    expect(result).toBe(false);
+    expect(mockGetWorldIdsWithPassedBossQuiz).not.toHaveBeenCalled();
+  });
+
+  it("is locked when enough worlds exist but the target position's Boss Quiz hasn't been passed", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 3,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ id: "world_1", order: 1 }),
+      worldRow({ id: "world_2", order: 2 }),
+      worldRow({ id: "world_3", order: 3 }),
+    ]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1", "world_2"]));
+
+    const result = await isTradingUnlocked(USER_ID);
+
+    expect(result).toBe(false);
+  });
+
+  it("unlocks once the world at the configured position has a passed Boss Quiz", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 3,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ id: "world_1", order: 1 }),
+      worldRow({ id: "world_2", order: 2 }),
+      worldRow({ id: "world_3", order: 3 }),
+    ]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(
+      new Set(["world_1", "world_2", "world_3"]),
+    );
+
+    const result = await isTradingUnlocked(USER_ID);
+
+    expect(result).toBe(true);
+  });
+
+  it("moves automatically when the position setting changes, with no world-id/name dependency", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 1,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ id: "world_1", order: 1 })]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+
+    const result = await isTradingUnlocked(USER_ID);
+
+    expect(result).toBe(true);
+  });
+});
+
+describe("deleteWorld", () => {
+  it("deletes a world with no lessons and logs it", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockListAllLessonsForWorld.mockResolvedValueOnce([]);
+    mockDeleteWorldRow.mockResolvedValueOnce(worldRow());
+
+    const result = await deleteWorld(ACTOR, "world_1", META);
+
+    expect(result.id).toBe("world_1");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "world.deleted", actorId: "staff_1" }),
+    );
+  });
+
+  it("deletes an empty PUBLISHED world directly - no unpublish-first requirement", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+    mockListAllLessonsForWorld.mockResolvedValueOnce([]);
+    mockDeleteWorldRow.mockResolvedValueOnce(worldRow({ status: "published" }));
+
+    const result = await deleteWorld(ACTOR, "world_1", META);
+
+    expect(result.id).toBe("world_1");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "world.deleted" }),
+    );
+  });
+
+  it("blocks deletion and names the lesson count when the world still has lessons (any status)", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockListAllLessonsForWorld.mockResolvedValueOnce([{ id: "l1" }, { id: "l2" }]);
+
+    await expect(deleteWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/2 lesson/),
+    });
+    expect(mockDeleteWorldRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND for an unknown world", async () => {
+    mockGetWorldById.mockResolvedValueOnce(null);
+
+    await expect(deleteWorld(ACTOR, "nope", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockListAllLessonsForWorld).not.toHaveBeenCalled();
+  });
+
+  // The lesson-count check and the delete itself aren't in the same
+  // transaction, so a genuinely concurrent write can still surface at the
+  // deleteWorldRow() call - both failure modes must map to a clean,
+  // retryable CONFLICT rather than an unmapped 500.
+  it("maps a WorldOrderConflictError from deleteWorldRow to a retryable CONFLICT", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockListAllLessonsForWorld.mockResolvedValueOnce([]);
+    mockDeleteWorldRow.mockRejectedValueOnce(new MockWorldOrderConflictError());
+
+    await expect(deleteWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/order.*try again/i),
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("maps a foreign-key violation (a lesson created between the check and the delete) to a retryable CONFLICT", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockListAllLessonsForWorld.mockResolvedValueOnce([]);
+    mockDeleteWorldRow.mockRejectedValueOnce({ code: "23503" });
+
+    await expect(deleteWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/lesson was just added/i),
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("re-throws an unrecognized error from deleteWorldRow unchanged", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockListAllLessonsForWorld.mockResolvedValueOnce([]);
+    mockDeleteWorldRow.mockRejectedValueOnce(new Error("something else entirely"));
+
+    await expect(deleteWorld(ACTOR, "world_1", META)).rejects.toThrow("something else entirely");
   });
 });

@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   createWorldDraftAction,
+  deleteWorldAction,
   hotfixWorldAction,
   publishWorldAction,
   reorderWorldAction,
@@ -103,6 +104,7 @@ export function WorldEditor({
               doubtZoneLessons={doubtZoneLessonsByWorldId[world.id] ?? []}
               canManage={canManage}
               canPublish={canPublish}
+              onDeleted={() => setSelectedId(worlds.find((w) => w.id !== world.id)?.id ?? "new")}
             />
           );
         })()
@@ -247,12 +249,14 @@ function WorldForm({
   doubtZoneLessons,
   canManage,
   canPublish,
+  onDeleted,
 }: {
   world: WorldRow;
   mentors: MentorOption[];
   doubtZoneLessons: DoubtZoneLessonRef[];
   canManage: boolean;
   canPublish: boolean;
+  onDeleted: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState(String(world.order));
@@ -263,6 +267,7 @@ function WorldForm({
   const [tagline, setTagline] = useState<LocalizedText>(world.tagline);
   const [reorderTarget, setReorderTarget] = useState("");
   const [confirmMentorChange, setConfirmMentorChange] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDraft = world.status === "draft";
@@ -370,6 +375,19 @@ function WorldForm({
         return;
       }
       toast.success(`Moved to position ${target}`);
+    });
+  }
+
+  function deleteThisWorld() {
+    startTransition(async () => {
+      const result = await deleteWorldAction({ id: world.id });
+      setConfirmDelete(false);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("World deleted");
+      onDeleted();
     });
   }
 
@@ -496,7 +514,26 @@ function WorldForm({
             Unpublish
           </Button>
         )}
+        {canPublish && (
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => setConfirmDelete(true)}
+            disabled={isPending}
+          >
+            Delete
+          </Button>
+        )}
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title="Delete this world?"
+        description="This permanently removes the world. Only possible while it has no lessons - if it does, this will fail and name them. This cannot be undone."
+        confirmLabel="Delete"
+        onConfirm={deleteThisWorld}
+      />
 
       <ConfirmDialog
         open={confirmMentorChange}

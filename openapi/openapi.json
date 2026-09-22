@@ -136,6 +136,11 @@
                 "example": [],
                 "description": "A non-fatal warning (never causes a 503): published worlds with no published Boss Quiz lesson. Sequential world-unlock (GET /api/v1/worlds) can never clear past one of these for any learner, since there's nothing to pass. See docs/ARCHITECTURE.md D24 and STATUS.md."
               },
+              "tradingUnlockWorldMissing": {
+                "type": "boolean",
+                "example": false,
+                "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -152,6 +157,7 @@
               "consentPiiHmacKey",
               "storage",
               "worldsMissingBossQuiz",
+              "tradingUnlockWorldMissing",
               "timestamp"
             ]
           }
@@ -672,18 +678,6 @@
               "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
             }
           },
-          "worldRangeStart": {
-            "type": "integer",
-            "example": 1
-          },
-          "worldRangeEnd": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "example": 3,
-            "description": "Null means an open-ended range (e.g. \"World 7+\")."
-          },
           "artUrl": {
             "type": [
               "string",
@@ -698,8 +692,6 @@
           "order",
           "name",
           "bio",
-          "worldRangeStart",
-          "worldRangeEnd",
           "artUrl"
         ]
       },
@@ -786,7 +778,7 @@
           "theme": {
             "type": "string",
             "example": "#7C3AED",
-            "description": "Cosmetic accent color/key for the world card - never affects unlock logic."
+            "description": "Cosmetic accent hex color for the world card, staff-chosen per world - never affects unlock logic."
           },
           "displayXpTarget": {
             "type": "integer",
@@ -2154,7 +2146,7 @@
     "/api/v1/mentors": {
       "get": {
         "summary": "List published mentors",
-        "description": "The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, ordered by their display order. Only published mentors are returned.",
+        "description": "The published Lamma mentors, ordered by their display order - staff decide how many exist. Which world(s) a mentor covers is set per world (worlds.mentorId), not returned here.",
         "tags": [
           "Learning"
         ],
@@ -2300,7 +2292,7 @@
     "/api/v1/worlds": {
       "get": {
         "summary": "List published worlds",
-        "description": "The 7 worlds, ordered. Only published worlds are returned. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
+        "description": "The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
         "tags": [
           "Learning"
         ],

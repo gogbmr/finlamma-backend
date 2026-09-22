@@ -134,6 +134,20 @@
       "when": 1790003830301,
       "tag": "0018_salty_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790058153203,
+      "tag": "0019_hot_ravenous",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1790058193093,
+      "tag": "0020_cynical_nomad",
+      "breakpoints": true
     }
   ]
 }

@@ -1,10 +1,14 @@
-// Seeds the three mentor evolution stages (Baby/Father/Grandpa Lamma) as
-// PUBLISHED, with world ranges and bios taken directly from the prototype's
+// D25 (docs/ARCHITECTURE.md): mentors are a fully data-driven, unbounded
+// content type - staff can create any number, and this script only seeds
+// three (Baby/Father/Grandpa Lamma) as an initial, fully-editable starting
+// point, not a fixed rule. Bios taken directly from the prototype's
 // MENTOR_INFO (Finlamma App.dc.html ~line 5519) - see docs/FEATURE_MAP.md
-// WH-09/WH-10 and docs/PRODUCT_SPEC.md §1. Unlike the legal-document seed,
-// this content isn't gated on outside legal review, so it seeds as real
-// (non-placeholder) published content - staff can still refine it later
-// through the admin Mentor editor.
+// WH-09/WH-10. Unlike the legal-document seed, this content isn't gated on
+// outside legal review, so it seeds as real (non-placeholder) published
+// content - staff can freely rename, add to or delete this later through
+// the admin Mentor editor. Which world(s) a mentor covers is never stored
+// here - that assignment lives entirely on worlds.mentorId, set per world
+// in the admin World editor (scripts/seed-worlds.ts).
 //
 // Refuses to touch a key that already exists, so this is safe to run again
 // (e.g. against a fresh database) without overwriting staff edits.
@@ -19,8 +23,9 @@ const MENTORS = [
   {
     key: "baby",
     order: 1,
-    worldRangeStart: 1,
-    worldRangeEnd: 3,
+    persona:
+      "Curious and gentle. Asks lots of clarifying questions, never judges a wrong answer, " +
+      "explains from absolute zero. Keep replies short, warm and encouraging.",
     name: { en: "Baby Lamma", hi: "बेबी लामा", hx: "Baby Lamma" },
     bio: {
       en: "The very first mentor - asks lots of questions and never judges. Starts from zero: " +
@@ -34,8 +39,9 @@ const MENTORS = [
   {
     key: "father",
     order: 2,
-    worldRangeStart: 4,
-    worldRangeEnd: 6,
+    persona:
+      "Straightforward and strict. No excuses, focused on numbers, risk and discipline. " +
+      "Talks like someone who expects the learner to already know the basics.",
     name: { en: "Father Lamma", hi: "फादर लामा", hx: "Father Lamma" },
     bio: {
       en: "The second mentor - straightforward and strict. Basics are done, now it's real " +
@@ -49,8 +55,9 @@ const MENTORS = [
   {
     key: "grandpa",
     order: 3,
-    worldRangeStart: 7,
-    worldRangeEnd: null,
+    persona:
+      "Says little, but every word carries decades of experience. Calm, measured, speaks in " +
+      "short wisdom-driven sentences rather than long explanations.",
     name: { en: "Grandpa Lamma", hi: "ग्रैंडपा लामा", hx: "Grandpa Lamma" },
     bio: {
       en: "The final mentor - says little, but carries 40 years of experience in every word. " +
@@ -80,8 +87,7 @@ async function seed() {
         order: mentor.order,
         name: mentor.name,
         bio: mentor.bio,
-        worldRangeStart: mentor.worldRangeStart,
-        worldRangeEnd: mentor.worldRangeEnd,
+        persona: mentor.persona,
         status: "published",
         publishedAt: new Date(),
         // No staff actor - script-seeded, not a real staff publish action.

@@ -24,9 +24,10 @@ export default async function WorldsPage() {
   const [worlds, mentors] = await Promise.all([getWorldEditorData(), getMentorEditorData()]);
 
   // Doubt Zone lessons per world, for the mentor-change warning below (see
-  // docs/ARCHITECTURE.md D19) - each world's lesson count is small (up to
-  // 40), so fetching all 7 worlds' lists up front is cheap and avoids a
-  // separate on-demand Server Action just for this.
+  // docs/ARCHITECTURE.md D19) - worlds/lessons are staff-created with no
+  // fixed count (D25), but each world's lesson count stays small enough in
+  // practice for fetching every world's list up front to remain cheap, and
+  // it avoids a separate on-demand Server Action just for this.
   const lessonsByWorld = await Promise.all(worlds.map((w) => getLessonEditorData(w.id)));
   const doubtZoneLessonsByWorldId: Record<
     string,
@@ -50,7 +51,7 @@ export default async function WorldsPage() {
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Worlds" }]}
         title="Worlds"
-        description="The 7 worlds a learner clears in order. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it."
+        description="Worlds a learner clears in sequential order - staff decide how many exist. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it. A world can only be deleted once it has no lessons."
       />
 
       <WorldEditor

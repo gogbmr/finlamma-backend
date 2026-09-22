@@ -42,7 +42,13 @@ vi.mock("@/server/lessons/repo", () => ({
   listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
 }));
 
+const mockGetLessonFlowScoringSettings = vi.fn();
+vi.mock("@/server/settings/service", () => ({
+  getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
+}));
+
 import { db } from "@/db/client";
+import { DEFAULT_LESSON_FLOW_SCORING } from "@/server/settings/schemas";
 import { GET } from "./route";
 
 function publishedDoc(overrides: Partial<{ isPlaceholder: boolean }> = {}) {
@@ -72,6 +78,9 @@ beforeEach(() => {
   // know about the worldsMissingBossQuiz warning field at all.
   mockListPublishedWorlds.mockReset().mockResolvedValue([]);
   mockListPublishedLessonsByWorldId.mockReset().mockResolvedValue([]);
+  // Default position (3) - existing tests below don't need to know about
+  // the tradingUnlockWorldMissing warning field at all.
+  mockGetLessonFlowScoringSettings.mockReset().mockResolvedValue(DEFAULT_LESSON_FLOW_SCORING);
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -302,5 +311,50 @@ describe("GET /api/v1/health", () => {
     const res = await GET();
 
     expect((await res.json()).data.storage).toBe("ok");
+  });
+
+  describe("tradingUnlockWorldMissing", () => {
+    it("reports true when fewer published worlds exist than the configured position", async () => {
+      mockHealthyDb();
+      mockGetLessonFlowScoringSettings.mockResolvedValue({
+        ...DEFAULT_LESSON_FLOW_SCORING,
+        tradingUnlockAfterWorldPosition: 3,
+      });
+      mockListPublishedWorlds.mockResolvedValue([
+        { id: "w1", title: { en: "World 1" } },
+        { id: "w2", title: { en: "World 2" } },
+      ]);
+
+      const res = await GET();
+
+      expect((await res.json()).data.tradingUnlockWorldMissing).toBe(true);
+    });
+
+    it("reports false once enough published worlds exist", async () => {
+      mockHealthyDb();
+      mockGetLessonFlowScoringSettings.mockResolvedValue({
+        ...DEFAULT_LESSON_FLOW_SCORING,
+        tradingUnlockAfterWorldPosition: 3,
+      });
+      mockListPublishedWorlds.mockResolvedValue([
+        { id: "w1", title: { en: "World 1" } },
+        { id: "w2", title: { en: "World 2" } },
+        { id: "w3", title: { en: "World 3" } },
+      ]);
+
+      const res = await GET();
+
+      expect((await res.json()).data.tradingUnlockWorldMissing).toBe(false);
+    });
+
+    it("reports false (not a 503) if the check itself throws", async () => {
+      mockHealthyDb();
+      mockGetLessonFlowScoringSettings.mockRejectedValue(new Error("boom"));
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.tradingUnlockWorldMissing).toBe(false);
+    });
   });
 });

@@ -17,6 +17,7 @@ vi.mock("next/cache", () => ({
 
 const mockCreateWorldDraft = vi.fn();
 const mockUpdateWorldDraft = vi.fn();
+const mockDeleteWorld = vi.fn();
 const mockHotfixWorld = vi.fn();
 const mockReorderWorld = vi.fn();
 const mockPublishWorld = vi.fn();
@@ -27,6 +28,7 @@ vi.mock("@/server/worlds/service", () => ({
     mockCreateWorldDraft(actor, input, meta),
   updateWorldDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockUpdateWorldDraft(actor, input, meta),
+  deleteWorld: (actor: unknown, id: unknown, meta: unknown) => mockDeleteWorld(actor, id, meta),
   hotfixWorld: (actor: unknown, input: unknown, meta: unknown) => mockHotfixWorld(actor, input, meta),
   reorderWorld: (actor: unknown, id: unknown, newOrder: unknown, meta: unknown) =>
     mockReorderWorld(actor, id, newOrder, meta),
@@ -39,6 +41,7 @@ vi.mock("@/server/worlds/service", () => ({
 
 import {
   createWorldDraftAction,
+  deleteWorldAction,
   hotfixWorldAction,
   publishWorldAction,
   reorderWorldAction,
@@ -136,6 +139,18 @@ describe("wrong role is rejected", () => {
     expect(result.ok).toBe(false);
     expect(mockRequireStaff).toHaveBeenCalledWith("world.publish");
     expect(mockHotfixWorld).not.toHaveBeenCalled();
+  });
+
+  // Gated on world.publish, not world.manage - deletion is stronger and
+  // irreversible, the same trust bar as unpublishing (D25, docs/ARCHITECTURE.md).
+  it("deleteWorldAction: requires world.publish, not world.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.publish"));
+
+    const result = await deleteWorldAction({ id: WORLD_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.publish");
+    expect(mockDeleteWorld).not.toHaveBeenCalled();
   });
 });
 
@@ -260,5 +275,59 @@ describe("happy paths", () => {
       expect.any(Object),
     );
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/worlds");
+  });
+
+  it("deleteWorldAction deletes and revalidates", async () => {
+    mockDeleteWorld.mockResolvedValueOnce({ id: WORLD_ID });
+
+    const result = await deleteWorldAction({ id: WORLD_ID });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockDeleteWorld).toHaveBeenCalledWith(ACTOR, WORLD_ID, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/worlds");
+  });
+
+  it("deleteWorldAction surfaces the has-lessons block to the caller", async () => {
+    mockDeleteWorld.mockRejectedValueOnce(
+      new AppError("CONFLICT", "Cannot delete: this world still has 2 lesson(s) - delete or move them first"),
+    );
+
+    const result = await deleteWorldAction({ id: WORLD_ID });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Cannot delete: this world still has 2 lesson(s) - delete or move them first",
+    });
+  });
+});
+
+// D25 (docs/ARCHITECTURE.md): theme is a validated hex color, not a fixed
+// enum of prototype themes - any staff-created world needs a real hex value.
+describe("theme hex validation", () => {
+  beforeEach(() => {
+    mockRequireStaff.mockResolvedValue(ACTOR);
+  });
+
+  it("rejects a non-hex theme value without calling the service", async () => {
+    const result = await createWorldDraftAction({ ...VALID_INPUT, theme: "purple" });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreateWorldDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects a 3-digit shorthand hex (not the required 6-digit form)", async () => {
+    const result = await createWorldDraftAction({ ...VALID_INPUT, theme: "#FFF" });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreateWorldDraft).not.toHaveBeenCalled();
+  });
+
+  it("accepts a valid 6-digit hex color", async () => {
+    mockCreateWorldDraft.mockResolvedValueOnce({ id: WORLD_ID });
+
+    const result = await createWorldDraftAction({ ...VALID_INPUT, theme: "#00ff00" });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockCreateWorldDraft).toHaveBeenCalled();
   });
 });

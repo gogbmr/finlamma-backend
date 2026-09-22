@@ -4,7 +4,7 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
-import { listPublishedWorldsByMentorId } from "@/server/worlds/repo";
+import { listAllWorlds, listPublishedWorldsByMentorId } from "@/server/worlds/repo";
 import {
   getMentorById,
   getPublishedMentorByKey,
@@ -33,8 +33,6 @@ async function toPublicMentor(row: MentorRow) {
     order: row.order,
     name: row.name,
     bio: row.bio,
-    worldRangeStart: row.worldRangeStart,
-    worldRangeEnd: row.worldRangeEnd,
     artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
   };
 }
@@ -74,12 +72,27 @@ function validateMentorForPublish(mentor: MentorRow): void {
   }
 }
 
+// D25 (docs/ARCHITECTURE.md): usedByWorlds is a read-only, computed "Used
+// by" list for the admin editor - derived entirely from worlds.mentorId,
+// never a stored field on this row, since a mentor can cover any number of
+// worlds and worlds are the only source of truth for that assignment. One
+// query for every world plus an in-memory group-by, mirroring
+// src/server/worlds/service.ts's mentorKeyById() (the reverse lookup) -
+// avoids an N+1 query per mentor.
 export async function getMentorEditorData() {
-  const rows = await listAllMentors();
+  const [rows, allWorlds] = await Promise.all([listAllMentors(), listAllWorlds()]);
+  const worldsByMentorId = new Map<string, { id: string; title: LocalizedText; status: "draft" | "published" }[]>();
+  for (const w of allWorlds) {
+    const list = worldsByMentorId.get(w.mentorId) ?? [];
+    list.push({ id: w.id, title: w.title, status: w.status });
+    worldsByMentorId.set(w.mentorId, list);
+  }
+
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
       artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
+      usedByWorlds: worldsByMentorId.get(row.id) ?? [],
     })),
   );
 }

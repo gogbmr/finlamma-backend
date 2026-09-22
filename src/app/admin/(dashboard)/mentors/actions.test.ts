@@ -51,8 +51,7 @@ const VALID_INPUT = {
   order: 1,
   name: { en: "Baby Lamma", hi: "बेबी लामा", hx: "Baby Lamma" },
   bio: { en: "en", hi: "hi", hx: "hx" },
-  worldRangeStart: 1,
-  worldRangeEnd: 3,
+  persona: "test persona",
 };
 
 beforeEach(() => {

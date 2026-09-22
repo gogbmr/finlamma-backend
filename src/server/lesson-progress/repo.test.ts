@@ -52,8 +52,7 @@ async function makeLesson(overrides: Partial<Record<string, unknown>> = {}) {
       order: uniqueOrder(),
       name: { en: "Test Mentor", hi: "x", hx: "x" },
       bio: { en: "x", hi: "x", hx: "x" },
-      worldRangeStart: 1,
-      worldRangeEnd: 3,
+      persona: "test persona",
     })
     .returning();
   const [world] = await db

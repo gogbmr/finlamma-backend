@@ -36,6 +36,12 @@ export const LessonFlowScoringSchema = z.object({
   // (src/server/worlds/service.ts). Failing doesn't block anything else -
   // the learner can simply retry (a fresh quiz_attempts row).
   bossQuizPassMarkPct: z.number().nonnegative().max(100),
+  // D25 (docs/ARCHITECTURE.md): trading unlocks once the learner has passed
+  // the Boss Quiz of the PUBLISHED world at this 1-based POSITION (not a
+  // specific world id/name) - src/server/worlds/service.ts's
+  // isTradingUnlocked. Position-based so it keeps working automatically if
+  // worlds are added, removed or reordered ahead of it.
+  tradingUnlockAfterWorldPosition: z.number().int().positive(),
 });
 export type LessonFlowScoring = z.infer<typeof LessonFlowScoringSchema>;
 
@@ -55,6 +61,7 @@ export const DEFAULT_LESSON_FLOW_SCORING: LessonFlowScoring = {
   feverComboThreshold: 3,
   feverMultiplier: 2,
   bossQuizPassMarkPct: 60,
+  tradingUnlockAfterWorldPosition: 3,
 };
 
 export const LESSON_FLOW_SCORING_SETTINGS_KEY = "lesson_flow_scoring";

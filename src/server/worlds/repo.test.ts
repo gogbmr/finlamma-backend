@@ -15,6 +15,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  deleteWorldRow,
   getWorldById,
   hotfixWorldRow,
   insertDraftWorld,
@@ -56,8 +57,7 @@ async function makeMentor() {
       order: uniqueOrder(),
       name: { en: "Test Mentor", hi: "टेस्ट मेंटर", hx: "Test Mentor" },
       bio: { en: "bio", hi: "bio", hx: "bio" },
-      worldRangeStart: 1,
-      worldRangeEnd: 3,
+      persona: "test persona",
     })
     .returning();
   return mentor;
@@ -463,3 +463,83 @@ describe("moveWorldToPosition", () => {
     expect(fresh?.order).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe("deleteWorldRow", () => {
+  it("deletes the world and closes the gap, shifting every later world down by one", async () => {
+    const [w1, w2, w3, w4] = await makeSequentialWorlds(4);
+    const [order1, order2, order3, order4] = [w1!.order, w2!.order, w3!.order, w4!.order];
+
+    const deleted = await deleteWorldRow(w2!.id);
+
+    expect(deleted?.id).toBe(w2!.id);
+    expect(await getWorldById(w2!.id)).toBeNull();
+    const [freshW1, freshW3, freshW4] = await Promise.all([
+      getWorldById(w1!.id),
+      getWorldById(w3!.id),
+      getWorldById(w4!.id),
+    ]);
+    expect(freshW1?.order).toBe(order1); // untouched (before the deleted world)
+    expect(freshW3?.order).toBe(order2); // shifted down into the gap
+    expect(freshW4?.order).toBe(order3); // shifted down by one
+    expect(order4).toBeGreaterThan(order3); // sanity: really was sequential before
+  });
+
+  it("deleting the last world leaves everyone else untouched", async () => {
+    const [w1, w2] = await makeSequentialWorlds(2);
+    const order1 = w1!.order;
+
+    await deleteWorldRow(w2!.id);
+
+    expect((await getWorldById(w1!.id))?.order).toBe(order1);
+  });
+
+  it("returns null for a nonexistent world", async () => {
+    const result = await deleteWorldRow(randomUUID());
+    expect(result).toBeNull();
+  });
+
+  // Same PGlite single-connection caveat as moveWorldToPosition's
+  // concurrency tests above: these prove "two overlapping deletes fired
+  // concurrently still leave the table in a valid, duplicate-free state"
+  // under the driver's actual serialization, not a genuine multi-connection
+  // race. The guard this exercises (deleteWorldRow's per-row
+  // `eq(worlds.order, row.order)` WHERE clause, throwing
+  // WorldOrderConflictError on a mismatch) can only ever fire against a
+  // stale read from a second real connection - proven directly at the unit
+  // level in src/server/worlds/service.test.ts's deleteWorld tests instead,
+  // where deleteWorldRow is mocked to throw it.
+  it("stays unique under two concurrent deletes on non-overlapping worlds", async () => {
+    const worlds6 = await makeSequentialWorlds(6);
+
+    const results = await Promise.allSettled([
+      deleteWorldRow(worlds6[0]!.id),
+      deleteWorldRow(worlds6[5]!.id),
+    ]);
+    for (const r of results) expect(r.status).toBe("fulfilled");
+
+    const fresh = (
+      await Promise.all(worlds6.slice(1, 5).map((w) => getWorldById(w.id)))
+    ).map((w) => w!.order);
+    expect(new Set(fresh).size).toBe(4); // no duplicates
+    expect(fresh.every((o) => o >= 1)).toBe(true);
+  });
+
+  it("two concurrent deletes touching overlapping ranges leave a valid, duplicate-free result", async () => {
+    const worlds5 = await makeSequentialWorlds(5);
+
+    const results = await Promise.allSettled([
+      deleteWorldRow(worlds5[1]!.id), // position 2
+      deleteWorldRow(worlds5[3]!.id), // position 4
+    ]);
+    for (const r of results) expect(r.status).toBe("fulfilled");
+
+    const remaining = [worlds5[0]!, worlds5[2]!, worlds5[4]!];
+    const fresh = (await Promise.all(remaining.map((w) => getWorldById(w.id)))).map(
+      (w) => w!.order,
+    );
+    expect(fresh.every((o) => o !== null)).toBe(true);
+    expect(new Set(fresh).size).toBe(3); // no duplicates
+    expect(fresh.every((o) => o >= 1)).toBe(true);
+  });
+});
+

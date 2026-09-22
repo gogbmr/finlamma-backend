@@ -3,6 +3,14 @@ import { registry } from "@/lib/openapi";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 import { MentorKeySchema } from "@/server/mentors/schemas";
 
+// A world's visual identity is data (art upload + this hex color), not a
+// fixed enum of prototype themes - any staff-created world needs no code
+// change to have its own accent color. Validated as a real 6-digit hex so
+// the admin editor and any future rendering can trust the format.
+export const ThemeHexSchema = z
+  .string()
+  .regex(/^#[0-9A-Fa-f]{6}$/, "theme must be a 6-digit hex color, e.g. #7C3AED");
+
 export const WorldPublicSchema = registry.register(
   "World",
   z.object({
@@ -19,7 +27,9 @@ export const WorldPublicSchema = registry.register(
     }),
     theme: z.string().openapi({
       example: "#7C3AED",
-      description: "Cosmetic accent color/key for the world card - never affects unlock logic.",
+      description:
+        "Cosmetic accent hex color for the world card, staff-chosen per world - never affects " +
+        "unlock logic.",
     }),
     displayXpTarget: z.number().int().openapi({
       example: 5,
@@ -55,7 +65,7 @@ export const CreateWorldDraftSchema = z.object({
   order: z.number().int().positive(),
   title: LocalizedTextSchema,
   tagline: LocalizedTextSchema,
-  theme: z.string().min(1),
+  theme: ThemeHexSchema,
   displayXpTarget: z.number().int().nonnegative(),
   mentorId: z.string().uuid(),
 });
@@ -66,7 +76,7 @@ export const UpdateWorldDraftSchema = z.object({
   order: z.number().int().positive(),
   title: LocalizedTextSchema,
   tagline: LocalizedTextSchema,
-  theme: z.string().min(1),
+  theme: ThemeHexSchema,
   displayXpTarget: z.number().int().nonnegative(),
   mentorId: z.string().uuid(),
 });

@@ -53,8 +53,7 @@ function draftInput(overrides: Partial<Record<string, unknown>> = {}) {
     order: uniqueOrder(),
     name: NAME,
     bio: BIO,
-    worldRangeStart: 1,
-    worldRangeEnd: 3,
+    persona: "test persona",
     ...overrides,
   };
 }
@@ -86,8 +85,7 @@ describe("updateDraftMentor", () => {
       order: created.order,
       name: { en: "Updated", hi: "अपडेटेड", hx: "Updated" },
       bio: created.bio,
-      worldRangeStart: created.worldRangeStart,
-      worldRangeEnd: created.worldRangeEnd,
+      persona: created.persona,
     });
     expect(updated?.name.en).toBe("Updated");
   });
@@ -101,8 +99,7 @@ describe("updateDraftMentor", () => {
       order: created.order,
       name: { en: "Should not apply", hi: "x", hx: "x" },
       bio: created.bio,
-      worldRangeStart: created.worldRangeStart,
-      worldRangeEnd: created.worldRangeEnd,
+      persona: created.persona,
     });
 
     expect(result).toBeNull();
@@ -116,8 +113,7 @@ describe("updateDraftMentor", () => {
       order: uniqueOrder(),
       name: NAME,
       bio: BIO,
-      worldRangeStart: 1,
-      worldRangeEnd: null,
+      persona: "test persona",
     });
     expect(result).toBeNull();
   });

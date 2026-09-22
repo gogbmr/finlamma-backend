@@ -15,6 +15,7 @@ import {
 } from "@/server/worlds/schemas";
 import {
   createWorldDraft,
+  deleteWorld,
   hotfixWorld,
   publishWorld,
   reorderWorld,
@@ -96,6 +97,21 @@ export async function hotfixWorldAction(input: unknown): Promise<ActionResult> {
     const actor = await requireStaff("world.publish");
     const parsed = HotfixWorldSchema.parse(input);
     await hotfixWorld(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/worlds");
+  });
+}
+
+// D25 (docs/ARCHITECTURE.md): permanent removal, gated on world.publish -
+// not world.manage - since deletion is stronger and irreversible compared
+// to create/update, and a world can be deleted regardless of its current
+// status (deleteWorld itself blocks this unless the world has zero
+// lessons), so this should never be reachable by a role that isn't even
+// trusted to unpublish a live world.
+export async function deleteWorldAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("world.publish");
+    const { id } = WorldIdSchema.parse(input);
+    await deleteWorld(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
   });
 }

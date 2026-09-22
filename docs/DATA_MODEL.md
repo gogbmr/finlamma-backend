@@ -94,9 +94,12 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   no PII in the log).
 
 **Learning**
-- `worlds` (order, title, theme, display_xp_target — cosmetic progress indicator only; the real
-  unlock rule is sequential (see `lesson_progress`: the previous world's Boss Quiz is complete),
-  not an XP/level gate), `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
+- `worlds` (order, title, theme — a staff-chosen, validated hex color, not an enum of fixed
+  themes, display_xp_target — cosmetic progress indicator only; the real unlock rule is
+  sequential (see `lesson_progress`: the previous world's Boss Quiz is complete), not an
+  XP/level gate). Fully data-driven and unbounded (D25, `docs/ARCHITECTURE.md`) — no fixed
+  world count anywhere in code; `mentor_id` is the only link to a mentor (a real FK, never a
+  computed range). `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
   Role Play are `lessons.kind` values, not separate tables or engines — both render through the
   same lesson-flow content shape as a Quiz step, with different settings.
 - `quizzes` (lesson_id or news_edition_id, settings), `questions` (quiz_id, format, payload jsonb,
@@ -151,11 +154,14 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 - `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
   badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,
   never computed from the viewing user's own balance), `reward_claims`
-- `mentors` (order, name, bio jsonb {en,hi,hx}, world_range, art_key) — admin-editable content
-  type (not hardcoded in the app)
+- `mentors` (order, name, bio jsonb {en,hi,hx}, persona — free-text voice/tone notes for the
+  Doubt Zone AI chat, art_key) — admin-editable content type, fully data-driven and unbounded
+  (D25, `docs/ARCHITECTURE.md`). No world-range column: which world(s) a mentor covers lives
+  entirely on `worlds.mentor_id`, so one mentor can cover any number of worlds
 - `settings_kv` (generic key/value store, introduced in Phase 2a for
   `parent_email_max_children` default 5 and `consent_resend_daily_cap` — see Compliance above;
-  e.g. `vm_issuance_multiplier` default 1.0, `trade_unlock_world_order` default 4
+  e.g. `vm_issuance_multiplier` default 1.0, `lesson_flow_scoring.tradingUnlockAfterWorldPosition`
+  default 3 (position, not a world id/name — D25, `docs/ARCHITECTURE.md`)
   — see Trading below; scoring constants `speed_bonus_threshold_pct` = 45,
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
   `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values)
@@ -171,9 +177,12 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 **Trading**
 - `instruments` (symbol, exchange, name, sector, about jsonb, tip jsonb {en,hi,hx}, tags text[],
   mcap, pe, lot_size, active, halted). Order pad access is gated by
-  `settings_kv.trade_unlock_world_order` (default: Market Maidan, world order 4) —
-  quotes/charts/watchlist stay visible to everyone regardless ("explore mode"); no starting
-  balance or unlock grant is ever issued (see `docs/ECONOMY.md`). Orders are whole-share only. No
+  `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition` (default: the 3rd published
+  world, by position - never a specific world id/name, D25 `docs/ARCHITECTURE.md`) -
+  `src/server/worlds/service.ts`'s `isTradingUnlocked()` implements the check now, ready for
+  Phase 4's trading domain to call; quotes/charts/watchlist stay visible to everyone regardless
+  ("explore mode"); no starting balance or unlock grant is ever issued (see `docs/ECONOMY.md`).
+  Orders are whole-share only. No
   per-user watchlist table — "Watchlist" in the app is simply the full active `instruments` list
   (matches the prototype, which has no add/remove control).
 - `instrument_daily_bars` (instrument_id, date, open/high/low/close/volume, all paise) — daily

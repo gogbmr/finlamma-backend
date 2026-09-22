@@ -191,7 +191,9 @@ export async function getLessonEditorData(worldId: string) {
 // publish-time check, same pattern as mentors<->worlds and worlds<->lessons.
 // Scans every published lesson's content (question ids are jsonb, not a
 // relational column, so there's no WHERE clause that can do this in SQL) -
-// bounded and cheap in v1 (7 worlds x up to 40 lessons).
+// worlds/lessons are staff-created with no fixed count (D25,
+// docs/ARCHITECTURE.md), but the total stays small enough in practice for
+// this full-table scan to remain cheap.
 export async function listPublishedLessonsReferencingQuestion(questionId: string) {
   const lessons = await listAllPublishedLessons();
   return lessons.filter((l) => extractQuestionIds(l.kind, l.content).includes(questionId));

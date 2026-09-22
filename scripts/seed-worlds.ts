@@ -1,10 +1,14 @@
-// Seeds the 7 worlds (Money World -> ... -> Elite Summit), title/tagline
-// taken directly from the prototype's WORLD_TEXT (Finlamma App.dc.html
-// ~line 4961 - all three of en/hi/hx are fully authored there, unlike most
-// prototype content which is Hinglish-only). Linked to the mentor seeded by
-// scripts/seed-mentors.ts (run that first) via mentor key -> world order
-// range: baby (1-3), father (4-6), grandpa (7+), per PRODUCT_SPEC.md §1.
-// `theme` (cosmetic accent color) and `displayXpTarget` (cosmetic only, see
+// D25 (docs/ARCHITECTURE.md): worlds are a fully data-driven, unbounded
+// content type - staff decide how many exist. This script seeds 7 as an
+// initial, fully-editable, reorderable and (if empty of lessons) deletable
+// starting point, not a fixed rule - title/tagline taken directly from the
+// prototype's WORLD_TEXT (Finlamma App.dc.html ~line 4961 - all three of
+// en/hi/hx are fully authored there, unlike most prototype content which is
+// Hinglish-only). Each world's mentorKey below is just this seed script's
+// own starting assignment (staff can freely reassign any world's mentor
+// afterward via the admin World editor's dropdown - the real relationship
+// is worlds.mentorId, never a range stored on the mentor). `theme`
+// (cosmetic accent hex color) and `displayXpTarget` (cosmetic only, see
 // docs/DATA_MODEL.md) are best-effort values, not exact prototype extracts -
 // staff can adjust either through the admin World editor.
 //

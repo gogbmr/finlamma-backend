@@ -1,15 +1,20 @@
 import { logActivity } from "@/lib/activity-log";
-import { isTransactionConflict, isUniqueViolation } from "@/lib/db-errors";
+import { isForeignKeyViolation, isTransactionConflict, isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
-import { hasBossQuizLesson, listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import {
+  hasBossQuizLesson,
+  listAllLessonsForWorld,
+  listPublishedLessonsByWorldId,
+} from "@/server/lessons/repo";
 import { getWorldIdsWithPassedBossQuiz } from "@/server/quiz-attempts/repo";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
+  deleteWorldRow,
   getWorldById,
   hotfixWorldRow,
   insertDraftWorld,
@@ -20,15 +25,17 @@ import {
   setWorldArtKey,
   unpublishWorldRow,
   updateDraftWorld,
+  WorldOrderConflictError,
 } from "./repo";
 import type { CreateWorldDraftInput, HotfixWorldInput, UpdateWorldDraftInput } from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type WorldRow = NonNullable<Awaited<ReturnType<typeof getWorldById>>>;
 
-// Small, bounded set (7 worlds, a handful of mentors) - one query for all
+// Staff decide how many worlds/mentors exist (D25, docs/ARCHITECTURE.md) -
+// this is a small dataset in practice, not a hard cap, so one query for all
 // mentors and an in-memory map is simpler and cheaper than a join or N+1
-// per-world lookups.
+// per-world lookups; it stays cheap even at dozens of worlds/mentors.
 async function mentorKeyById(): Promise<Map<string, string>> {
   const mentors = await listAllMentors();
   return new Map(mentors.map((m) => [m.id, m.key]));
@@ -385,4 +392,91 @@ export async function unpublishWorld(actor: { id: string }, id: string, meta: Re
     userAgent: meta.userAgent,
   });
   return unpublished;
+}
+
+// D25 (docs/ARCHITECTURE.md): a world can be permanently removed only while
+// it has zero lessons (any status - draft or published). This is the only
+// check needed: lesson_progress rows are keyed off a lesson, so a world
+// with no lessons structurally cannot have any learner progress either.
+// Draft or published worlds can both be deleted under this rule (a
+// published world with no lessons is empty, not "live" in any meaningful
+// sense) - deleteWorldRow itself closes the resulting gap in `order` so
+// sequencing stays contiguous for the sequential-unlock rule. Gated on
+// world.publish (not world.manage) in the action layer, the same trust bar
+// as unpublishing - deletion is a stronger, irreversible action, so it
+// shouldn't be reachable by a role that isn't even trusted to unpublish.
+export async function deleteWorld(actor: { id: string }, id: string, meta: RequestMeta) {
+  const world = await getWorldById(id);
+  if (!world) throw new AppError("NOT_FOUND", "World not found");
+
+  const lessons = await listAllLessonsForWorld(id);
+  if (lessons.length > 0) {
+    throw new AppError(
+      "CONFLICT",
+      `Cannot delete: this world still has ${lessons.length} lesson(s) - delete or move them first`,
+      { lessonIds: lessons.map((l) => l.id) },
+    );
+  }
+
+  // The lesson-count check above isn't in the same transaction as the
+  // delete itself, so a lesson created for this world in the gap between
+  // them (lessons.worldId is onDelete: "restrict") makes the delete fail
+  // as a foreign-key violation instead - mapped here to the same kind of
+  // clean, retryable CONFLICT rather than a raw 500. A genuinely concurrent
+  // write to the order sequence itself (another delete, a reorder) is a
+  // separate failure mode, mapped from WorldOrderConflictError below.
+  let deleted;
+  try {
+    deleted = await deleteWorldRow(id);
+  } catch (err) {
+    if (err instanceof WorldOrderConflictError) {
+      throw new AppError(
+        "CONFLICT",
+        "Another change to the world order was happening at the same time - try again",
+      );
+    }
+    if (isForeignKeyViolation(err)) {
+      throw new AppError(
+        "CONFLICT",
+        "Cannot delete: a lesson was just added to this world - delete or move it first",
+      );
+    }
+    throw err;
+  }
+  if (!deleted) throw new AppError("NOT_FOUND", "World not found");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "world.deleted",
+    targetType: "world",
+    targetId: id,
+    metadata: { title: world.title.en, order: world.order },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return deleted;
+}
+
+// D25 (docs/ARCHITECTURE.md): trading unlocks once the learner has passed
+// the Boss Quiz of the world at settings_kv position
+// `tradingUnlockAfterWorldPosition` (default 3, super_admin-editable) -
+// position in the published, ordered world list, never a specific world id
+// or name, so trading's unlock point moves automatically if worlds are
+// added, removed or reordered ahead of it. Not consumed by any endpoint
+// yet (that's Phase 4's trading domain); exported now so Phase 4 can import
+// it directly instead of re-deriving this rule. If fewer published worlds
+// exist than the configured position, trading stays locked for everyone -
+// see GET /api/v1/health's tradingUnlockWorldMissing warning for the
+// content-completeness side of this.
+export async function isTradingUnlocked(userId: string): Promise<boolean> {
+  const settings = await getLessonFlowScoringSettings();
+  const position = settings.tradingUnlockAfterWorldPosition;
+
+  const publishedWorlds = await listPublishedWorlds();
+  if (publishedWorlds.length < position) return false;
+
+  const targetWorld = publishedWorlds[position - 1]!;
+  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct);
+  return clearedWorldIds.has(targetWorld.id);
 }

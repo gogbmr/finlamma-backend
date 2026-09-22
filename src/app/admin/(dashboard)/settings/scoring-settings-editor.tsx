@@ -117,10 +117,20 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
           value={form.bossQuizPassMarkPct}
           onChange={(v) => setForm({ ...form, bossQuizPassMarkPct: v })}
         />
+        <NumberField
+          label="Trading unlocks after world position"
+          value={form.tradingUnlockAfterWorldPosition}
+          onChange={(v) => setForm({ ...form, tradingUnlockAfterWorldPosition: v })}
+        />
       </div>
       <p className="text-xs text-muted-foreground">
         A Boss Quiz attempt below the pass mark doesn&apos;t unlock the next world - the learner
         can simply retry.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Trading unlocks once a learner passes the Boss Quiz of the published world at this
+        position (1st, 2nd, 3rd published world, etc.) - not a specific world by name, so it
+        keeps working if worlds are added, removed or reordered.
       </p>
 
       <Button type="button" onClick={save} disabled={isPending}>

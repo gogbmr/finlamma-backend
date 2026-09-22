@@ -26,16 +26,18 @@ import {
   uploadMentorArtAction,
 } from "./actions";
 
+type UsedByWorld = { id: string; title: LocalizedText; status: "draft" | "published" };
+
 type MentorRow = {
   id: string;
   key: string;
   order: number;
   name: LocalizedText;
   bio: LocalizedText;
-  worldRangeStart: number;
-  worldRangeEnd: number | null;
+  persona: string;
   status: "draft" | "published";
   artUrl: string | null;
+  usedByWorlds: UsedByWorld[];
 };
 
 const LANGUAGES = ["en", "hi", "hx"] as const;
@@ -132,8 +134,7 @@ function NewMentorForm() {
   const [isPending, startTransition] = useTransition();
   const [key, setKey] = useState("");
   const [order, setOrder] = useState("");
-  const [worldRangeStart, setWorldRangeStart] = useState("");
-  const [worldRangeEnd, setWorldRangeEnd] = useState("");
+  const [persona, setPersona] = useState("");
   const [name, setName] = useState<LocalizedText>(EMPTY_LOCALIZED);
   const [bio, setBio] = useState<LocalizedText>(EMPTY_LOCALIZED);
 
@@ -142,8 +143,7 @@ function NewMentorForm() {
       const result = await createMentorDraftAction({
         key,
         order: Number(order),
-        worldRangeStart: Number(worldRangeStart),
-        worldRangeEnd: worldRangeEnd ? Number(worldRangeEnd) : null,
+        persona,
         name,
         bio,
       });
@@ -154,8 +154,7 @@ function NewMentorForm() {
       toast.success("Mentor created as a draft");
       setKey("");
       setOrder("");
-      setWorldRangeStart("");
-      setWorldRangeEnd("");
+      setPersona("");
       setName(EMPTY_LOCALIZED);
       setBio(EMPTY_LOCALIZED);
     });
@@ -172,32 +171,21 @@ function NewMentorForm() {
           <Label>Display order</Label>
           <Input type="number" value={order} onChange={(e) => setOrder(e.target.value)} />
         </div>
-        <div className="space-y-1">
-          <Label>World range start</Label>
-          <Input
-            type="number"
-            value={worldRangeStart}
-            onChange={(e) => setWorldRangeStart(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label>World range end (blank = open-ended)</Label>
-          <Input
-            type="number"
-            value={worldRangeEnd}
-            onChange={(e) => setWorldRangeEnd(e.target.value)}
-          />
-        </div>
       </div>
 
       <LocalizedFields label="Name" value={name} onChange={setName} disabled={false} />
       <LocalizedFields label="Bio" value={bio} onChange={setBio} disabled={false} />
 
-      <Button
-        type="button"
-        onClick={create}
-        disabled={isPending || !key || !order || !worldRangeStart}
-      >
+      <div className="space-y-1">
+        <Label>Persona / voice notes (Doubt Zone AI chat)</Label>
+        <Textarea
+          value={persona}
+          onChange={(e) => setPersona(e.target.value)}
+          placeholder="e.g. Straightforward and strict, focused on numbers and discipline, no excuses."
+        />
+      </div>
+
+      <Button type="button" onClick={create} disabled={isPending || !key || !order}>
         Create draft
       </Button>
     </div>
@@ -215,10 +203,7 @@ function MentorForm({
 }) {
   const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState(String(mentor.order));
-  const [worldRangeStart, setWorldRangeStart] = useState(String(mentor.worldRangeStart));
-  const [worldRangeEnd, setWorldRangeEnd] = useState(
-    mentor.worldRangeEnd === null ? "" : String(mentor.worldRangeEnd),
-  );
+  const [persona, setPersona] = useState(mentor.persona);
   const [name, setName] = useState<LocalizedText>(mentor.name);
   const [bio, setBio] = useState<LocalizedText>(mentor.bio);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -237,8 +222,7 @@ function MentorForm({
       const result = await updateMentorDraftAction({
         id: mentor.id,
         order: Number(order),
-        worldRangeStart: Number(worldRangeStart),
-        worldRangeEnd: worldRangeEnd ? Number(worldRangeEnd) : null,
+        persona,
         name,
         bio,
       });
@@ -319,29 +303,30 @@ function MentorForm({
             onChange={(e) => setOrder(e.target.value)}
           />
         </div>
-        <div />
-        <div className="space-y-1">
-          <Label>World range start</Label>
-          <Input
-            type="number"
-            value={worldRangeStart}
-            disabled={!editable}
-            onChange={(e) => setWorldRangeStart(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label>World range end (blank = open-ended)</Label>
-          <Input
-            type="number"
-            value={worldRangeEnd}
-            disabled={!editable}
-            onChange={(e) => setWorldRangeEnd(e.target.value)}
-          />
-        </div>
+      </div>
+
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-foreground">Used by</p>
+        {mentor.usedByWorlds.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No worlds reference this mentor yet.</p>
+        ) : (
+          <ul className="flex flex-wrap gap-1.5">
+            {mentor.usedByWorlds.map((w) => (
+              <li key={w.id}>
+                <StatusBadge status={w.status}>{w.title.en || "(untitled)"}</StatusBadge>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <LocalizedFields label="Name" value={name} onChange={setName} disabled={!nameBioEditable} />
       <LocalizedFields label="Bio" value={bio} onChange={setBio} disabled={!nameBioEditable} />
+
+      <div className="space-y-1">
+        <Label>Persona / voice notes (Doubt Zone AI chat)</Label>
+        <Textarea value={persona} disabled={!editable} onChange={(e) => setPersona(e.target.value)} />
+      </div>
 
       <div className="space-y-1">
         <Label>Art</Label>

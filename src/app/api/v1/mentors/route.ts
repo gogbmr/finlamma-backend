@@ -10,8 +10,9 @@ registry.registerPath({
   path: "/api/v1/mentors",
   summary: "List published mentors",
   description:
-    "The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of " +
-    "worlds, ordered by their display order. Only published mentors are returned.",
+    "The published Lamma mentors, ordered by their display order - staff decide how many " +
+    "exist. Which world(s) a mentor covers is set per world (worlds.mentorId), not returned " +
+    "here.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {

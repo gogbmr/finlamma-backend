@@ -6,9 +6,9 @@ file disagree, ask the user.
 
 ## What Finlamma is
 A gamified financial-literacy app for Indian students and young earners. Users learn
-through a map of 7 "worlds", earn XP and **V Money** (virtual currency), and practise
-paper trading on real NSE market data. Nothing involves real rupees.
-Educational only — never investment advice.
+through a map of "worlds" (staff decide how many — see §1), earn XP and **V Money**
+(virtual currency), and practise paper trading on real NSE market data. Nothing involves
+real rupees. Educational only — never investment advice.
 
 Languages: **Hinglish (default)**, English, Hindi (Devanagari). Themes: dark (default), light.
 Mascot family: Lamma characters (Baby, Young, Father, Mother, Brother, Sister, Grandpa,
@@ -18,13 +18,19 @@ Professor, Trader) with ~20 expressions.
 Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings is reached from Home.
 
 ## 1. World Home & Lessons
-- 7 worlds in order: Money World → Savings Valley → Budget Bazaar → Market Maidan →
-  Risk Ridge → Economy Empire → Elite Summit.
-- **World unlock is sequential only**: World 1 is unlocked; clearing a world's **Boss quiz**
-  unlocks the next one. There is no separate XP or level gate — a locked world's card shows the
-  user's XP/level as a **progress indicator only**, never as the actual unlock condition, and
-  never a paywall. Trading's own unlock (§4) follows this same rule: it opens once World 3's
-  Boss Quiz is cleared and World 4 (Market Maidan) is reached.
+- **Worlds are a fully data-driven, unbounded content type (D25, `docs/ARCHITECTURE.md`)**:
+  staff decide how many exist (5, 7, 10, 20, any number), their names, order, tagline, art
+  and accent color, all through the admin World editor. v1 seeds an initial 7-world set
+  (Money World → Savings Valley → Budget Bazaar → Market Maidan → Risk Ridge → Economy
+  Empire → Elite Summit) as **starting content only** — fully editable, reorderable, and
+  (once empty of lessons) deletable, not a fixed spec.
+- **World unlock is sequential only**: the first (lowest-order) published world is unlocked;
+  clearing a world's **Boss quiz** unlocks the next one. There is no separate XP or level gate
+  — a locked world's card shows the user's XP/level as a **progress indicator only**, never as
+  the actual unlock condition, and never a paywall. Trading's own unlock (§4) is
+  **position-based**, not tied to any specific world: it opens once the learner passes the Boss
+  Quiz of the world at `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`
+  (default: the 3rd published world, super_admin-editable).
 - A world is a trail of lesson nodes. Six node kinds: **Video, Story, Quiz, Boss Quiz,
   Role Play, Doubt Zone**. Boss Quiz and Role Play don't need their own screens — both reuse the
   same lesson-flow engine as a normal Quiz step, Boss Quiz with higher-stakes settings (longer
@@ -41,10 +47,11 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
   the content team per lesson, no live AI call. The **real "Ask Lamma AI" live AI mentor ships in
   Phase 7**, with the safety and rate-limit rules a minors-facing AI feature needs; it then
   becomes what this node kind (and the standalone Doubt Zone entry point) actually calls.
-- **Mentor evolution**: the user's mentor changes as they progress through worlds (e.g. Baby →
-  Father → Grandpa Lamma), each stage covering a fixed range of worlds with its own bio and
-  dialogue. Mentors are an **admin-editable content type** (name, bio, world range, art, per
-  language) — not hardcoded in the app — so staff can add or adjust stages without a release.
+- **Mentors are a fully data-driven, unbounded content type (D25)**: staff create any number
+  of Lamma mentors (name, bio per language, art, persona/voice notes for the Doubt Zone AI
+  chat). A mentor's assignment to a world lives **only** on `worlds.mentorId`, chosen per world
+  in the admin World editor — one mentor can cover many worlds. v1 seeds Baby/Father/Grandpa
+  Lamma as an initial, fully-editable starting set, not a fixed 3-stage system.
 - Completing a world issues a printable A4 **certificate** (ID like `FL-MW-2026-0417`, XP, score, date).
 
 ## 2. Progress economy
@@ -91,11 +98,14 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
 ## 4. Trade (paper trading)
 - **Explore mode from day one**: live prices, charts, watchlist and stock info are visible to
   every user regardless of progress. The **order pad** (placing real BUY/SELL orders) unlocks
-  when the learner clears World 3's Boss Quiz and reaches **Market Maidan (World 4)** — following
-  the same sequential world-unlock rule as §1, not a separate XP/level threshold — shown with a
-  progress message ("Reach Market Maidan to start trading — N worlds to go"). No grant on unlock:
-  trading capital is whatever V Money the learner has already earned (see §2), carried over
-  automatically.
+  once the learner passes the Boss Quiz of the world at position
+  `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition` (default: the 3rd published
+  world, super_admin-editable) — **by position, never a specific world's id or name** (D25,
+  `docs/ARCHITECTURE.md`), so it keeps working automatically if worlds are added, removed or
+  reordered ahead of it, and not a separate XP/level threshold — shown with a progress message
+  ("N worlds to go"). If fewer published worlds exist than the configured position, trading
+  stays locked for everyone (`GET /api/v1/health` warns). No grant on unlock: trading capital is
+  whatever V Money the learner has already earned (see §2), carried over automatically.
 - 12 NSE large caps: RELIANCE, TCS, HDFCBANK, INFY, ICICIBANK, SBIN, ITC, TATAMOTORS,
   BHARTIARTL, HINDUNILVR, LT, ASIANPAINT (list is admin-editable).
 - Stock detail: candlestick chart (timeframes), sector, about text, market cap, P/E, volume.
@@ -108,7 +118,8 @@ Bottom tabs: **Home (World map) · Arena · Trade · News · Profile**. Settings
 - Weekly portfolio report in Profile.
 - Market status respects NSE hours (09:15–15:30 IST) and holidays.
 - See `docs/ECONOMY.md` for the simulation behind the reward values and unlock design (how much
-  V Money a typical learner has by World 4, and whether it's enough to trade comfortably).
+  V Money a typical learner has by the trading-unlock world, and whether it's enough to trade
+  comfortably).
 
 ### Ops console (admin)
 Feed mode LIVE / 15-min delayed / paused, per-symbol halts, global halt (order pad rejects on the

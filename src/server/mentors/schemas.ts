@@ -29,11 +29,6 @@ export const MentorPublicSchema = registry.register(
         hx: "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta.",
       },
     }),
-    worldRangeStart: z.number().int().openapi({ example: 1 }),
-    worldRangeEnd: z.number().int().nullable().openapi({
-      example: 3,
-      description: "Null means an open-ended range (e.g. \"World 7+\").",
-    }),
     artUrl: z.string().url().nullable().openapi({
       description: "Short-lived signed URL to the mentor's art, or null if none uploaded yet.",
     }),
@@ -58,8 +53,10 @@ export const CreateMentorDraftSchema = z.object({
   order: z.number().int().positive(),
   name: LocalizedTextSchema,
   bio: LocalizedTextSchema,
-  worldRangeStart: z.number().int().positive(),
-  worldRangeEnd: z.number().int().positive().nullable(),
+  // Voice/tone notes for the Doubt Zone AI chat to stay in character as
+  // this mentor - internal, staff-facing only, never returned by the
+  // public GET /api/v1/mentors endpoint.
+  persona: z.string(),
 });
 export type CreateMentorDraftInput = z.infer<typeof CreateMentorDraftSchema>;
 
@@ -68,8 +65,7 @@ export const UpdateMentorDraftSchema = z.object({
   order: z.number().int().positive(),
   name: LocalizedTextSchema,
   bio: LocalizedTextSchema,
-  worldRangeStart: z.number().int().positive(),
-  worldRangeEnd: z.number().int().positive().nullable(),
+  persona: z.string(),
 });
 export type UpdateMentorDraftInput = z.infer<typeof UpdateMentorDraftSchema>;
 
@@ -79,9 +75,9 @@ export type MentorIdInput = z.infer<typeof MentorIdSchema>;
 // D20 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED mentor's
 // name/bio, without unpublishing - the fix for the circular problem where
 // unpublishing a mentor is blocked while a published world references it
-// (src/server/mentors/service.ts unpublishMentor). No `worldRangeStart/End`/
-// `order`/`key` - those are structural, not a typo fix, and still go
-// through the normal unpublish -> edit draft -> republish cycle.
+// (src/server/mentors/service.ts unpublishMentor). No `persona`/`order`/
+// `key` - those are structural, not a typo fix, and still go through the
+// normal unpublish -> edit draft -> republish cycle.
 export const HotfixMentorSchema = z.object({
   id: z.string().uuid(),
   name: LocalizedTextSchema,

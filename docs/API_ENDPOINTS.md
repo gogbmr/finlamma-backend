@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-21.
+> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-22.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -72,6 +72,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "consentPiiHmacKey": "ok",
     "storage": "ok",
     "worldsMissingBossQuiz": [],
+    "tradingUnlockWorldMissing": false,
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
@@ -613,7 +614,7 @@ For an under-18 account: emails the given parent/guardian a magic link to a publ
 
 **List published mentors**
 
-The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, ordered by their display order. Only published mentors are returned.
+The published Lamma mentors, ordered by their display order - staff decide how many exist. Which world(s) a mentor covers is set per world (worlds.mentorId), not returned here.
 
 **Auth:** bearerAuth
 
@@ -637,8 +638,6 @@ The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed r
         "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
         "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
       },
-      "worldRangeStart": 1,
-      "worldRangeEnd": 3,
       "artUrl": "https://example.com"
     }
   ]
@@ -703,8 +702,6 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
       "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
       "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
     },
-    "worldRangeStart": 1,
-    "worldRangeEnd": 3,
     "artUrl": "https://example.com"
   }
 }
@@ -750,7 +747,7 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
 
 **List published worlds**
 
-The 7 worlds, ordered. Only published worlds are returned. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.
+The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.
 
 **Auth:** bearerAuth
 

@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { listPublishedWorlds } from "@/server/worlds/repo";
+
+// Worlds are staff-created with no fixed count (D25, docs/ARCHITECTURE.md) -
+// this page renders whatever is currently published, in order. Revalidated
+// every 5 minutes rather than on every request, since the world list
+// changes rarely and this is a public marketing page, not the live app.
+export const revalidate = 300;
 
 const TITLE = "Finlamma — Learn Finance. Build Freedom.";
 const DESCRIPTION =
@@ -22,16 +29,6 @@ export const metadata: Metadata = {
     images: ["/brand/app-icon.png"],
   },
 };
-
-const WORLDS = [
-  { n: 1, name: "Money World", desc: "What money is, and why it matters" },
-  { n: 2, name: "Savings Valley", desc: "Saving habits and goals" },
-  { n: 3, name: "Budget Bazaar", desc: "Budgeting and spending choices" },
-  { n: 4, name: "Market Maidan", desc: "How markets work" },
-  { n: 5, name: "Risk Ridge", desc: "Risk, return and diversification" },
-  { n: 6, name: "Economy Empire", desc: "The bigger economic picture" },
-  { n: 7, name: "Elite Summit", desc: "Putting it all together" },
-];
 
 const HOW_IT_WORKS = [
   { step: "Learn", desc: "Short video and text lessons, one idea at a time." },
@@ -63,7 +60,9 @@ const FAQS = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const publishedWorlds = await listPublishedWorlds();
+
   return (
     <div className="flex flex-1 flex-col">
       <header className="border-b border-border bg-card">
@@ -126,7 +125,7 @@ export default function HomePage() {
           </div>
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {[
-              { title: "Learn by doing", desc: "Short lessons and quizzes across 7 worlds, from the basics of money to markets." },
+              { title: "Learn by doing", desc: "Short lessons and quizzes across a series of worlds, from the basics of money to markets." },
               { title: "Earn as you go", desc: "XP and virtual V Money reward progress — never real currency." },
               { title: "Practice safely", desc: "Paper trading on real market data, with zero real money at risk." },
             ].map((f) => (
@@ -138,29 +137,32 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* 7-world journey */}
-        <section className="bg-secondary/40 py-14 md:py-20">
-          <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-            <div className="mx-auto max-w-2xl text-center">
-              <h2 className="text-2xl font-bold text-foreground sm:text-3xl">The 7-world journey</h2>
-              <p className="mt-3 text-muted-foreground">
-                Every learner moves through the same seven worlds, in order — each one unlocked
-                by passing the world before it.
-              </p>
+        {/* World journey - staff decide how many worlds exist (D25); this
+            renders whatever is currently published, in order. */}
+        {publishedWorlds.length > 0 && (
+          <section className="bg-secondary/40 py-14 md:py-20">
+            <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
+              <div className="mx-auto max-w-2xl text-center">
+                <h2 className="text-2xl font-bold text-foreground sm:text-3xl">The world journey</h2>
+                <p className="mt-3 text-muted-foreground">
+                  Every learner moves through the same worlds, in order — each one unlocked by
+                  passing the world before it.
+                </p>
+              </div>
+              <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {publishedWorlds.map((w, i) => (
+                  <li key={w.id} className="rounded-xl border border-border bg-card p-5">
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+                      {i + 1}
+                    </span>
+                    <h3 className="mt-3 font-semibold text-foreground">{w.title.en}</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">{w.tagline.en}</p>
+                  </li>
+                ))}
+              </ol>
             </div>
-            <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {WORLDS.map((w) => (
-                <li key={w.n} className="rounded-xl border border-border bg-card p-5">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                    {w.n}
-                  </span>
-                  <h3 className="mt-3 font-semibold text-foreground">{w.name}</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">{w.desc}</p>
-                </li>
-              ))}
-            </ol>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* How it works */}
         <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 md:py-20">
