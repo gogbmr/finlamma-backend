@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -106,8 +107,8 @@ function DocumentEditor({ document }: { document: DocumentState }) {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {document.published ? (
           <span>
             Published: v{document.published.version}
@@ -118,20 +119,14 @@ function DocumentEditor({ document }: { document: DocumentState }) {
           <span>Not published yet</span>
         )}
         {document.published?.isPlaceholder && (
-          <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-800">
-            PLACEHOLDER — NOT FOR LAUNCH
-          </span>
+          <Badge variant="destructive">PLACEHOLDER — NOT FOR LAUNCH</Badge>
         )}
-        {document.draft && (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-            Draft v{document.draft.version} pending publish
-          </span>
-        )}
+        {document.draft && <Badge variant="warning">Draft v{document.draft.version} pending publish</Badge>}
       </div>
 
       {LANGUAGES.map((lang) => (
         <div key={lang} className="space-y-1.5">
-          <label className="text-xs font-medium uppercase text-neutral-500">{lang}</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
           <Textarea
             value={content[lang]}
             onChange={(e) => setContent((c) => ({ ...c, [lang]: e.target.value }))}
@@ -140,8 +135,8 @@ function DocumentEditor({ document }: { document: DocumentState }) {
       ))}
 
       {document.draft && (
-        <div className="space-y-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
-          <p className="text-sm font-medium text-neutral-800">
+        <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
+          <p className="text-sm font-medium text-foreground">
             Does this change require every already-consented minor&apos;s parent to re-approve?
           </p>
           <div className="flex gap-2">
@@ -163,7 +158,7 @@ function DocumentEditor({ document }: { document: DocumentState }) {
             </Button>
           </div>
           {reapprovalChoice === "yes" && (
-            <p className="rounded bg-red-100 px-2 py-1.5 text-xs text-red-800">
+            <p className="rounded bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
               Every minor whose parent already consented will lose full access until their parent
               re-approves this version. They&apos;ll each get an email with a fresh 7-day link.
             </p>

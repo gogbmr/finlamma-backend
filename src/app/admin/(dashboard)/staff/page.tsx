@@ -1,4 +1,5 @@
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
 import { getStaffPageData } from "@/server/staff/service";
 import { AddStaffForm } from "./add-staff-form";
@@ -16,13 +17,11 @@ export default async function StaffPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold">Staff</h1>
-        <p className="text-sm text-neutral-600">
-          Manage who has access to this admin dashboard. Inviting someone sends them a Clerk
-          invite email - they appear here automatically once they accept and sign up.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Staff" }]}
+        title="Staff"
+        description="Manage who has access to this admin dashboard. Inviting someone sends them a Clerk invite email - they appear here automatically once they accept and sign up."
+      />
 
       <AddStaffForm roles={roleOptions} />
 

@@ -3,16 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { ZodError } from "zod";
-import { requireStaff } from "@/lib/auth";
+import { requireStaff, requireStaffAny } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
   CreateMentorDraftSchema,
+  HotfixMentorSchema,
   MentorIdSchema,
   UpdateMentorDraftSchema,
 } from "@/server/mentors/schemas";
 import {
   createMentorDraft,
+  hotfixMentor,
   publishMentor,
   unpublishMentor,
   updateMentorDraft,
@@ -75,14 +77,28 @@ export async function unpublishMentorAction(input: unknown): Promise<ActionResul
   });
 }
 
+export async function hotfixMentorAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("mentor.publish");
+    const parsed = HotfixMentorSchema.parse(input);
+    await hotfixMentor(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/mentors");
+  });
+}
+
 // No Content-Type/extension/size check here on purpose - a client-supplied
 // File.type or filename is not evidence of anything (a Server Action can be
 // called directly, not just through this form). The only real check is
 // uploadMentorArt's byte-level format sniff and size cap (src/lib/image.ts),
 // which this delegates to unconditionally.
+//
+// Gated on EITHER mentor.manage or mentor.publish here - a cheap early
+// reject only. uploadMentorArt itself (which already loads the mentor)
+// re-checks the exact required permission for this mentor's actual status
+// (manage for a draft, publish for a published one) - see its own comment.
 export async function uploadMentorArtAction(formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.manage");
+    const actor = await requireStaffAny(["mentor.manage", "mentor.publish"]);
     const id = MentorIdSchema.parse({ id: formData.get("id") }).id;
     const file = formData.get("file");
     if (!(file instanceof File)) {

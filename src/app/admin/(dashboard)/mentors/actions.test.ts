@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
 const mockRequireStaff = vi.fn();
+const mockRequireStaffAny = vi.fn();
 vi.mock("@/lib/auth", () => ({
   requireStaff: (permission: unknown) => mockRequireStaff(permission),
+  requireStaffAny: (permissions: unknown) => mockRequireStaffAny(permissions),
 }));
 
 vi.mock("next/headers", () => ({
@@ -17,6 +19,7 @@ vi.mock("next/cache", () => ({
 
 const mockCreateMentorDraft = vi.fn();
 const mockUpdateMentorDraft = vi.fn();
+const mockHotfixMentor = vi.fn();
 const mockPublishMentor = vi.fn();
 const mockUnpublishMentor = vi.fn();
 const mockUploadMentorArt = vi.fn();
@@ -25,6 +28,8 @@ vi.mock("@/server/mentors/service", () => ({
     mockCreateMentorDraft(actor, input, meta),
   updateMentorDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockUpdateMentorDraft(actor, input, meta),
+  hotfixMentor: (actor: unknown, input: unknown, meta: unknown) =>
+    mockHotfixMentor(actor, input, meta),
   publishMentor: (actor: unknown, id: unknown, meta: unknown) => mockPublishMentor(actor, id, meta),
   unpublishMentor: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishMentor(actor, id, meta),
@@ -34,6 +39,7 @@ vi.mock("@/server/mentors/service", () => ({
 
 import {
   createMentorDraftAction,
+  hotfixMentorAction,
   publishMentorAction,
   unpublishMentorAction,
   updateMentorDraftAction,
@@ -47,8 +53,7 @@ const VALID_INPUT = {
   order: 1,
   name: { en: "Baby Lamma", hi: "बेबी लामा", hx: "Baby Lamma" },
   bio: { en: "en", hi: "hi", hx: "hx" },
-  worldRangeStart: 1,
-  worldRangeEnd: 3,
+  persona: "test persona",
 };
 
 beforeEach(() => {
@@ -94,8 +99,10 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishMentor).not.toHaveBeenCalled();
   });
 
-  it("uploadMentorArtAction: requires mentor.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.manage"));
+  it("uploadMentorArtAction: requires mentor.manage or mentor.publish", async () => {
+    mockRequireStaffAny.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: one of mentor.manage, mentor.publish"),
+    );
     const formData = new FormData();
     formData.set("id", MENTOR_ID);
     formData.set("file", new File([new Uint8Array([1, 2, 3])], "art.png", { type: "image/png" }));
@@ -103,13 +110,29 @@ describe("wrong role is rejected", () => {
     const result = await uploadMentorArtAction(formData);
 
     expect(result.ok).toBe(false);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["mentor.manage", "mentor.publish"]);
     expect(mockUploadMentorArt).not.toHaveBeenCalled();
+  });
+
+  it("hotfixMentorAction: requires mentor.publish, not mentor.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.publish"));
+
+    const result = await hotfixMentorAction({
+      id: MENTOR_ID,
+      name: VALID_INPUT.name,
+      bio: VALID_INPUT.bio,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.publish");
+    expect(mockHotfixMentor).not.toHaveBeenCalled();
   });
 });
 
 describe("happy paths", () => {
   beforeEach(() => {
     mockRequireStaff.mockResolvedValue(ACTOR);
+    mockRequireStaffAny.mockResolvedValue(ACTOR);
   });
 
   it("createMentorDraftAction creates and revalidates", async () => {
@@ -188,5 +211,40 @@ describe("happy paths", () => {
       { body: Buffer.from(bytes) },
       expect.any(Object),
     );
+  });
+
+  it("hotfixMentorAction hotfixes and revalidates", async () => {
+    mockHotfixMentor.mockResolvedValueOnce({ id: MENTOR_ID, status: "published" });
+
+    const result = await hotfixMentorAction({
+      id: MENTOR_ID,
+      name: VALID_INPUT.name,
+      bio: VALID_INPUT.bio,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockHotfixMentor).toHaveBeenCalledWith(
+      ACTOR,
+      { id: MENTOR_ID, name: VALID_INPUT.name, bio: VALID_INPUT.bio },
+      expect.any(Object),
+    );
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/mentors");
+  });
+
+  it("hotfixMentorAction surfaces a translation-completeness error to the caller", async () => {
+    mockHotfixMentor.mockRejectedValueOnce(
+      new AppError("VALIDATION_FAILED", "Cannot publish: missing translation for bio.hi"),
+    );
+
+    const result = await hotfixMentorAction({
+      id: MENTOR_ID,
+      name: VALID_INPUT.name,
+      bio: VALID_INPUT.bio,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Cannot publish: missing translation for bio.hi",
+    });
   });
 });

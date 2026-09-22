@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { listActivityLogs, type ActivityLogCursor, type ActorTypeFilter } from "@/lib/activity-log";
 import { requireStaff } from "@/lib/auth";
 import { decodeCursor, DEFAULT_PAGE_LIMIT } from "@/lib/http";
@@ -37,17 +38,20 @@ export default async function ActivityLogPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Activity Log</h1>
-        <p className="text-sm text-neutral-600">
-          Append-only record of staff and user actions. Nothing here can be edited or deleted.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Activity Log" }]}
+        title="Activity Log"
+        description="Append-only record of staff and user actions. Nothing here can be edited or deleted."
+      />
 
       <div className="flex gap-4 text-sm">
         <Link
           href={filterHref()}
-          className={!actorType ? "font-semibold underline" : "text-neutral-600 hover:underline"}
+          className={
+            !actorType
+              ? "font-semibold text-foreground underline"
+              : "text-muted-foreground hover:underline"
+          }
         >
           All
         </Link>
@@ -56,7 +60,9 @@ export default async function ActivityLogPage({
             key={type}
             href={filterHref(type)}
             className={
-              actorType === type ? "font-semibold underline" : "text-neutral-600 hover:underline"
+              actorType === type
+                ? "font-semibold text-foreground underline"
+                : "text-muted-foreground hover:underline"
             }
           >
             {type}

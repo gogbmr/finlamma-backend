@@ -1,19 +1,9 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import { Users } from "lucide-react";
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -22,7 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { DataTable } from "@/components/admin/data-table";
+import { EmptyState } from "@/components/admin/empty-state";
+import { StatusBadge } from "@/components/admin/status-badge";
 import { setStaffActiveAction, updateStaffRoleAction } from "./actions";
 
 export type StaffRow = {
@@ -94,9 +87,9 @@ export function StaffTable({
         header: "Status",
         accessorKey: "active",
         cell: ({ row }) => (
-          <Badge variant={row.original.active ? "success" : "muted"}>
+          <StatusBadge status={row.original.active ? "active" : "inactive"}>
             {row.original.active ? "Active" : "Inactive"}
-          </Badge>
+          </StatusBadge>
         ),
       },
       {
@@ -131,33 +124,30 @@ export function StaffTable({
 
   return (
     <>
-      <DataTable columns={columns} data={staff} emptyMessage="No staff members yet." />
+      <DataTable
+        columns={columns}
+        data={staff}
+        emptyState={
+          <EmptyState icon={Users} title="No staff members yet" description="Invite your first staff member above." />
+        }
+      />
 
-      <AlertDialog
+      <ConfirmDialog
         open={confirmDeactivate !== null}
         onOpenChange={(open) => !open && setConfirmDeactivate(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Deactivate staff member?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmDeactivate?.clerkUserId} will immediately lose access to this admin
-              dashboard. You can reactivate them later.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (confirmDeactivate) setActive(confirmDeactivate.id, false);
-                setConfirmDeactivate(null);
-              }}
-            >
-              Deactivate
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Deactivate staff member?"
+        description={
+          <>
+            {confirmDeactivate?.clerkUserId} will immediately lose access to this admin
+            dashboard. You can reactivate them later.
+          </>
+        }
+        confirmLabel="Deactivate"
+        onConfirm={() => {
+          if (confirmDeactivate) setActive(confirmDeactivate.id, false);
+          setConfirmDeactivate(null);
+        }}
+      />
     </>
   );
 }

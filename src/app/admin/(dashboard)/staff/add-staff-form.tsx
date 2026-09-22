@@ -45,7 +45,7 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-neutral-200 p-4"
+      className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4"
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="email">Email</Label>
@@ -56,7 +56,7 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
           {...register("email")}
           className="w-64"
         />
-        {errors.email && <p className="text-xs text-red-600">{errors.email.message}</p>}
+        {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -73,7 +73,7 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
             ))}
           </SelectContent>
         </Select>
-        {errors.roleId && <p className="text-xs text-red-600">{errors.roleId.message}</p>}
+        {errors.roleId && <p className="text-xs text-destructive">{errors.roleId.message}</p>}
       </div>
 
       <Button type="submit" disabled={isPending}>

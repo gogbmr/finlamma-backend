@@ -1,0 +1,1 @@
+ALTER TABLE "mentors" ADD COLUMN "persona" text DEFAULT '' NOT NULL;

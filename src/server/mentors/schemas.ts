@@ -1,16 +1,13 @@
 import { z } from "zod";
 import { registry } from "@/lib/openapi";
+import { LocalizedTextSchema } from "@/server/shared/schemas";
 
-// Leaf-level trilingual text - see docs/DATA_MODEL.md's Learning section and
-// docs/ARCHITECTURE.md's Phase 2b kickoff discussion for why this is one
-// shared structure with localized leaves, not three duplicated content
-// trees or a separate translations-table key.
-export const LocalizedTextSchema = z.object({
-  en: z.string(),
-  hi: z.string(),
-  hx: z.string(),
-});
-export type LocalizedText = z.infer<typeof LocalizedTextSchema>;
+// Re-exported so existing imports of `LocalizedText`/`LocalizedTextSchema`
+// from this module (e.g. the admin mentor editor) keep working unchanged -
+// see src/server/shared/schemas.ts for the actual definition, now shared
+// with the worlds domain too.
+export { LocalizedTextSchema };
+export type { LocalizedText } from "@/server/shared/schemas";
 
 export const MentorKeySchema = z
   .string()
@@ -31,11 +28,6 @@ export const MentorPublicSchema = registry.register(
         hi: "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
         hx: "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta.",
       },
-    }),
-    worldRangeStart: z.number().int().openapi({ example: 1 }),
-    worldRangeEnd: z.number().int().nullable().openapi({
-      example: 3,
-      description: "Null means an open-ended range (e.g. \"World 7+\").",
     }),
     artUrl: z.string().url().nullable().openapi({
       description: "Short-lived signed URL to the mentor's art, or null if none uploaded yet.",
@@ -61,8 +53,10 @@ export const CreateMentorDraftSchema = z.object({
   order: z.number().int().positive(),
   name: LocalizedTextSchema,
   bio: LocalizedTextSchema,
-  worldRangeStart: z.number().int().positive(),
-  worldRangeEnd: z.number().int().positive().nullable(),
+  // Voice/tone notes for the Doubt Zone AI chat to stay in character as
+  // this mentor - internal, staff-facing only, never returned by the
+  // public GET /api/v1/mentors endpoint.
+  persona: z.string(),
 });
 export type CreateMentorDraftInput = z.infer<typeof CreateMentorDraftSchema>;
 
@@ -71,10 +65,22 @@ export const UpdateMentorDraftSchema = z.object({
   order: z.number().int().positive(),
   name: LocalizedTextSchema,
   bio: LocalizedTextSchema,
-  worldRangeStart: z.number().int().positive(),
-  worldRangeEnd: z.number().int().positive().nullable(),
+  persona: z.string(),
 });
 export type UpdateMentorDraftInput = z.infer<typeof UpdateMentorDraftSchema>;
 
 export const MentorIdSchema = z.object({ id: z.string().uuid() });
 export type MentorIdInput = z.infer<typeof MentorIdSchema>;
+
+// D20 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED mentor's
+// name/bio, without unpublishing - the fix for the circular problem where
+// unpublishing a mentor is blocked while a published world references it
+// (src/server/mentors/service.ts unpublishMentor). No `persona`/`order`/
+// `key` - those are structural, not a typo fix, and still go through the
+// normal unpublish -> edit draft -> republish cycle.
+export const HotfixMentorSchema = z.object({
+  id: z.string().uuid(),
+  name: LocalizedTextSchema,
+  bio: LocalizedTextSchema,
+});
+export type HotfixMentorInput = z.infer<typeof HotfixMentorSchema>;

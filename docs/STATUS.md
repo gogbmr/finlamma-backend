@@ -1,5 +1,141 @@
 # Status
 
+## 2026-09-22 — `/phase-audit 2b`: PASS, 1 Medium security finding fixed before merge
+
+Full audit of Phase 2b (`docs/ROADMAP.md`'s 7 ticked items + all 42 `docs/FEATURE_MAP.md` rows
+tagged phase `2b`) before merging `phase-2b-content` to `main`.
+
+**Code health**: `pnpm typecheck`/`pnpm lint`/`pnpm test -- --run` (758 tests)/`pnpm build` all
+clean. Contract (`openapi/openapi.json`, `docs/API_ENDPOINTS.md`) regenerated and diffed against
+committed versions - no drift.
+
+**Database**: all 21 migrations applied and match `drizzle/meta/_journal.json`; live schema
+matches `src/db/schema/*` exactly for every Phase 2b table; RLS enabled with zero policies on all
+20 `public` tables (by design, CLAUDE.md rule 6); Supabase advisors - zero at `warn` or above (8
+unindexed FKs and 15 unused indexes, both `INFO`, added to the pre-launch checklist below).
+
+**FEATURE_MAP.md drift found and fixed**: every one of the 42 Phase-2b-tagged rows still read
+"Not built" despite most being implemented and tested throughout the phase - pure documentation
+drift, not a functional gap. Traced each row to real code: **25 rows → Built**, **5 rows
+(LF-24/25/26/27/31, the lesson report card's letter-grade/hero-stats/bar-chart/XP-breakdown
+presentation) reassigned from phase `2b/3` to `3`** with status "Partial — aggregation in Phase
+3" (the underlying `quiz_attempts`/`question_answers` data exists, but no endpoint aggregates it
+into that shape yet), **12 rows correctly remain "Not built"** (genuine mobile-app-only UI or
+depend on Phase 3 tables that don't exist yet - `xp_events`, `streaks`, `certificates`).
+
+**Security audit** (`security-auditor` subagent, read-only scope: mentors/worlds/lessons/
+questions/quiz-attempts domains). **1 Medium, fixed before merge**: `uploadMentorArt`/
+`uploadWorldArt` never checked the content's status, unlike every other live-content edit path -
+a `content_uploader` (holds `.manage`, no `.publish`) could silently replace a **published**
+mentor/world's art, instantly visible to every learner, with no review step. D20 deliberately
+requires `.publish`-tier trust for any direct edit to live content; this path was missed. Fixed:
+`uploadMentorArt`/`uploadWorldArt` now require `mentor.publish`/`world.publish` when the target
+is published (`mentor.manage`/`world.manage` still suffices for a draft) - checked authoritatively
+in the service layer (`src/server/{mentors,worlds}/service.ts`), not just the action layer. Art
+uploads also now get a unique key per upload (`randomUUID()`-suffixed, not a fixed per-entity
+path) instead of overwriting the previous object in place, and the activity log records both the
+previous and new key, so a bad upload to live content can be reverted without needing the
+original file again. The same fix extended to `reorderWorld`: reordering a **published** world
+now also requires `world.publish` (a draft reorder still only needs `world.manage`), since a
+published world's position drives D25's `tradingUnlockAfterWorldPosition` gate. New shared
+`requireStaffAny(permissions)` helper added to `src/lib/auth.ts` for this "which permission
+applies depends on data the caller doesn't know yet" shape. 21 new/updated tests cover both
+fixes (uploader rejected on published content, publisher allowed, draft uploads unchanged, for
+both mentors and worlds, plus the equivalent reorder-tier tests).
+
+**2 Low findings, tracked, not fixed now**: no rate limiting on the quiz serve/answer endpoints
+(added as the first item of Phase 3 in `docs/ROADMAP.md` - low impact today since XP is
+preview-only and each step grades once idempotently, but needed before Phase 3 credits real XP);
+`world.manage` alone can still reorder a *draft* world's position relative to published ones in
+some edge cases - noted for a second look once Phase 4 wires up `isTradingUnlocked()` for real.
+
+**Production checks** (`https://finlamma-backend-rho.vercel.app`, version `a1bced1` = `origin/main`
+HEAD): health `ok`, every authenticated endpoint in scope returns 401 without a token, both Clerk
+webhooks reject unsigned requests with 400, `/admin` redirects a signed-out visitor to sign-in.
+Confirms the known `/admin/mentors`/`GET /api/v1/mentors` production breakage below is still the
+only issue, isolated to mentors (worlds/lessons/questions were never deployed to `main` at all).
+
+**Cosmetic fix**: `metadataBase` now set from `env.APP_URL` in the root layout, silencing the
+`pnpm build` warning about OG/Twitter image resolution falling back to `localhost:3000`.
+
+**Result: PASS.** The one Medium finding was fixed before this entry; no Critical/High findings.
+Ready to merge once the founder finishes preview testing.
+
+## 2026-09-22 — Known, temporary production issue: `/admin/mentors` and `GET /api/v1/mentors` are broken, resolved by the Phase 2b merge
+
+D25 (`docs/ARCHITECTURE.md`) dropped `mentors.world_range_start`/`world_range_end` on
+`phase-2b-content` (migration `drizzle/0020_cynical_nomad.sql`, applied to the shared database).
+**Preview and production share one database**, and `main` (still at `a1bced1`) has code
+(`src/server/mentors/repo.ts`, `schemas.ts`) that still selects and inserts those columns - every
+mentor query Drizzle generates on `main` now references columns that no longer exist.
+
+**Confirmed broken in production right now:**
+- `GET /api/v1/mentors` and `GET /api/v1/mentors/{key}` - will 500 past the auth gate (verified
+  the auth gate itself still works: an unauthenticated request correctly returns
+  `401 UNAUTHENTICATED`, but no valid session token was available to observe the failure past it;
+  confirmed instead by reading `main`'s `repo.ts`, which still does `db.select().from(mentors)`
+  including the dropped columns).
+- `/admin/mentors` - `getMentorEditorData()` → `listAllMentors()` throws uncaught, so the page
+  fails to render.
+
+**Nothing else is affected** - `main` doesn't have the `worlds` domain at all yet, so
+`GET /api/v1/worlds` and everything else are untouched. `GET /api/v1/health` still reports
+`status: ok`/`database: ok` in production, which is not evidence mentors works - health never
+queries the `mentors` table.
+
+**Accepted, not fixed now** (founder decision, 2026-09-22): the founder is the only staff user
+and tests on the preview deployment, not production `/admin/mentors`, so this is low-cost to
+leave until the Phase 2b merge - re-adding the columns temporarily was considered and declined.
+**Resolved automatically once `phase-2b-content` merges to `main`** (main's mentor code no longer
+references the dropped columns from that point on).
+
+**Post-merge checklist addition**: verify `/admin/mentors` and `GET /api/v1/mentors` work in
+production, alongside whatever else `/phase-audit 2b`'s post-merge verification already covers
+(see the Phase 2a merge entry below for the pattern this should follow).
+
+Standing rule added as a result (`CLAUDE.md` rule 8, `.claude/skills/db-migration/SKILL.md`): a
+destructive migration may only be applied after the code that stops depending on the old shape
+is deployed to production, not merely committed on a feature branch.
+
+## 2026-09-21 — Pre-launch blocker: all 7 seeded worlds are missing a Boss Quiz
+
+Checkpoint 6 made sequential world-unlock real (`GET /api/v1/worlds`'s `locked` field,
+docs/ARCHITECTURE.md D23) and Checkpoint 6's pass-mark fix (D24) tightened it further - a world
+only unlocks the next one once its Boss Quiz lesson is actually **passed**
+(`settings_kv.lesson_flow_scoring.bossQuizPassMarkPct`, default 60%). Checked directly against the
+database: **all 7 seeded worlds (Money World through Elite Summit) are published but have zero
+lessons at all**, so none has a Boss Quiz - a real learner reaching World 2+ today would find it
+permanently locked, with no possible way to clear it. `GET /api/v1/health`'s new
+`worldsMissingBossQuiz` field surfaces exactly this (lists all 7 right now) so it's visible without
+a direct DB query.
+
+**Not fixed here, deliberately** - per instruction, the existing published worlds were left alone
+(not unpublished) rather than force a disruptive content-authoring pass into this checkpoint.
+**Before launch, every world that's meant to be reachable needs at least one published Boss Quiz
+lesson**, authored and published through `/admin/lessons` like any other content. Treat
+`GET /api/v1/health`'s `worldsMissingBossQuiz` reading non-empty in production as a launch blocker,
+same as `legalDocuments` reading anything but `"ok"`.
+
+## 2026-09-20 — Process fix: Phase 2b's first 3 commits landed directly on `main`, corrected
+
+`/phase-kickoff 2b` had no branch-creation step, so Checkpoint 1 (S3 storage plumbing), Checkpoint 2
+(Mentors content type), and a follow-up hardening commit (mentor art upload magic-byte validation,
+OpenAPI-route-coverage guard test) were committed and **pushed directly to `main`** -
+`cb907fd`, `c3cfe81`, `a1bced1` - which auto-deploys to production. This violates the "one branch
+per phase, merged only after `/phase-audit`" rule.
+
+Corrected: `phase-2b-content` branch created from `main` at `a1bced1` and pushed
+(`origin/phase-2b-content`); all further Phase 2b work happens there. **`main` was not reset or
+rewritten** - those 3 commits stay on `main`'s history as-is, since rewriting a branch that already
+deployed to production would be worse than the original mistake. This means **`/phase-audit 2b`
+must explicitly cover `cb907fd`/`c3cfe81`/`a1bced1` too**, not just what lands on
+`phase-2b-content` afterward - they were never audited as part of a phase branch review before
+reaching `main`/production the way every other phase's work has been.
+
+Also fixed to prevent recurrence: `.claude/hooks/guard-bash.mjs` now hard-blocks `git commit`
+while on `main` and any `git push` targeting `main`, and `/phase-kickoff` now creates and switches
+to the phase branch as its first action, before any code change.
+
 ## 2026-09-20 — Phase 2a merged to `main` and verified in production. Next: Phase 2b.
 
 `phase-2a-consent` merged into `main` via merge commit `2d29847` (27 commits, kept the branch). Before

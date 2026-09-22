@@ -7,9 +7,13 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-neutral-900 text-white",
-        success: "bg-green-100 text-green-800",
-        muted: "bg-neutral-100 text-neutral-600",
+        default: "bg-primary text-primary-foreground",
+        secondary: "bg-secondary text-secondary-foreground",
+        success: "bg-status-published-bg text-status-published-fg",
+        warning: "bg-status-draft-bg text-status-draft-fg",
+        info: "bg-status-in-progress-bg text-status-in-progress-fg",
+        destructive: "bg-destructive/10 text-destructive",
+        muted: "bg-muted text-muted-foreground",
       },
     },
     defaultVariants: { variant: "default" },

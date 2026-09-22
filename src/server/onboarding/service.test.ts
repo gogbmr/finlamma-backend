@@ -11,6 +11,7 @@ const mockEnv = vi.hoisted(() => ({
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
 const mockSetDateOfBirthOnce = vi.fn();
+const mockMarkOnboardingCompletedOnce = vi.fn();
 const mockGetParentContact = vi.fn();
 const mockUpsertParentContact = vi.fn();
 const mockCountChildrenForParentEmail = vi.fn();
@@ -37,6 +38,7 @@ const mockDeclineReapprovalAndRefuseConsent = vi.fn();
 const mockSetConsentRecordWithdrawTokenHash = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
+  markOnboardingCompletedOnce: (id: unknown) => mockMarkOnboardingCompletedOnce(id),
   getParentContact: (id: unknown) => mockGetParentContact(id),
   upsertParentContact: (id: unknown, name: unknown, email: unknown) =>
     mockUpsertParentContact(id, name, email),
@@ -99,6 +101,7 @@ vi.mock("@/server/legal/service", () => ({
 
 import {
   approveReapproval,
+  completeOnboarding,
   confirmParentConsent,
   declineParentConsent,
   declineReapproval,
@@ -183,6 +186,52 @@ describe("setDateOfBirth", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "onboarding.date_of_birth_set", actorId: "u1" }),
     );
+  });
+});
+
+describe("completeOnboarding", () => {
+  const USER = {
+    id: "u1",
+    email: "kid@example.com",
+    firstName: "Aarav",
+    dateOfBirth: null,
+    onboardingCompletedAt: null,
+  };
+
+  it("marks it complete, logs it, and returns the timestamp on the first call", async () => {
+    const stamp = new Date("2026-01-01T00:00:00.000Z");
+    mockMarkOnboardingCompletedOnce.mockResolvedValueOnce({ id: "u1", onboardingCompletedAt: stamp });
+
+    const result = await completeOnboarding(USER, META);
+
+    expect(result).toEqual({ onboardingCompletedAt: "2026-01-01T00:00:00.000Z" });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "onboarding.completed", actorId: "u1" }),
+    );
+  });
+
+  it("is a no-op (no activity log) on a repeat call - returns the original timestamp without erroring", async () => {
+    const originalStamp = new Date("2025-06-01T00:00:00.000Z");
+    // repo.ts re-fetches and returns the existing row unchanged on a repeat call.
+    mockMarkOnboardingCompletedOnce.mockResolvedValueOnce({
+      id: "u1",
+      onboardingCompletedAt: originalStamp,
+    });
+
+    const result = await completeOnboarding(
+      { ...USER, onboardingCompletedAt: originalStamp },
+      META,
+    );
+
+    expect(result).toEqual({ onboardingCompletedAt: "2025-06-01T00:00:00.000Z" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND if the user row is gone", async () => {
+    mockMarkOnboardingCompletedOnce.mockResolvedValueOnce(null);
+
+    await expect(completeOnboarding(USER, META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 

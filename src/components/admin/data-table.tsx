@@ -1,6 +1,7 @@
 "use client";
 
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import type { ReactNode } from "react";
 import {
   Table,
   TableBody,
@@ -18,10 +19,15 @@ export function DataTable<TData>({
   columns,
   data,
   emptyMessage = "No results.",
+  emptyState,
 }: {
   columns: ColumnDef<TData, unknown>[];
   data: TData[];
   emptyMessage?: string;
+  // A richer <EmptyState> to render instead of the plain emptyMessage text,
+  // when the caller wants an icon/action (e.g. "Invite your first staff
+  // member"). Falls back to emptyMessage when omitted.
+  emptyState?: ReactNode;
 }) {
   const table = useReactTable({ data, columns, getCoreRowModel: getCoreRowModel() });
 
@@ -43,8 +49,10 @@ export function DataTable<TData>({
       <TableBody>
         {table.getRowModel().rows.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={columns.length} className="text-center text-sm text-neutral-500">
-              {emptyMessage}
+            <TableCell colSpan={columns.length} className="p-0">
+              {emptyState ?? (
+                <p className="py-6 text-center text-sm text-muted-foreground">{emptyMessage}</p>
+              )}
             </TableCell>
           </TableRow>
         ) : (

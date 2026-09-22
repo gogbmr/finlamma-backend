@@ -18,6 +18,11 @@ const mockEnv = vi.hoisted(() => ({
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
   VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
   CONSENT_PII_HMAC_KEY: undefined as string | undefined,
+  S3_ENDPOINT: undefined as string | undefined,
+  S3_REGION: undefined as string | undefined,
+  S3_BUCKET: undefined as string | undefined,
+  S3_ACCESS_KEY_ID: undefined as string | undefined,
+  S3_SECRET_ACCESS_KEY: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -27,7 +32,23 @@ vi.mock("@/server/legal/repo", () => ({
   listPublishedDocuments: () => mockListPublishedDocuments(),
 }));
 
+const mockListPublishedWorlds = vi.fn();
+vi.mock("@/server/worlds/repo", () => ({
+  listPublishedWorlds: () => mockListPublishedWorlds(),
+}));
+
+const mockListPublishedLessonsByWorldId = vi.fn();
+vi.mock("@/server/lessons/repo", () => ({
+  listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
+}));
+
+const mockGetLessonFlowScoringSettings = vi.fn();
+vi.mock("@/server/settings/service", () => ({
+  getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
+}));
+
 import { db } from "@/db/client";
+import { DEFAULT_LESSON_FLOW_SCORING } from "@/server/settings/schemas";
 import { GET } from "./route";
 
 function publishedDoc(overrides: Partial<{ isPlaceholder: boolean }> = {}) {
@@ -41,6 +62,11 @@ beforeEach(() => {
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
   mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
   mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+  mockEnv.S3_ENDPOINT = "https://xxx.supabase.co/storage/v1/s3";
+  mockEnv.S3_REGION = "ap-south-1";
+  mockEnv.S3_BUCKET = "finlamma";
+  mockEnv.S3_ACCESS_KEY_ID = "test-key";
+  mockEnv.S3_SECRET_ACCESS_KEY = "test-secret";
   // All three types published, none placeholder - existing tests below
   // don't need to know about the legalDocuments warning field at all.
   mockListPublishedDocuments.mockReset().mockResolvedValue([
@@ -48,6 +74,13 @@ beforeEach(() => {
     publishedDoc(),
     publishedDoc(),
   ]);
+  // No published worlds by default - existing tests below don't need to
+  // know about the worldsMissingBossQuiz warning field at all.
+  mockListPublishedWorlds.mockReset().mockResolvedValue([]);
+  mockListPublishedLessonsByWorldId.mockReset().mockResolvedValue([]);
+  // Default position (3) - existing tests below don't need to know about
+  // the tradingUnlockWorldMissing warning field at all.
+  mockGetLessonFlowScoringSettings.mockReset().mockResolvedValue(DEFAULT_LESSON_FLOW_SCORING);
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -76,7 +109,48 @@ describe("GET /api/v1/health", () => {
     expect(body.data.legalDocuments).toBe("ok");
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
+    expect(body.data.storage).toBe("ok");
+    expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(typeof body.data.timestamp).toBe("string");
+  });
+
+  it("lists a published world with no published Boss Quiz lesson, without failing the check", async () => {
+    mockHealthyDb();
+    mockListPublishedWorlds.mockResolvedValue([
+      { id: "world_1", title: { en: "Money World" } },
+      { id: "world_2", title: { en: "Savings Valley" } },
+    ]);
+    mockListPublishedLessonsByWorldId.mockImplementation((worldId: string) =>
+      Promise.resolve(
+        worldId === "world_1" ? [{ kind: "boss_quiz" }, { kind: "video" }] : [{ kind: "video" }],
+      ),
+    );
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.worldsMissingBossQuiz).toEqual([{ id: "world_2", title: "Savings Valley" }]);
+  });
+
+  it("reports worldsMissingBossQuiz: [] when every published world has one", async () => {
+    mockHealthyDb();
+    mockListPublishedWorlds.mockResolvedValue([{ id: "world_1", title: { en: "Money World" } }]);
+    mockListPublishedLessonsByWorldId.mockResolvedValue([{ kind: "boss_quiz" }]);
+
+    const res = await GET();
+
+    expect((await res.json()).data.worldsMissingBossQuiz).toEqual([]);
+  });
+
+  it("reports worldsMissingBossQuiz: [] (not a 503) if the check itself throws", async () => {
+    mockHealthyDb();
+    mockListPublishedWorlds.mockRejectedValue(new Error("boom"));
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.worldsMissingBossQuiz).toEqual([]);
   });
 
   it("reports legalDocuments: placeholder without failing the check, when a published document is seeded filler text", async () => {
@@ -213,5 +287,74 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.consentPiiHmacKey).toBe("missing");
+  });
+
+  it.each([
+    ["S3_ENDPOINT"],
+    ["S3_REGION"],
+    ["S3_BUCKET"],
+    ["S3_ACCESS_KEY_ID"],
+    ["S3_SECRET_ACCESS_KEY"],
+  ] as const)("reports storage: 'missing' (not a 503) when %s isn't configured", async (varName) => {
+    mockEnv[varName] = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.storage).toBe("missing");
+  });
+
+  it("reports storage: 'ok' when every S3_* var is configured", async () => {
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect((await res.json()).data.storage).toBe("ok");
+  });
+
+  describe("tradingUnlockWorldMissing", () => {
+    it("reports true when fewer published worlds exist than the configured position", async () => {
+      mockHealthyDb();
+      mockGetLessonFlowScoringSettings.mockResolvedValue({
+        ...DEFAULT_LESSON_FLOW_SCORING,
+        tradingUnlockAfterWorldPosition: 3,
+      });
+      mockListPublishedWorlds.mockResolvedValue([
+        { id: "w1", title: { en: "World 1" } },
+        { id: "w2", title: { en: "World 2" } },
+      ]);
+
+      const res = await GET();
+
+      expect((await res.json()).data.tradingUnlockWorldMissing).toBe(true);
+    });
+
+    it("reports false once enough published worlds exist", async () => {
+      mockHealthyDb();
+      mockGetLessonFlowScoringSettings.mockResolvedValue({
+        ...DEFAULT_LESSON_FLOW_SCORING,
+        tradingUnlockAfterWorldPosition: 3,
+      });
+      mockListPublishedWorlds.mockResolvedValue([
+        { id: "w1", title: { en: "World 1" } },
+        { id: "w2", title: { en: "World 2" } },
+        { id: "w3", title: { en: "World 3" } },
+      ]);
+
+      const res = await GET();
+
+      expect((await res.json()).data.tradingUnlockWorldMissing).toBe(false);
+    });
+
+    it("reports false (not a 503) if the check itself throws", async () => {
+      mockHealthyDb();
+      mockGetLessonFlowScoringSettings.mockRejectedValue(new Error("boom"));
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.tradingUnlockWorldMissing).toBe(false);
+    });
   });
 });

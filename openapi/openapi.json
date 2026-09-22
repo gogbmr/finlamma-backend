@@ -106,6 +106,41 @@
                 "example": "ok",
                 "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
               },
+              "storage": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "missing"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'missing' means at least one of the S3_ENDPOINT/S3_REGION/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY env vars isn't configured, so src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage plumbing with no way to notice a missing key from outside the deployment's env vars."
+              },
+              "worldsMissingBossQuiz": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title"
+                  ]
+                },
+                "example": [],
+                "description": "A non-fatal warning (never causes a 503): published worlds with no published Boss Quiz lesson. Sequential world-unlock (GET /api/v1/worlds) can never clear past one of these for any learner, since there's nothing to pass. See docs/ARCHITECTURE.md D24 and STATUS.md."
+              },
+              "tradingUnlockWorldMissing": {
+                "type": "boolean",
+                "example": false,
+                "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -120,6 +155,9 @@
               "legalDocuments",
               "version",
               "consentPiiHmacKey",
+              "storage",
+              "worldsMissingBossQuiz",
+              "tradingUnlockWorldMissing",
               "timestamp"
             ]
           }
@@ -484,6 +522,31 @@
           "data"
         ]
       },
+      "OnboardingCompleteStatus": {
+        "type": "object",
+        "properties": {
+          "onboardingCompletedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z",
+            "description": "When the World Home mentor-intro modal (WH-11) first finished for this user. Calling this endpoint again after it's already set just returns the original timestamp - it never errors and never moves the timestamp forward."
+          }
+        },
+        "required": [
+          "onboardingCompletedAt"
+        ]
+      },
+      "OnboardingCompleteResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OnboardingCompleteStatus"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "RequestParentConsentRequest": {
         "type": "object",
         "properties": {
@@ -615,18 +678,6 @@
               "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
             }
           },
-          "worldRangeStart": {
-            "type": "integer",
-            "example": 1
-          },
-          "worldRangeEnd": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "example": 3,
-            "description": "Null means an open-ended range (e.g. \"World 7+\")."
-          },
           "artUrl": {
             "type": [
               "string",
@@ -641,8 +692,6 @@
           "order",
           "name",
           "bio",
-          "worldRangeStart",
-          "worldRangeEnd",
           "artUrl"
         ]
       },
@@ -665,6 +714,765 @@
             "items": {
               "$ref": "#/components/schemas/Mentor"
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "World": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "integer",
+            "example": 1
+          },
+          "title": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "Money World",
+              "hi": "मनी वर्ल्ड",
+              "hx": "Money World"
+            }
+          },
+          "tagline": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "From barter to UPI — the whole story of money",
+              "hi": "बार्टर से UPI तक — पैसे की पूरी कहानी",
+              "hx": "Barter se UPI tak — paise ki poori kahani"
+            }
+          },
+          "theme": {
+            "type": "string",
+            "example": "#7C3AED",
+            "description": "Cosmetic accent hex color for the world card, staff-chosen per world - never affects unlock logic."
+          },
+          "displayXpTarget": {
+            "type": "integer",
+            "example": 5,
+            "description": "Cosmetic progress indicator only, shown on a locked world's card - never the actual unlock gate. The real rule is sequential (clearing the previous world's Boss Quiz)."
+          },
+          "artUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Short-lived signed URL to the world's art, or null if none uploaded yet."
+          },
+          "mentorKey": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "example": "baby",
+            "description": "The mentor covering this world (see GET /api/v1/mentors for their details)."
+          },
+          "locked": {
+            "type": "boolean",
+            "example": false,
+            "description": "This signed-in user's own unlock state - sequential only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always false."
+          }
+        },
+        "required": [
+          "order",
+          "title",
+          "tagline",
+          "theme",
+          "displayXpTarget",
+          "artUrl",
+          "mentorKey",
+          "locked"
+        ]
+      },
+      "WorldListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/World"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "LessonSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter": {
+            "type": "integer",
+            "example": 1
+          },
+          "step": {
+            "type": "integer",
+            "example": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "story",
+              "quiz",
+              "boss_quiz",
+              "role_play",
+              "doubt_zone"
+            ]
+          },
+          "title": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "blurb": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "chapter",
+          "step",
+          "kind",
+          "title",
+          "blurb"
+        ]
+      },
+      "LessonDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "worldId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter": {
+            "type": "integer",
+            "example": 1
+          },
+          "step": {
+            "type": "integer",
+            "example": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "video",
+              "story",
+              "quiz",
+              "boss_quiz",
+              "role_play",
+              "doubt_zone"
+            ]
+          },
+          "title": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "blurb": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "lengthSeconds": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "scenes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Seconds into the video this scene starts."
+                        },
+                        "kind": {
+                          "type": "string",
+                          "minLength": 1,
+                          "description": "Open, admin-extensible enum (e.g. \"trade\", \"coins\", \"timeline\")."
+                        },
+                        "title": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "caption": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "mascotLine": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "kind",
+                        "title",
+                        "caption",
+                        "mascotLine"
+                      ]
+                    },
+                    "default": []
+                  },
+                  "cues": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "number",
+                          "minimum": 0,
+                          "description": "Seconds into the video this pop-quiz fires."
+                        },
+                        "questionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "timerSeconds": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        }
+                      },
+                      "required": [
+                        "at",
+                        "questionId",
+                        "timerSeconds"
+                      ]
+                    },
+                    "default": []
+                  }
+                },
+                "required": [
+                  "lengthSeconds"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "lengthSeconds": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "pages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "lengthSeconds",
+                  "pages"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "questionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1
+                  },
+                  "framing": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ],
+                    "description": "Role Play's dialogue/receipt-graphic framing text, if this step uses it."
+                  }
+                },
+                "required": [
+                  "questionIds"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "mentorKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The mentor persona (see GET /api/v1/mentors) this script was written in the voice of."
+                  },
+                  "educationalOnlyNote": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "chips": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "chipLabel": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "reply": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "chipLabel",
+                        "reply"
+                      ]
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "mentorKey",
+                  "educationalOnlyNote",
+                  "chips"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "worldId",
+          "chapter",
+          "step",
+          "kind",
+          "title",
+          "blurb",
+          "content"
+        ]
+      },
+      "LessonDetailResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/LessonDetail"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "LessonSummaryListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LessonSummary"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ServeStepResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "stepIndex": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "example": 1
+              },
+              "totalSteps": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "example": 5
+              },
+              "questionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "format": {
+                "type": "string",
+                "enum": [
+                  "single_select",
+                  "ordering",
+                  "sort_buckets",
+                  "fill_blank",
+                  "match_pairs",
+                  "spot_mistake"
+                ]
+              },
+              "prompt": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  },
+                  "hi": {
+                    "type": "string"
+                  },
+                  "hx": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en",
+                  "hi",
+                  "hx"
+                ]
+              },
+              "payload": {
+                "type": "object",
+                "additionalProperties": {}
+              },
+              "timerSeconds": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "example": 12,
+                "description": "Allotted seconds to answer, captured at serve time."
+              },
+              "servedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+              }
+            },
+            "required": [
+              "attemptId",
+              "stepIndex",
+              "totalSteps",
+              "questionId",
+              "format",
+              "prompt",
+              "payload",
+              "timerSeconds",
+              "servedAt"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SubmitAnswerResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "attemptId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "stepIndex": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "totalSteps": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "isCorrect": {
+                "type": "boolean"
+              },
+              "timedOut": {
+                "type": "boolean",
+                "description": "True if the server-measured elapsed time exceeded the allotted timer."
+              },
+              "correctAnswer": {
+                "description": "This question's correct answer - only ever included here, after grading."
+              },
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  },
+                  "hi": {
+                    "type": "string"
+                  },
+                  "hx": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en",
+                  "hi",
+                  "hx"
+                ]
+              },
+              "xpAwardedPreview": {
+                "type": "integer",
+                "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+              },
+              "speedBonusAwarded": {
+                "type": "boolean"
+              },
+              "feverActive": {
+                "type": "boolean"
+              },
+              "comboAfter": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "isAttemptComplete": {
+                "type": "boolean"
+              },
+              "totalXpPreview": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+              }
+            },
+            "required": [
+              "attemptId",
+              "stepIndex",
+              "totalSteps",
+              "isCorrect",
+              "timedOut",
+              "explanation",
+              "xpAwardedPreview",
+              "speedBonusAwarded",
+              "feverActive",
+              "comboAfter",
+              "isAttemptComplete",
+              "totalXpPreview"
+            ]
           }
         },
         "required": [
@@ -1130,6 +1938,48 @@
         }
       }
     },
+    "/api/v1/me/onboarding-complete": {
+      "patch": {
+        "summary": "Mark onboarding's mentor-intro modal as seen",
+        "description": "Idempotent, unlike /me/date-of-birth - a repeat call is a harmless no-op that returns the original timestamp. Not a requireFullAccess gate; purely a 'have they seen it' flag for World Home's first-open mentor-intro modal (WH-11).",
+        "tags": [
+          "Onboarding"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Onboarding marked complete (or already was)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingCompleteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/parent-consent/request": {
       "post": {
         "summary": "Request parental consent",
@@ -1296,7 +2146,7 @@
     "/api/v1/mentors": {
       "get": {
         "summary": "List published mentors",
-        "description": "The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, ordered by their display order. Only published mentors are returned.",
+        "description": "The published Lamma mentors, ordered by their display order - staff decide how many exist. Which world(s) a mentor covers is set per world (worlds.mentorId), not returned here.",
         "tags": [
           "Learning"
         ],
@@ -1428,6 +2278,542 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No published mentor with key \"baby\""
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/worlds": {
+      "get": {
+        "summary": "List published worlds",
+        "description": "The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Published worlds, ordered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorldListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/worlds/{id}/lessons": {
+      "get": {
+        "summary": "List a world's published lessons",
+        "description": "The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Per-user node state (done/current/next/locked) is added once lesson_progress exists (Checkpoint 5) - for now this is the world's lesson list only, ordered by chapter then step.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The world's published lessons, ordered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonSummaryListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lessons/{id}": {
+      "get": {
+        "summary": "Get a published lesson",
+        "description": "Full content for a single published lesson - what the Lesson Flow engine renders. Never includes a question's correct answer, only a reference id (see docs/DATA_MODEL.md's single-source-of-truth rule for questions, Checkpoint 5).",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The published lesson",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lessons/{id}/steps/{n}/serve": {
+      "post": {
+        "summary": "Serve the next graded step of a lesson (starts or resumes an attempt)",
+        "description": "Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this step's timer runs from, and is never trusted from the client on submit. Only the current, next-in-sequence step can be served - no skipping ahead. Starts a new attempt on step 1 if none is in progress, or resumes an already-served-but-unanswered step idempotently. Never includes this question's correct answer or explanation - see POST .../answer.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": true,
+            "name": "n",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The step to render",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServeStepResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id, or its question is no longer available",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not the current step (no skip-ahead), or the step is already answered",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Not the current step - answer earlier steps first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lessons/{id}/steps/{n}/answer": {
+      "post": {
+        "summary": "Submit an answer for the current step and grade it",
+        "description": "Server-graded and server-timed - the submitted answer is checked against the question's real answer server-side, and the elapsed time used for the speed bonus/timeout is measured from this step's serve time, never a client-reported value (docs/ARCHITECTURE.md D21). Idempotent: submitting again for an already-answered step returns the exact original graded result unchanged, no re-scoring. This is the ONLY response that reveals this question's correct answer and explanation - never for any other step. No `Idempotency-Key` header is needed (unlike trading orders): the (attempt, step) pair already is the natural idempotency key, since only one attempt is ever in progress per (user, lesson) and only one unanswered row can exist per step.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": true,
+            "name": "n",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answer": {
+                    "description": "Shape depends on the question's format - see the matching *AnswerSchema in src/server/questions/schemas.ts (e.g. { correctIndex } for single_select)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The graded result for this step",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SubmitAnswerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The submitted answer doesn't match this question's format shape",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid answer for a \"single_select\" question: answer.correctIndex: Required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id, or the question no longer exists",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No active attempt, or this step hasn't been served yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "This step hasn't been served yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/current-lesson": {
+      "get": {
+        "summary": "Get my current/resume lesson",
+        "description": "Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's lesson_progress table exists**: always returns chapter 1, step 1 of the lowest-order published world, regardless of what the caller has actually done - not yet progress-aware. The response shape is the real contract (identical to GET /api/v1/lessons/{id}); only the selection logic upgrades once real progress tracking ships.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's current lesson (see description for today's placeholder logic)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LessonDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published worlds or lessons yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published worlds yet"
                   }
                 },
                 "schema": {

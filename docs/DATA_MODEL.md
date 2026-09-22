@@ -94,9 +94,12 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   no PII in the log).
 
 **Learning**
-- `worlds` (order, title, theme, display_xp_target — cosmetic progress indicator only; the real
-  unlock rule is sequential (see `lesson_progress`: the previous world's Boss Quiz is complete),
-  not an XP/level gate), `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
+- `worlds` (order, title, theme — a staff-chosen, validated hex color, not an enum of fixed
+  themes, display_xp_target — cosmetic progress indicator only; the real unlock rule is
+  sequential (see `lesson_progress`: the previous world's Boss Quiz is complete), not an
+  XP/level gate). Fully data-driven and unbounded (D25, `docs/ARCHITECTURE.md`) — no fixed
+  world count anywhere in code; `mentor_id` is the only link to a mentor (a real FK, never a
+  computed range). `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
   Role Play are `lessons.kind` values, not separate tables or engines — both render through the
   same lesson-flow content shape as a Quiz step, with different settings.
 - `quizzes` (lesson_id or news_edition_id, settings), `questions` (quiz_id, format, payload jsonb,
@@ -108,7 +111,29 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   is language-independent — one shared answer per question, not one per language. A learner-facing
   response never includes `questions.answer` or its explanation text until that specific question
   has been graded server-side (see `docs/ARCHITECTURE.md` D17 and Phase 2b's answer-leakage tests).
-- `lesson_progress`, `quiz_attempts`, `question_answers`
+- `lesson_progress` (user_id, lesson_id, status `in_progress`|`completed`, started_at, completed_at)
+  — one row per (user, lesson), written entirely as a byproduct of the quiz-attempts flow below
+  (`serveStep` starts it, `submitAnswer` completes it), so only lesson kinds with at least one
+  graded step (video/quiz/boss_quiz/role_play) ever get a row yet — `story`/`doubt_zone` have no
+  "mark as done" endpoint at all today, a known gap. Drives the admin unpublish-warning
+  (in-progress learner counts) — see `docs/ARCHITECTURE.md` D23. World unlock itself is judged on
+  `quiz_attempts.accuracy_pct` (below), not this table — see D24.
+- `quiz_attempts` (user_id, lesson_id, attempt_number, is_first_pass, status `in_progress`|
+  `completed`, started_at, completed_at, total_xp_preview, accuracy_pct — correct steps / total
+  steps, 0-100, computed once at completion; a Boss Quiz's pass/fail is judged against this vs.
+  the admin-editable `settings_kv.lesson_flow_scoring.bossQuizPassMarkPct`, default 60% — see
+  `docs/ARCHITECTURE.md` D24) and `question_answers` (attempt_id,
+  question_id, step_index, served_at, timer_seconds, served_revision — the exact `questions`
+  revision served, captured at serve time, never re-derived — answered_at, submitted_answer,
+  is_correct, timed_out, speed_bonus_awarded, fever_active, xp_awarded_preview, combo_after) —
+  Checkpoint 5b's server-timed, idempotent quiz answering; see `docs/ARCHITECTURE.md` D21 for the
+  full anti-cheat design
+- `question_revisions` (question_id, revision, prompt, explanation, payload, answer) — a full
+  content snapshot written every time a question's live content changes (every publish and every
+  D20 hotfix), never on a draft edit. This is what makes `question_answers.served_revision`
+  actually recoverable, and what grading reads instead of the live `questions` row, so a hotfix
+  landing between serve and answer never affects an in-flight answer — see `docs/ARCHITECTURE.md`
+  D22.
 - `certificates` (user_id, world_id, code, file_key) — PDFs are rendered server-side with a
   browser-free library (e.g. `@react-pdf/renderer`, not a headless browser — Vercel-compatible)
   and stored via `src/lib/s3.ts`; sharing is a signed URL the student sends themselves, never a
@@ -129,11 +154,14 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 - `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
   badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,
   never computed from the viewing user's own balance), `reward_claims`
-- `mentors` (order, name, bio jsonb {en,hi,hx}, world_range, art_key) — admin-editable content
-  type (not hardcoded in the app)
+- `mentors` (order, name, bio jsonb {en,hi,hx}, persona — free-text voice/tone notes for the
+  Doubt Zone AI chat, art_key) — admin-editable content type, fully data-driven and unbounded
+  (D25, `docs/ARCHITECTURE.md`). No world-range column: which world(s) a mentor covers lives
+  entirely on `worlds.mentor_id`, so one mentor can cover any number of worlds
 - `settings_kv` (generic key/value store, introduced in Phase 2a for
   `parent_email_max_children` default 5 and `consent_resend_daily_cap` — see Compliance above;
-  e.g. `vm_issuance_multiplier` default 1.0, `trade_unlock_world_order` default 4
+  e.g. `vm_issuance_multiplier` default 1.0, `lesson_flow_scoring.tradingUnlockAfterWorldPosition`
+  default 3 (position, not a world id/name — D25, `docs/ARCHITECTURE.md`)
   — see Trading below; scoring constants `speed_bonus_threshold_pct` = 45,
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
   `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values)
@@ -149,9 +177,12 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
 **Trading**
 - `instruments` (symbol, exchange, name, sector, about jsonb, tip jsonb {en,hi,hx}, tags text[],
   mcap, pe, lot_size, active, halted). Order pad access is gated by
-  `settings_kv.trade_unlock_world_order` (default: Market Maidan, world order 4) —
-  quotes/charts/watchlist stay visible to everyone regardless ("explore mode"); no starting
-  balance or unlock grant is ever issued (see `docs/ECONOMY.md`). Orders are whole-share only. No
+  `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition` (default: the 3rd published
+  world, by position - never a specific world id/name, D25 `docs/ARCHITECTURE.md`) -
+  `src/server/worlds/service.ts`'s `isTradingUnlocked()` implements the check now, ready for
+  Phase 4's trading domain to call; quotes/charts/watchlist stay visible to everyone regardless
+  ("explore mode"); no starting balance or unlock grant is ever issued (see `docs/ECONOMY.md`).
+  Orders are whole-share only. No
   per-user watchlist table — "Watchlist" in the app is simply the full active `instruments` list
   (matches the prototype, which has no add/remove control).
 - `instrument_daily_bars` (instrument_id, date, open/high/low/close/volume, all paise) — daily

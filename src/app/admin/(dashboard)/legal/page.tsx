@@ -1,4 +1,5 @@
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
 import { LEGAL_DOCUMENT_TYPES } from "@/server/legal/repo";
 import { getLegalEditorData } from "@/server/legal/service";
@@ -31,16 +32,11 @@ export default async function LegalPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Legal documents</h1>
-        <p className="text-sm text-neutral-600">
-          Terms, Privacy and Risk-disclosure text - staff-editable, versioned. Only super_admin
-          can publish. Publishing a new version prompts every user (and every consenting parent)
-          to re-accept it. v1 seeds these as DRAFT placeholders until the outside legal review in
-          docs/ROADMAP.md&apos;s pre-launch checklist - never publish real text without that
-          review.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Legal" }]}
+        title="Legal documents"
+        description="Terms, Privacy and Risk-disclosure text - staff-editable, versioned. Only super_admin can publish. Publishing a new version prompts every user (and every consenting parent) to re-accept it. v1 seeds these as DRAFT placeholders until the outside legal review in docs/ROADMAP.md's pre-launch checklist - never publish real text without that review."
+      />
 
       <LegalEditor documents={documents} />
     </div>

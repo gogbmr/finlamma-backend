@@ -9,9 +9,14 @@ the time the order pad unlocks?
 
 - Trade tab is visible from day one in **explore mode**: live prices, charts, watchlist, stock
   info — no lock. The **order pad** (placing real BUY/SELL orders) is locked with a progress
-  message ("Reach Market Maidan to start trading — 2 worlds to go").
-- The unlock world defaults to **Market Maidan (World 4)**, admin-configurable in the Ops console
-  (change logged via `activity_logs`).
+  message ("N worlds to go").
+- **D25 (`docs/ARCHITECTURE.md`): the unlock is by world POSITION, never a specific world's id
+  or name.** `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition` defaults to
+  **3** (i.e. trading unlocks once the 3rd published world's Boss Quiz is passed),
+  super_admin-editable and logged via `activity_logs`. Because it's position-based, it keeps
+  working automatically if worlds are added, removed or reordered ahead of it — this whole
+  simulation below is written in terms of "3 worlds of guaranteed content," which is what the
+  *default* position means today, not a hardcoded assumption about which world that is.
 - **No grant of any kind.** No ₹5,00,000 starting balance, no unlock bonus. Trading capital is
   only the V Money the learner has actually earned — from lessons, quizzes, boss battles, Pulse
   Check, streaks, Arena, cheers — plus trading P&L once they start. No "add money."
@@ -38,12 +43,13 @@ Boss Quiz ×1.
 
 **Per-world VM total (current values):** `8×10 + 8×15 + 8×20 + 8×25 + 7×30 + 1×100 = 870 VM`
 
-To reach World 4 (Market Maidan), a learner clears Worlds 1–3 (Money World, Savings Valley,
-Budget Bazaar): **3 × 870 = 2,610 VM**, counting *only* the guaranteed lesson path — zero credit
-for Pulse Check, Arena cheers, or streak bonuses, since those depend on optional daily engagement
+To reach the trading-unlock world (position 3 by default - the 3 worlds seeded as Money World,
+Savings Valley, Budget Bazaar in v1, but this holds for whichever 3 worlds staff have published
+first): **3 × 870 = 2,610 VM**, counting *only* the guaranteed lesson path — zero credit for
+Pulse Check, Arena cheers, or streak bonuses, since those depend on optional daily engagement
 this simulation shouldn't assume.
 
-The 12 stock prices at World 4 arrival (`STOCKS`, prototype's `p0` field, lines 6693–6706):
+The 12 stock prices at trading-unlock (`STOCKS`, prototype's `p0` field, lines 6693–6706):
 
 | Symbol | Price (₹) |
 |---|---|
@@ -74,10 +80,10 @@ Corporate Bond, Liquid, ELSS) all have `minSip: 500`.
 | One share of **each** of the 12 stocks (₹23,938.25) | **No** — the floor covers barely 11% of this |
 
 **Conclusion:** with the current per-lesson VM values and no grant, a learner who does only the
-guaranteed lesson path arrives at Market Maidan able to place a couple of small single-stock
-trades, but nowhere near enough to explore the full watchlist or hold a diversified handful of
-positions — the Trade screen would feel cramped rather than "comfortable" the moment real money
-management starts.
+guaranteed lesson path arrives at the trading-unlock world able to place a couple of small
+single-stock trades, but nowhere near enough to explore the full watchlist or hold a diversified
+handful of positions — the Trade screen would feel cramped rather than "comfortable" the moment
+real money management starts.
 
 ## Proposed revised values
 
@@ -96,7 +102,7 @@ earn side by side" model already decided — there's no fixed conversion ratio t
 | Boss Quiz | 120 | 100 | 300 |
 
 **Per-world VM total (proposed):** `8×30 + 8×45 + 8×60 + 8×75 + 7×90 + 1×300 = 2,610 VM`
-**VM at World 4 arrival (3 worlds, proposed):** `3 × 2,610 = 7,830 VM`
+**VM at trading-unlock (3 worlds at the default position, proposed):** `3 × 2,610 = 7,830 VM`
 
 ### Affordability check — proposed values (7,830 VM floor)
 
@@ -115,20 +121,21 @@ launch without a redeploy, so 3× is a starting proposal, not a permanent consta
 Note this floor is deliberately pessimistic — it assumes zero Pulse Check participation. Pulse
 Check alone (News tab, unlocked from day one) can plausibly add several hundred VM per active day
 under its own scoring rules (see `docs/FEATURE_MAP.md` NW-25/NW-26), so an engaged learner would
-likely arrive at World 4 with meaningfully more than either floor shown above.
+likely arrive at the trading-unlock world with meaningfully more than either floor shown above.
 
-## Time to reach World 4
+## Time to reach the trading-unlock world
 
 Per-world time, from the same `LSTEP` minutes (Video 4, Story 6, AI Chat 5, Role Play 7, Quiz 3,
 Boss Quiz 10, same 8×/8×/8×/8×/7×/1× step counts as the VM calculation above):
 
 `8×4 + 8×6 + 8×5 + 8×7 + 7×3 + 1×10 = 207 minutes per world`
 
-Three worlds to reach Market Maidan: `3 × 207 = 621 minutes` of actual lesson time. At a realistic
-15–20 minutes/day of use, that's **roughly 31–41 days — about a month** of typical daily use
-before the order pad unlocks. (This ignores days skipped entirely; a learner who misses days
-takes proportionally longer in calendar time, though streak freezes and the daily-goal nudge exist
-precisely to reduce that.)
+Three worlds at the default unlock position: `3 × 207 = 621 minutes` of actual lesson time. At a
+realistic 15–20 minutes/day of use, that's **roughly 31–41 days — about a month** of typical
+daily use before the order pad unlocks. (This ignores days skipped entirely; a learner who misses
+days takes proportionally longer in calendar time, though streak freezes and the daily-goal nudge
+exist precisely to reduce that. If `tradingUnlockAfterWorldPosition` is changed from its default
+of 3, this figure scales roughly linearly with the new position.)
 
 ## A note on re-checking this later
 

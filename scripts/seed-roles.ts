@@ -59,12 +59,55 @@ const PERMISSIONS = [
   {
     key: "mentor.manage",
     description:
-      "Create mentors and edit a mentor's draft fields (name, bio, world range, art). " +
+      "Create mentors and edit a mentor's draft fields (name, bio, persona, art). " +
       "Cannot edit a mentor that's currently published - unpublish it first.",
   },
   {
     key: "mentor.publish",
     description: "Publish or unpublish a mentor, making it visible to (or hidden from) the app.",
+  },
+  {
+    key: "world.manage",
+    description:
+      "Create worlds and edit a world's draft fields (title, tagline, theme, mentor, order, " +
+      "art). Cannot edit a world that's currently published - unpublish it first.",
+  },
+  {
+    key: "world.publish",
+    description:
+      "Publish or unpublish a world, making it visible to (or hidden from) the app, and " +
+      "permanently delete a world once it has no lessons. Publishing requires the world's " +
+      "mentor to already be published.",
+  },
+  {
+    key: "lesson.manage",
+    description:
+      "Create lessons and edit a lesson's draft fields (title, blurb, content). Cannot edit a " +
+      "lesson that's currently published - unpublish it first.",
+  },
+  {
+    key: "lesson.publish",
+    description:
+      "Publish or unpublish a lesson, making it visible to (or hidden from) the app. Publishing " +
+      "requires the lesson's world to already be published.",
+  },
+  {
+    key: "question.manage",
+    description:
+      "Create questions and edit a question's draft fields (prompt, explanation, payload, " +
+      "answer). Cannot edit a question that's currently published - unpublish it first.",
+  },
+  {
+    key: "question.publish",
+    description:
+      "Publish or unpublish a question. A lesson can't be published while it references a " +
+      "missing or unpublished question (docs/ARCHITECTURE.md D18).",
+  },
+  {
+    key: "settings.manage",
+    description:
+      "Edit admin-tunable settings_kv values that affect every learner immediately (e.g. Lesson " +
+      "Flow scoring constants). Narrower than content permissions - granted to super_admin only.",
   },
 ] as const;
 
@@ -80,10 +123,18 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "legal.manage",
     "mentor.manage",
     "mentor.publish",
+    "world.manage",
+    "world.publish",
+    "lesson.manage",
+    "lesson.publish",
+    "question.manage",
+    "question.publish",
+    "settings.manage",
   ],
   user_manager: ["consent.view"],
-  content_uploader: ["mentor.manage"],
-  content_publisher: ["mentor.publish"],
+  content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],
+  content_publisher: ["mentor.publish", "world.publish", "lesson.publish", "question.publish"],
+  quiz_maker: ["question.manage"],
 };
 
 async function seed() {

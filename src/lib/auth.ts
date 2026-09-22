@@ -1,6 +1,6 @@
 import { createClerkClient } from "@clerk/backend";
 import { auth } from "@clerk/nextjs/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { permissions, rolePermissions, staffMembers, users } from "@/db/schema";
 import { env } from "@/lib/env";
@@ -157,6 +157,47 @@ export async function requireStaff(permission: string) {
 
   if (!grant) {
     throw new AppError("FORBIDDEN", `Missing permission: ${permission}`);
+  }
+
+  return staff;
+}
+
+// Same as requireStaff, but authorizes on ANY one of several permissions -
+// for the rare action whose real required tier depends on data the caller
+// doesn't know yet at this point (e.g. uploading art for a mentor/world:
+// draft content needs `.manage`, published content needs the stronger
+// `.publish`, and which applies depends on the row's current status). This
+// is a cheap early reject only (staff with neither permission can't reach
+// the handler at all) - the service function that already loads the row
+// still re-checks the exact required permission against the real status
+// via `roleHasPermission`, which is the authoritative check.
+export async function requireStaffAny(permissionKeys: string[]) {
+  const { userId: clerkUserId } = await auth();
+  if (!clerkUserId) {
+    throw new AppError("UNAUTHENTICATED", "Staff sign-in required");
+  }
+
+  const [staff] = await db
+    .select()
+    .from(staffMembers)
+    .where(eq(staffMembers.clerkUserId, clerkUserId))
+    .limit(1);
+
+  if (!staff || !staff.active) {
+    throw new AppError("FORBIDDEN", "No active staff account for this session");
+  }
+
+  const [grant] = await db
+    .select({ id: rolePermissions.id })
+    .from(rolePermissions)
+    .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+    .where(
+      and(eq(rolePermissions.roleId, staff.roleId), inArray(permissions.key, permissionKeys)),
+    )
+    .limit(1);
+
+  if (!grant) {
+    throw new AppError("FORBIDDEN", `Missing permission: one of ${permissionKeys.join(", ")}`);
   }
 
   return staff;

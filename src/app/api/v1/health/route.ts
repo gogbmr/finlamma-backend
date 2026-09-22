@@ -6,6 +6,9 @@ import { AppError } from "@/lib/errors";
 import { fail, logInternalError, ok, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
+import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { listPublishedWorlds } from "@/server/worlds/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
 // drizzle/meta/_journal.json would risk not being traced into the bundle.
@@ -55,6 +58,33 @@ const HealthDataSchema = z.object({
       "store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's " +
       "scrubConsentDataForDeletedUser.",
   }),
+  storage: z.enum(["ok", "missing"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'missing' means at least one of the S3_ENDPOINT/" +
+      "S3_REGION/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY env vars isn't configured, so " +
+      "src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - " +
+      "e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage " +
+      "plumbing with no way to notice a missing key from outside the deployment's env vars.",
+  }),
+  worldsMissingBossQuiz: z
+    .array(z.object({ id: z.string().uuid(), title: z.string() }))
+    .openapi({
+      example: [],
+      description:
+        "A non-fatal warning (never causes a 503): published worlds with no published Boss " +
+        "Quiz lesson. Sequential world-unlock (GET /api/v1/worlds) can never clear past one of " +
+        "these for any learner, since there's nothing to pass. See docs/ARCHITECTURE.md D24 " +
+        "and STATUS.md.",
+    }),
+  tradingUnlockWorldMissing: z.boolean().openapi({
+    example: false,
+    description:
+      "A non-fatal warning (never causes a 503): true when fewer published worlds exist than " +
+      "settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading " +
+      "stays locked for every learner until enough worlds are published. See " +
+      "docs/ARCHITECTURE.md D25.",
+  }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
 
@@ -79,6 +109,22 @@ function clerkInstanceHost(publishableKey: string): string | null {
   } catch {
     return null;
   }
+}
+
+// Non-fatal: a missing S3 var doesn't fail the health check (the API and
+// database are still genuinely healthy), it's surfaced as a warning so a
+// missing storage key is visible from the outside instead of only
+// discovered the first time someone tries an upload in production - see
+// src/lib/s3.ts's getS3Config(), which fails closed the same way
+// getResendConfig() does for email.
+function checkStorageConfigured(): "ok" | "missing" {
+  const configured =
+    env.S3_ENDPOINT &&
+    env.S3_REGION &&
+    env.S3_BUCKET &&
+    env.S3_ACCESS_KEY_ID &&
+    env.S3_SECRET_ACCESS_KEY;
+  return configured ? "ok" : "missing";
 }
 
 // Catches the STAFF and CONSUMER Clerk applications' publishable keys
@@ -153,6 +199,47 @@ async function checkLegalDocuments(): Promise<"ok" | "placeholder" | "unpublishe
   }
 }
 
+// Non-fatal, same reasoning as checkLegalDocuments: a published world with
+// no published Boss Quiz lesson doesn't fail the health check (the API is
+// still genuinely healthy), but it's a real content gap - the sequential
+// world-unlock rule (src/server/worlds/service.ts's getPublicWorlds, D23/D24)
+// can never let any learner clear past it. Defaults to an empty array (no
+// warning) if the check itself throws, matching every other warning field's
+// fail-open shape here, except reported via logInternalError so a genuine
+// query failure is never silently indistinguishable from "all good".
+async function checkWorldsMissingBossQuiz(): Promise<{ id: string; title: string }[]> {
+  try {
+    const worlds = await listPublishedWorlds();
+    const missing: { id: string; title: string }[] = [];
+    for (const world of worlds) {
+      const lessons = await listPublishedLessonsByWorldId(world.id);
+      if (!lessons.some((l) => l.kind === "boss_quiz")) {
+        missing.push({ id: world.id, title: world.title.en });
+      }
+    }
+    return missing;
+  } catch (err) {
+    logInternalError("health.boss_quiz_check_failed", err);
+    return [];
+  }
+}
+
+// Non-fatal, same reasoning as checkWorldsMissingBossQuiz: fewer published
+// worlds than the configured trading-unlock position (D25,
+// docs/ARCHITECTURE.md) doesn't fail the health check, but it means
+// isTradingUnlocked() can never return true for anyone yet - a real content
+// gap worth surfacing before Phase 4 wires trading up to this rule.
+async function checkTradingUnlockWorldMissing(): Promise<boolean> {
+  try {
+    const settings = await getLessonFlowScoringSettings();
+    const worlds = await listPublishedWorlds();
+    return worlds.length < settings.tradingUnlockAfterWorldPosition;
+  } catch (err) {
+    logInternalError("health.trading_unlock_check_failed", err);
+    return false;
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -218,6 +305,8 @@ export const GET = withErrors(async () => {
   }
 
   const legalDocuments = await checkLegalDocuments();
+  const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
+  const tradingUnlockWorldMissing = await checkTradingUnlockWorldMissing();
 
   return ok({
     status: "ok" as const,
@@ -227,6 +316,9 @@ export const GET = withErrors(async () => {
     legalDocuments,
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
+    storage: checkStorageConfigured(),
+    worldsMissingBossQuiz,
+    tradingUnlockWorldMissing,
     timestamp: new Date().toISOString(),
   });
 });

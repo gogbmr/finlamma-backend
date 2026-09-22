@@ -19,6 +19,7 @@
     "seed:super-admin": "tsx scripts/seed-super-admin.ts",
     "seed:legal": "tsx scripts/seed-legal-documents.ts",
     "seed:mentors": "tsx scripts/seed-mentors.ts",
+    "seed:worlds": "tsx scripts/seed-worlds.ts",
     "seed:settings": "tsx scripts/seed-settings.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },

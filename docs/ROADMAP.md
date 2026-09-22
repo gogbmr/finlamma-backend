@@ -54,24 +54,32 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - See `docs/PRODUCT_SPEC.md`'s Onboarding & parental consent section for the exact flow.
 
 ## Phase 2b — Learning content
-- [ ] Mentors content type (admin CRUD: name, bio, world range, art, per language) — moved here
-      from Phase 3 because worlds need a mentor; seed Baby/Father/Grandpa Lamma per the
-      prototype's world ranges
-- [ ] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
+- [x] Mentors content type (admin CRUD: name, bio, persona/voice notes, art, per language) —
+      unbounded, no fixed count (D25, `docs/ARCHITECTURE.md`); moved here from Phase 3 because
+      worlds need a mentor; seed Baby/Father/Grandpa Lamma as a starting set, assigned to worlds
+      via `worlds.mentorId`
+- [x] Worlds, lessons (6 node kinds), quizzes, questions (all formats). World unlock is
       **sequential only** (clearing the previous world's Boss Quiz) — no XP/level gate; Boss Quiz
       and Role Play reuse the same lesson-flow content shape as Quiz, not separate engines
-- [ ] Content CRUD in admin with draft → published flow and uploads to storage. `lessons.content`/
+- [x] Content CRUD in admin with draft → published flow and uploads to storage. `lessons.content`/
       `questions.payload` are authored via a schema-validated JSON editor for v1 (human-readable
       validation errors, a starter template per lesson/quiz format, a publish preview, and cue-
       timestamp-order/video-length checks) — see "Later" section below for the visual builder
-- [ ] Translations for `en`, `hi`, `hx` on every content field
-- [ ] Scoring constants (speed-bonus 45% threshold, fever mode combo≥3 → 2×, combo bonus,
-      all-correct bonus) as admin-editable `settings_kv`, seeded from the prototype's exact values
-- [ ] "Doubt Zone" node kind ships **scripted** in v1 — fixed Q&A written by the content team per
+- [x] Translations for `en`, `hi`, `hx` on every content field
+- [x] Scoring constants (speed-bonus 45% threshold, fever mode combo≥3 → 2×, combo bonus) as
+      admin-editable `settings_kv`, seeded from the prototype's exact values. "All-correct bonus"
+      is Pulse Check's own mechanic (News, Phase 5), not part of Lesson Flow's LF-12/LF-22
+      formula — deferred to that phase, not built here
+- [x] "Doubt Zone" node kind ships **scripted** in v1 — fixed Q&A written by the content team per
       lesson, no live AI call. The live AI mentor upgrade is Phase 7.
-- [ ] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
+- [x] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
 
 ## Phase 3 — Progress economy
+- [ ] **Rate limiting (Upstash Redis) on the quiz serve/answer endpoints** (`POST
+      /api/v1/lessons/{id}/steps/{n}/serve`, `.../answer`), before any real XP is credited to a
+      ledger. Flagged by the Phase 2b security audit (`docs/STATUS.md`) - low-impact today since
+      XP is preview-only (D17) and each step grades once, idempotently, but a real abuse/
+      resource-consumption vector once this phase wires XP to `vmoney_ledger`.
 - [ ] XP events, levels, world unlocks
 - [ ] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
       `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
@@ -93,10 +101,11 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 ## Phase 4 — Trading engine (needs the market relay for live prices)
 - [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
 - [ ] Twelve Data REST: quotes and candle history with Redis caching
-- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks when the
-      user reaches `settings_kv.trade_unlock_world_order` (default: Market Maidan/World 4) via
-      the same sequential world-clear rule as Phase 2b, not an XP/level threshold — no starting
-      balance or unlock grant, ever (see `docs/ECONOMY.md`)
+- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks per
+      `isTradingUnlocked()` (`src/server/worlds/service.ts`, already built in Phase 2b ahead of
+      this phase) — position-based (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`,
+      default 3rd published world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`),
+      not an XP/level threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`)
 - [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
 - [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
 - [ ] Limit-order matching job (Inngest)
@@ -155,10 +164,25 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Review the 8 unindexed-foreign-key and 15 unused-index Supabase advisor findings**
+      (`INFO` level, flagged by the Phase 2b audit, `docs/STATUS.md`) - low-traffic pre-launch
+      noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
+      `question_answers.question_id` have no covering index), but worth a real pass once query
+      patterns and data volume are closer to production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
       questions, emails, consent pages) — the seed/draft copy written during development (e.g.
       `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
       reviewed by a native speaker.
+- [ ] **Real-Postgres concurrency test for world reorder**, once a separate dev database exists.
+      `src/server/worlds/repo.test.ts`'s concurrent-move tests run against PGlite
+      (`src/test/db.ts`), which is a single connection - two "concurrent" `db.transaction()` calls
+      there are actually serialized by the driver, not genuinely interleaved, so those tests can
+      prove "no corruption" but not "a real race loses cleanly" (see the reorder-fix commit and
+      `src/lib/db-errors.ts`'s `isTransactionConflict`). Once a real multi-connection Postgres is
+      available outside the shared production database (e.g. a Supabase branch/dev project), add a
+      test that fires two genuinely concurrent overlapping `moveWorldToPosition` calls from two
+      separate connections and confirms one gets a clean `isTransactionConflict` and neither
+      leaves a negative sentinel order behind.
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
 - [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps

@@ -8,6 +8,7 @@
 import "../envConfig";
 import { db } from "../src/db/client";
 import { settingsKv } from "../src/db/schema";
+import { DEFAULT_LESSON_FLOW_SCORING } from "../src/server/settings/schemas";
 
 const SETTINGS = [
   {
@@ -23,6 +24,13 @@ const SETTINGS = [
     description:
       "Max parent-consent request emails sent per day, enforced independently per account and " +
       "per parent email.",
+  },
+  {
+    key: "lesson_flow_scoring",
+    value: DEFAULT_LESSON_FLOW_SCORING,
+    description:
+      "Lesson Flow scoring constants (speed bonus, combo, fever mode, base XP per quiz kind) - " +
+      "see docs/PRODUCT_SPEC.md §1. Editable only by super_admin (settings.manage), logged.",
   },
 ] as const;
 

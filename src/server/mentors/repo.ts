@@ -1,7 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { mentors } from "@/db/schema";
-import type { CreateMentorDraftInput, UpdateMentorDraftInput } from "./schemas";
+import type { CreateMentorDraftInput, HotfixMentorInput, UpdateMentorDraftInput } from "./schemas";
 
 export async function listPublishedMentors() {
   return db
@@ -59,6 +59,19 @@ export async function publishMentorRow(id: string, staffId: string) {
     .update(mentors)
     .set({ status: "published", publishedAt: new Date(), publishedBy: staffId })
     .where(and(eq(mentors.id, id), eq(mentors.status, "draft")))
+    .returning();
+  return row ?? null;
+}
+
+// D20 (docs/ARCHITECTURE.md): only updates a mentor that's currently
+// PUBLISHED - returns null if the row doesn't exist or is a draft, mirroring
+// updateDraftMentor's opposite-status guard.
+export async function hotfixMentorRow(input: HotfixMentorInput) {
+  const { id, ...rest } = input;
+  const [row] = await db
+    .update(mentors)
+    .set(rest)
+    .where(and(eq(mentors.id, id), eq(mentors.status, "published")))
     .returning();
   return row ?? null;
 }

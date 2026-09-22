@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-20.
+> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-22.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -27,12 +27,19 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 **Onboarding**
 
 - `PATCH /api/v1/me/date-of-birth` — Set my date of birth (once)
+- `PATCH /api/v1/me/onboarding-complete` — Mark onboarding's mentor-intro modal as seen
 - `POST /api/v1/me/parent-consent/request` — Request parental consent
 
 **Learning**
 
 - `GET /api/v1/mentors` — List published mentors
 - `GET /api/v1/mentors/{key}` — Get a published mentor
+- `GET /api/v1/worlds` — List published worlds
+- `GET /api/v1/worlds/{id}/lessons` — List a world's published lessons
+- `GET /api/v1/lessons/{id}` — Get a published lesson
+- `POST /api/v1/lessons/{id}/steps/{n}/serve` — Serve the next graded step of a lesson (starts or resumes an attempt)
+- `POST /api/v1/lessons/{id}/steps/{n}/answer` — Submit an answer for the current step and grade it
+- `GET /api/v1/me/current-lesson` — Get my current/resume lesson
 
 **Webhooks**
 
@@ -63,6 +70,9 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "legalDocuments": "ok",
     "version": "2d303f6",
     "consentPiiHmacKey": "ok",
+    "storage": "ok",
+    "worldsMissingBossQuiz": [],
+    "tradingUnlockWorldMissing": false,
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
@@ -490,6 +500,40 @@ Collected once at onboarding - determines whether the account needs parental con
 
 ---
 
+### `PATCH /api/v1/me/onboarding-complete`
+
+**Mark onboarding's mentor-intro modal as seen**
+
+Idempotent, unlike /me/date-of-birth - a repeat call is a harmless no-op that returns the original timestamp. Not a requireFullAccess gate; purely a 'have they seen it' flag for World Home's first-open mentor-intro modal (WH-11).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Onboarding marked complete (or already was)
+
+```json
+{
+  "data": {
+    "onboardingCompletedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
 ### `POST /api/v1/me/parent-consent/request`
 
 **Request parental consent**
@@ -570,7 +614,7 @@ For an under-18 account: emails the given parent/guardian a magic link to a publ
 
 **List published mentors**
 
-The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed range of worlds, ordered by their display order. Only published mentors are returned.
+The published Lamma mentors, ordered by their display order - staff decide how many exist. Which world(s) a mentor covers is set per world (worlds.mentorId), not returned here.
 
 **Auth:** bearerAuth
 
@@ -594,8 +638,6 @@ The mentor evolution stages (Baby/Father/Grandpa Lamma), each covering a fixed r
         "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
         "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
       },
-      "worldRangeStart": 1,
-      "worldRangeEnd": 3,
       "artUrl": "https://example.com"
     }
   ]
@@ -660,8 +702,6 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
       "hi": "पहला मेंटर - बहुत सवाल पूछता है, कभी जज नहीं करता।",
       "hx": "Sabse pehla mentor - dher saara sawaal poochta hai, kabhi judge nahi karta."
     },
-    "worldRangeStart": 1,
-    "worldRangeEnd": 3,
     "artUrl": "https://example.com"
   }
 }
@@ -696,6 +736,489 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
   "error": {
     "code": "NOT_FOUND",
     "message": "No published mentor with key \"baby\""
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/worlds`
+
+**List published worlds**
+
+The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Published worlds, ordered
+
+```json
+{
+  "data": [
+    {
+      "order": 1,
+      "title": {
+        "en": "Money World",
+        "hi": "मनी वर्ल्ड",
+        "hx": "Money World"
+      },
+      "tagline": {
+        "en": "From barter to UPI — the whole story of money",
+        "hi": "बार्टर से UPI तक — पैसे की पूरी कहानी",
+        "hx": "Barter se UPI tak — paise ki poori kahani"
+      },
+      "theme": "#7C3AED",
+      "displayXpTarget": 5,
+      "artUrl": "https://example.com",
+      "mentorKey": "baby",
+      "locked": false
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/worlds/{id}/lessons`
+
+**List a world's published lessons**
+
+The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Per-user node state (done/current/next/locked) is added once lesson_progress exists (Checkpoint 5) - for now this is the world's lesson list only, ordered by chapter then step.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The world's published lessons, ordered
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "chapter": 1,
+      "step": 1,
+      "kind": "video",
+      "title": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "blurb": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      }
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/lessons/{id}`
+
+**Get a published lesson**
+
+Full content for a single published lesson - what the Lesson Flow engine renders. Never includes a question's correct answer, only a reference id (see docs/DATA_MODEL.md's single-source-of-truth rule for questions, Checkpoint 5).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The published lesson
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "worldId": "00000000-0000-0000-0000-000000000000",
+    "chapter": 1,
+    "step": 1,
+    "kind": "video",
+    "title": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "blurb": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "content": {
+      "lengthSeconds": 0,
+      "scenes": [],
+      "cues": []
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/steps/{n}/serve`
+
+**Serve the next graded step of a lesson (starts or resumes an attempt)**
+
+Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this step's timer runs from, and is never trusted from the client on submit. Only the current, next-in-sequence step can be served - no skipping ahead. Starts a new attempt on step 1 if none is in progress, or resumes an already-served-but-unanswered step idempotently. Never includes this question's correct answer or explanation - see POST .../answer.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+| `n` | path | integer | yes |  |
+
+**Responses**
+
+- **200** — The step to render
+
+```json
+{
+  "data": {
+    "attemptId": "00000000-0000-0000-0000-000000000000",
+    "stepIndex": 1,
+    "totalSteps": 5,
+    "questionId": "00000000-0000-0000-0000-000000000000",
+    "format": "single_select",
+    "prompt": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "payload": {},
+    "timerSeconds": 12,
+    "servedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id, or its question is no longer available
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **409** — Not the current step (no skip-ahead), or the step is already answered
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Not the current step - answer earlier steps first"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/steps/{n}/answer`
+
+**Submit an answer for the current step and grade it**
+
+Server-graded and server-timed - the submitted answer is checked against the question's real answer server-side, and the elapsed time used for the speed bonus/timeout is measured from this step's serve time, never a client-reported value (docs/ARCHITECTURE.md D21). Idempotent: submitting again for an already-answered step returns the exact original graded result unchanged, no re-scoring. This is the ONLY response that reveals this question's correct answer and explanation - never for any other step. No `Idempotency-Key` header is needed (unlike trading orders): the (attempt, step) pair already is the natural idempotency key, since only one attempt is ever in progress per (user, lesson) and only one unanswered row can exist per step.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+| `n` | path | integer | yes |  |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `answer` | object | no | Shape depends on the question's format - see the matching *AnswerSchema in src/server/questions/schemas.ts (e.g. { correctIndex } for single_select). |
+
+```json
+{
+  "answer": null
+}
+```
+
+**Responses**
+
+- **200** — The graded result for this step
+
+```json
+{
+  "data": {
+    "attemptId": "00000000-0000-0000-0000-000000000000",
+    "stepIndex": 0,
+    "totalSteps": 0,
+    "isCorrect": true,
+    "timedOut": true,
+    "correctAnswer": null,
+    "explanation": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "xpAwardedPreview": 0,
+    "speedBonusAwarded": true,
+    "feverActive": true,
+    "comboAfter": 0,
+    "isAttemptComplete": true,
+    "totalXpPreview": 0
+  }
+}
+```
+
+- **400** — The submitted answer doesn't match this question's format shape
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid answer for a \"single_select\" question: answer.correctIndex: Required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id, or the question no longer exists
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **409** — No active attempt, or this step hasn't been served yet
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "This step hasn't been served yet"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/current-lesson`
+
+**Get my current/resume lesson**
+
+Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's lesson_progress table exists**: always returns chapter 1, step 1 of the lowest-order published world, regardless of what the caller has actually done - not yet progress-aware. The response shape is the real contract (identical to GET /api/v1/lessons/{id}); only the selection logic upgrades once real progress tracking ships.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's current lesson (see description for today's placeholder logic)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "worldId": "00000000-0000-0000-0000-000000000000",
+    "chapter": 1,
+    "step": 1,
+    "kind": "video",
+    "title": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "blurb": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "content": {
+      "lengthSeconds": 0,
+      "scenes": [],
+      "cues": []
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published worlds or lessons yet
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published worlds yet"
   }
 }
 ```

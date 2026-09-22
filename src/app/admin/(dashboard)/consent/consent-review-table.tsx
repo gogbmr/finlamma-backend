@@ -1,6 +1,9 @@
 "use client";
 
+import { ShieldCheck } from "lucide-react";
 import { useState, useTransition } from "react";
+import { EmptyState } from "@/components/admin/empty-state";
+import { StatusBadge } from "@/components/admin/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -15,13 +18,6 @@ type Row = {
   deleted: boolean;
 };
 
-const STATUS_VARIANT: Record<Row["status"], "default" | "success" | "muted"> = {
-  pending: "default",
-  consented: "success",
-  refused: "muted",
-  withdrawn: "muted",
-};
-
 function ParentContactCell({ userId }: { userId: string }) {
   const [isPending, startTransition] = useTransition();
   const [revealed, setRevealed] = useState<{ name: string; email: string } | null>(null);
@@ -29,7 +25,7 @@ function ParentContactCell({ userId }: { userId: string }) {
 
   if (revealed) {
     return (
-      <span className="text-xs text-neutral-700">
+      <span className="text-xs text-foreground/80">
         {revealed.name} &lt;{revealed.email}&gt;
       </span>
     );
@@ -55,14 +51,20 @@ function ParentContactCell({ userId }: { userId: string }) {
       >
         {isPending ? "Loading..." : "View parent details"}
       </Button>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
 
 export function ConsentReviewTable({ rows }: { rows: Row[] }) {
   if (rows.length === 0) {
-    return <p className="text-sm text-neutral-600">No consent requests yet.</p>;
+    return (
+      <EmptyState
+        icon={ShieldCheck}
+        title="No consent requests yet"
+        description="Requests appear here once an under-18 account signs up and a parent is emailed for consent."
+      />
+    );
   }
 
   return (
@@ -84,18 +86,18 @@ export function ConsentReviewTable({ rows }: { rows: Row[] }) {
               {row.deleted ? (
                 <Badge variant="muted">Deleted, anonymised</Badge>
               ) : (
-                <Badge variant={STATUS_VARIANT[row.status]}>{row.status}</Badge>
+                <StatusBadge status={row.status}>{row.status}</StatusBadge>
               )}
             </TableCell>
-            <TableCell className="text-xs text-neutral-600">
+            <TableCell className="text-xs text-muted-foreground">
               {new Date(row.requestedAt).toLocaleString()}
             </TableCell>
-            <TableCell className="text-xs text-neutral-600">
+            <TableCell className="text-xs text-muted-foreground">
               {row.actedAt ? new Date(row.actedAt).toLocaleString() : "—"}
             </TableCell>
             <TableCell>
               {row.deleted ? (
-                <span className="text-xs text-neutral-400">Not available</span>
+                <span className="text-xs text-muted-foreground/70">Not available</span>
               ) : (
                 <ParentContactCell userId={row.userId} />
               )}

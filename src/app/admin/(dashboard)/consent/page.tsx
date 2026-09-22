@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
 import { getConsentReviewList } from "@/server/onboarding/service";
 import { ConsentReviewTable } from "./consent-review-table";
@@ -22,15 +23,11 @@ export default async function ConsentReviewPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Parental consent</h1>
-        <p className="text-sm text-neutral-600">
-          Read-only status for every under-18 account&apos;s parental-consent request. This view
-          cannot approve, deny or bypass consent - only the parent can, via their emailed link.
-          Parent contact details are hidden by default; viewing them is logged. Deleted accounts
-          are hidden by default and their contact details are never revealable.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Consent" }]}
+        title="Parental consent"
+        description="Read-only status for every under-18 account's parental-consent request. This view cannot approve, deny or bypass consent - only the parent can, via their emailed link. Parent contact details are hidden by default; viewing them is logged. Deleted accounts are hidden by default and their contact details are never revealable."
+      />
 
       <Link
         href={includeDeleted ? "/admin/consent" : "/admin/consent?includeDeleted=1"}
