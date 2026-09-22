@@ -139,15 +139,35 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   and stored via `src/lib/s3.ts`; sharing is a signed URL the student sends themselves, never a
   message sent on their behalf
 
-**Economy**
-- `xp_events` (user_id, source, amount, ref)
-- `vmoney_ledger` (user_id, amount (+/-), reason, ref_type, ref_id, idempotency_key,
-  multiplier_applied — the `vm_issuance_multiplier` in effect when this entry was written, so a
-  balance stays explainable even after the multiplier later changes)
-- `reward_rules` (activity_kind — video|story|ai_chat|role_play|quiz|boss_quiz|pulse_check|..,
-  default_xp, default_vm, active) — admin-editable; XP and VM are earned independently (no
-  conversion rate between them), and an individual lesson/quiz's content can override its kind's
-  default. See `docs/ECONOMY.md` for the seeded starting values and the simulation behind them.
+**Economy** (Phase 3 Checkpoint 2 — built; see `docs/ARCHITECTURE.md` D26 and the `money-ledger`
+skill for the full idempotency/reversal design)
+- `xp_events` (user_id, amount, source_type, source_id, rule_id → `reward_rules.id` nullable,
+  reason) — append-only, no update/delete path anywhere in the codebase (same convention as
+  `activity_logs`). Unique index on `(user_id, source_type, source_id)` is the idempotency
+  mechanism: a crediting insert conflicts (no-ops) if this exact `(user, source)` was already
+  credited. `rule_id` is null for a non-rule-based entry (a reversal, or a future manual
+  adjustment).
+- `vmoney_ledger` — same shape as `xp_events` plus `multiplier_applied` (the
+  `vm_issuance_multiplier` in effect when this entry was written, so a balance stays explainable
+  even after the multiplier later changes). `amount` is `bigint({ mode: "number" })` per CLAUDE.md
+  rule 2 (`xp_events.amount` is a plain `integer` — XP isn't money). A reversal is a new row with
+  a negative amount and its own distinct `source_type`/`source_id` (e.g. `source_type:
+  "reversal"`, `source_id: <original row's id>`) — never an UPDATE/DELETE of the original, and
+  never reusing the original's `(source_type, source_id)`, which would collide with its own
+  unique index.
+- `reward_rules` (activity_kind — video|story|ai_chat|role_play|quiz|boss_quiz, unique —
+  default_xp, default_vm, active) — admin-editable (`/admin/settings`, `economy.manage`); XP and
+  VM are earned independently (no conversion rate between them), seeded from
+  `docs/ECONOMY.md`'s decided 3× values (`pnpm seed:reward-rules`). `lessons.xp_override`/
+  `vm_override` (nullable integer columns, null = use the kind's `reward_rules` default) let an
+  individual lesson pay a different amount — no admin UI for setting them yet, see D26.
+  `activity_kind` names differ from `lessons.kind` in one place ("ai_chat" here is the
+  "doubt_zone" lesson kind) — `src/server/economy/service.ts`'s `activityKindForLessonKind` maps
+  between them. Crediting happens once per user per lesson, on the first *successful* completion
+  (`docs/ECONOMY.md` decision 4 defines "successful" per lesson kind) — wired into
+  `quiz-attempts/service.ts`'s attempt-completion path for video/quiz/role_play/boss_quiz;
+  story/doubt_zone credit from Checkpoint 3's own completion endpoint (no `quiz_attempts` row
+  exists for those kinds, D23).
 - `streaks` (user_id, scope `learning`|`pulse_check` — two independent habit loops, same shape,
   current, longest, last_active_date_ist, freezes_left, freezes_reset_on)
 - `badges`, `user_badges`

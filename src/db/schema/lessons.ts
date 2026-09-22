@@ -38,6 +38,11 @@ export const lessons = pgTable(
     title: jsonb("title").$type<LocalizedText>().notNull(),
     blurb: jsonb("blurb").$type<LocalizedText>().notNull(),
     content: jsonb("content").$type<Record<string, unknown>>().notNull(),
+    // Null = use reward_rules' default for this lesson's kind (the normal
+    // case). Set only when a specific lesson should pay a different amount
+    // than its kind's default (docs/DATA_MODEL.md, FEATURE_MAP WH-14).
+    xpOverride: integer("xp_override"),
+    vmOverride: integer("vm_override"),
     status: lessonStatusEnum("status").default("draft").notNull(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishedBy: uuid("published_by").references(() => staffMembers.id, {

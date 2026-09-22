@@ -21,6 +21,7 @@
     "seed:mentors": "tsx scripts/seed-mentors.ts",
     "seed:worlds": "tsx scripts/seed-worlds.ts",
     "seed:settings": "tsx scripts/seed-settings.ts",
+    "seed:reward-rules": "tsx scripts/seed-reward-rules.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {

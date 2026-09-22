@@ -1,7 +1,9 @@
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
+import { getVmIssuanceMultiplier, listRewardRulesForAdmin } from "@/server/economy/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { EconomySettingsEditor } from "./economy-settings-editor";
 import { ScoringSettingsEditor } from "./scoring-settings-editor";
 
 export default async function SettingsPage() {
@@ -12,6 +14,8 @@ export default async function SettingsPage() {
   }
 
   const scoring = await getLessonFlowScoringSettings();
+  const rewardRules = await listRewardRulesForAdmin();
+  const vmIssuanceMultiplier = await getVmIssuanceMultiplier();
 
   return (
     <div className="space-y-8">
@@ -22,6 +26,7 @@ export default async function SettingsPage() {
       />
 
       <ScoringSettingsEditor scoring={scoring} />
+      <EconomySettingsEditor rewardRules={rewardRules} vmIssuanceMultiplier={vmIssuanceMultiplier} />
     </div>
   );
 }

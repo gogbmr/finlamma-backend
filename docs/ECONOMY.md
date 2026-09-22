@@ -179,3 +179,25 @@ balance stays fully explainable.
 These figures, plus the virtual-only Competition prizes, admin-editable mentors, and the in-scope
 templated report card decided earlier in this round, are now reflected in `docs/PRODUCT_SPEC.md`,
 `docs/DATA_MODEL.md`, `docs/ROADMAP.md` and the relevant `docs/FEATURE_MAP.md` rows.
+
+**4. "Successful completion" per lesson kind (Phase 3 Checkpoint 2) — what actually credits
+`reward_rules`' XP/VM.** A lesson is credited **once per user per lesson**, on the first
+successful completion; a failed first attempt never forfeits the reward, and any later replay
+(successful or not) never credits again. Idempotency is a DB unique constraint on
+`(userId, sourceType, sourceId=lessonId)` on both `xp_events` and `vmoney_ledger` (see
+`docs/DATA_MODEL.md`, the `money-ledger` skill) — crediting code always attempts the insert and
+treats a conflict as "already credited," which is what makes this correct across retries without
+tracking "has this been credited" separately.
+
+| Lesson kind | "Successful" means | Why |
+|---|---|---|
+| Video | The attempt reaches `completed` (every in-video pop quiz answered) | No pass/fail concept exists for a video anywhere else in the system — finishing it is the whole ask. |
+| Story, Doubt Zone (AI Chat) | The Checkpoint 3 completion endpoint marks it complete (served, then a server-measured minimum time elapsed) | These kinds have no graded steps and no `quiz_attempts` row at all (docs/ARCHITECTURE.md D23's known gap, closed in Checkpoint 3) — there is no accuracy to judge, only "did they actually engage with it." |
+| Quiz, Role Play | The attempt reaches `completed` | Same reasoning as Video — PRODUCT_SPEC.md never defines a pass mark for a plain Quiz or Role Play lesson, only for Boss Quiz. |
+| Boss Quiz | The attempt reaches `completed` **and** `accuracyPct >= settings_kv.lesson_flow_scoring.bossQuizPassMarkPct` (default 60%, D24) | Reuses the exact same pass mark that already gates the next world's unlock (D24) — a Boss Quiz a learner answered mostly wrong shouldn't pay the same reward as one they actually passed. A failed attempt doesn't block anything: the learner just starts a fresh attempt (new `attemptNumber`, same lesson id), and *that* attempt's success is what credits, since the idempotency key is per-lesson, not per-attempt. |
+
+A lesson's `xpOverride`/`vmOverride` (nullable columns on `lessons`, `null` = use the kind's
+`reward_rules` default) let an individual lesson pay a different amount than its kind's default —
+decided in `docs/DATA_MODEL.md`'s `reward_rules` entry, no admin UI for setting them yet (the
+per-lesson override is a natural extension of the Phase 2b lesson content editor, deferred until a
+real lesson actually needs a non-default amount).

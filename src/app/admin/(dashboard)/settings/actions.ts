@@ -6,6 +6,9 @@ import { ZodError } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
+import type { RewardActivityKind } from "@/server/economy/repo";
+import { RewardRuleUpdateSchema, VmIssuanceMultiplierSchema } from "@/server/economy/schemas";
+import { updateRewardRuleForAdmin, updateVmIssuanceMultiplier } from "@/server/economy/service";
 import { LessonFlowScoringSchema } from "@/server/settings/schemas";
 import { updateLessonFlowScoringSettings } from "@/server/settings/service";
 
@@ -32,6 +35,27 @@ export async function updateLessonFlowScoringAction(input: unknown): Promise<Act
     const actor = await requireStaff("settings.manage");
     const parsed = LessonFlowScoringSchema.parse(input);
     await updateLessonFlowScoringSettings(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updateVmIssuanceMultiplierAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("economy.manage");
+    const parsed = VmIssuanceMultiplierSchema.parse(input);
+    await updateVmIssuanceMultiplier(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updateRewardRuleAction(
+  activityKind: RewardActivityKind,
+  input: unknown,
+): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("economy.manage");
+    const parsed = RewardRuleUpdateSchema.parse(input);
+    await updateRewardRuleForAdmin(actor, activityKind, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }

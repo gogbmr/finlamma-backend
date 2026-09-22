@@ -70,6 +70,16 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
+const mockCreditLessonCompletion = vi.fn();
+vi.mock("@/server/economy/service", () => ({
+  creditLessonCompletion: (
+    user: unknown,
+    lesson: unknown,
+    successful: unknown,
+    meta: unknown,
+  ) => mockCreditLessonCompletion(user, lesson, successful, meta),
+}));
+
 import { serveStep, submitAnswer } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -644,6 +654,117 @@ describe("submitAnswer", () => {
     expect(result.isAttemptComplete).toBe(false);
     expect(result.totalXpPreview).toBeNull();
     expect(mockCompleteLessonProgress).not.toHaveBeenCalled();
+    expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
+  });
+
+  describe("XP/VM crediting (docs/ECONOMY.md decision 4, docs/ARCHITECTURE.md D26)", () => {
+    it("credits a non-Boss-Quiz kind as successful on completion, no accuracy gate", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "role_play" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      // Every step wrong - still "successful" for a non-Boss-Quiz kind.
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 0 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID, kind: "role_play" }),
+        true,
+        META,
+      );
+    });
+
+    it("credits a Boss Quiz as successful once accuracyPct clears the pass mark", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "boss_quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      // 100% - clears the default 60% bossQuizPassMarkPct.
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID, kind: "boss_quiz" }),
+        true,
+        META,
+      );
+    });
+
+    it("does NOT credit a Boss Quiz that completed below the pass mark - not successful", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "boss_quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      // 0% - well below the default 60% bossQuizPassMarkPct.
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 0 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      // completeLessonProgress still runs (D23: "completed" tracks
+      // finishing, not passing) - only the credit call gets successful:false.
+      expect(mockCompleteLessonProgress).toHaveBeenCalledWith(USER.id, LESSON_ID);
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID, kind: "boss_quiz" }),
+        false,
+        META,
+      );
+    });
+
+    it("passes the lesson's xpOverride/vmOverride through to creditLessonCompletion", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ xpOverride: 999, vmOverride: 500 }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ xpOverride: 999, vmOverride: 500 }),
+        true,
+        META,
+      );
+    });
   });
 
   it("falls back to the concurrent winner's stored row when gradeQuestionAnswer loses a race", async () => {

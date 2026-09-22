@@ -1,6 +1,7 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { extractQuestionIds } from "@/server/lessons/service";
 import { VideoContentSchema } from "@/server/lessons/schemas";
@@ -292,6 +293,22 @@ export async function submitAnswer(
       // admin unpublish-warning (src/server/lessons/service.ts) - see
       // docs/ARCHITECTURE.md D23.
       await completeLessonProgress(user.id, lessonId);
+      // docs/ECONOMY.md's per-lesson-kind "successful completion" rule: a
+      // Boss Quiz must also clear the same pass mark that gates world
+      // unlock (D24) to credit - completing-but-failing doesn't forfeit
+      // anything, the learner just retries (a fresh attempt, same lesson
+      // id, so the next PASS is still the one that credits - idempotency
+      // is keyed on (user, lesson), never on a specific attempt). Every
+      // other graded kind (video/quiz/role_play) credits on completion
+      // alone, no accuracy gate.
+      const successful =
+        lesson.kind === "boss_quiz" ? accuracyPct >= settings.bossQuizPassMarkPct : true;
+      await creditLessonCompletion(
+        user,
+        { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
+        successful,
+        meta,
+      );
     } else {
       // Already completed by a concurrent duplicate last-step submit -
       // reflect the real, already-completed state rather than claiming

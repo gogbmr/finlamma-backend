@@ -81,9 +81,9 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       XP is preview-only (D17) and each step grades once, idempotently, but a real abuse/
       resource-consumption vector once this phase wires XP to `vmoney_ledger`.
 - [ ] XP events, levels, world unlocks
-- [ ] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
+- [x] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
       `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
-- [ ] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
+- [x] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
       on every ledger entry
 - [ ] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month; daily goal
 - [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
