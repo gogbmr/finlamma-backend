@@ -128,6 +128,13 @@ describe("happy path", () => {
     expect(mockUpdateVmIssuanceMultiplier).not.toHaveBeenCalled();
   });
 
+  it("updateVmIssuanceMultiplierAction rejects a value above the max without calling the service", async () => {
+    const result = await updateVmIssuanceMultiplierAction(3.01);
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdateVmIssuanceMultiplier).not.toHaveBeenCalled();
+  });
+
   it("updateRewardRuleAction updates and revalidates", async () => {
     mockUpdateRewardRuleForAdmin.mockResolvedValueOnce({
       activityKind: "video",
@@ -155,6 +162,17 @@ describe("happy path", () => {
   it("updateRewardRuleAction rejects a negative XP/VM value without calling the service", async () => {
     const result = await updateRewardRuleAction("video", {
       defaultXp: -1,
+      defaultVm: 30,
+      active: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdateRewardRuleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("updateRewardRuleAction rejects an amount above the max without calling the service", async () => {
+    const result = await updateRewardRuleAction("video", {
+      defaultXp: 50_000,
       defaultVm: 30,
       active: true,
     });
