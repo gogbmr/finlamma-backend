@@ -1,7 +1,11 @@
 "use client";
 
+import { Globe2 } from "lucide-react";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { EmptyState } from "@/components/admin/empty-state";
+import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -57,6 +61,16 @@ export function WorldEditor({
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(worlds[0]?.id ?? "new");
 
+  if (worlds.length === 0 && !canManage) {
+    return (
+      <EmptyState
+        icon={Globe2}
+        title="No worlds yet"
+        description="A staff member with world.manage can create the first one."
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -110,10 +124,10 @@ function LocalizedFields({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-neutral-800">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
       {LANGUAGES.map((lang) => (
         <div key={lang} className="space-y-1">
-          <label className="text-xs font-medium uppercase text-neutral-500">{lang}</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
           <Textarea
             value={value[lang]}
             disabled={disabled}
@@ -151,7 +165,7 @@ function MentorSelect({
           ))}
         </SelectContent>
       </Select>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         Publishing this world requires the chosen mentor to already be published.
       </p>
     </div>
@@ -192,7 +206,7 @@ function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Display order</Label>
@@ -248,6 +262,7 @@ function WorldForm({
   const [title, setTitle] = useState<LocalizedText>(world.title);
   const [tagline, setTagline] = useState<LocalizedText>(world.tagline);
   const [reorderTarget, setReorderTarget] = useState("");
+  const [confirmMentorChange, setConfirmMentorChange] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isDraft = world.status === "draft";
@@ -273,13 +288,13 @@ function WorldForm({
 
   function saveDraft() {
     if (affectedDoubtZoneLessons.length > 0) {
-      const titles = affectedDoubtZoneLessons.map((l) => l.title.en || l.id).join(", ");
-      const confirmed = window.confirm(
-        `Changing the mentor will leave these Doubt Zone lessons scripted for the old mentor: ` +
-          `${titles}. Review/update their scripts after saving. Continue?`,
-      );
-      if (!confirmed) return;
+      setConfirmMentorChange(true);
+      return;
     }
+    doSaveDraft();
+  }
+
+  function doSaveDraft() {
     startTransition(async () => {
       const result = await updateWorldDraftAction({
         id: world.id,
@@ -359,19 +374,11 @@ function WorldForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-        <span
-          className={
-            world.status === "published"
-              ? "rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-              : "rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-          }
-        >
-          {world.status}
-        </span>
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <StatusBadge status={world.status}>{world.status}</StatusBadge>
         {!isDraft && (
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-muted-foreground">
             Published - only title/tagline can be fixed directly below. Everything else needs
             unpublish first.
           </span>
@@ -379,7 +386,7 @@ function WorldForm({
       </div>
 
       {affectedDoubtZoneLessons.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
           Changing the mentor will leave {affectedDoubtZoneLessons.length} Doubt Zone lesson
           {affectedDoubtZoneLessons.length > 1 ? "s" : ""} scripted for the old mentor (
           {originalMentorKey}):
@@ -393,7 +400,7 @@ function WorldForm({
       )}
 
       {canManage && (
-        <div className="flex items-end gap-2 rounded-md border border-neutral-200 bg-neutral-50 p-3">
+        <div className="flex items-end gap-2 rounded-md border border-border bg-muted/50 p-3">
           <div className="space-y-1">
             <Label>Move to position</Label>
             <Input
@@ -407,7 +414,7 @@ function WorldForm({
           <Button type="button" variant="outline" size="sm" onClick={reorder} disabled={isPending}>
             Move
           </Button>
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-muted-foreground">
             Works on published worlds too, and shifts everyone between the old and new position -
             no unpublish needed.
           </p>
@@ -490,6 +497,26 @@ function WorldForm({
           </Button>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmMentorChange}
+        onOpenChange={setConfirmMentorChange}
+        title="Change this world's mentor?"
+        description={
+          <>
+            Changing the mentor will leave {affectedDoubtZoneLessons.length} Doubt Zone lesson
+            {affectedDoubtZoneLessons.length > 1 ? "s" : ""} scripted for the old mentor (
+            {originalMentorKey}): {affectedDoubtZoneLessons.map((l) => l.title.en || l.id).join(", ")}.
+            Review/update their scripts after saving.
+          </>
+        }
+        confirmLabel="Save anyway"
+        destructive={false}
+        onConfirm={() => {
+          setConfirmMentorChange(false);
+          doSaveDraft();
+        }}
+      />
     </div>
   );
 }

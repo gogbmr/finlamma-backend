@@ -1,4 +1,5 @@
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
@@ -46,14 +47,11 @@ export default async function WorldsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Worlds</h1>
-        <p className="text-sm text-neutral-600">
-          The 7 worlds a learner clears in order. Publish is blocked until every en/hi/hx field is
-          filled, and until the world&apos;s mentor is itself published. A mentor can&apos;t be
-          unpublished while a published world still references it.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Worlds" }]}
+        title="Worlds"
+        description="The 7 worlds a learner clears in order. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it."
+      />
 
       <WorldEditor
         worlds={worlds.map((w) => ({

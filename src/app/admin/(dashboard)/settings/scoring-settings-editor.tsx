@@ -48,9 +48,9 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-neutral-200 p-4">
-      <h2 className="text-sm font-semibold text-neutral-800">Lesson Flow scoring</h2>
-      <p className="text-xs text-neutral-500">
+    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+      <h2 className="text-sm font-semibold text-foreground">Lesson Flow scoring</h2>
+      <p className="text-xs text-muted-foreground">
         Video pop quiz (LF-12) and lesson practice quiz (LF-22) each have their own base XP; speed
         bonus, combo and fever mode are shared.
       </p>
@@ -118,7 +118,7 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
           onChange={(v) => setForm({ ...form, bossQuizPassMarkPct: v })}
         />
       </div>
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs text-muted-foreground">
         A Boss Quiz attempt below the pass mark doesn&apos;t unlock the next world - the learner
         can simply retry.
       </p>

@@ -1,7 +1,12 @@
 "use client";
 
+import { BookOpen } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
+import { EmptyState } from "@/components/admin/empty-state";
+import { StatusBadge } from "@/components/admin/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,6 +81,16 @@ export function LessonEditor({
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(lessons[0]?.id ?? "new");
 
+  if (lessons.length === 0 && !canManage) {
+    return (
+      <EmptyState
+        icon={BookOpen}
+        title="No lessons in this world yet"
+        description="A staff member with lesson.manage can create the first one."
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
@@ -128,10 +143,10 @@ function LocalizedFields({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-neutral-800">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
       {LANGUAGES.map((lang) => (
         <div key={lang} className="space-y-1">
-          <label className="text-xs font-medium uppercase text-neutral-500">{lang}</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
           <Textarea
             value={value[lang]}
             disabled={disabled}
@@ -204,7 +219,7 @@ function NewLessonForm({ worldId }: { worldId: string }) {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
       <div className="grid grid-cols-3 gap-3">
         <div className="space-y-1">
           <Label>Chapter (1-8)</Label>
@@ -270,6 +285,7 @@ function LessonForm({
   const [blurb, setBlurb] = useState<LocalizedText>(lesson.blurb);
   const [contentText, setContentText] = useState(JSON.stringify(lesson.content, null, 2));
   const [preview, setPreview] = useState<PreviewData | null>(null);
+  const [confirmUnpublish, setConfirmUnpublish] = useState(false);
 
   const isDraft = lesson.status === "draft";
   const editable = canManage && isDraft;
@@ -336,13 +352,13 @@ function LessonForm({
     // 404 them until it's republished or fixed. Save fix is the
     // lower-disruption alternative.
     if (lesson.inProgressLearnerCount > 0) {
-      const confirmed = window.confirm(
-        `${lesson.inProgressLearnerCount} learner${lesson.inProgressLearnerCount > 1 ? "s are" : " is"} ` +
-          `currently mid-lesson on this. Unpublishing will 404 them until it's fixed or republished - ` +
-          `consider "Save fix" instead if you're just correcting content. Unpublish anyway?`,
-      );
-      if (!confirmed) return;
+      setConfirmUnpublish(true);
+      return;
     }
+    doUnpublish();
+  }
+
+  function doUnpublish() {
     startTransition(async () => {
       const result = await unpublishLessonAction({ id: lesson.id });
       if (!result.ok) {
@@ -381,41 +397,33 @@ function LessonForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
       {mentorMismatch && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
           This Doubt Zone script was written for mentor &quot;{scriptedMentorKey}&quot;, but this
           world&apos;s current mentor is &quot;{worldMentorKey}&quot;. Review the script before
           publishing.
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-        <span
-          className={
-            lesson.status === "published"
-              ? "rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-              : "rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-          }
-        >
-          {lesson.status}
-        </span>
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <StatusBadge status={lesson.status}>{lesson.status}</StatusBadge>
         <span>Kind: {KIND_LABELS[lesson.kind] ?? lesson.kind} (fixed, can&apos;t change after creation)</span>
         {!isDraft && (
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-muted-foreground">
             Published - title/blurb/content can be fixed directly below. Chapter/step need
             unpublish first.
           </span>
         )}
         {!isDraft && lesson.inProgressLearnerCount > 0 && (
-          <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
+          <Badge variant="info">
             {lesson.inProgressLearnerCount} learner{lesson.inProgressLearnerCount > 1 ? "s" : ""} mid-lesson
-          </span>
+          </Badge>
         )}
       </div>
 
       {isBossQuiz && !isDraft && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
           This is a world&apos;s Boss Quiz - it can never be unpublished (it gates every later
           world&apos;s unlock). Use &quot;Save fix&quot; to correct it instead.
         </div>
@@ -486,6 +494,22 @@ function LessonForm({
       </div>
 
       {preview && <LessonPreview data={preview} onClose={() => setPreview(null)} />}
+
+      <ConfirmDialog
+        open={confirmUnpublish}
+        onOpenChange={setConfirmUnpublish}
+        title="Unpublish this lesson?"
+        description={
+          `${lesson.inProgressLearnerCount} learner${lesson.inProgressLearnerCount > 1 ? "s are" : " is"} ` +
+          `currently mid-lesson on this. Unpublishing will 404 them until it's fixed or republished - ` +
+          `consider "Save fix" instead if you're just correcting content.`
+        }
+        confirmLabel="Unpublish anyway"
+        onConfirm={() => {
+          setConfirmUnpublish(false);
+          doUnpublish();
+        }}
+      />
     </div>
   );
 }

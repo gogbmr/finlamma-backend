@@ -1,26 +1,109 @@
 @import "tailwindcss";
 
+/* Finlamma design tokens - extracted from the brand sheet at
+   ui_file/Finlamma_UI/assets/brand-sheet.png (read-only prototype, Checkpoint 7).
+   Core tokens (background/foreground/primary/...) follow shadcn's naming so
+   every existing src/components/ui/* primitive can read them directly.
+   Two extra groups sit alongside: `--status-*` (admin content-status badges)
+   and `--marketing-*` (homepage hero band only - never used in /admin, per
+   the "brand colour as accent only, not the playful game UI" brief). */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --radius: 0.625rem;
+
+  /* Core - shadcn-shaped, used everywhere (admin + the homepage's light sections) */
+  --background: #f7f6fb;
+  --foreground: #1e1b2e;
+  --card: #ffffff;
+  --card-foreground: #1e1b2e;
+  --popover: #ffffff;
+  --popover-foreground: #1e1b2e;
+  --primary: #7c3aed;
+  --primary-foreground: #ffffff;
+  --secondary: #ede9fe;
+  --secondary-foreground: #4822bb;
+  --muted: #f1f0f7;
+  --muted-foreground: #6b6478;
+  --accent: #ede9fe;
+  --accent-foreground: #4822bb;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e4e1ee;
+  --input: #e4e1ee;
+  --ring: #7c3aed;
+
+  /* Brand raw scale - logo marks, marketing accents. Reach for the semantic
+     tokens above first; these exist for the handful of spots that need the
+     literal brand hue rather than its UI role (e.g. a decorative gradient). */
+  --brand-violet-900: #4822bb;
+  --brand-violet-600: #7c3aed;
+  --brand-violet-400: #9d5cff;
+  --brand-violet-100: #ede9fe;
+
+  /* Admin content-status badges - the amber/green/blue already used ad hoc
+     across the editors (draft/published/in-progress), now named. */
+  --status-draft-bg: #fef3c7;
+  --status-draft-fg: #92400e;
+  --status-published-bg: #dcfce7;
+  --status-published-fg: #166534;
+  --status-in-progress-bg: #dbeafe;
+  --status-in-progress-fg: #1e40af;
+
+  /* Marketing-only - the homepage hero band exclusively. Never used in
+     /admin, which stays light/professional throughout. */
+  --marketing-deep-950: #070518;
+  --marketing-deep-900: #0f0728;
+  --marketing-deep-800: #1a0b3d;
+  --marketing-gold: #fde68a;
 }
 
 @theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-brand-violet-900: var(--brand-violet-900);
+  --color-brand-violet-600: var(--brand-violet-600);
+  --color-brand-violet-400: var(--brand-violet-400);
+  --color-brand-violet-100: var(--brand-violet-100);
+
+  --color-status-draft-bg: var(--status-draft-bg);
+  --color-status-draft-fg: var(--status-draft-fg);
+  --color-status-published-bg: var(--status-published-bg);
+  --color-status-published-fg: var(--status-published-fg);
+  --color-status-in-progress-bg: var(--status-in-progress-bg);
+  --color-status-in-progress-fg: var(--status-in-progress-fg);
+
+  --color-marketing-deep-950: var(--marketing-deep-950);
+  --color-marketing-deep-900: var(--marketing-deep-900);
+  --color-marketing-deep-800: var(--marketing-deep-800);
+  --color-marketing-gold: var(--marketing-gold);
+
+  --font-sans: var(--font-poppins);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }

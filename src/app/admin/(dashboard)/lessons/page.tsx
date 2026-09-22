@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
+import { cn } from "@/lib/cn";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
@@ -32,8 +34,11 @@ export default async function LessonsPage({
   if (!selectedWorld) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-semibold">Lessons</h1>
-        <p className="text-sm text-neutral-600">
+        <PageHeader
+          breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Lessons" }]}
+          title="Lessons"
+        />
+        <p className="text-sm text-muted-foreground">
           No worlds exist yet - create one at{" "}
           <Link href="/admin/worlds" className="underline">
             Worlds
@@ -55,25 +60,23 @@ export default async function LessonsPage({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Lessons</h1>
-        <p className="text-sm text-neutral-600">
-          Each world is a trail of up to 8 chapters x 5 steps. Publish is blocked until every
-          en/hi/hx field (title, blurb, every localized field inside content) is filled, and until
-          the lesson&apos;s world is itself published.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Lessons" }]}
+        title="Lessons"
+        description="Each world is a trail of up to 8 chapters x 5 steps. Publish is blocked until every en/hi/hx field (title, blurb, every localized field inside content) is filled, and until the lesson's world is itself published."
+      />
 
       <div className="flex flex-wrap gap-2">
         {worlds.map((w) => (
           <Link
             key={w.id}
             href={`/admin/lessons?worldId=${w.id}`}
-            className={
+            className={cn(
+              "rounded-md px-3 py-1.5 text-sm",
               w.id === selectedWorld.id
-                ? "rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white"
-                : "rounded-md border border-neutral-200 px-3 py-1.5 text-sm hover:bg-neutral-100"
-            }
+                ? "bg-primary text-primary-foreground"
+                : "border border-border hover:bg-accent hover:text-accent-foreground",
+            )}
           >
             {w.order}. {w.title.en || "(untitled)"}
           </Link>

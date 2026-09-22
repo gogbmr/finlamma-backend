@@ -1,7 +1,10 @@
 "use client";
 
+import { HelpCircle } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/admin/empty-state";
+import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +73,16 @@ export function QuestionEditor({
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(questions[0]?.id ?? "new");
 
+  if (questions.length === 0 && !canManage) {
+    return (
+      <EmptyState
+        icon={HelpCircle}
+        title="No questions yet"
+        description="A staff member with question.manage can create the first one."
+      />
+    );
+  }
+
   return (
     <div className="space-y-4">
       <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
@@ -119,10 +132,10 @@ function LocalizedFields({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-neutral-800">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
       {LANGUAGES.map((lang) => (
         <div key={lang} className="space-y-1">
-          <label className="text-xs font-medium uppercase text-neutral-500">{lang}</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
           <Textarea
             value={value[lang]}
             disabled={disabled}
@@ -195,7 +208,7 @@ function NewQuestionForm() {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Format</Label>
@@ -349,20 +362,12 @@ function QuestionForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-        <span
-          className={
-            question.status === "published"
-              ? "rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-              : "rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-          }
-        >
-          {question.status}
-        </span>
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <StatusBadge status={question.status}>{question.status}</StatusBadge>
         <span>Format: {FORMAT_LABELS[question.format]} (fixed, can&apos;t change after creation)</span>
         {!isDraft && (
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-muted-foreground">
             Published - prompt/explanation/payload/answer can be fixed directly below. Topic needs
             unpublish first.
           </span>

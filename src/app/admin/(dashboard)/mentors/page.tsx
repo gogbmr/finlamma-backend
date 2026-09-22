@@ -1,4 +1,5 @@
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
@@ -22,13 +23,11 @@ export default async function MentorsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Mentors</h1>
-        <p className="text-sm text-neutral-600">
-          The mentor evolution stages (Baby/Father/Grandpa Lamma) shown as the learner clears
-          worlds. Publish is blocked until every en/hi/hx field is filled.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Mentors" }]}
+        title="Mentors"
+        description="The mentor evolution stages (Baby/Father/Grandpa Lamma) shown as the learner clears worlds. Publish is blocked until every en/hi/hx field is filled."
+      />
 
       <MentorEditor
         mentors={mentors.map((m) => ({

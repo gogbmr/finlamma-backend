@@ -1,4 +1,5 @@
 import { Forbidden } from "@/components/admin/forbidden";
+import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { ScoringSettingsEditor } from "./scoring-settings-editor";
@@ -14,12 +15,11 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold">Settings</h1>
-        <p className="text-sm text-neutral-600">
-          Admin-tunable constants that affect every learner immediately. Every change is logged.
-        </p>
-      </div>
+      <PageHeader
+        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Settings" }]}
+        title="Settings"
+        description="Admin-tunable constants that affect every learner immediately. Every change is logged."
+      />
 
       <ScoringSettingsEditor scoring={scoring} />
     </div>

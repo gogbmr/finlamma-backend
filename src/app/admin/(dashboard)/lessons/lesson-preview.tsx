@@ -47,9 +47,9 @@ export function LessonPreview({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-neutral-300 bg-white p-4 shadow-sm">
+    <div className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-neutral-800">
+        <p className="text-sm font-medium text-foreground">
           Preview - this is the exact answer-free shape the app receives (see
           docs/ARCHITECTURE.md D18) for a published lesson at this position.
         </p>
@@ -72,13 +72,13 @@ export function LessonPreview({
         ))}
       </div>
 
-      <div className="space-y-2 rounded-md bg-neutral-50 p-3">
-        <p className="text-xs uppercase text-neutral-500">
+      <div className="space-y-2 rounded-md bg-muted/50 p-3">
+        <p className="text-xs text-muted-foreground uppercase">
           Ch{localized.chapter}/Step{localized.step} - {localized.kind}
         </p>
-        <h3 className="text-base font-semibold">{localized.title}</h3>
-        <p className="text-sm text-neutral-700">{localized.blurb}</p>
-        <pre className="mt-2 overflow-x-auto rounded bg-neutral-900 p-2 text-xs text-neutral-100">
+        <h3 className="text-base font-semibold text-foreground">{localized.title}</h3>
+        <p className="text-sm text-foreground/80">{localized.blurb}</p>
+        <pre className="mt-2 overflow-x-auto rounded bg-foreground p-2 text-xs text-background">
           {JSON.stringify(localized.content, null, 2)}
         </pre>
       </div>

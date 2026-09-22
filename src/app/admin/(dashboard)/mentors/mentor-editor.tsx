@@ -1,7 +1,10 @@
 "use client";
 
+import { Users } from "lucide-react";
 import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/admin/empty-state";
+import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,6 +51,16 @@ export function MentorEditor({
   canPublish: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(mentors[0]?.id ?? "new");
+
+  if (mentors.length === 0 && !canManage) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="No mentors yet"
+        description="A staff member with mentor.manage can create the first one."
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -100,10 +113,10 @@ function LocalizedFields({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium text-neutral-800">{label}</p>
+      <p className="text-sm font-medium text-foreground">{label}</p>
       {LANGUAGES.map((lang) => (
         <div key={lang} className="space-y-1">
-          <label className="text-xs font-medium uppercase text-neutral-500">{lang}</label>
+          <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
           <Textarea
             value={value[lang]}
             disabled={disabled}
@@ -149,7 +162,7 @@ function NewMentorForm() {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <Label>Key (slug)</Label>
@@ -285,20 +298,12 @@ function MentorForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-neutral-200 p-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-        <span
-          className={
-            mentor.status === "published"
-              ? "rounded bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800"
-              : "rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800"
-          }
-        >
-          {mentor.status}
-        </span>
+    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+        <StatusBadge status={mentor.status}>{mentor.status}</StatusBadge>
         <span>Key: {mentor.key}</span>
         {!isDraft && (
-          <span className="text-xs text-neutral-500">
+          <span className="text-xs text-muted-foreground">
             Published - only name/bio can be fixed directly below. Everything else needs unpublish first.
           </span>
         )}
