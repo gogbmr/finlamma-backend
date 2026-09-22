@@ -1,5 +1,25 @@
 # Status
 
+## 2026-09-22 — Phase 2b merged to `main` and verified in production. Next: Phase 3a.
+
+`phase-2b-content` merged into `main` via merge commit `3b0d147` (21 commits, kept the branch),
+after `/phase-audit 2b` below passed with its one Medium finding fixed pre-merge.
+
+**Production, verified post-merge against `https://finlamma-backend-rho.vercel.app`:**
+- `GET /api/v1/health`: `version` is `3b0d147`, matching the merge commit exactly. `status`,
+  `database`, `migrations`, `clerkKeys`, `storage`, `consentPiiHmacKey` all `ok`.
+  `tradingUnlockWorldMissing: false`. `worldsMissingBossQuiz` still lists all 7 seeded worlds -
+  this is the pre-existing pre-launch blocker tracked below (2026-09-21 entry), not a merge
+  regression; nothing in Phase 2b was expected to close it.
+- `legalDocuments: "placeholder"` is expected (real text pending outside legal review) - unrelated
+  to this merge, tracked on the pre-launch checklist.
+
+**Phase 2b is fully verified end to end and closed.** Phase 3 is split into two branches per the
+`/phase-kickoff 3` plan: **Phase 3a** (rate limiting, core XP/VM ledger, story/doubt-zone
+completion, streaks, XP/level/VM stat endpoints) merges first and gets its own `/phase-audit`;
+**Phase 3b** (badges, rewards, certificates, weekly report card) starts on a fresh branch only
+after 3a merges to `main`. Next up: Phase 3a.
+
 ## 2026-09-22 — `/phase-audit 2b`: PASS, 1 Medium security finding fixed before merge
 
 Full audit of Phase 2b (`docs/ROADMAP.md`'s 7 ticked items + all 42 `docs/FEATURE_MAP.md` rows
