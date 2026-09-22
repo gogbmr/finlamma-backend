@@ -117,6 +117,17 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
    (compares the latest local migration in `drizzle/meta/_journal.json` against
    `drizzle.__drizzle_migrations`) exists to catch this after the fact — treat it as a safety
    net, not a substitute for running `pnpm db:migrate` before pushing.
+   **Preview and production share one database.** Because of that, the rule above cuts both
+   ways: a destructive migration (drop/rename a column or table, add `NOT NULL` without a
+   default) must be applied only after the code that stops depending on the old shape has
+   actually been deployed to **production** (`main`) — not merely committed on a feature
+   branch. Applying it earlier breaks whatever `main` currently has deployed, since `main`'s
+   code still queries/writes the old columns against the same database. Additive migrations
+   (new nullable column, new table, new default) carry no such ordering constraint and may
+   still go first, before merge. (Incident: dropping `mentors.world_range_start/end` while
+   `main` was still `a1bced1` broke `GET /api/v1/mentors`, `GET /api/v1/mentors/{key}` and
+   `/admin/mentors` in production, since `main`'s Drizzle schema still selected/inserted those
+   columns.)
 9. **Secrets**: never read `.env*` files or print secrets. New variables go into `.env.example`
    and `src/lib/env.ts`, and you tell the user what to add.
 10. **Privacy (kid-safe)**: public display name = first name + last initial. No photos, no chat

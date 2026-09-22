@@ -15,6 +15,7 @@ paths: "src/db/**, drizzle/**"
 3. Open the generated SQL and review it. Flag to the user in plain English anything that:
    drops or renames a column/table, rewrites a large table, adds NOT NULL without a default,
    or changes a type. For renames, prefer add-new → backfill → switch reads → drop-old later.
+   Anything in this flagged category is a **destructive migration** - see step 7.
 4. Update `docs/DATA_MODEL.md` if the change is meaningful.
 5. Ask the user before running `pnpm db:migrate`. Explain what will change.
 6. After migrating, run the tests that touch the changed tables.
@@ -25,3 +26,13 @@ paths: "src/db/**, drizzle/**"
    from what's actually live - `GET /api/v1/health`'s `migrations` field exists specifically to
    catch this class of drift, but the fix is to run `pnpm db:migrate` before shipping, not to
    rely on the health check noticing after the fact.
+8. **Preview and production share one database, so a destructive migration (drop/rename a
+   column or table, add NOT NULL without a default) may only be applied AFTER the code that
+   stops depending on the old shape has been deployed to production (`main`)** - not merely
+   committed on a feature/preview branch. `main`'s currently-deployed code keeps
+   selecting/inserting the old columns until it's actually redeployed, so an early drop breaks
+   production immediately, even though the branch that dropped it was never merged. Before
+   applying a destructive migration, check what `main` actually has deployed (`git log
+   origin/main -1`, `git show origin/main:<path>`) and confirm it no longer references the
+   column/table being removed. Additive migrations (new nullable column, new table, new
+   default) have no such ordering constraint and may be applied before merge.
