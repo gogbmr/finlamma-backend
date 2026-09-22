@@ -1,5 +1,41 @@
 # Status
 
+## 2026-09-22 — Known, temporary production issue: `/admin/mentors` and `GET /api/v1/mentors` are broken, resolved by the Phase 2b merge
+
+D25 (`docs/ARCHITECTURE.md`) dropped `mentors.world_range_start`/`world_range_end` on
+`phase-2b-content` (migration `drizzle/0020_cynical_nomad.sql`, applied to the shared database).
+**Preview and production share one database**, and `main` (still at `a1bced1`) has code
+(`src/server/mentors/repo.ts`, `schemas.ts`) that still selects and inserts those columns - every
+mentor query Drizzle generates on `main` now references columns that no longer exist.
+
+**Confirmed broken in production right now:**
+- `GET /api/v1/mentors` and `GET /api/v1/mentors/{key}` - will 500 past the auth gate (verified
+  the auth gate itself still works: an unauthenticated request correctly returns
+  `401 UNAUTHENTICATED`, but no valid session token was available to observe the failure past it;
+  confirmed instead by reading `main`'s `repo.ts`, which still does `db.select().from(mentors)`
+  including the dropped columns).
+- `/admin/mentors` - `getMentorEditorData()` → `listAllMentors()` throws uncaught, so the page
+  fails to render.
+
+**Nothing else is affected** - `main` doesn't have the `worlds` domain at all yet, so
+`GET /api/v1/worlds` and everything else are untouched. `GET /api/v1/health` still reports
+`status: ok`/`database: ok` in production, which is not evidence mentors works - health never
+queries the `mentors` table.
+
+**Accepted, not fixed now** (founder decision, 2026-09-22): the founder is the only staff user
+and tests on the preview deployment, not production `/admin/mentors`, so this is low-cost to
+leave until the Phase 2b merge - re-adding the columns temporarily was considered and declined.
+**Resolved automatically once `phase-2b-content` merges to `main`** (main's mentor code no longer
+references the dropped columns from that point on).
+
+**Post-merge checklist addition**: verify `/admin/mentors` and `GET /api/v1/mentors` work in
+production, alongside whatever else `/phase-audit 2b`'s post-merge verification already covers
+(see the Phase 2a merge entry below for the pattern this should follow).
+
+Standing rule added as a result (`CLAUDE.md` rule 8, `.claude/skills/db-migration/SKILL.md`): a
+destructive migration may only be applied after the code that stops depending on the old shape
+is deployed to production, not merely committed on a feature branch.
+
 ## 2026-09-21 — Pre-launch blocker: all 7 seeded worlds are missing a Boss Quiz
 
 Checkpoint 6 made sequential world-unlock real (`GET /api/v1/worlds`'s `locked` field,
