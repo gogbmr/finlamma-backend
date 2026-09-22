@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
 const mockRequireStaff = vi.fn();
+const mockRequireStaffAny = vi.fn();
 vi.mock("@/lib/auth", () => ({
   requireStaff: (permission: unknown) => mockRequireStaff(permission),
+  requireStaffAny: (permissions: unknown) => mockRequireStaffAny(permissions),
 }));
 
 vi.mock("next/headers", () => ({
@@ -97,8 +99,10 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishMentor).not.toHaveBeenCalled();
   });
 
-  it("uploadMentorArtAction: requires mentor.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.manage"));
+  it("uploadMentorArtAction: requires mentor.manage or mentor.publish", async () => {
+    mockRequireStaffAny.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: one of mentor.manage, mentor.publish"),
+    );
     const formData = new FormData();
     formData.set("id", MENTOR_ID);
     formData.set("file", new File([new Uint8Array([1, 2, 3])], "art.png", { type: "image/png" }));
@@ -106,6 +110,7 @@ describe("wrong role is rejected", () => {
     const result = await uploadMentorArtAction(formData);
 
     expect(result.ok).toBe(false);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["mentor.manage", "mentor.publish"]);
     expect(mockUploadMentorArt).not.toHaveBeenCalled();
   });
 
@@ -127,6 +132,7 @@ describe("wrong role is rejected", () => {
 describe("happy paths", () => {
   beforeEach(() => {
     mockRequireStaff.mockResolvedValue(ACTOR);
+    mockRequireStaffAny.mockResolvedValue(ACTOR);
   });
 
   it("createMentorDraftAction creates and revalidates", async () => {

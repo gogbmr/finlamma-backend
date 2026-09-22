@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
+import { roleHasPermission } from "@/server/staff/repo";
 import { listAllWorlds, listPublishedWorldsByMentorId } from "@/server/worlds/repo";
 import {
   getMentorById,
@@ -157,14 +159,32 @@ export async function updateMentorDraft(
   return updated;
 }
 
+// Same live-content trust tier as D20's hotfix mechanism (docs/ARCHITECTURE.md):
+// replacing a DRAFT mentor's art only needs mentor.manage (the normal editing
+// tier), but replacing a PUBLISHED mentor's art - instantly visible to every
+// learner, no review step - needs mentor.publish, exactly like the
+// name/bio hotfix path. Authoritative here (not just at the action layer),
+// since only this function knows the mentor's actual status. The action
+// layer's own requireStaff() call is a cheap early reject (at least one of
+// the two permissions), not the source of truth for which tier applies.
 export async function uploadMentorArt(
-  actor: { id: string },
+  actor: { id: string; roleId: string },
   id: string,
   file: { body: Buffer },
   meta: RequestMeta,
 ) {
   const mentor = await getMentorById(id);
   if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
+
+  const requiredPermission = mentor.status === "published" ? "mentor.publish" : "mentor.manage";
+  if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
+    throw new AppError(
+      "FORBIDDEN",
+      mentor.status === "published"
+        ? "Uploading art for a published mentor requires mentor.publish"
+        : "Missing permission: mentor.manage",
+    );
+  }
 
   if (file.body.byteLength > MAX_IMAGE_BYTES) {
     throw new AppError("VALIDATION_FAILED", "Art must be 2MB or smaller");
@@ -180,10 +200,11 @@ export async function uploadMentorArt(
     throw new AppError("VALIDATION_FAILED", "Art must be a valid PNG, JPEG or WebP image");
   }
 
-  // Server-generated key, never the client's filename - id + detected
-  // extension only, so nothing about the uploaded filename ever reaches
-  // storage.
-  const artKey = `mentors/${id}/art.${imageExtension(detectedType)}`;
+  // A unique key per upload (not a fixed per-mentor path) - replacing art
+  // never deletes or overwrites the previous object, so a bad upload to
+  // live content can be reverted by re-pointing artKey at the previous key
+  // recorded below, without needing the original file again.
+  const artKey = `mentors/${id}/${randomUUID()}.${imageExtension(detectedType)}`;
   await uploadObject(artKey, file.body, imageContentType(detectedType));
   const updated = await setMentorArtKey(id, artKey);
   if (!updated) throw new AppError("NOT_FOUND", "Mentor not found");
@@ -194,7 +215,7 @@ export async function uploadMentorArt(
     action: "mentor.art_uploaded",
     targetType: "mentor",
     targetId: id,
-    metadata: { key: mentor.key },
+    metadata: { key: mentor.key, previousArtKey: mentor.artKey, newArtKey: artKey },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });

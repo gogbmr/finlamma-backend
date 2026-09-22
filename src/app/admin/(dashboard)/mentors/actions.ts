@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { ZodError } from "zod";
-import { requireStaff } from "@/lib/auth";
+import { requireStaff, requireStaffAny } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
@@ -91,9 +91,14 @@ export async function hotfixMentorAction(input: unknown): Promise<ActionResult> 
 // called directly, not just through this form). The only real check is
 // uploadMentorArt's byte-level format sniff and size cap (src/lib/image.ts),
 // which this delegates to unconditionally.
+//
+// Gated on EITHER mentor.manage or mentor.publish here - a cheap early
+// reject only. uploadMentorArt itself (which already loads the mentor)
+// re-checks the exact required permission for this mentor's actual status
+// (manage for a draft, publish for a published one) - see its own comment.
 export async function uploadMentorArtAction(formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.manage");
+    const actor = await requireStaffAny(["mentor.manage", "mentor.publish"]);
     const id = MentorIdSchema.parse({ id: formData.get("id") }).id;
     const file = formData.get("file");
     if (!(file instanceof File)) {

@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
 const mockRequireStaff = vi.fn();
+const mockRequireStaffAny = vi.fn();
 vi.mock("@/lib/auth", () => ({
   requireStaff: (permission: unknown) => mockRequireStaff(permission),
+  requireStaffAny: (permissions: unknown) => mockRequireStaffAny(permissions),
 }));
 
 vi.mock("next/headers", () => ({
@@ -86,13 +88,15 @@ describe("wrong role is rejected", () => {
     expect(mockUpdateWorldDraft).not.toHaveBeenCalled();
   });
 
-  it("reorderWorldAction: requires world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.manage"));
+  it("reorderWorldAction: requires world.manage or world.publish", async () => {
+    mockRequireStaffAny.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: one of world.manage, world.publish"),
+    );
 
     const result = await reorderWorldAction({ id: WORLD_ID, newOrder: 2 });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("world.manage");
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["world.manage", "world.publish"]);
     expect(mockReorderWorld).not.toHaveBeenCalled();
   });
 
@@ -115,8 +119,10 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishWorld).not.toHaveBeenCalled();
   });
 
-  it("uploadWorldArtAction: requires world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.manage"));
+  it("uploadWorldArtAction: requires world.manage or world.publish", async () => {
+    mockRequireStaffAny.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: one of world.manage, world.publish"),
+    );
     const formData = new FormData();
     formData.set("id", WORLD_ID);
     formData.set("file", new File([new Uint8Array([1, 2, 3])], "art.png", { type: "image/png" }));
@@ -124,6 +130,7 @@ describe("wrong role is rejected", () => {
     const result = await uploadWorldArtAction(formData);
 
     expect(result.ok).toBe(false);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["world.manage", "world.publish"]);
     expect(mockUploadWorldArt).not.toHaveBeenCalled();
   });
 
@@ -157,6 +164,7 @@ describe("wrong role is rejected", () => {
 describe("happy paths", () => {
   beforeEach(() => {
     mockRequireStaff.mockResolvedValue(ACTOR);
+    mockRequireStaffAny.mockResolvedValue(ACTOR);
   });
 
   it("createWorldDraftAction creates and revalidates", async () => {

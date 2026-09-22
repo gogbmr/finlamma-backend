@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
 import { isForeignKeyViolation, isTransactionConflict, isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
@@ -13,6 +14,7 @@ import {
 import { getWorldIdsWithPassedBossQuiz } from "@/server/quiz-attempts/repo";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import type { LocalizedText } from "@/server/shared/schemas";
+import { roleHasPermission } from "@/server/staff/repo";
 import {
   deleteWorldRow,
   getWorldById,
@@ -182,16 +184,36 @@ export async function updateWorldDraft(
 
 // A real reorder (swap two worlds, move one to a new position) - see
 // moveWorldToPosition in repo.ts for how it stays safe under the unique
-// order index. Deliberately not draft-gated like updateWorldDraft: order is
-// a structural sequencing property, not reviewed content, so staff can
-// reorder published worlds too (e.g. re-prioritizing after launch) without
-// an unpublish/republish cycle.
+// order index. Not draft-gated like updateWorldDraft (order is a
+// structural sequencing property, not reviewed content, so staff can
+// reorder published worlds too, e.g. re-prioritizing after launch, without
+// an unpublish/republish cycle) - but the REQUIRED PERMISSION still depends
+// on the mover's status: reordering a draft world only needs world.manage,
+// while reordering a published one needs world.publish, the same trust bar
+// as publish/unpublish/delete. This matters because a published world's
+// order drives D25's position-based trading-unlock gate (`isTradingUnlocked`)
+// - moving worlds around can change which one sits at that position, so a
+// manage-only role shouldn't be able to do that unreviewed. Authoritative
+// here, not just at the action layer (see reorderWorldAction's comment).
 export async function reorderWorld(
-  actor: { id: string },
+  actor: { id: string; roleId: string },
   id: string,
   newOrder: number,
   meta: RequestMeta,
 ) {
+  const mover = await getWorldById(id);
+  if (!mover) throw new AppError("NOT_FOUND", "World not found");
+
+  const requiredPermission = mover.status === "published" ? "world.publish" : "world.manage";
+  if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
+    throw new AppError(
+      "FORBIDDEN",
+      mover.status === "published"
+        ? "Reordering a published world requires world.publish"
+        : "Missing permission: world.manage",
+    );
+  }
+
   const worldCount = (await listAllWorlds()).length;
   if (newOrder < 1 || newOrder > worldCount) {
     throw new AppError(
@@ -235,14 +257,30 @@ export async function reorderWorld(
   return moved;
 }
 
+// Same live-content trust tier as D20's hotfix mechanism, mirroring
+// src/server/mentors/service.ts's uploadMentorArt exactly: a DRAFT world's
+// art only needs world.manage, but a PUBLISHED world's art - instantly
+// visible to every learner, no review step - needs world.publish, same as
+// the title/tagline hotfix path. Authoritative here, not just at the
+// action layer.
 export async function uploadWorldArt(
-  actor: { id: string },
+  actor: { id: string; roleId: string },
   id: string,
   file: { body: Buffer },
   meta: RequestMeta,
 ) {
   const world = await getWorldById(id);
   if (!world) throw new AppError("NOT_FOUND", "World not found");
+
+  const requiredPermission = world.status === "published" ? "world.publish" : "world.manage";
+  if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
+    throw new AppError(
+      "FORBIDDEN",
+      world.status === "published"
+        ? "Uploading art for a published world requires world.publish"
+        : "Missing permission: world.manage",
+    );
+  }
 
   if (file.body.byteLength > MAX_IMAGE_BYTES) {
     throw new AppError("VALIDATION_FAILED", "Art must be 2MB or smaller");
@@ -256,7 +294,10 @@ export async function uploadWorldArt(
     throw new AppError("VALIDATION_FAILED", "Art must be a valid PNG, JPEG or WebP image");
   }
 
-  const artKey = `worlds/${id}/art.${imageExtension(detectedType)}`;
+  // A unique key per upload, not a fixed per-world path - see
+  // uploadMentorArt's comment, same reasoning (revertable without deleting
+  // the previous object).
+  const artKey = `worlds/${id}/${randomUUID()}.${imageExtension(detectedType)}`;
   await uploadObject(artKey, file.body, imageContentType(detectedType));
   const updated = await setWorldArtKey(id, artKey);
   if (!updated) throw new AppError("NOT_FOUND", "World not found");
@@ -267,7 +308,7 @@ export async function uploadWorldArt(
     action: "world.art_uploaded",
     targetType: "world",
     targetId: id,
-    metadata: { title: world.title.en },
+    metadata: { title: world.title.en, previousArtKey: world.artKey, newArtKey: artKey },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });

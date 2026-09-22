@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { ZodError } from "zod";
-import { requireStaff } from "@/lib/auth";
+import { requireStaff, requireStaffAny } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
@@ -62,12 +62,17 @@ export async function updateWorldDraftAction(input: unknown): Promise<ActionResu
   });
 }
 
-// Gated on world.manage (not world.publish) - reordering is a structural
-// content operation, not a visibility/trust decision, same reasoning as
-// src/server/worlds/service.ts's reorderWorld.
+// Gated on EITHER world.manage or world.publish here - a cheap early
+// reject only. Reordering a DRAFT world is a structural content operation
+// (world.manage is enough), but reordering a PUBLISHED world moves its
+// position in the sequential-unlock chain and, per D25, can shift which
+// world sits at the trading-unlock position - so that needs world.publish,
+// the same trust bar as publish/unpublish/delete. reorderWorld itself
+// (which already loads the world) re-checks the exact required permission
+// for the mover's actual status - see its own comment.
 export async function reorderWorldAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("world.manage");
+    const actor = await requireStaffAny(["world.manage", "world.publish"]);
     const { id, newOrder } = MoveWorldSchema.parse(input);
     await reorderWorld(actor, id, newOrder, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
@@ -119,10 +124,12 @@ export async function deleteWorldAction(input: unknown): Promise<ActionResult> {
 // No Content-Type/extension/size check here on purpose - see
 // src/app/admin/(dashboard)/mentors/actions.ts's uploadMentorArtAction,
 // which this mirrors exactly. The only real check is uploadWorldArt's
-// byte-level format sniff and size cap (src/lib/image.ts).
+// byte-level format sniff and size cap (src/lib/image.ts). Gated on EITHER
+// world.manage or world.publish - uploadWorldArt itself re-checks the
+// exact required permission for this world's actual status.
 export async function uploadWorldArtAction(formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("world.manage");
+    const actor = await requireStaffAny(["world.manage", "world.publish"]);
     const id = WorldIdSchema.parse({ id: formData.get("id") }).id;
     const file = formData.get("file");
     if (!(file instanceof File)) {

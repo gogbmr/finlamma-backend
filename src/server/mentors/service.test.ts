@@ -43,6 +43,12 @@ vi.mock("@/lib/s3", () => ({
     mockUploadObject(key, body, contentType),
 }));
 
+const mockRoleHasPermission = vi.fn();
+vi.mock("@/server/staff/repo", () => ({
+  roleHasPermission: (roleId: unknown, permission: unknown) =>
+    mockRoleHasPermission(roleId, permission),
+}));
+
 import {
   createMentorDraft,
   getMentorEditorData,
@@ -56,7 +62,7 @@ import {
 } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
-const ACTOR = { id: "staff_1" };
+const ACTOR = { id: "staff_1", roleId: "role_1" };
 
 function mentorRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -82,6 +88,9 @@ beforeEach(() => {
   // below don't need to know about the world-reference block at all.
   mockListPublishedWorldsByMentorId.mockResolvedValue([]);
   mockListAllWorlds.mockResolvedValue([]);
+  // Actor has every permission by default - existing tests below don't
+  // need to know about the art-upload permission-tier check at all.
+  mockRoleHasPermission.mockResolvedValue(true);
 });
 
 describe("getPublicMentors / getPublicMentorByKey", () => {
@@ -338,31 +347,47 @@ const WEBP_BYTES = Buffer.concat([
 ]);
 
 describe("uploadMentorArt", () => {
-  it("uploads to storage under a server-generated key, records it, and logs it", async () => {
-    mockGetMentorById.mockResolvedValueOnce(mentorRow());
-    mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/art.png" }));
+  it("uploads to storage under a server-generated, unique key, records old+new keys, and logs it", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/old-key.png" }));
+    mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/new-key.png" }));
 
     const result = await uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META);
 
     expect(mockUploadObject).toHaveBeenCalledWith(
-      "mentors/mentor_1/art.png",
+      expect.stringMatching(/^mentors\/mentor_1\/[0-9a-f-]+\.png$/),
       PNG_BYTES,
       "image/png",
     );
-    expect(result.artKey).toBe("mentors/mentor_1/art.png");
+    expect(result.artKey).toBe("mentors/mentor_1/new-key.png");
     expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "mentor.art_uploaded" }),
+      expect.objectContaining({
+        action: "mentor.art_uploaded",
+        metadata: expect.objectContaining({
+          previousArtKey: "mentors/mentor_1/old-key.png",
+          newArtKey: expect.stringMatching(/^mentors\/mentor_1\/[0-9a-f-]+\.png$/),
+        }),
+      }),
     );
   });
 
-  it("derives the storage key/content-type from sniffed bytes, not any client-supplied label", async () => {
+  it("never reuses the previous art's key - the old object is never overwritten or deleted", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/old-key.png" }));
+    mockSetMentorArtKey.mockResolvedValueOnce(mentorRow());
+
+    await uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META);
+
+    const [uploadedKey] = mockUploadObject.mock.calls[0]!;
+    expect(uploadedKey).not.toBe("mentors/mentor_1/old-key.png");
+  });
+
+  it("derives the storage content-type from sniffed bytes, not any client-supplied label", async () => {
     mockGetMentorById.mockResolvedValueOnce(mentorRow());
     mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ artKey: "mentors/mentor_1/art.webp" }));
 
     await uploadMentorArt(ACTOR, "mentor_1", { body: WEBP_BYTES }, META);
 
     expect(mockUploadObject).toHaveBeenCalledWith(
-      "mentors/mentor_1/art.webp",
+      expect.stringMatching(/^mentors\/mentor_1\/[0-9a-f-]+\.webp$/),
       WEBP_BYTES,
       "image/webp",
     );
@@ -400,6 +425,48 @@ describe("uploadMentorArt", () => {
       uploadMentorArt(ACTOR, "nope", { body: PNG_BYTES }, META),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  // D20/D25 (docs/ARCHITECTURE.md): a published mentor's art is live content
+  // - replacing it needs mentor.publish, the same trust bar as the name/bio
+  // hotfix path, not just mentor.manage. A draft's art is normal editing.
+  describe("permission tier depends on the mentor's status", () => {
+    it("allows a draft upload for an actor with only mentor.manage", async () => {
+      mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "draft" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "mentor.manage"),
+      );
+      mockSetMentorArtKey.mockResolvedValueOnce(mentorRow());
+
+      await expect(
+        uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META),
+      ).resolves.toBeDefined();
+    });
+
+    it("blocks a published-mentor upload for an actor with only mentor.manage", async () => {
+      mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "mentor.manage"),
+      );
+
+      await expect(
+        uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META),
+      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/mentor\.publish/) });
+      expect(mockUploadObject).not.toHaveBeenCalled();
+      expect(mockLogActivity).not.toHaveBeenCalled();
+    });
+
+    it("allows a published-mentor upload for an actor with mentor.publish", async () => {
+      mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "mentor.publish"),
+      );
+      mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ status: "published" }));
+
+      await expect(
+        uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META),
+      ).resolves.toBeDefined();
+    });
   });
 });
 

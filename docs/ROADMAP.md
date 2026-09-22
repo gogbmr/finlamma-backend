@@ -75,6 +75,11 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [x] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
 
 ## Phase 3 — Progress economy
+- [ ] **Rate limiting (Upstash Redis) on the quiz serve/answer endpoints** (`POST
+      /api/v1/lessons/{id}/steps/{n}/serve`, `.../answer`), before any real XP is credited to a
+      ledger. Flagged by the Phase 2b security audit (`docs/STATUS.md`) - low-impact today since
+      XP is preview-only (D17) and each step grades once, idempotently, but a real abuse/
+      resource-consumption vector once this phase wires XP to `vmoney_ledger`.
 - [ ] XP events, levels, world unlocks
 - [ ] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
       `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
@@ -159,6 +164,11 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Review the 8 unindexed-foreign-key and 15 unused-index Supabase advisor findings**
+      (`INFO` level, flagged by the Phase 2b audit, `docs/STATUS.md`) - low-traffic pre-launch
+      noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
+      `question_answers.question_id` have no covering index), but worth a real pass once query
+      patterns and data volume are closer to production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
       questions, emails, consent pages) — the seed/draft copy written during development (e.g.
       `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not

@@ -1,5 +1,66 @@
 # Status
 
+## 2026-09-22 — `/phase-audit 2b`: PASS, 1 Medium security finding fixed before merge
+
+Full audit of Phase 2b (`docs/ROADMAP.md`'s 7 ticked items + all 42 `docs/FEATURE_MAP.md` rows
+tagged phase `2b`) before merging `phase-2b-content` to `main`.
+
+**Code health**: `pnpm typecheck`/`pnpm lint`/`pnpm test -- --run` (758 tests)/`pnpm build` all
+clean. Contract (`openapi/openapi.json`, `docs/API_ENDPOINTS.md`) regenerated and diffed against
+committed versions - no drift.
+
+**Database**: all 21 migrations applied and match `drizzle/meta/_journal.json`; live schema
+matches `src/db/schema/*` exactly for every Phase 2b table; RLS enabled with zero policies on all
+20 `public` tables (by design, CLAUDE.md rule 6); Supabase advisors - zero at `warn` or above (8
+unindexed FKs and 15 unused indexes, both `INFO`, added to the pre-launch checklist below).
+
+**FEATURE_MAP.md drift found and fixed**: every one of the 42 Phase-2b-tagged rows still read
+"Not built" despite most being implemented and tested throughout the phase - pure documentation
+drift, not a functional gap. Traced each row to real code: **25 rows → Built**, **5 rows
+(LF-24/25/26/27/31, the lesson report card's letter-grade/hero-stats/bar-chart/XP-breakdown
+presentation) reassigned from phase `2b/3` to `3`** with status "Partial — aggregation in Phase
+3" (the underlying `quiz_attempts`/`question_answers` data exists, but no endpoint aggregates it
+into that shape yet), **12 rows correctly remain "Not built"** (genuine mobile-app-only UI or
+depend on Phase 3 tables that don't exist yet - `xp_events`, `streaks`, `certificates`).
+
+**Security audit** (`security-auditor` subagent, read-only scope: mentors/worlds/lessons/
+questions/quiz-attempts domains). **1 Medium, fixed before merge**: `uploadMentorArt`/
+`uploadWorldArt` never checked the content's status, unlike every other live-content edit path -
+a `content_uploader` (holds `.manage`, no `.publish`) could silently replace a **published**
+mentor/world's art, instantly visible to every learner, with no review step. D20 deliberately
+requires `.publish`-tier trust for any direct edit to live content; this path was missed. Fixed:
+`uploadMentorArt`/`uploadWorldArt` now require `mentor.publish`/`world.publish` when the target
+is published (`mentor.manage`/`world.manage` still suffices for a draft) - checked authoritatively
+in the service layer (`src/server/{mentors,worlds}/service.ts`), not just the action layer. Art
+uploads also now get a unique key per upload (`randomUUID()`-suffixed, not a fixed per-entity
+path) instead of overwriting the previous object in place, and the activity log records both the
+previous and new key, so a bad upload to live content can be reverted without needing the
+original file again. The same fix extended to `reorderWorld`: reordering a **published** world
+now also requires `world.publish` (a draft reorder still only needs `world.manage`), since a
+published world's position drives D25's `tradingUnlockAfterWorldPosition` gate. New shared
+`requireStaffAny(permissions)` helper added to `src/lib/auth.ts` for this "which permission
+applies depends on data the caller doesn't know yet" shape. 21 new/updated tests cover both
+fixes (uploader rejected on published content, publisher allowed, draft uploads unchanged, for
+both mentors and worlds, plus the equivalent reorder-tier tests).
+
+**2 Low findings, tracked, not fixed now**: no rate limiting on the quiz serve/answer endpoints
+(added as the first item of Phase 3 in `docs/ROADMAP.md` - low impact today since XP is
+preview-only and each step grades once idempotently, but needed before Phase 3 credits real XP);
+`world.manage` alone can still reorder a *draft* world's position relative to published ones in
+some edge cases - noted for a second look once Phase 4 wires up `isTradingUnlocked()` for real.
+
+**Production checks** (`https://finlamma-backend-rho.vercel.app`, version `a1bced1` = `origin/main`
+HEAD): health `ok`, every authenticated endpoint in scope returns 401 without a token, both Clerk
+webhooks reject unsigned requests with 400, `/admin` redirects a signed-out visitor to sign-in.
+Confirms the known `/admin/mentors`/`GET /api/v1/mentors` production breakage below is still the
+only issue, isolated to mentors (worlds/lessons/questions were never deployed to `main` at all).
+
+**Cosmetic fix**: `metadataBase` now set from `env.APP_URL` in the root layout, silencing the
+`pnpm build` warning about OG/Twitter image resolution falling back to `localhost:3000`.
+
+**Result: PASS.** The one Medium finding was fixed before this entry; no Critical/High findings.
+Ready to merge once the founder finishes preview testing.
+
 ## 2026-09-22 — Known, temporary production issue: `/admin/mentors` and `GET /api/v1/mentors` are broken, resolved by the Phase 2b merge
 
 D25 (`docs/ARCHITECTURE.md`) dropped `mentors.world_range_start`/`world_range_end` on

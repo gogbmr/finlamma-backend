@@ -334,17 +334,24 @@ function MentorForm({
           // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
           <img src={mentor.artUrl} alt="" className="h-16 w-16 rounded-full object-cover" />
         )}
-        {canManage && (
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            disabled={isPending}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) uploadArt(file);
-            }}
-          />
+        {(canManage || canPublish) && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={isPending}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadArt(file);
+              }}
+            />
+            {!isDraft && (
+              <p className="text-xs text-muted-foreground">
+                This mentor is published - replacing its art requires mentor.publish.
+              </p>
+            )}
+          </>
         )}
       </div>
 

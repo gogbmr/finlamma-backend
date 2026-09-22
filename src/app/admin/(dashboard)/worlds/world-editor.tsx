@@ -417,7 +417,7 @@ function WorldForm({
         </div>
       )}
 
-      {canManage && (
+      {(canManage || canPublish) && (
         <div className="flex items-end gap-2 rounded-md border border-border bg-muted/50 p-3">
           <div className="space-y-1">
             <Label>Move to position</Label>
@@ -434,7 +434,8 @@ function WorldForm({
           </Button>
           <p className="text-xs text-muted-foreground">
             Works on published worlds too, and shifts everyone between the old and new position -
-            no unpublish needed.
+            no unpublish needed. Reordering a published world requires world.publish, not just
+            world.manage.
           </p>
         </div>
       )}
@@ -479,17 +480,24 @@ function WorldForm({
           // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
           <img src={world.artUrl} alt="" className="h-16 w-28 rounded object-cover" />
         )}
-        {canManage && (
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            disabled={isPending}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) uploadArt(file);
-            }}
-          />
+        {(canManage || canPublish) && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={isPending}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) uploadArt(file);
+              }}
+            />
+            {!isDraft && (
+              <p className="text-xs text-muted-foreground">
+                This world is published - replacing its art requires world.publish.
+              </p>
+            )}
+          </>
         )}
       </div>
 

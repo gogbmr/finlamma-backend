@@ -74,6 +74,12 @@ vi.mock("@/lib/s3", () => ({
     mockUploadObject(key, body, contentType),
 }));
 
+const mockRoleHasPermission = vi.fn();
+vi.mock("@/server/staff/repo", () => ({
+  roleHasPermission: (roleId: unknown, permission: unknown) =>
+    mockRoleHasPermission(roleId, permission),
+}));
+
 import {
   createWorldDraft,
   deleteWorld,
@@ -89,7 +95,7 @@ import {
 } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
-const ACTOR = { id: "staff_1" };
+const ACTOR = { id: "staff_1", roleId: "role_1" };
 const MENTOR_ID = "mentor_1";
 const USER_ID = "user_1";
 
@@ -140,6 +146,9 @@ beforeEach(() => {
   // A boss_quiz lesson already exists by default - existing publishWorld
   // tests below don't need to know about the D24 publish-time gate at all.
   mockHasBossQuizLesson.mockResolvedValue(true);
+  // Actor has every permission by default - existing tests below don't need
+  // to know about the art-upload/reorder permission-tier checks at all.
+  mockRoleHasPermission.mockResolvedValue(true);
 });
 
 describe("getPublicWorlds", () => {
@@ -351,7 +360,8 @@ describe("updateWorldDraft", () => {
 });
 
 describe("reorderWorld", () => {
-  it("moves the world and logs it, once newOrder is within range", async () => {
+  it("moves a draft world and logs it, once newOrder is within range", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
     mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow(), worldRow()]); // count: 3
     mockMoveWorldToPosition.mockResolvedValueOnce(worldRow({ order: 2 }));
 
@@ -365,6 +375,7 @@ describe("reorderWorld", () => {
   });
 
   it("rejects newOrder below 1 without calling the repo", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
     mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow(), worldRow()]);
 
     await expect(reorderWorld(ACTOR, "world_1", 0, META)).rejects.toMatchObject({
@@ -374,6 +385,7 @@ describe("reorderWorld", () => {
   });
 
   it("rejects newOrder beyond the current world count without calling the repo", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
     mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow(), worldRow()]); // count: 3
 
     await expect(reorderWorld(ACTOR, "world_1", 4, META)).rejects.toMatchObject({
@@ -383,16 +395,17 @@ describe("reorderWorld", () => {
   });
 
   it("throws NOT_FOUND for an unknown world", async () => {
-    mockListAllWorlds.mockResolvedValueOnce([worldRow()]);
-    mockMoveWorldToPosition.mockResolvedValueOnce(null);
+    mockGetWorldById.mockResolvedValueOnce(null);
 
     await expect(reorderWorld(ACTOR, "nope", 1, META)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockLogActivity).not.toHaveBeenCalled();
+    expect(mockListAllWorlds).not.toHaveBeenCalled();
   });
 
   it.each([["serialization failure", "40001"], ["deadlock", "40P01"]])(
     "maps a genuine concurrent-transaction conflict (%s) to a clean, retryable CONFLICT",
     async (_label, code) => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
       mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
       mockMoveWorldToPosition.mockRejectedValueOnce({ code });
 
@@ -404,10 +417,53 @@ describe("reorderWorld", () => {
   );
 
   it("re-throws an unrelated error instead of misreporting it as a reorder conflict", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
     mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
     mockMoveWorldToPosition.mockRejectedValueOnce(new Error("something else entirely"));
 
     await expect(reorderWorld(ACTOR, "world_1", 2, META)).rejects.toThrow("something else entirely");
+  });
+
+  // D25 (docs/ARCHITECTURE.md): reordering a published world can shift which
+  // world sits at the trading-unlock position, so it needs world.publish -
+  // the same trust bar as publish/unpublish/delete - while a draft reorder
+  // only needs world.manage.
+  describe("permission tier depends on the mover's status", () => {
+    it("allows a draft reorder for an actor with only world.manage", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
+      mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.manage"),
+      );
+      mockMoveWorldToPosition.mockResolvedValueOnce(worldRow({ order: 2 }));
+
+      await expect(reorderWorld(ACTOR, "world_1", 2, META)).resolves.toBeDefined();
+    });
+
+    it("blocks a published reorder for an actor with only world.manage", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.manage"),
+      );
+
+      await expect(reorderWorld(ACTOR, "world_1", 2, META)).rejects.toMatchObject({
+        code: "FORBIDDEN",
+        message: expect.stringMatching(/world\.publish/),
+      });
+      expect(mockMoveWorldToPosition).not.toHaveBeenCalled();
+      expect(mockLogActivity).not.toHaveBeenCalled();
+    });
+
+    it("allows a published reorder for an actor with world.publish", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+      mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.publish"),
+      );
+      mockMoveWorldToPosition.mockResolvedValueOnce(worldRow({ order: 2, status: "published" }));
+
+      await expect(reorderWorld(ACTOR, "world_1", 2, META)).resolves.toBeDefined();
+    });
   });
 });
 
@@ -613,17 +669,37 @@ describe("unpublishWorld", () => {
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
 describe("uploadWorldArt", () => {
-  it("uploads to storage under a server-generated key, records it, and logs it", async () => {
-    mockGetWorldById.mockResolvedValueOnce(worldRow());
-    mockSetWorldArtKey.mockResolvedValueOnce(worldRow({ artKey: "worlds/world_1/art.png" }));
+  it("uploads to storage under a server-generated, unique key, records old+new keys, and logs it", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ artKey: "worlds/world_1/old-key.png" }));
+    mockSetWorldArtKey.mockResolvedValueOnce(worldRow({ artKey: "worlds/world_1/new-key.png" }));
 
     const result = await uploadWorldArt(ACTOR, "world_1", { body: PNG_BYTES }, META);
 
-    expect(mockUploadObject).toHaveBeenCalledWith("worlds/world_1/art.png", PNG_BYTES, "image/png");
-    expect(result.artKey).toBe("worlds/world_1/art.png");
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "world.art_uploaded" }),
+    expect(mockUploadObject).toHaveBeenCalledWith(
+      expect.stringMatching(/^worlds\/world_1\/[0-9a-f-]+\.png$/),
+      PNG_BYTES,
+      "image/png",
     );
+    expect(result.artKey).toBe("worlds/world_1/new-key.png");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "world.art_uploaded",
+        metadata: expect.objectContaining({
+          previousArtKey: "worlds/world_1/old-key.png",
+          newArtKey: expect.stringMatching(/^worlds\/world_1\/[0-9a-f-]+\.png$/),
+        }),
+      }),
+    );
+  });
+
+  it("never reuses the previous art's key - the old object is never overwritten or deleted", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ artKey: "worlds/world_1/old-key.png" }));
+    mockSetWorldArtKey.mockResolvedValueOnce(worldRow());
+
+    await uploadWorldArt(ACTOR, "world_1", { body: PNG_BYTES }, META);
+
+    const [uploadedKey] = mockUploadObject.mock.calls[0]!;
+    expect(uploadedKey).not.toBe("worlds/world_1/old-key.png");
   });
 
   it("rejects a file whose bytes aren't a real PNG/JPEG/WebP", async () => {
@@ -656,6 +732,49 @@ describe("uploadWorldArt", () => {
       uploadWorldArt(ACTOR, "nope", { body: PNG_BYTES }, META),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  // D20/D25 (docs/ARCHITECTURE.md): a published world's art is live content
+  // - replacing it needs world.publish, the same trust bar as the
+  // title/tagline hotfix path, not just world.manage. A draft's art is
+  // normal editing.
+  describe("permission tier depends on the world's status", () => {
+    it("allows a draft upload for an actor with only world.manage", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.manage"),
+      );
+      mockSetWorldArtKey.mockResolvedValueOnce(worldRow());
+
+      await expect(
+        uploadWorldArt(ACTOR, "world_1", { body: PNG_BYTES }, META),
+      ).resolves.toBeDefined();
+    });
+
+    it("blocks a published-world upload for an actor with only world.manage", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.manage"),
+      );
+
+      await expect(
+        uploadWorldArt(ACTOR, "world_1", { body: PNG_BYTES }, META),
+      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/world\.publish/) });
+      expect(mockUploadObject).not.toHaveBeenCalled();
+      expect(mockLogActivity).not.toHaveBeenCalled();
+    });
+
+    it("allows a published-world upload for an actor with world.publish", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.publish"),
+      );
+      mockSetWorldArtKey.mockResolvedValueOnce(worldRow({ status: "published" }));
+
+      await expect(
+        uploadWorldArt(ACTOR, "world_1", { body: PNG_BYTES }, META),
+      ).resolves.toBeDefined();
+    });
   });
 });
 

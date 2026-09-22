@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
+import { env } from "@/lib/env";
 import "./globals.css";
 
 // The one typeface on the brand sheet (ui_file/Finlamma_UI/assets/brand-sheet.png) -
@@ -11,6 +12,11 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
+  // Resolves relative OG/Twitter image URLs (e.g. the homepage's
+  // /brand/app-icon.png) against the real deployed origin instead of
+  // Next's "http://localhost:3000" fallback - found by the Phase 2b audit's
+  // `pnpm build` warning.
+  metadataBase: new URL(env.APP_URL),
   title: {
     default: "Finlamma",
     template: "%s · Finlamma",
