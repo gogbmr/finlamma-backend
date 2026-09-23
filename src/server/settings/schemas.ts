@@ -36,6 +36,17 @@ export const LessonFlowScoringSchema = z.object({
   // (src/server/worlds/service.ts). Failing doesn't block anything else -
   // the learner can simply retry (a fresh quiz_attempts row).
   bossQuizPassMarkPct: z.number().nonnegative().max(100),
+  // docs/ARCHITECTURE.md D28: the minimum accuracy a Video/Quiz/Role Play
+  // attempt needs to count as a "successful completion" for real XP/VM
+  // crediting (src/server/economy - docs/ECONOMY.md decision 4). Deliberately
+  // lower than bossQuizPassMarkPct - a Boss Quiz gates world progression, this
+  // only gates the reward for the lesson it's on. Failing doesn't block
+  // anything else - the learner can simply retry (a fresh quiz_attempts row,
+  // same as Boss Quiz); the first attempt that clears it is the one that
+  // credits, since idempotency is keyed on (user, lesson), never a specific
+  // attempt (D26). Story/Doubt Zone have no accuracyPct at all (no graded
+  // questions) and are unaffected - see Checkpoint 3's own completion rule.
+  lessonPassMarkPct: z.number().nonnegative().max(100),
   // D25 (docs/ARCHITECTURE.md): trading unlocks once the learner has passed
   // the Boss Quiz of the PUBLISHED world at this 1-based POSITION (not a
   // specific world id/name) - src/server/worlds/service.ts's
@@ -61,6 +72,7 @@ export const DEFAULT_LESSON_FLOW_SCORING: LessonFlowScoring = {
   feverComboThreshold: 3,
   feverMultiplier: 2,
   bossQuizPassMarkPct: 60,
+  lessonPassMarkPct: 50,
   tradingUnlockAfterWorldPosition: 3,
 };
 
