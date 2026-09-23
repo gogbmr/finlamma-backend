@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+# ephemeral vitest JSON report consumed by scripts/check-test-count.mjs
+# (posttest) - tests/min-count.json (the committed floor) is not this.
+tests/.last-run.json
 
 # next.js
 /.next/

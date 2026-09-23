@@ -150,6 +150,15 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
     re-acceptance notice on a new legal-document version, etc.), not only what exists today.
     See `docs/ARCHITECTURE.md` decision D15 (DPDP requires withdrawal to stay as easy as giving
     consent) for the reasoning.
+14. **Never write a test file without reading it first.** Use Edit (or append) on an existing
+    `*.test.ts` file, never a whole-file Write — a Write silently overwrites whatever was already
+    there instead of extending it. `pnpm test`'s `posttest` step (`scripts/check-test-count.mjs`,
+    floor in `tests/min-count.json`) fails the run if the total test count drops below the
+    committed floor, as a backstop — but it's a backstop, not a substitute for reading the file
+    first; it only catches a *count* drop, not a rewrite that happens to keep the count the same
+    or higher. (Incident: a Write call on `src/server/lesson-progress/repo.test.ts` during Phase
+    3a Checkpoint 3 silently deleted three functions' test coverage; the suite still reported
+    "passing" since nothing checked for a minimum count at the time — see `docs/STATUS.md`.)
 
 ## API endpoint documentation (required)
 `docs/API_ENDPOINTS.md` must always list **every** endpoint with method, path, summary, auth,
@@ -178,3 +187,23 @@ own security schemes, so the document covers the whole backend.
 - Use the `code-reviewer` subagent before committing larger changes and `security-auditor`
   for anything touching auth, permissions, money or trading.
 - If you make an architectural decision, append it to the decisions table in `docs/ARCHITECTURE.md`.
+
+## Working rhythm
+- Default to running 2-3 checkpoints in a row before stopping. Stop at natural boundaries (a
+  domain finished end to end), not after every small unit.
+- Always STOP and ask before:
+  - anything touching real or virtual money rules (ledger, rewards, pricing, multipliers)
+  - anything affecting minors (consent, DOB, parent contact, safety)
+  - destructive DB changes or backfills
+  - any security finding of Medium or above
+  - adding a new external service or env var
+  - any change to `main`
+  - anything contradicting a recorded `docs/ARCHITECTURE.md` decision
+- Otherwise don't stop for approval on routine work: build it, test it, push it, report it in
+  the batch summary.
+- Batch summaries: lead with anything that needs a decision, then what shipped, then what to
+  manually test. Keep it short; skip detail that doesn't need action.
+- Don't split a phase into sub-phases unless it involves money handling, minors, or security.
+  Phases 5, 6, 8, 9 run as single phases.
+- Never wait for approval on something verifiable directly (tests, read-only DB checks,
+  contract regeneration) — just verify it and report the result.

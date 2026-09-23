@@ -75,17 +75,26 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [x] App endpoints: world map, lesson detail, submit quiz answers (server-side scoring)
 
 ## Phase 3 — Progress economy
-- [ ] **Rate limiting (Upstash Redis) on the quiz serve/answer endpoints** (`POST
+- [x] **Rate limiting (Upstash Redis) on the quiz serve/answer endpoints** (`POST
       /api/v1/lessons/{id}/steps/{n}/serve`, `.../answer`), before any real XP is credited to a
       ledger. Flagged by the Phase 2b security audit (`docs/STATUS.md`) - low-impact today since
       XP is preview-only (D17) and each step grades once, idempotently, but a real abuse/
       resource-consumption vector once this phase wires XP to `vmoney_ledger`.
-- [ ] XP events, levels, world unlocks
-- [ ] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
+- [x] XP events, levels, world unlocks — `xp_events` (Checkpoint 2), world unlocks (Phase 2b
+      Checkpoint 6/D23-D24, built ahead of this phase), level (Checkpoint 5: always derived from
+      `xp_events` via an admin-editable level curve, `settings_kv.level_curve`, never stored -
+      `src/server/leveling`, D32)
+- [x] Stat endpoints: `GET /me/stats/xp` (WH-04), `GET /me/stats/vmoney` (WH-03), `GET
+      /me/stats/streak` (WH-02, Checkpoint 4), `GET /me/profile/overview` (PR-01/PR-02) - admin-
+      editable rank titles table (`rank_titles`, keyed on level, not hardcoded); V Money balance
+      and level both always summed/derived live, never stored columns; percentile/rank
+      deliberately deferred to Phase 6 (Arena's weekly leaderboard snapshot), not stubbed (D32)
+- [x] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
       `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
-- [ ] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
+- [x] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
       on every ledger entry
-- [ ] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month; daily goal
+- [x] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month
+- [ ] Daily goal meter
 - [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
       admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
       brand-partner rewards later without a schema change
@@ -173,6 +182,16 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       questions, emails, consent pages) — the seed/draft copy written during development (e.g.
       `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
       reviewed by a native speaker.
+- [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
+      up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
+      reset of this one, then `pnpm db:migrate` + the full seed sequence
+      (`db:seed`/`seed:super-admin`/`seed:legal`/`seed:mentors`/`seed:worlds`/`seed:settings`/
+      `seed:reward-rules`). Necessary because the deliberate decision to keep one shared database
+      pre-launch (no separate dev project - see the next item) means every local/preview test
+      credit written to the append-only `xp_events`/`vmoney_ledger` tables (D26 - no delete path,
+      ever) permanently accumulates in what will become the production database. Check
+      `docs/STATUS.md`'s "Test learners recorded so far" list before recreating, to confirm
+      nothing real got mixed in with test data in the meantime.
 - [ ] **Real-Postgres concurrency test for world reorder**, once a separate dev database exists.
       `src/server/worlds/repo.test.ts`'s concurrent-move tests run against PGlite
       (`src/test/db.ts`), which is a single connection - two "concurrent" `db.transaction()` calls

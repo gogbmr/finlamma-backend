@@ -70,6 +70,16 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
+const mockCreditLessonCompletion = vi.fn();
+vi.mock("@/server/economy/service", () => ({
+  creditLessonCompletion: (
+    user: unknown,
+    lesson: unknown,
+    successful: unknown,
+    meta: unknown,
+  ) => mockCreditLessonCompletion(user, lesson, successful, meta),
+}));
+
 import { serveStep, submitAnswer } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -90,6 +100,7 @@ const SCORING_SETTINGS = {
   feverComboThreshold: 3,
   feverMultiplier: 2,
   bossQuizPassMarkPct: 60,
+  lessonPassMarkPct: 50,
 };
 
 function quizLesson(overrides: Partial<Record<string, unknown>> = {}) {
@@ -99,6 +110,26 @@ function quizLesson(overrides: Partial<Record<string, unknown>> = {}) {
     content: { questionIds: [Q1_ID, Q2_ID] },
     ...overrides,
   };
+}
+
+// extractQuestionIds (src/server/lessons/service.ts) reads a DIFFERENT
+// content shape for "video" (VideoContentSchema's `cues[].questionId`) than
+// for quiz/boss_quiz/role_play (QuizLikeContentSchema's flat `questionIds`)
+// - quizLesson()'s own default only matches the latter. Tests that need a
+// real 2-question lesson across multiple kinds (e.g. it.each) must use this
+// so a "video" case doesn't fail assertGradedLesson's "no graded steps"
+// check with the wrong shape.
+function contentForKind(kind: string) {
+  return kind === "video"
+    ? {
+        lengthSeconds: 48,
+        scenes: [],
+        cues: [
+          { at: 5, questionId: Q1_ID, timerSeconds: 8 },
+          { at: 15, questionId: Q2_ID, timerSeconds: 8 },
+        ],
+      }
+    : { questionIds: [Q1_ID, Q2_ID] };
 }
 
 function questionRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -644,6 +675,211 @@ describe("submitAnswer", () => {
     expect(result.isAttemptComplete).toBe(false);
     expect(result.totalXpPreview).toBeNull();
     expect(mockCompleteLessonProgress).not.toHaveBeenCalled();
+    expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
+  });
+
+  describe("XP/VM crediting (docs/ECONOMY.md decision 4, docs/ARCHITECTURE.md D26/D28)", () => {
+    it.each(["video", "quiz", "role_play"] as const)(
+      "does NOT credit a %s below the default 50% lessonPassMarkPct - not successful",
+      async (kind) => {
+        mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind, content: contentForKind(kind) }));
+        mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+        mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+        mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+        mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+        mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+          Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+        );
+        // 0/2 correct = 0% - below the default 50% lessonPassMarkPct.
+        mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+          servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+          servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+        ]);
+        mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 0 }));
+
+        await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+        // completeLessonProgress still runs (D23: "completed" tracks
+        // finishing, not passing) - only the credit call gets successful:false.
+        expect(mockCompleteLessonProgress).toHaveBeenCalledWith(USER.id, LESSON_ID);
+        expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+          USER,
+          expect.objectContaining({ id: LESSON_ID, kind }),
+          false,
+          META,
+        );
+      },
+    );
+
+    it.each(["video", "quiz", "role_play"] as const)(
+      "credits a %s once accuracyPct clears the default 50% lessonPassMarkPct",
+      async (kind) => {
+        mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind, content: contentForKind(kind) }));
+        mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+        mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+        mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+        mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+        mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+          Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+        );
+        // 1/2 correct = 50% - clears the default 50% lessonPassMarkPct (>=).
+        mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+          servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+          servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+        ]);
+        mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 50 }));
+
+        await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+        expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+          USER,
+          expect.objectContaining({ id: LESSON_ID, kind }),
+          true,
+          META,
+        );
+      },
+    );
+
+    it("a failed first attempt doesn't forfeit the reward - a later passing retry still credits once", async () => {
+      // Attempt 1: fails (0%) - no credit, but no error either; the learner
+      // can simply start a fresh attempt (serveStep's existing "no attempt
+      // in progress -> start a new one" path, no code change needed here).
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow({ attemptNumber: 1 }));
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(
+        attemptRow({ attemptNumber: 1, status: "completed", accuracyPct: 0 }),
+      );
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenLastCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID }),
+        false,
+        META,
+      );
+
+      // Attempt 2: a fresh attempt (attemptNumber 2), same lesson - passes.
+      // creditLessonCompletion's own (user, lesson) idempotency key (D26) is
+      // what makes this the one that actually credits.
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow({ attemptNumber: 2 }));
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(
+        attemptRow({ attemptNumber: 2, status: "completed", accuracyPct: 100 }),
+      );
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenLastCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID }),
+        true,
+        META,
+      );
+      expect(mockCreditLessonCompletion).toHaveBeenCalledTimes(2);
+    });
+
+    it("credits a Boss Quiz as successful once accuracyPct clears the pass mark", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "boss_quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      // 100% - clears the default 60% bossQuizPassMarkPct.
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID, kind: "boss_quiz" }),
+        true,
+        META,
+      );
+    });
+
+    it("does NOT credit a Boss Quiz that completed below the pass mark - not successful", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "boss_quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      // 0% - well below the default 60% bossQuizPassMarkPct.
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 0 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      // completeLessonProgress still runs (D23: "completed" tracks
+      // finishing, not passing) - only the credit call gets successful:false.
+      expect(mockCompleteLessonProgress).toHaveBeenCalledWith(USER.id, LESSON_ID);
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID, kind: "boss_quiz" }),
+        false,
+        META,
+      );
+    });
+
+    it("passes the lesson's xpOverride/vmOverride through to creditLessonCompletion", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ xpOverride: 999, vmOverride: 500 }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ xpOverride: 999, vmOverride: 500 }),
+        true,
+        META,
+      );
+    });
   });
 
   it("falls back to the concurrent winner's stored row when gradeQuestionAnswer loses a race", async () => {

@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { lessonProgress } from "@/db/schema";
 
@@ -12,6 +12,51 @@ export async function startLessonProgress(userId: string, lessonId: string) {
     .insert(lessonProgress)
     .values({ userId, lessonId })
     .onConflictDoNothing({ target: [lessonProgress.userId, lessonProgress.lessonId] })
+    .returning();
+  return row ?? null;
+}
+
+// Story/Doubt Zone (Phase 3 Checkpoint 3): the row created by
+// startLessonProgress carries the server-stamped `startedAt` these kinds
+// need as their anti-instant-complete anchor (they have no quiz_attempts
+// row at all, D23). Read back after an insert attempt so a re-serve
+// returns the ORIGINAL startedAt, never a new one - same idempotent-serve
+// shape as quiz-attempts/service.ts's serveStep.
+export async function getLessonProgress(userId: string, lessonId: string) {
+  const [row] = await db
+    .select()
+    .from(lessonProgress)
+    .where(and(eq(lessonProgress.userId, userId), eq(lessonProgress.lessonId, lessonId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// Story/Doubt Zone completion (Phase 3 Checkpoint 3, docs/ECONOMY.md
+// decision 4): the UPDATE's own WHERE clause is the atomicity guarantee -
+// `status = 'in_progress'` means an already-completed row (or a
+// concurrent duplicate completion request) simply doesn't match and
+// `.returning()` comes back empty, and `started_at <= minStartedAt` means
+// a request that arrives before enough time has elapsed doesn't match
+// either. The caller (src/server/lesson-progress/service.ts) tells these
+// two "why did nothing update" cases apart by re-reading the row - this
+// function only needs to guarantee it never marks a lesson complete before
+// its own minimum time has genuinely elapsed, even under a race.
+export async function completeUngradedLessonProgressIfEligible(
+  userId: string,
+  lessonId: string,
+  minStartedAt: Date,
+) {
+  const [row] = await db
+    .update(lessonProgress)
+    .set({ status: "completed", completedAt: new Date() })
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.lessonId, lessonId),
+        eq(lessonProgress.status, "in_progress"),
+        lte(lessonProgress.startedAt, minStartedAt),
+      ),
+    )
     .returning();
   return row ?? null;
 }

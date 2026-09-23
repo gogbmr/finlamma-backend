@@ -19,6 +19,9 @@ const SETTINGS: LessonFlowScoring = {
   feverComboThreshold: 3,
   feverMultiplier: 2,
   bossQuizPassMarkPct: 60,
+  lessonPassMarkPct: 50,
+  storyMinCompletionSeconds: 180,
+  doubtZoneMinCompletionSeconds: 150,
   tradingUnlockAfterWorldPosition: 3,
 };
 

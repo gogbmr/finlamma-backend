@@ -1,8 +1,9 @@
 // Integration test against an in-process PGlite database (src/test/db.ts),
-// not a mock - proves the unique (user_id, lesson_id) constraint and the
-// never-downgrade-on-conflict behavior actually hold at the database level.
-// Never touches the real Supabase database (see @/db/client's
-// NODE_ENV=test guard).
+// not a mock - proves the unique (user_id, lesson_id) constraint, the
+// never-downgrade-on-conflict behavior, and (Phase 3 Checkpoint 3) the
+// atomic time-gated UPDATE in completeUngradedLessonProgressIfEligible
+// actually hold at the database level. Never touches the real Supabase
+// database (see @/db/client's NODE_ENV=test guard).
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { lessons, mentors, users, worlds } from "@/db/schema";
@@ -13,8 +14,10 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   completeLessonProgress,
+  completeUngradedLessonProgressIfEligible,
   countInProgressLearners,
   countInProgressLearnersByLessonIds,
+  getLessonProgress,
   startLessonProgress,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
@@ -110,6 +113,27 @@ describe("startLessonProgress", () => {
   });
 });
 
+describe("getLessonProgress", () => {
+  it("returns null when no row exists", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson();
+
+    expect(await getLessonProgress(user.id, lesson.id)).toBeNull();
+  });
+
+  it("a re-serve returns the same startedAt as the original serve, never a new one", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
+
+    const first = await startLessonProgress(user.id, lesson.id);
+    const second = await startLessonProgress(user.id, lesson.id); // idempotent re-serve
+    expect(second).toBeNull(); // onConflictDoNothing - caller falls back to getLessonProgress
+
+    const row = await getLessonProgress(user.id, lesson.id);
+    expect(row?.startedAt.getTime()).toBe(first!.startedAt.getTime());
+  });
+});
+
 describe("completeLessonProgress", () => {
   it("marks a started lesson completed, stamping completedAt", async () => {
     const user = await makeUser();
@@ -131,6 +155,62 @@ describe("completeLessonProgress", () => {
     const second = await completeLessonProgress(user.id, lesson.id);
 
     expect(second?.status).toBe("completed");
+  });
+});
+
+describe("completeUngradedLessonProgressIfEligible (Phase 3 Checkpoint 3)", () => {
+  it("does NOT complete when the minimum time hasn't elapsed yet (instant-complete rejected)", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
+    await startLessonProgress(user.id, lesson.id);
+
+    // Require startedAt to be at or before 1 hour ago - the just-inserted
+    // row obviously isn't, simulating "not enough time has elapsed" (a real
+    // caller computes minStartedAt = now - storyMinCompletionSeconds).
+    const minStartedAt = new Date(Date.now() - 60 * 60 * 1000);
+
+    const result = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, minStartedAt);
+
+    expect(result).toBeNull();
+    const row = await getLessonProgress(user.id, lesson.id);
+    expect(row?.status).toBe("in_progress");
+  });
+
+  it("completes once the minimum time has genuinely elapsed", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
+    await startLessonProgress(user.id, lesson.id);
+
+    // Require only that startedAt is at or before "now" (trivially true,
+    // simulating "enough time has elapsed").
+    const minStartedAt = new Date();
+
+    const result = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, minStartedAt);
+
+    expect(result?.status).toBe("completed");
+    expect(result?.completedAt).not.toBeNull();
+  });
+
+  it("does NOT complete again once already completed (double-complete no-ops)", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
+    await startLessonProgress(user.id, lesson.id);
+    const minStartedAt = new Date();
+    const firstCompletion = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, minStartedAt);
+    expect(firstCompletion?.status).toBe("completed");
+
+    const secondCompletion = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, minStartedAt);
+
+    expect(secondCompletion).toBeNull(); // WHERE status='in_progress' no longer matches
+  });
+
+  it("returns null when the lesson was never served at all", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
+
+    const result = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, new Date());
+
+    expect(result).toBeNull();
   });
 });
 

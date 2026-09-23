@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.1.0) on 2026-09-22.
+> Generated from `openapi/openapi.json` (version 0.2.0) on 2026-09-23.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -37,9 +37,15 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/worlds` — List published worlds
 - `GET /api/v1/worlds/{id}/lessons` — List a world's published lessons
 - `GET /api/v1/lessons/{id}` — Get a published lesson
+- `POST /api/v1/lessons/{id}/serve` — Serve a Story or Doubt Zone lesson (starts its completion timer)
+- `POST /api/v1/lessons/{id}/complete` — Complete a Story or Doubt Zone lesson (credits XP/V Money)
 - `POST /api/v1/lessons/{id}/steps/{n}/serve` — Serve the next graded step of a lesson (starts or resumes an attempt)
 - `POST /api/v1/lessons/{id}/steps/{n}/answer` — Submit an answer for the current step and grade it
 - `GET /api/v1/me/current-lesson` — Get my current/resume lesson
+- `GET /api/v1/me/stats/streak` — Get my streak stats (World Home header STREAK tile, WH-02)
+- `GET /api/v1/me/stats/xp` — Get my XP stats (World Home header XP tile, WH-04)
+- `GET /api/v1/me/stats/vmoney` — Get my V Money stats (World Home header V MONEY tile, WH-03)
+- `GET /api/v1/me/profile/overview` — Get my profile overview (Profile screen ID card, PR-01/PR-02)
 
 **Webhooks**
 
@@ -71,6 +77,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "version": "2d303f6",
     "consentPiiHmacKey": "ok",
     "storage": "ok",
+    "redis": "ok",
     "worldsMissingBossQuiz": [],
     "tradingUnlockWorldMissing": false,
     "timestamp": "2026-01-01T00:00:00.000Z"
@@ -952,6 +959,183 @@ Full content for a single published lesson - what the Lesson Flow engine renders
 
 ---
 
+### `POST /api/v1/lessons/{id}/serve`
+
+**Serve a Story or Doubt Zone lesson (starts its completion timer)**
+
+For Story and Doubt Zone lessons only - these have no graded questions (docs/ARCHITECTURE.md D23), so unlike a Video/Quiz/Role Play/Boss Quiz lesson there is no POST .../steps/{n}/serve to call instead. The returned `startedAt` is server-stamped and never trusted from the client - POST /lessons/{id}/complete measures elapsed time from it, not from anything the app reports. Idempotent: re-serving an already-served (or already-completed) lesson returns the exact original startedAt, never a new one.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The lesson's current progress, with its server-stamped startedAt
+
+```json
+{
+  "data": {
+    "lessonId": "00000000-0000-0000-0000-000000000000",
+    "status": "in_progress",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **400** — This lesson isn't a Story or Doubt Zone kind - use the graded-step endpoints instead
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "\"quiz\" lessons use POST /lessons/{id}/steps/{n}/serve, not this endpoint"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/complete`
+
+**Complete a Story or Doubt Zone lesson (credits XP/V Money)**
+
+For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson to have been served first, and at least the kind's own admin-editable minimum time (settings_kv.lesson_flow_scoring.storyMinCompletionSeconds / doubtZoneMinCompletionSeconds) to have elapsed since that server-stamped serve time - never a client-reported duration (docs/ARCHITECTURE.md D21's server-timed reasoning applies here too). Credits at most once per user per lesson (docs/ECONOMY.md decision 4, D26): completing an already-completed lesson is an idempotent no-op, `credited: false`, never a second credit.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The lesson is now completed
+
+```json
+{
+  "data": {
+    "lessonId": "00000000-0000-0000-0000-000000000000",
+    "status": "completed",
+    "completedAt": "2026-01-01T00:00:00.000Z",
+    "credited": true
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **409** — Not served yet - call POST /lessons/{id}/serve first
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Not served yet - call POST /lessons/{id}/serve first"
+  }
+}
+```
+
+- **429** — Either too many requests, or not enough time has elapsed since serve yet (LESSON_TOO_SOON) - both mean: wait, then retry the exact same request
+
+```json
+{
+  "error": {
+    "code": "LESSON_TOO_SOON",
+    "message": "Spend a bit more time here before completing (150s minimum, 40s so far)",
+    "details": {
+      "minSeconds": 150,
+      "secondsElapsed": 40
+    }
+  }
+}
+```
+
+
+---
+
 ### `POST /api/v1/lessons/{id}/steps/{n}/serve`
 
 **Serve the next graded step of a lesson (starts or resumes an attempt)**
@@ -1031,6 +1215,17 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
   "error": {
     "code": "CONFLICT",
     "message": "Not the current step - answer earlier steps first"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
   }
 }
 ```
@@ -1148,6 +1343,17 @@ Server-graded and server-timed - the submitted answer is checked against the que
 }
 ```
 
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
 
 ---
 
@@ -1219,6 +1425,212 @@ Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's le
   "error": {
     "code": "NOT_FOUND",
     "message": "No published worlds yet"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/streak`
+
+**Get my streak stats (World Home header STREAK tile, WH-02)**
+
+Current/longest streak and freezes left, for both independent habit loops - `learning` (lesson completions, docs/ECONOMY.md decision 5) and `pulseCheck` (News' Pulse Check, Phase 5 - always 0/0/full freezes until that phase ships the events that trigger it). Day boundaries are computed server-side in IST (Asia/Kolkata) from the server's own clock - never a client-reported date or timezone.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's streak stats
+
+```json
+{
+  "data": {
+    "learning": {
+      "current": 4,
+      "longest": 11,
+      "freezesLeft": 2
+    },
+    "pulseCheck": {
+      "current": 4,
+      "longest": 11,
+      "freezesLeft": 2
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/xp`
+
+**Get my XP stats (World Home header XP tile, WH-04)**
+
+Total XP, current level and XP progress to the next level, plus XP earned in the trailing 7 days. Level is always derived from total XP using the admin-editable level curve (settings_kv) - it is never stored. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot to read it from (docs/FEATURE_MAP.md PR-03).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's XP stats
+
+```json
+{
+  "data": {
+    "level": 3,
+    "totalXp": 1000,
+    "xpIntoLevel": 300,
+    "xpToNextLevel": 200,
+    "weeklyXp": 180
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/vmoney`
+
+**Get my V Money stats (World Home header V MONEY tile, WH-03)**
+
+Balance and V Money earned/spent in the trailing 7 days. Balance is always summed live from vmoney_ledger (CLAUDE.md rule 2) - it is never a stored column. There is no spend path yet in this phase (trading is Phase 4+), so weeklySpent is currently always 0 - it starts reflecting real spends automatically once one exists, no API change needed. "Earned from trade" (also part of WH-03) is omitted entirely until trading exists.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's V Money stats
+
+```json
+{
+  "data": {
+    "balance": 210,
+    "weeklyEarned": 90,
+    "weeklySpent": 0
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/profile/overview`
+
+**Get my profile overview (Profile screen ID card, PR-01/PR-02)**
+
+Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, and the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet). Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's profile overview
+
+```json
+{
+  "data": {
+    "firstName": "Aarav",
+    "lastInitial": "S",
+    "joinedAt": "2026-01-05T09:12:00.000Z",
+    "level": 3,
+    "totalXp": 1000,
+    "xpIntoLevel": 300,
+    "xpToNextLevel": 200,
+    "rankTitle": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

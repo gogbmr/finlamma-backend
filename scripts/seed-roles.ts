@@ -109,6 +109,13 @@ const PERMISSIONS = [
       "Edit admin-tunable settings_kv values that affect every learner immediately (e.g. Lesson " +
       "Flow scoring constants). Narrower than content permissions - granted to super_admin only.",
   },
+  {
+    key: "economy.manage",
+    description:
+      "Edit reward_rules (default XP/VM per activity kind) and the global VM issuance " +
+      "multiplier - changes what every learner earns immediately. Same narrow trust bar as " +
+      "settings.manage - granted to super_admin only.",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -130,6 +137,7 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "question.manage",
     "question.publish",
     "settings.manage",
+    "economy.manage",
   ],
   user_manager: ["consent.view"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],

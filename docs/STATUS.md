@@ -1,5 +1,195 @@
 # Status
 
+## 2026-09-23 — `/phase-audit 3a` complete: 2 Low fixes applied, ready to merge
+
+Audited every commit on `phase-3a-economy-core` since it diverged from `main` (`8ff65b0`..`28f4b8b`,
+14 commits: rate limiting, the economy ledger, Story/Doubt Zone completion, streaks, stat
+endpoints). Full report covered ROADMAP/FEATURE_MAP cross-check, code health (typecheck/lint/
+test/build), database state (migrations, schema drift, RLS, security advisors - all via the
+Supabase MCP, read-only), API surface, production checks against the live deployment, a
+dedicated `security-auditor` subagent pass, and docs-vs-reality.
+
+**Result: no Critical/High findings, 2 Low + 1 Informational, all now addressed:**
+- **[Low, reliability - fixed]** `recordStreakActivity`'s first-ever-activity insert
+  (`src/server/streaks/repo.ts`) didn't use `onConflictDoNothing`, unlike every other insert
+  added this phase - a race on a user's very first streak activity could throw an unhandled
+  unique-violation and surface a 500, even though the XP/VM credit itself had already committed
+  correctly. Fixed with the same `onConflictDoNothing` + re-read pattern
+  `startLessonProgress` (`src/server/lesson-progress/repo.ts`) already used. Covered by two new
+  tests: a concurrent-Promise.all regression guard, and a deterministic test of the exact
+  onConflictDoNothing mechanism the fix depends on (real concurrent interleaving can't be forced
+  against PGlite's single connection - see the test file's own comment).
+- **[Low, defense-in-depth - fixed]** `/admin/settings` gated page entry on `settings.manage`,
+  but the reward-rules/VM-multiplier editors it renders actually require the stronger
+  `economy.manage`. No live gap today (both are `super_admin`-only per `scripts/seed-roles.ts`),
+  but fixed anyway so a future role split can't silently show live money controls that fail on
+  submit. `page.tsx` now checks `roleHasPermission(staff.roleId, "economy.manage")` and only
+  renders those two editors when true; the server actions' own permission checks are unchanged
+  (defense-in-depth, not the real gate). Covered by a new `page.test.tsx` (Server Components are
+  plain async functions returning a React element tree - testable directly with Vitest, no DOM
+  needed).
+- **[Informational - documented]** `lessons.xpOverride`/`vmOverride` exist and are already
+  trusted by `creditLessonCompletion`, but no editor UI exists yet. Noted in `docs/DATA_MODEL.md`
+  and the `admin-page` skill (new item 8) so whoever builds that editor routes it through the
+  same bounds-checked, staff-only pattern `reward_rules` already uses, rather than inventing a
+  second convention.
+
+**FEATURE_MAP.md Status column updated** for the rows this phase actually delivers: WH-02/03/04
+(streak/VM/XP tiles) → Built, PR-01 → Partially built (percentile deferred to Phase 6, avatar/
+handle never v1 concepts), PR-02 → Built, TR-52 → Built (with a note that its API-endpoints
+column is stale - implemented as a Server Action per D16, not the REST route named there).
+Everything else FEATURE_MAP tags Phase 3 (badges, rewards, certificates, report card, daily
+goals, PR-04 onward) is Phase 3b, explicitly deferred per this session's 3a/3b split - not
+audited as a miss here.
+
+Production check note: the 3 new Checkpoint 5 endpoints return 404 (not 401) against
+`https://finlamma-backend-rho.vercel.app` - expected, since `phase-3a-economy-core` isn't merged
+to `main` yet (`health.version` = `3b0d147` = `origin/main` HEAD exactly). **Re-verify as 401,
+not 404, once merged.**
+
+`pnpm typecheck`/`pnpm lint` clean, `pnpm test` clean run alone (985+ tests - an earlier run
+showed 8 worker crashes, traced to running `pnpm test` and `pnpm build` concurrently on Windows,
+not a real failure), `pnpm build` exit 0. All 24 migrations applied and match the repo exactly;
+zero schema drift across all 25 tables; RLS enabled with 0 policies everywhere; Supabase security
+advisor shows only the expected `rls_enabled_no_policy` INFO-level findings.
+
+## 2026-09-23 — Phase 3a Checkpoint 5 (stat endpoints) built; Phase 3a complete pending merge/audit
+
+Two fixes done first, per founder feedback on Checkpoint 4's safeguards:
+- `tests/min-count.json`'s floor lowered from 902 (an exact match to the count at the time) to
+  890, with the `note` field rewritten to say why: the floor exists to catch a bulk accidental
+  loss (like the incident below), not to force a commit-time bump for every small deliberate
+  test removal.
+- Streak read staleness bug found and fixed - see `docs/ARCHITECTURE.md` D31. The write path
+  (D30) was already correct (no retroactive freeze stacking, proven with a new explicit 10-day-
+  gap test); the read path (`GET /me/stats/streak`) was not - it echoed the stored row as-is, so
+  a learner silent for 10+ days would see their old streak number until their next real activity
+  happened to recompute it. Fixed with a shared pure decision function used by both paths.
+
+Then Checkpoint 5 itself - `docs/ARCHITECTURE.md` D32 has the full design. Summary: level is
+always derived from `xp_events` via an admin-editable curve (`settings_kv.level_curve`, base 300/
+step 100), never stored; a new `rank_titles` table (admin-editable, keyed on level, not
+hardcoded) supplies Profile's rank title; V Money balance is summed live from `vmoney_ledger`,
+same as it always has been. Three new endpoints: `GET /me/stats/xp` (WH-04), `GET
+/me/stats/vmoney` (WH-03), `GET /me/profile/overview` (PR-01/PR-02) - all `requireFullAccess`,
+self-only, tested including a zero-activity user (level 1, 0 XP, 0 balance, no rank title).
+Percentile/rank omitted outright (not stubbed) - deferred to Phase 6's Arena leaderboard
+snapshot, as already planned in `docs/FEATURE_MAP.md`.
+
+**Known limitation: `pnpm db:migrate` cannot reach the database from this machine/network -
+use the Supabase SQL Editor for migrations until resolved.** `pnpm db:migrate` hung
+indefinitely (not just slow - confirmed hung after a 2-minute attempt, a 5-minute attempt, and a
+third attempt with this session's sandboxing fully disabled, ruling out a sandbox-specific
+network restriction) trying to apply the new `rank_titles` table migration
+(`drizzle/0023_deep_champions.sql`, purely additive - one `CREATE TABLE`) against
+`DATABASE_URL_DIRECT`. Root cause not fully confirmed, but the symptom matches Supabase's
+**direct connection (port 5432, `db.<ref>.supabase.co`) being IPv6-only**, against a network with
+no working IPv6 route - a generic `curl` reachability probe from this same environment also
+failed for both IPv4 and IPv6 targets, consistent with (though not conclusive proof of) an
+IPv6-routing gap rather than something Supabase-side.
+
+**Workaround used**: ran the `CREATE TABLE`/`ALTER TABLE ENABLE ROW LEVEL SECURITY`/`CREATE
+UNIQUE INDEX` SQL directly in the Supabase SQL Editor, plus a manually-computed `insert into
+drizzle.__drizzle_migrations` row (hash computed locally via the exact sha256-of-file-content
+logic `drizzle-orm`'s own migrator uses, then independently re-verified by recomputing it a
+second time) so `pnpm db:migrate`/`GET /api/v1/health`'s migration-drift check don't think it's
+still pending. Do this for every migration until the connection issue is fixed.
+
+**Recommended fix (not applied - `drizzle.config.ts` still points at `DATABASE_URL_DIRECT`,
+pending founder decision)**: switch `drizzle.config.ts`'s `dbCredentials.url` to Supabase's
+**Session pooler** connection string (`aws-0-<region>.pooler.supabase.com:5432`, IPv4-compatible,
+one stable session per connection - unlike the Transaction pooler). Specifically **not** the
+Transaction pooler (port 6543, same host) - that one reassigns the backend connection between
+individual statements, which is the exact D13 incident's root cause applied to a different
+connection; a multi-statement `db:migrate` transaction is precisely the kind of thing that
+failure mode breaks. The Session pooler keeps a stable session (closer to what a direct
+connection gives you) while still being IPv4-reachable, which is the actual property migrations
+need. **Worth confirming/fixing before Phase 3b or Phase 4 add another migration**, in case this
+recurs.
+
+`pnpm typecheck`/`pnpm lint`/`pnpm test` all clean (985 tests, floor 890), `pnpm contract`
+regenerated (25 paths, 27 endpoints documented). Not yet merged - stop-and-audit is the next step
+per the founder's Checkpoint 5 instruction ("stop after Checkpoint 5, then we audit and merge").
+
+## 2026-09-23 — Incident: a Write call overwrote an existing test file; safeguards added
+
+During Phase 3a Checkpoint 3, a `Write` tool call on
+`src/server/lesson-progress/repo.test.ts` was made without reading the file first. The file
+already existed (pre-dating Checkpoint 3), so the write silently replaced its entire contents
+instead of extending it - deleting all test coverage for `completeLessonProgress`,
+`countInProgressLearners` and `countInProgressLearnersByLessonIds` (functions unrelated to
+Checkpoint 3, still used elsewhere). `pnpm test` still reported "passing" immediately afterward,
+since nothing checked for a minimum test count - the drop (859 tests before Checkpoint 3's other
+new tests, vs. 6 new added while 9 were silently deleted) was only caught by noticing `git commit`
+labelled the file a "rewrite (66%)" rather than a plain modification.
+
+**Fixed same-session**: the original 9 test cases were merged back in alongside the 6 new
+Checkpoint 3 ones (commit `eec5abb`) - 15 total, all passing. `git log --numstat` across the whole
+`phase-3a-economy-core` branch was then checked for every other `*.test.ts` file touched this
+phase (deletions vs. insertions per file, looking for the same "roughly equal delete/insert"
+signature) - confirmed this was the only file affected; every other test file this phase shows
+zero deletions (pure additions).
+
+**Safeguards added** (both same-day):
+- CLAUDE.md rule 14: never `Write` a test file without reading it first; use `Edit`/append on an
+  existing `*.test.ts` file.
+- `pnpm test`'s new `posttest` step (`scripts/check-test-count.mjs`) fails the run if the real
+  test count (from vitest's own JSON reporter, `tests/.last-run.json`) drops below the floor
+  committed in `tests/min-count.json` (currently 869). This is a backstop, not a substitute for
+  reading the file first - it only catches a *count* drop, not a rewrite that happens to net the
+  same or a higher count. `tests/min-count.json` must be bumped deliberately, in the same commit,
+  whenever tests are intentionally removed or consolidated.
+
+## 2026-09-23 — Decided: keep the single shared database for now (dev/preview/production), not a separate dev project
+
+Recorded in full as `docs/ARCHITECTURE.md` decision D27 - summary here for the dated record.
+
+Considered splitting off a dedicated dev database once Phase 3 Checkpoint 2 started writing to
+the append-only `xp_events`/`vmoney_ledger` tables, since local/preview test credits permanently
+accumulate there with no delete path. **Decided against it for now**: there are no real users
+yet, so a dedicated dev database isn't buying real protection today - it would just be earlier
+infrastructure than the risk currently justifies.
+
+**Consequences (also in D27, restated here since this is the entry someone will find first):**
+- `xp_events`/`vmoney_ledger` (and later Phase 4's `orders`/`holdings`) cannot be cleaned up -
+  only reversed with a new row, which still leaves the original test row in the table forever.
+- **Blocking pre-launch item added to `docs/ROADMAP.md`** (above the existing "separate dev
+  database" item): the production database must be recreated from migrations + seeds - fresh
+  Supabase project or a full reset - before real users sign up, so day-one ledgers are clean.
+- CLAUDE.md rule 8 (destructive migrations must wait for production deploy) stays exactly as
+  critical as before - nothing about this decision relaxes it, since every migration still lands
+  on the one real database immediately.
+- **Test learners created against this shared database from here on must be recorded here**,
+  by email or `clerkUserId`, at the time they're created - not because they can be cleaned up
+  (they can't, per the point above), but so they're identifiable rather than mistaken for real
+  activity when the recreate actually happens.
+
+**Test learners recorded so far: none.** No test learner (user) rows have been created against
+the shared database during Phase 3a work (Checkpoints 1-2 only touched schema/seed/settings rows
+- `reward_rules`, `settings_kv`, the `economy.manage` permission grant - which are real
+launch-intended data, not test learners). This section gets a new bullet the first time one is
+created.
+
+## 2026-09-22 — Phase 2b merged to `main` and verified in production. Next: Phase 3a.
+
+`phase-2b-content` merged into `main` via merge commit `3b0d147` (21 commits, kept the branch),
+after `/phase-audit 2b` below passed with its one Medium finding fixed pre-merge.
+
+**Production, verified post-merge against `https://finlamma-backend-rho.vercel.app`:**
+- `GET /api/v1/health`: `version` is `3b0d147`, matching the merge commit exactly. `status`,
+  `database`, `migrations`, `clerkKeys`, `storage`, `consentPiiHmacKey` all `ok`.
+  `tradingUnlockWorldMissing: false`. `worldsMissingBossQuiz` still lists all 7 seeded worlds -
+  this is the pre-existing pre-launch blocker tracked below (2026-09-21 entry), not a merge
+  regression; nothing in Phase 2b was expected to close it.
+- `legalDocuments: "placeholder"` is expected (real text pending outside legal review) - unrelated
+  to this merge, tracked on the pre-launch checklist.
+
+**Phase 2b is fully verified end to end and closed.** Phase 3 is split into two branches per the
+`/phase-kickoff 3` plan: **Phase 3a** (rate limiting, core XP/VM ledger, story/doubt-zone
+completion, streaks, XP/level/VM stat endpoints) merges first and gets its own `/phase-audit`;
+**Phase 3b** (badges, rewards, certificates, weekly report card) starts on a fresh branch only
+after 3a merges to `main`. Next up: Phase 3a.
+
 ## 2026-09-22 — `/phase-audit 2b`: PASS, 1 Medium security finding fixed before merge
 
 Full audit of Phase 2b (`docs/ROADMAP.md`'s 7 ticked items + all 42 `docs/FEATURE_MAP.md` rows

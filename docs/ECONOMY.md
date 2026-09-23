@@ -179,3 +179,61 @@ balance stays fully explainable.
 These figures, plus the virtual-only Competition prizes, admin-editable mentors, and the in-scope
 templated report card decided earlier in this round, are now reflected in `docs/PRODUCT_SPEC.md`,
 `docs/DATA_MODEL.md`, `docs/ROADMAP.md` and the relevant `docs/FEATURE_MAP.md` rows.
+
+**4. "Successful completion" per lesson kind (Phase 3 Checkpoint 2, revised in Checkpoint 3 kickoff
+— D28) — what actually credits `reward_rules`' XP/VM.** A lesson is credited **once per user per
+lesson**, on the first successful completion; a failed first attempt never forfeits the reward,
+and any later replay (successful or not) never credits again. Idempotency is a DB unique
+constraint on `(userId, sourceType, sourceId=lessonId)` on both `xp_events` and `vmoney_ledger`
+(see `docs/DATA_MODEL.md`, the `money-ledger` skill) — crediting code always attempts the insert
+and treats a conflict as "already credited," which is what makes this correct across retries
+without tracking "has this been credited" separately.
+
+**Revised (D28): every kind with graded questions needs a minimum accuracy to count as
+successful, not just Boss Quiz.** Checked against the prototype (`Finlamma App.dc.html`) and this
+doc before deciding: the prototype's own Lesson Report Card (lines 4283-4417/9782-10471) shows a
+real accuracy ring and S/A/B/C grade as *feedback*, but never gates the flat per-lesson VM reward
+on it anywhere — the original design paid a flat reward for finishing, regardless of score. This
+is a **deliberate departure from that**: for a learning app, "finish it however badly and still
+get paid the same as someone who tried" doesn't hold up, so a real (lower-than-Boss-Quiz) pass
+mark was added on top of the original design rather than restoring it as-is.
+
+| Lesson kind | "Successful" means | Why |
+|---|---|---|
+| Video, Quiz, Role Play | The attempt reaches `completed` **and** `accuracyPct >= settings_kv.lesson_flow_scoring.lessonPassMarkPct` (default 50%) | All three go through the same graded-step engine as Boss Quiz (`quiz-attempts/service.ts`'s `quizKindForLesson` — Role Play included, per PRODUCT_SPEC.md's "Boss Quiz and Role Play reuse the same lesson-flow content shape as Quiz") and so all have a real `accuracyPct` to judge, unlike Story/Doubt Zone. Deliberately lower than Boss Quiz's bar (D24) — this gates one lesson's reward, not world progression. |
+| Story, Doubt Zone (AI Chat) | The Checkpoint 3 completion endpoint marks it complete (served, then a server-measured minimum time elapsed) | These kinds have no graded steps and no `quiz_attempts` row at all (docs/ARCHITECTURE.md D23's known gap, closed in Checkpoint 3) — there is no accuracy to judge, only "did they actually engage with it." |
+| Boss Quiz | The attempt reaches `completed` **and** `accuracyPct >= settings_kv.lesson_flow_scoring.bossQuizPassMarkPct` (default 60%, D24) | Reuses the exact same pass mark that already gates the next world's unlock (D24) — a higher bar than the other graded kinds, since it also gates world progression, not just this lesson's own reward. |
+
+Every graded kind's pattern is identical: a failed attempt doesn't block anything — the learner
+just starts a fresh attempt (new `attemptNumber`, same lesson id), and *that* attempt's success is
+what credits, since the idempotency key is per-lesson, not per-attempt.
+
+**5. What counts as "activity" for the learning streak (Phase 3 Checkpoint 4).** A day extends the
+`learning`-scope streak (`docs/ARCHITECTURE.md` D30) if and only if it contains **at least one
+real, first-time XP/VM credit** — i.e. `src/server/economy/service.ts`'s `creditLessonCompletion`
+actually inserted new `xp_events`/`vmoney_ledger` rows (`credited: true`), for *any* lesson kind
+(Video/Quiz/Role Play/Boss Quiz passing its pass mark per decision 4 above, or Story/Doubt Zone
+completing per Checkpoint 3's minimum-time rule). Deliberately **not** triggered by:
+- Opening the app, viewing a lesson, or starting an attempt with no completion.
+- A failed/below-pass-mark attempt (never credits, per decision 4 — so never extends the streak
+  either, matching the same "genuine engagement" bar rather than mere app usage).
+- A replay of an already-completed lesson (never re-credits, per `docs/ARCHITECTURE.md` D26's
+  idempotency — so it never re-triggers a streak update either, though this is moot in practice
+  since the streak update itself is also idempotent within a day regardless).
+
+This ties the streak to the same "successful completion" bar the ledger already uses, rather than
+inventing a separate, weaker "activity" concept — one real accomplishment a day keeps the streak
+alive, not just opening the app. `pulse_check`-scope streaks have no trigger yet (Phase 5's Pulse
+Check doesn't exist); the row structure exists (`streaks.scope`) but nothing writes to it today.
+
+**No XP/VM reward is credited for a streak itself in this checkpoint** — nothing above (or
+anywhere else in this document) defines a streak-length bonus amount, so none is invented here.
+If/when one is decided, it must be credited through the same `creditLessonCompletion`-style
+`(userId, sourceType, sourceId)` idempotency path as everything else (`docs/ARCHITECTURE.md` D26),
+never a separate ad hoc write to `xp_events`/`vmoney_ledger`.
+
+A lesson's `xpOverride`/`vmOverride` (nullable columns on `lessons`, `null` = use the kind's
+`reward_rules` default) let an individual lesson pay a different amount than its kind's default —
+decided in `docs/DATA_MODEL.md`'s `reward_rules` entry, no admin UI for setting them yet (the
+per-lesson override is a natural extension of the Phase 2b lesson content editor, deferred until a
+real lesson actually needs a non-default amount).

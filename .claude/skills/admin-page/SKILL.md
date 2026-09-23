@@ -38,3 +38,12 @@ paths: "src/app/admin/**"
 5. Destructive actions need a confirmation dialog that names what will happen.
 6. Show loading and empty states; toast success and error messages in plain English.
 7. Add a Playwright test for the main flow when the page has mutations.
+8. **When building an editor for a bounded numeric admin input that a client-facing service
+   function already trusts** (e.g. `lessons.xpOverride`/`vmOverride` — nullable integer columns
+   `src/server/economy/service.ts`'s `creditLessonCompletion` already reads and trusts, with no
+   editor UI yet as of Phase 3a) — reuse the exact pattern `RewardRuleUpdateSchema`
+   (`src/server/economy/schemas.ts`, `MAX_REWARD_AMOUNT` = 5000) already established: a Zod schema
+   with an explicit upper bound (a fat-finger guard, not a product limit), the mutation gated on
+   the domain's own permission (never a broader one), and logged via `logActivity` with
+   before/after values. Don't invent a second bounds-checking convention for a lever that's
+   structurally the same shape as one that already exists.

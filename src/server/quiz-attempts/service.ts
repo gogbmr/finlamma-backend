@@ -1,6 +1,7 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { extractQuestionIds } from "@/server/lessons/service";
 import { VideoContentSchema } from "@/server/lessons/schemas";
@@ -292,6 +293,26 @@ export async function submitAnswer(
       // admin unpublish-warning (src/server/lessons/service.ts) - see
       // docs/ARCHITECTURE.md D23.
       await completeLessonProgress(user.id, lessonId);
+      // docs/ECONOMY.md's per-lesson-kind "successful completion" rule
+      // (docs/ARCHITECTURE.md D28): every kind that goes through this
+      // graded-step flow has an accuracyPct, so every one of them needs a
+      // pass mark to credit - completing-but-failing doesn't forfeit
+      // anything, the learner just retries (a fresh attempt, same lesson
+      // id, so the next PASS is still the one that credits - idempotency
+      // is keyed on (user, lesson), never on a specific attempt). Boss
+      // Quiz uses its own higher bar (D24, since it also gates world
+      // unlock); Video/Quiz/Role Play share the lower lessonPassMarkPct.
+      // Story/Doubt Zone never reach this code path at all (no graded
+      // questions - Checkpoint 3's own completion endpoint handles them).
+      const passMark =
+        lesson.kind === "boss_quiz" ? settings.bossQuizPassMarkPct : settings.lessonPassMarkPct;
+      const successful = accuracyPct >= passMark;
+      await creditLessonCompletion(
+        user,
+        { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
+        successful,
+        meta,
+      );
     } else {
       // Already completed by a concurrent duplicate last-step submit -
       // reflect the real, already-completed state rather than claiming

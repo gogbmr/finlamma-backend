@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests --reporter=default --reporter=json --outputFile.json=tests/.last-run.json",
+    "posttest": "node scripts/check-test-count.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:generate": "drizzle-kit generate",
@@ -21,6 +22,7 @@
     "seed:mentors": "tsx scripts/seed-mentors.ts",
     "seed:worlds": "tsx scripts/seed-worlds.ts",
     "seed:settings": "tsx scripts/seed-settings.ts",
+    "seed:reward-rules": "tsx scripts/seed-reward-rules.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {
@@ -38,6 +40,8 @@
     "@react-email/components": "^1.0.12",
     "@scalar/nextjs-api-reference": "^0.12.0",
     "@tanstack/react-table": "^8.21.3",
+    "@upstash/ratelimit": "^2.1.0",
+    "@upstash/redis": "^1.39.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",

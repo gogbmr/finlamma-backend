@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -115,6 +115,16 @@
                 "example": "ok",
                 "description": "A non-fatal warning (never causes a 503): 'missing' means at least one of the S3_ENDPOINT/S3_REGION/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY env vars isn't configured, so src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage plumbing with no way to notice a missing key from outside the deployment's env vars."
               },
+              "redis": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "unreachable",
+                  "unconfigured"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'unconfigured' means UPSTASH_REDIS_REST_URL/TOKEN aren't set, 'unreachable' means they're set but a live PING failed. Unlike storage, src/lib/redis.ts's rate limiter fails OPEN when this isn't 'ok' (docs/ROADMAP.md Phase 3 checkpoint 1) - the lesson step serve/answer endpoints stay usable, but this field is how that gap is visible from outside the deployment's env vars."
+              },
               "worldsMissingBossQuiz": {
                 "type": "array",
                 "items": {
@@ -156,6 +166,7 @@
               "version",
               "consentPiiHmacKey",
               "storage",
+              "redis",
               "worldsMissingBossQuiz",
               "tradingUnlockWorldMissing",
               "timestamp"
@@ -2501,6 +2512,309 @@
         }
       }
     },
+    "/api/v1/lessons/{id}/serve": {
+      "post": {
+        "summary": "Serve a Story or Doubt Zone lesson (starts its completion timer)",
+        "description": "For Story and Doubt Zone lessons only - these have no graded questions (docs/ARCHITECTURE.md D23), so unlike a Video/Quiz/Role Play/Boss Quiz lesson there is no POST .../steps/{n}/serve to call instead. The returned `startedAt` is server-stamped and never trusted from the client - POST /lessons/{id}/complete measures elapsed time from it, not from anything the app reports. Idempotent: re-serving an already-served (or already-completed) lesson returns the exact original startedAt, never a new one.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lesson's current progress, with its server-stamped startedAt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "lessonId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "in_progress",
+                            "completed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Server-stamped serve time (ISO 8601 UTC) - what .../complete measures elapsed time from."
+                        }
+                      },
+                      "required": [
+                        "lessonId",
+                        "status",
+                        "startedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "This lesson isn't a Story or Doubt Zone kind - use the graded-step endpoints instead",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "\"quiz\" lessons use POST /lessons/{id}/steps/{n}/serve, not this endpoint"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lessons/{id}/complete": {
+      "post": {
+        "summary": "Complete a Story or Doubt Zone lesson (credits XP/V Money)",
+        "description": "For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson to have been served first, and at least the kind's own admin-editable minimum time (settings_kv.lesson_flow_scoring.storyMinCompletionSeconds / doubtZoneMinCompletionSeconds) to have elapsed since that server-stamped serve time - never a client-reported duration (docs/ARCHITECTURE.md D21's server-timed reasoning applies here too). Credits at most once per user per lesson (docs/ECONOMY.md decision 4, D26): completing an already-completed lesson is an idempotent no-op, `credited: false`, never a second credit.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lesson is now completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "lessonId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        "completedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "credited": {
+                          "type": "boolean",
+                          "description": "True only the first time this lesson was completed for this user - a later idempotent replay of an already-completed lesson returns credited: false (no re-credit)."
+                        }
+                      },
+                      "required": [
+                        "lessonId",
+                        "status",
+                        "completedAt",
+                        "credited"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not served yet - call POST /lessons/{id}/serve first",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Not served yet - call POST /lessons/{id}/serve first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Either too many requests, or not enough time has elapsed since serve yet (LESSON_TOO_SOON) - both mean: wait, then retry the exact same request",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "LESSON_TOO_SOON",
+                    "message": "Spend a bit more time here before completing (150s minimum, 40s so far)",
+                    "details": {
+                      "minSeconds": 150,
+                      "secondsElapsed": 40
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/lessons/{id}/steps/{n}/serve": {
       "post": {
         "summary": "Serve the next graded step of a lesson (starts or resumes an attempt)",
@@ -2600,6 +2914,22 @@
                   "error": {
                     "code": "CONFLICT",
                     "message": "Not the current step - answer earlier steps first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
                   }
                 },
                 "schema": {
@@ -2747,6 +3077,22 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -2814,6 +3160,459 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No published worlds yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/stats/streak": {
+      "get": {
+        "summary": "Get my streak stats (World Home header STREAK tile, WH-02)",
+        "description": "Current/longest streak and freezes left, for both independent habit loops - `learning` (lesson completions, docs/ECONOMY.md decision 5) and `pulseCheck` (News' Pulse Check, Phase 5 - always 0/0/full freezes until that phase ships the events that trigger it). Day boundaries are computed server-side in IST (Asia/Kolkata) from the server's own clock - never a client-reported date or timezone.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's streak stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "learning": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 11
+                            },
+                            "freezesLeft": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest",
+                            "freezesLeft"
+                          ]
+                        },
+                        "pulseCheck": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 11
+                            },
+                            "freezesLeft": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest",
+                            "freezesLeft"
+                          ],
+                          "description": "Always 0/0/full freezes until Phase 5's Pulse Check exists to trigger it."
+                        }
+                      },
+                      "required": [
+                        "learning",
+                        "pulseCheck"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/stats/xp": {
+      "get": {
+        "summary": "Get my XP stats (World Home header XP tile, WH-04)",
+        "description": "Total XP, current level and XP progress to the next level, plus XP earned in the trailing 7 days. Level is always derived from total XP using the admin-editable level curve (settings_kv) - it is never stored. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot to read it from (docs/FEATURE_MAP.md PR-03).",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's XP stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "level": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 3
+                        },
+                        "totalXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1000
+                        },
+                        "xpIntoLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 300
+                        },
+                        "xpToNextLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 200
+                        },
+                        "weeklyXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "XP earned in the trailing 7 days.",
+                          "example": 180
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "totalXp",
+                        "xpIntoLevel",
+                        "xpToNextLevel",
+                        "weeklyXp"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/stats/vmoney": {
+      "get": {
+        "summary": "Get my V Money stats (World Home header V MONEY tile, WH-03)",
+        "description": "Balance and V Money earned/spent in the trailing 7 days. Balance is always summed live from vmoney_ledger (CLAUDE.md rule 2) - it is never a stored column. There is no spend path yet in this phase (trading is Phase 4+), so weeklySpent is currently always 0 - it starts reflecting real spends automatically once one exists, no API change needed. \"Earned from trade\" (also part of WH-03) is omitted entirely until trading exists.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's V Money stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "balance": {
+                          "type": "integer",
+                          "example": 210
+                        },
+                        "weeklyEarned": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "V Money earned in the trailing 7 days.",
+                          "example": 90
+                        },
+                        "weeklySpent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "V Money spent in the trailing 7 days. Always 0 until a spend path exists.",
+                          "example": 0
+                        }
+                      },
+                      "required": [
+                        "balance",
+                        "weeklyEarned",
+                        "weeklySpent"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/profile/overview": {
+      "get": {
+        "summary": "Get my profile overview (Profile screen ID card, PR-01/PR-02)",
+        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, and the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet). Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's profile overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "firstName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "Aarav"
+                        },
+                        "lastInitial": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "S"
+                        },
+                        "joinedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2026-01-05T09:12:00.000Z"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 3
+                        },
+                        "totalXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1000
+                        },
+                        "xpIntoLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 300
+                        },
+                        "xpToNextLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 200
+                        },
+                        "rankTitle": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ],
+                          "description": "The highest rank title the learner's current level qualifies for, or null if no rank_titles row has a minLevel at or below their level yet."
+                        }
+                      },
+                      "required": [
+                        "firstName",
+                        "lastInitial",
+                        "joinedAt",
+                        "level",
+                        "totalXp",
+                        "xpIntoLevel",
+                        "xpToNextLevel",
+                        "rankTitle"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
                   }
                 },
                 "schema": {

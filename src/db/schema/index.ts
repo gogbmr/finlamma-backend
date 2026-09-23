@@ -11,3 +11,6 @@ export * from "./lessons";
 export * from "./questions";
 export * from "./quiz_attempts";
 export * from "./lesson_progress";
+export * from "./economy";
+export * from "./streaks";
+export * from "./rank_titles";

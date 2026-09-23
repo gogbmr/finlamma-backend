@@ -85,6 +85,15 @@ const envSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().optional(),
   S3_SECRET_ACCESS_KEY: z.string().optional(),
 
+  // Redis (Upstash) - optional until a database exists; src/lib/redis.ts fails
+  // OPEN (not closed) when unset, unlike S3/email above - see its own comment
+  // for why: this is used for rate limiting a learning endpoint, and refusing
+  // every learner's request because ops forgot a Redis var would be a worse
+  // outage than the abuse vector it guards against. GET /api/v1/health's
+  // `redis` field surfaces "unconfigured" so the gap is still visible.
+  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+  UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
+
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),

@@ -148,6 +148,27 @@
       "when": 1790058193093,
       "tag": "0020_cynical_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790095463030,
+      "tag": "0021_bumpy_changeling",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1790153039776,
+      "tag": "0022_nasty_sauron",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790155277407,
+      "tag": "0023_deep_champions",
+      "breakpoints": true
     }
   ]
 }

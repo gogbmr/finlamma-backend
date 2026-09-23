@@ -118,6 +118,21 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
           onChange={(v) => setForm({ ...form, bossQuizPassMarkPct: v })}
         />
         <NumberField
+          label="Lesson pass mark (%) - Video/Quiz/Role Play"
+          value={form.lessonPassMarkPct}
+          onChange={(v) => setForm({ ...form, lessonPassMarkPct: v })}
+        />
+        <NumberField
+          label="Story min. completion time (seconds)"
+          value={form.storyMinCompletionSeconds}
+          onChange={(v) => setForm({ ...form, storyMinCompletionSeconds: v })}
+        />
+        <NumberField
+          label="Doubt Zone min. completion time (seconds)"
+          value={form.doubtZoneMinCompletionSeconds}
+          onChange={(v) => setForm({ ...form, doubtZoneMinCompletionSeconds: v })}
+        />
+        <NumberField
           label="Trading unlocks after world position"
           value={form.tradingUnlockAfterWorldPosition}
           onChange={(v) => setForm({ ...form, tradingUnlockAfterWorldPosition: v })}
@@ -126,6 +141,13 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
       <p className="text-xs text-muted-foreground">
         A Boss Quiz attempt below the pass mark doesn&apos;t unlock the next world - the learner
         can simply retry.
+      </p>
+      <p className="text-xs text-muted-foreground">
+        A Video/Quiz/Role Play attempt below its own (lower) pass mark doesn&apos;t earn XP/V
+        Money - the learner can simply retry, and the first passing attempt is the one that
+        credits. Story and Doubt Zone have no accuracy gate (no graded questions) - instead they
+        require the minimum completion time below, measured server-side from when the lesson was
+        served.
       </p>
       <p className="text-xs text-muted-foreground">
         Trading unlocks once a learner passes the Boss Quiz of the published world at this

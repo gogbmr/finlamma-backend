@@ -16,8 +16,12 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   the last change we applied, so the webhook can ignore stale/out-of-order redeliveries),
   deleted_at. On `user.deleted` from Clerk, the row is soft-deleted and anonymized in place
   (personal fields cleared) rather than removed, so ledger/trading/leaderboard history stays
-  intact. `level`, `total_xp`, `current_world_id` are added in Phase 3 (progress economy) once
-  `worlds` exists.
+  intact. **Not added in Phase 3, despite this section's original plan**: `level` and `total_xp`
+  are never stored columns — level is always derived from `xp_events`/`vmoney_ledger` sums at
+  read time (`src/server/leveling`, Phase 3 Checkpoint 5), so it re-derives instantly if the
+  level curve settings change, with no backfill. `current_world_id` was likewise never needed —
+  "current lesson" (`GET /api/v1/me/current-lesson`, Phase 2b) is derived from `lesson_progress`,
+  not a stored pointer on `users`.
 - `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
   `users` - staff never has a row in `users`), role_id, active
 - `roles`, `permissions` (key like `quiz.create`), `role_permissions`
@@ -112,12 +116,16 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   response never includes `questions.answer` or its explanation text until that specific question
   has been graded server-side (see `docs/ARCHITECTURE.md` D17 and Phase 2b's answer-leakage tests).
 - `lesson_progress` (user_id, lesson_id, status `in_progress`|`completed`, started_at, completed_at)
-  — one row per (user, lesson), written entirely as a byproduct of the quiz-attempts flow below
-  (`serveStep` starts it, `submitAnswer` completes it), so only lesson kinds with at least one
-  graded step (video/quiz/boss_quiz/role_play) ever get a row yet — `story`/`doubt_zone` have no
-  "mark as done" endpoint at all today, a known gap. Drives the admin unpublish-warning
-  (in-progress learner counts) — see `docs/ARCHITECTURE.md` D23. World unlock itself is judged on
-  `quiz_attempts.accuracy_pct` (below), not this table — see D24.
+  — one row per (user, lesson). For a graded kind (video/quiz/boss_quiz/role_play), it's written
+  entirely as a byproduct of the quiz-attempts flow below (`serveStep` starts it, `submitAnswer`
+  completes it). For Story/Doubt Zone — which have no graded questions at all — `POST
+  /api/v1/lessons/{id}/serve` and `.../complete` (Phase 3 Checkpoint 3, closing D23's original
+  gap) write it directly: `serve` stamps `started_at` server-side (the anti-farming anchor
+  `complete` measures elapsed time from, never a client-reported duration), and `complete` only
+  succeeds once `settings_kv.lesson_flow_scoring.storyMinCompletionSeconds`/
+  `doubtZoneMinCompletionSeconds` have genuinely elapsed since then — see `docs/ARCHITECTURE.md`
+  D29. Drives the admin unpublish-warning (in-progress learner counts) — see D23. World unlock
+  itself is judged on `quiz_attempts.accuracy_pct` (below), not this table — see D24.
 - `quiz_attempts` (user_id, lesson_id, attempt_number, is_first_pass, status `in_progress`|
   `completed`, started_at, completed_at, total_xp_preview, accuracy_pct — correct steps / total
   steps, 0-100, computed once at completion; a Boss Quiz's pass/fail is judged against this vs.
@@ -139,17 +147,54 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   and stored via `src/lib/s3.ts`; sharing is a signed URL the student sends themselves, never a
   message sent on their behalf
 
-**Economy**
-- `xp_events` (user_id, source, amount, ref)
-- `vmoney_ledger` (user_id, amount (+/-), reason, ref_type, ref_id, idempotency_key,
-  multiplier_applied — the `vm_issuance_multiplier` in effect when this entry was written, so a
-  balance stays explainable even after the multiplier later changes)
-- `reward_rules` (activity_kind — video|story|ai_chat|role_play|quiz|boss_quiz|pulse_check|..,
-  default_xp, default_vm, active) — admin-editable; XP and VM are earned independently (no
-  conversion rate between them), and an individual lesson/quiz's content can override its kind's
-  default. See `docs/ECONOMY.md` for the seeded starting values and the simulation behind them.
-- `streaks` (user_id, scope `learning`|`pulse_check` — two independent habit loops, same shape,
-  current, longest, last_active_date_ist, freezes_left, freezes_reset_on)
+**Economy** (Phase 3 Checkpoint 2 — built; see `docs/ARCHITECTURE.md` D26 and the `money-ledger`
+skill for the full idempotency/reversal design)
+- `xp_events` (user_id, amount, source_type, source_id, rule_id → `reward_rules.id` nullable,
+  reason) — append-only, no update/delete path anywhere in the codebase (same convention as
+  `activity_logs`). Unique index on `(user_id, source_type, source_id)` is the idempotency
+  mechanism: a crediting insert conflicts (no-ops) if this exact `(user, source)` was already
+  credited. `rule_id` is null for a non-rule-based entry (a reversal, or a future manual
+  adjustment).
+- `vmoney_ledger` — same shape as `xp_events` plus `multiplier_applied` (the
+  `vm_issuance_multiplier` in effect when this entry was written, so a balance stays explainable
+  even after the multiplier later changes). `amount` is `bigint({ mode: "number" })` per CLAUDE.md
+  rule 2 (`xp_events.amount` is a plain `integer` — XP isn't money). A reversal is a new row with
+  a negative amount and its own distinct `source_type`/`source_id` (e.g. `source_type:
+  "reversal"`, `source_id: <original row's id>`) — never an UPDATE/DELETE of the original, and
+  never reusing the original's `(source_type, source_id)`, which would collide with its own
+  unique index.
+- `reward_rules` (activity_kind — video|story|ai_chat|role_play|quiz|boss_quiz, unique —
+  default_xp, default_vm, active) — admin-editable (`/admin/settings`, `economy.manage`); XP and
+  VM are earned independently (no conversion rate between them), seeded from
+  `docs/ECONOMY.md`'s decided 3× values (`pnpm seed:reward-rules`). `lessons.xp_override`/
+  `vm_override` (nullable integer columns, null = use the kind's `reward_rules` default) let an
+  individual lesson pay a different amount — no admin UI for setting them yet, see D26. Already
+  trusted unconditionally by `creditLessonCompletion` (`src/server/economy/service.ts`) once set,
+  so whoever builds that editor must route it through the same bounds-checked, staff-only pattern
+  `RewardRuleUpdateSchema` already uses (`MAX_REWARD_AMOUNT` = 5000, `economy.manage`-gated,
+  logged) — see the `admin-page` skill's note on this.
+  `activity_kind` names differ from `lessons.kind` in one place ("ai_chat" here is the
+  "doubt_zone" lesson kind) — `src/server/economy/service.ts`'s `activityKindForLessonKind` maps
+  between them. Crediting happens once per user per lesson, on the first *successful* completion
+  (`docs/ECONOMY.md` decision 4 defines "successful" per lesson kind) — wired into
+  `quiz-attempts/service.ts`'s attempt-completion path for video/quiz/role_play/boss_quiz;
+  story/doubt_zone credit from Checkpoint 3's own completion endpoint (no `quiz_attempts` row
+  exists for those kinds, D23).
+- `streaks` (Phase 3 Checkpoint 4 — built; unique on (user_id, scope)) — user_id, scope
+  `learning`|`pulse_check` (two independent habit loops, same shape; `pulse_check` rows don't
+  exist until Phase 5's Pulse Check triggers one), current, longest, last_active_date_ist (a bare
+  `date`, already an IST calendar date computed server-side by `src/lib/ist-date.ts` before it
+  reaches this column — never re-derived from a stored timestamp), freezes_left, freezes_reset_month
+  (`YYYY-MM` IST — the freeze allowance's lazy monthly reset point). See `docs/ARCHITECTURE.md` D30
+  for the day-boundary/freeze/idempotency design and `docs/ECONOMY.md` decision 5 for exactly which
+  events extend the `learning` streak. A learner's displayed streak is also re-checked at *read*
+  time (not just at the next write) against today's IST date, so a long-silent learner doesn't see
+  a stale, already-broken streak number until their next activity happens to recompute it.
+- `rank_titles` (Phase 3 Checkpoint 5 — built; unique on min_level) — min_level (integer),
+  title jsonb `{en,hi,hx}`. Admin-editable (`/admin/settings`, `settings.manage`) — no `order`
+  column, since `min_level` itself is the ladder's order. A learner's displayed rank title
+  (Profile Overview, PR-01) is the row with the highest `min_level` still ≤ their derived level;
+  `null` (no title shown) if the table is empty or every row's `min_level` is above their level.
 - `badges`, `user_badges`
 - `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
   badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,
@@ -164,7 +209,9 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   default 3 (position, not a world id/name — D25, `docs/ARCHITECTURE.md`)
   — see Trading below; scoring constants `speed_bonus_threshold_pct` = 45,
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
-  `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values)
+  `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values;
+  `level_curve` — `{baseXp: 300, stepXp: 100}` (Phase 3 Checkpoint 5) — XP to advance from level L
+  to L+1 = baseXp + stepXp×(L−1); admin-editable, `src/server/leveling`)
 
 **Reporting**
 - `report_snapshots` (user_id, week_start_date IST, efficiency_score 0-100, sub_metrics jsonb

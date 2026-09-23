@@ -8,7 +8,12 @@
 import "../envConfig";
 import { db } from "../src/db/client";
 import { settingsKv } from "../src/db/schema";
+import {
+  DEFAULT_VM_ISSUANCE_MULTIPLIER,
+  VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,
+} from "../src/server/economy/schemas";
 import { DEFAULT_LESSON_FLOW_SCORING } from "../src/server/settings/schemas";
+import { DEFAULT_STREAKS_SETTINGS, STREAKS_SETTINGS_KEY } from "../src/server/streaks/schemas";
 
 const SETTINGS = [
   {
@@ -31,6 +36,21 @@ const SETTINGS = [
     description:
       "Lesson Flow scoring constants (speed bonus, combo, fever mode, base XP per quiz kind) - " +
       "see docs/PRODUCT_SPEC.md §1. Editable only by super_admin (settings.manage), logged.",
+  },
+  {
+    key: VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,
+    value: DEFAULT_VM_ISSUANCE_MULTIPLIER,
+    description:
+      "Global V Money issuance multiplier - scales every reward_rules VM award at credit time, " +
+      "without touching the seeded reward_rules values. See docs/PRODUCT_SPEC.md §2. Editable " +
+      "only by super_admin (economy.manage), logged.",
+  },
+  {
+    key: STREAKS_SETTINGS_KEY,
+    value: DEFAULT_STREAKS_SETTINGS,
+    description:
+      "Streak freeze allowance per IST calendar month. See docs/ARCHITECTURE.md D30. Editable " +
+      "only by super_admin (settings.manage), logged.",
   },
 ] as const;
 
