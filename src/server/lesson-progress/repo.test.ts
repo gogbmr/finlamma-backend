@@ -1,20 +1,22 @@
 // Integration test against an in-process PGlite database (src/test/db.ts),
-// not a mock - proves the atomic time-gated UPDATE in
-// completeUngradedLessonProgressIfEligible actually enforces "at least N
-// seconds since startedAt" at the database level (docs/ECONOMY.md decision
-// 4's Story/Doubt Zone completion rule), not just in application code.
-// Never touches the real Supabase database (see @/db/client's NODE_ENV=test
-// guard). src/server/lesson-progress/service.test.ts covers the service
-// layer (settings lookup, error shapes) with this repo mocked out.
-import { mentors, users, worlds, lessons } from "@/db/schema";
+// not a mock - proves the unique (user_id, lesson_id) constraint, the
+// never-downgrade-on-conflict behavior, and (Phase 3 Checkpoint 3) the
+// atomic time-gated UPDATE in completeUngradedLessonProgressIfEligible
+// actually hold at the database level. Never touches the real Supabase
+// database (see @/db/client's NODE_ENV=test guard).
+import { randomUUID } from "node:crypto";
+import { afterAll, describe, expect, it, vi } from "vitest";
+import { lessons, mentors, users, worlds } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
-import { afterAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  completeLessonProgress,
   completeUngradedLessonProgressIfEligible,
+  countInProgressLearners,
+  countInProgressLearnersByLessonIds,
   getLessonProgress,
   startLessonProgress,
 } = await import("./repo");
@@ -24,9 +26,12 @@ afterAll(async () => {
   await db.$client.close();
 });
 
-let nextOrder = 200_000;
+let nextOrder = 100_000;
 function uniqueOrder() {
   return nextOrder++;
+}
+function uniqueKey(label: string) {
+  return `${label}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
 }
 
 async function makeUser() {
@@ -42,11 +47,11 @@ async function makeUser() {
   return user;
 }
 
-async function makeLesson(kind: "story" | "doubt_zone" = "story") {
+async function makeLesson(overrides: Partial<Record<string, unknown>> = {}) {
   const [mentor] = await db
     .insert(mentors)
     .values({
-      key: `mentor_${uniqueOrder()}`,
+      key: uniqueKey("mentor"),
       order: uniqueOrder(),
       name: { en: "Test Mentor", hi: "x", hx: "x" },
       bio: { en: "x", hi: "x", hx: "x" },
@@ -70,23 +75,57 @@ async function makeLesson(kind: "story" | "doubt_zone" = "story") {
       worldId: world.id,
       chapter: 1,
       step: 1,
-      kind,
+      kind: "quiz",
       title: { en: "Test Lesson", hi: "x", hx: "x" },
       blurb: { en: "x", hi: "x", hx: "x" },
-      content: {},
+      content: { questionIds: [] },
+      ...overrides,
     })
     .returning();
-  return lesson;
+  return { lesson, world };
 }
 
-describe("startLessonProgress / getLessonProgress", () => {
-  it("starts a row, and a re-serve returns the same startedAt, never a new one", async () => {
+describe("startLessonProgress", () => {
+  it("creates an in_progress row", async () => {
     const user = await makeUser();
-    const lesson = await makeLesson();
+    const { lesson } = await makeLesson();
+
+    const row = await startLessonProgress(user.id, lesson.id);
+
+    expect(row?.status).toBe("in_progress");
+  });
+
+  it("is a no-op (returns null) if a row already exists - never downgrades a completed row", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson();
+    await startLessonProgress(user.id, lesson.id);
+    await completeLessonProgress(user.id, lesson.id);
+
+    const result = await startLessonProgress(user.id, lesson.id);
+
+    expect(result).toBeNull();
+    expect(await countInProgressLearners(lesson.id)).toBe(0); // still completed, not in_progress
+  });
+
+  it("rejects a nonexistent lessonId (FK violation)", async () => {
+    const user = await makeUser();
+    await expect(startLessonProgress(user.id, randomUUID())).rejects.toThrow();
+  });
+});
+
+describe("getLessonProgress", () => {
+  it("returns null when no row exists", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson();
+
+    expect(await getLessonProgress(user.id, lesson.id)).toBeNull();
+  });
+
+  it("a re-serve returns the same startedAt as the original serve, never a new one", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
 
     const first = await startLessonProgress(user.id, lesson.id);
-    expect(first?.status).toBe("in_progress");
-
     const second = await startLessonProgress(user.id, lesson.id); // idempotent re-serve
     expect(second).toBeNull(); // onConflictDoNothing - caller falls back to getLessonProgress
 
@@ -95,18 +134,39 @@ describe("startLessonProgress / getLessonProgress", () => {
   });
 });
 
-describe("completeUngradedLessonProgressIfEligible", () => {
-  it("does NOT complete when the minimum time hasn't elapsed yet (instant-complete rejected)", async () => {
+describe("completeLessonProgress", () => {
+  it("marks a started lesson completed, stamping completedAt", async () => {
     const user = await makeUser();
-    const lesson = await makeLesson();
+    const { lesson } = await makeLesson();
     await startLessonProgress(user.id, lesson.id);
 
-    // minStartedAt in the past relative to "now", but AFTER the real
-    // startedAt (which is "now", just inserted) - i.e. not enough time has
-    // elapsed. A real 150s-minimum check would compute
-    // `minStartedAt = now - 150s`; here we simulate "not enough elapsed"
-    // by requiring startedAt to be at or before 1 hour ago, which the
-    // just-inserted row obviously isn't.
+    const completed = await completeLessonProgress(user.id, lesson.id);
+
+    expect(completed?.status).toBe("completed");
+    expect(completed?.completedAt).toBeInstanceOf(Date);
+  });
+
+  it("is a harmless no-op when called again on an already-completed row", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson();
+    await startLessonProgress(user.id, lesson.id);
+    await completeLessonProgress(user.id, lesson.id);
+
+    const second = await completeLessonProgress(user.id, lesson.id);
+
+    expect(second?.status).toBe("completed");
+  });
+});
+
+describe("completeUngradedLessonProgressIfEligible (Phase 3 Checkpoint 3)", () => {
+  it("does NOT complete when the minimum time hasn't elapsed yet (instant-complete rejected)", async () => {
+    const user = await makeUser();
+    const { lesson } = await makeLesson({ kind: "story" });
+    await startLessonProgress(user.id, lesson.id);
+
+    // Require startedAt to be at or before 1 hour ago - the just-inserted
+    // row obviously isn't, simulating "not enough time has elapsed" (a real
+    // caller computes minStartedAt = now - storyMinCompletionSeconds).
     const minStartedAt = new Date(Date.now() - 60 * 60 * 1000);
 
     const result = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, minStartedAt);
@@ -118,7 +178,7 @@ describe("completeUngradedLessonProgressIfEligible", () => {
 
   it("completes once the minimum time has genuinely elapsed", async () => {
     const user = await makeUser();
-    const lesson = await makeLesson();
+    const { lesson } = await makeLesson({ kind: "story" });
     await startLessonProgress(user.id, lesson.id);
 
     // Require only that startedAt is at or before "now" (trivially true,
@@ -133,7 +193,7 @@ describe("completeUngradedLessonProgressIfEligible", () => {
 
   it("does NOT complete again once already completed (double-complete no-ops)", async () => {
     const user = await makeUser();
-    const lesson = await makeLesson();
+    const { lesson } = await makeLesson({ kind: "story" });
     await startLessonProgress(user.id, lesson.id);
     const minStartedAt = new Date();
     const firstCompletion = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, minStartedAt);
@@ -146,10 +206,54 @@ describe("completeUngradedLessonProgressIfEligible", () => {
 
   it("returns null when the lesson was never served at all", async () => {
     const user = await makeUser();
-    const lesson = await makeLesson();
+    const { lesson } = await makeLesson({ kind: "story" });
 
     const result = await completeUngradedLessonProgressIfEligible(user.id, lesson.id, new Date());
 
     expect(result).toBeNull();
+  });
+});
+
+describe("countInProgressLearners", () => {
+  it("counts only in_progress rows, excluding completed ones", async () => {
+    const { lesson } = await makeLesson();
+    const learnerA = await makeUser();
+    const learnerB = await makeUser();
+    const learnerC = await makeUser();
+    await startLessonProgress(learnerA.id, lesson.id);
+    await startLessonProgress(learnerB.id, lesson.id);
+    await startLessonProgress(learnerC.id, lesson.id);
+    await completeLessonProgress(learnerC.id, lesson.id); // C finished - shouldn't count
+
+    expect(await countInProgressLearners(lesson.id)).toBe(2);
+  });
+
+  it("returns 0 for a lesson no one has touched", async () => {
+    const { lesson } = await makeLesson();
+    expect(await countInProgressLearners(lesson.id)).toBe(0);
+  });
+});
+
+describe("countInProgressLearnersByLessonIds", () => {
+  it("counts in_progress learners per lesson in one grouped query, omitting lessons with none", async () => {
+    const { lesson: lessonA } = await makeLesson();
+    const { lesson: lessonB } = await makeLesson();
+    const { lesson: lessonC } = await makeLesson(); // untouched
+    const learner1 = await makeUser();
+    const learner2 = await makeUser();
+    await startLessonProgress(learner1.id, lessonA.id);
+    await startLessonProgress(learner2.id, lessonA.id);
+    await startLessonProgress(learner1.id, lessonB.id);
+    await completeLessonProgress(learner1.id, lessonB.id); // completed - shouldn't count
+
+    const result = await countInProgressLearnersByLessonIds([lessonA.id, lessonB.id, lessonC.id]);
+
+    expect(result.get(lessonA.id)).toBe(2);
+    expect(result.has(lessonB.id)).toBe(false); // 0 in_progress - absent, not zero-valued
+    expect(result.has(lessonC.id)).toBe(false);
+  });
+
+  it("returns an empty map without querying for an empty id list", async () => {
+    expect(await countInProgressLearnersByLessonIds([])).toEqual(new Map());
   });
 });
