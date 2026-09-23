@@ -187,3 +187,23 @@ own security schemes, so the document covers the whole backend.
 - Use the `code-reviewer` subagent before committing larger changes and `security-auditor`
   for anything touching auth, permissions, money or trading.
 - If you make an architectural decision, append it to the decisions table in `docs/ARCHITECTURE.md`.
+
+## Working rhythm
+- Default to running 2-3 checkpoints in a row before stopping. Stop at natural boundaries (a
+  domain finished end to end), not after every small unit.
+- Always STOP and ask before:
+  - anything touching real or virtual money rules (ledger, rewards, pricing, multipliers)
+  - anything affecting minors (consent, DOB, parent contact, safety)
+  - destructive DB changes or backfills
+  - any security finding of Medium or above
+  - adding a new external service or env var
+  - any change to `main`
+  - anything contradicting a recorded `docs/ARCHITECTURE.md` decision
+- Otherwise don't stop for approval on routine work: build it, test it, push it, report it in
+  the batch summary.
+- Batch summaries: lead with anything that needs a decision, then what shipped, then what to
+  manually test. Keep it short; skip detail that doesn't need action.
+- Don't split a phase into sub-phases unless it involves money handling, minors, or security.
+  Phases 5, 6, 8, 9 run as single phases.
+- Never wait for approval on something verifiable directly (tests, read-only DB checks,
+  contract regeneration) — just verify it and report the result.
