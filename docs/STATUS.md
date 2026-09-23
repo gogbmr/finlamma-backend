@@ -1,5 +1,58 @@
 # Status
 
+## 2026-09-23 — `/phase-audit 3a` complete: 2 Low fixes applied, ready to merge
+
+Audited every commit on `phase-3a-economy-core` since it diverged from `main` (`8ff65b0`..`28f4b8b`,
+14 commits: rate limiting, the economy ledger, Story/Doubt Zone completion, streaks, stat
+endpoints). Full report covered ROADMAP/FEATURE_MAP cross-check, code health (typecheck/lint/
+test/build), database state (migrations, schema drift, RLS, security advisors - all via the
+Supabase MCP, read-only), API surface, production checks against the live deployment, a
+dedicated `security-auditor` subagent pass, and docs-vs-reality.
+
+**Result: no Critical/High findings, 2 Low + 1 Informational, all now addressed:**
+- **[Low, reliability - fixed]** `recordStreakActivity`'s first-ever-activity insert
+  (`src/server/streaks/repo.ts`) didn't use `onConflictDoNothing`, unlike every other insert
+  added this phase - a race on a user's very first streak activity could throw an unhandled
+  unique-violation and surface a 500, even though the XP/VM credit itself had already committed
+  correctly. Fixed with the same `onConflictDoNothing` + re-read pattern
+  `startLessonProgress` (`src/server/lesson-progress/repo.ts`) already used. Covered by two new
+  tests: a concurrent-Promise.all regression guard, and a deterministic test of the exact
+  onConflictDoNothing mechanism the fix depends on (real concurrent interleaving can't be forced
+  against PGlite's single connection - see the test file's own comment).
+- **[Low, defense-in-depth - fixed]** `/admin/settings` gated page entry on `settings.manage`,
+  but the reward-rules/VM-multiplier editors it renders actually require the stronger
+  `economy.manage`. No live gap today (both are `super_admin`-only per `scripts/seed-roles.ts`),
+  but fixed anyway so a future role split can't silently show live money controls that fail on
+  submit. `page.tsx` now checks `roleHasPermission(staff.roleId, "economy.manage")` and only
+  renders those two editors when true; the server actions' own permission checks are unchanged
+  (defense-in-depth, not the real gate). Covered by a new `page.test.tsx` (Server Components are
+  plain async functions returning a React element tree - testable directly with Vitest, no DOM
+  needed).
+- **[Informational - documented]** `lessons.xpOverride`/`vmOverride` exist and are already
+  trusted by `creditLessonCompletion`, but no editor UI exists yet. Noted in `docs/DATA_MODEL.md`
+  and the `admin-page` skill (new item 8) so whoever builds that editor routes it through the
+  same bounds-checked, staff-only pattern `reward_rules` already uses, rather than inventing a
+  second convention.
+
+**FEATURE_MAP.md Status column updated** for the rows this phase actually delivers: WH-02/03/04
+(streak/VM/XP tiles) → Built, PR-01 → Partially built (percentile deferred to Phase 6, avatar/
+handle never v1 concepts), PR-02 → Built, TR-52 → Built (with a note that its API-endpoints
+column is stale - implemented as a Server Action per D16, not the REST route named there).
+Everything else FEATURE_MAP tags Phase 3 (badges, rewards, certificates, report card, daily
+goals, PR-04 onward) is Phase 3b, explicitly deferred per this session's 3a/3b split - not
+audited as a miss here.
+
+Production check note: the 3 new Checkpoint 5 endpoints return 404 (not 401) against
+`https://finlamma-backend-rho.vercel.app` - expected, since `phase-3a-economy-core` isn't merged
+to `main` yet (`health.version` = `3b0d147` = `origin/main` HEAD exactly). **Re-verify as 401,
+not 404, once merged.**
+
+`pnpm typecheck`/`pnpm lint` clean, `pnpm test` clean run alone (985+ tests - an earlier run
+showed 8 worker crashes, traced to running `pnpm test` and `pnpm build` concurrently on Windows,
+not a real failure), `pnpm build` exit 0. All 24 migrations applied and match the repo exactly;
+zero schema drift across all 25 tables; RLS enabled with 0 policies everywhere; Supabase security
+advisor shows only the expected `rls_enabled_no_policy` INFO-level findings.
+
 ## 2026-09-23 — Phase 3a Checkpoint 5 (stat endpoints) built; Phase 3a complete pending merge/audit
 
 Two fixes done first, per founder feedback on Checkpoint 4's safeguards:

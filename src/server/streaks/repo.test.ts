@@ -6,8 +6,9 @@
 // note on this same limitation for world reorder - but the transition
 // LOGIC these tests exercise is identical either way). Never touches the
 // real Supabase database (see @/db/client's NODE_ENV=test guard).
+import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { users } from "@/db/schema";
+import { streaks, users } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -132,6 +133,69 @@ describe("recordStreakActivity", () => {
     const pulseCheck = await getStreak(user.id, "pulse_check");
 
     expect(pulseCheck).toBeNull(); // untouched scope has no row at all
+  });
+
+  it("two concurrent first-ever activities for the same user/scope never throw and converge to one row", async () => {
+    const user = await makeUser();
+
+    // Fired together via Promise.all, not awaited one-then-the-other. Note:
+    // PGlite is a single-connection instance (see this file's header
+    // comment), so in practice these two db.transaction() calls fully
+    // serialize rather than genuinely interleave - the second call's own
+    // SELECT ... FOR UPDATE only runs once the first has committed, so this
+    // test alone can't prove the race actually reaches the
+    // onConflictDoNothing branch (the next test proves that mechanism
+    // directly). What this test DOES lock in: however the two calls end up
+    // interleaved by whatever driver runs this in production, neither may
+    // ever throw, and they must converge to exactly one row.
+    const results = await Promise.all([
+      recordStreakActivity(user.id, "learning", "2026-01-05", FREEZES),
+      recordStreakActivity(user.id, "learning", "2026-01-05", FREEZES),
+    ]);
+
+    expect(results.map((r) => r.current)).toEqual([1, 1]);
+    const row = await getStreak(user.id, "learning");
+    expect(row).toMatchObject({ current: 1, longest: 1, lastActiveDateIst: "2026-01-05" });
+  });
+
+  it("the insert's onConflictDoNothing genuinely returns empty (not a thrown unique-violation) against a real conflicting row", async () => {
+    // Deterministically proves the exact DB-level mechanism
+    // recordStreakActivity's race fix depends on, since true concurrent
+    // interleaving can't be forced against PGlite's single connection
+    // (see the test above). Reproduces the shape of the insert in
+    // src/server/streaks/repo.ts exactly: same target table, same
+    // (userId, scope) conflict target.
+    const user = await makeUser();
+    await db.insert(streaks).values({
+      userId: user.id,
+      scope: "learning",
+      current: 1,
+      longest: 1,
+      lastActiveDateIst: "2026-01-05",
+      freezesLeft: FREEZES,
+      freezesResetMonth: "2026-01",
+    });
+
+    const conflicting = await db
+      .insert(streaks)
+      .values({
+        userId: user.id,
+        scope: "learning",
+        current: 1,
+        longest: 1,
+        lastActiveDateIst: "2026-01-05",
+        freezesLeft: FREEZES,
+        freezesResetMonth: "2026-01",
+      })
+      .onConflictDoNothing({ target: [streaks.userId, streaks.scope] })
+      .returning();
+
+    expect(conflicting).toEqual([]); // empty, not a thrown exception
+    const rows = await db
+      .select()
+      .from(streaks)
+      .where(and(eq(streaks.userId, user.id), eq(streaks.scope, "learning")));
+    expect(rows).toHaveLength(1); // the conflicting insert changed nothing
   });
 
   it("tracks independent streaks per user for the same scope", async () => {

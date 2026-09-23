@@ -29,7 +29,7 @@ export async function recordStreakActivity(
   freezesPerMonth: number,
 ) {
   return db.transaction(async (tx) => {
-    const [existing] = await tx
+    let [existing] = await tx
       .select()
       .from(streaks)
       .where(and(eq(streaks.userId, userId), eq(streaks.scope, scope)))
@@ -49,8 +49,29 @@ export async function recordStreakActivity(
           freezesLeft: freezesPerMonth,
           freezesResetMonth: monthIst,
         })
+        // The row lock above has nothing to lock until a row exists, so two
+        // genuinely concurrent "this user's very first activity for this
+        // scope" calls can both reach this insert - onConflictDoNothing
+        // (same pattern as src/server/lesson-progress/repo.ts's
+        // startLessonProgress) means the loser gets an empty .returning()
+        // instead of an unhandled unique-violation exception, and falls
+        // through below to re-read the winner's row rather than crashing.
+        .onConflictDoNothing({ target: [streaks.userId, streaks.scope] })
         .returning();
-      return { ...created, extended: true };
+
+      if (created) {
+        return { ...created, extended: true };
+      }
+
+      const [winner] = await tx
+        .select()
+        .from(streaks)
+        .where(and(eq(streaks.userId, userId), eq(streaks.scope, scope)))
+        .limit(1);
+      if (!winner) {
+        throw new Error("streaks: insert conflicted but no row was found on re-read");
+      }
+      existing = winner;
     }
 
     if (existing.lastActiveDateIst === todayIst) {

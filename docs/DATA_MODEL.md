@@ -168,7 +168,11 @@ skill for the full idempotency/reversal design)
   VM are earned independently (no conversion rate between them), seeded from
   `docs/ECONOMY.md`'s decided 3× values (`pnpm seed:reward-rules`). `lessons.xp_override`/
   `vm_override` (nullable integer columns, null = use the kind's `reward_rules` default) let an
-  individual lesson pay a different amount — no admin UI for setting them yet, see D26.
+  individual lesson pay a different amount — no admin UI for setting them yet, see D26. Already
+  trusted unconditionally by `creditLessonCompletion` (`src/server/economy/service.ts`) once set,
+  so whoever builds that editor must route it through the same bounds-checked, staff-only pattern
+  `RewardRuleUpdateSchema` already uses (`MAX_REWARD_AMOUNT` = 5000, `economy.manage`-gated,
+  logged) — see the `admin-page` skill's note on this.
   `activity_kind` names differ from `lessons.kind` in one place ("ai_chat" here is the
   "doubt_zone" lesson kind) — `src/server/economy/service.ts`'s `activityKindForLessonKind` maps
   between them. Crediting happens once per user per lesson, on the first *successful* completion
