@@ -1,6 +1,6 @@
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
-import { istDateString } from "@/lib/ist-date";
+import { daysBetweenIstDates, istDateString } from "@/lib/ist-date";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import { getStreak, recordStreakActivity, type StreakScope } from "./repo";
 import {
@@ -9,6 +9,7 @@ import {
   StreaksSettingsSchema,
   type StreaksSettings,
 } from "./schemas";
+import { computeStreakTransition, effectiveFreezesLeft } from "./streak-math";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 
@@ -61,22 +62,47 @@ export async function recordLearningActivity(userId: string, at: Date = new Date
   return recordStreakActivity(userId, "learning", todayIst, settings.streakFreezesPerMonth);
 }
 
+// There's no midnight job: the stored row only ever advances when the user
+// does something (recordStreakActivity). So a row can go stale - e.g. a
+// learner with a 5-day streak who then vanishes for 10 days still has
+// current=5 sitting in the database, because nothing has run to reset it.
+// A plain read must not repeat that stale number back to the user as if
+// their streak were still alive. This computes what the stored row means
+// AS OF TODAY, without writing anything: if today's gap since their last
+// activity would trigger a reset were they to act right now, it's already
+// effectively broken and reads as 0, even though the row hasn't been
+// physically updated yet. It never awards a freeze it hasn't confirmed via
+// a real write either - "extend" (including the freeze-covered case) just
+// means the existing streak is still intact, so `current` is shown as-is.
 function shapeStreak(
   row: Awaited<ReturnType<typeof getStreak>>,
+  todayIst: string,
   defaultFreezes: number,
 ): { current: number; longest: number; freezesLeft: number } {
   if (!row) return { current: 0, longest: 0, freezesLeft: defaultFreezes };
-  return { current: row.current, longest: row.longest, freezesLeft: row.freezesLeft };
+
+  const freezesLeft = effectiveFreezesLeft(
+    row.freezesLeft,
+    row.freezesResetMonth,
+    todayIst,
+    defaultFreezes,
+  );
+  const gapDays = daysBetweenIstDates(row.lastActiveDateIst, todayIst);
+  const transition = computeStreakTransition(gapDays, freezesLeft);
+  const current = transition.kind === "reset" ? 0 : row.current;
+
+  return { current, longest: row.longest, freezesLeft };
 }
 
-export async function getStreakStats(userId: string) {
+export async function getStreakStats(userId: string, at: Date = new Date()) {
   const settings = await getStreaksSettings();
+  const todayIst = istDateString(at);
   const [learning, pulseCheck] = await Promise.all([
     getStreak(userId, "learning" satisfies StreakScope),
     getStreak(userId, "pulse_check" satisfies StreakScope),
   ]);
   return {
-    learning: shapeStreak(learning, settings.streakFreezesPerMonth),
-    pulseCheck: shapeStreak(pulseCheck, settings.streakFreezesPerMonth),
+    learning: shapeStreak(learning, todayIst, settings.streakFreezesPerMonth),
+    pulseCheck: shapeStreak(pulseCheck, todayIst, settings.streakFreezesPerMonth),
   };
 }

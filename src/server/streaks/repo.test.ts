@@ -97,6 +97,17 @@ describe("recordStreakActivity", () => {
     expect(result).toMatchObject({ current: 1, extended: true });
   });
 
+  it("breaks the streak after a 10-day gap, regardless of freezes remaining", async () => {
+    const user = await makeUser();
+    await recordStreakActivity(user.id, "learning", "2026-01-05", FREEZES);
+
+    // Activity resumes 10 days later, with both freezes still untouched -
+    // proves a big gap can't be covered by having "enough" freezes saved up.
+    const result = await recordStreakActivity(user.id, "learning", "2026-01-15", FREEZES);
+
+    expect(result).toMatchObject({ current: 1, freezesLeft: FREEZES, extended: true });
+  });
+
   it("resets the freeze allowance at the first activity of a new IST month", async () => {
     const user = await makeUser();
     await recordStreakActivity(user.id, "learning", "2026-01-01", FREEZES);

@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { streaks } from "@/db/schema";
 import { daysBetweenIstDates } from "@/lib/ist-date";
+import { computeStreakTransition, effectiveFreezesLeft } from "./streak-math";
 
 export type StreakScope = "learning" | "pulse_check";
 
@@ -59,21 +60,24 @@ export async function recordStreakActivity(
     // Lazy monthly reset: the first activity recorded in a new IST month
     // tops the allowance back up, rather than a scheduled job doing it for
     // every user at month start.
-    let freezesLeft =
-      existing.freezesResetMonth === monthIst ? existing.freezesLeft : freezesPerMonth;
+    let freezesLeft = effectiveFreezesLeft(
+      existing.freezesLeft,
+      existing.freezesResetMonth,
+      todayIst,
+      freezesPerMonth,
+    );
     const freezesResetMonth = monthIst;
 
     const gapDays = daysBetweenIstDates(existing.lastActiveDateIst, todayIst);
+    const transition = computeStreakTransition(gapDays, freezesLeft);
     let current: number;
-    if (gapDays === 1) {
-      // Consecutive day - the normal case.
-      current = existing.current + 1;
-    } else if (gapDays === 2 && freezesLeft >= 1) {
-      // Exactly one IST day was missed in between, and a freeze covers it -
-      // the streak continues as if unbroken (D30: a freeze auto-covers one
-      // missed day at a time, never a multi-day gap even with more than
-      // one freeze available).
-      freezesLeft -= 1;
+    if (transition.kind === "extend") {
+      // Either the normal consecutive-day case, or exactly one missed day
+      // covered by a freeze (D30: a freeze auto-covers one missed day at a
+      // time, never a multi-day gap even with more than one freeze
+      // available - computeStreakTransition never returns consumesFreeze
+      // for a gap bigger than 2).
+      if (transition.consumesFreeze) freezesLeft -= 1;
       current = existing.current + 1;
     } else {
       // Missed 2+ days, or missed exactly one with no freeze left - the

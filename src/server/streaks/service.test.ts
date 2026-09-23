@@ -92,12 +92,14 @@ describe("recordLearningActivity", () => {
 });
 
 describe("getStreakStats", () => {
+  const TODAY = new Date("2026-01-10T04:00:00.000Z"); // 2026-01-10 09:30 IST
+
   it("defaults an untouched scope to 0/0/full freezes rather than requiring a row to exist", async () => {
     mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
     mockGetStreak.mockResolvedValueOnce(null); // learning
     mockGetStreak.mockResolvedValueOnce(null); // pulse_check
 
-    const result = await getStreakStats(USER.id);
+    const result = await getStreakStats(USER.id, TODAY);
 
     expect(result).toEqual({
       learning: { current: 0, longest: 0, freezesLeft: 2 },
@@ -105,14 +107,106 @@ describe("getStreakStats", () => {
     });
   });
 
-  it("shapes an existing row's real values", async () => {
+  it("shapes an existing row's real values when it's still current (active today)", async () => {
     mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
-    mockGetStreak.mockResolvedValueOnce({ current: 5, longest: 12, freezesLeft: 1 }); // learning
+    mockGetStreak.mockResolvedValueOnce({
+      current: 5,
+      longest: 12,
+      freezesLeft: 1,
+      lastActiveDateIst: "2026-01-10",
+      freezesResetMonth: "2026-01",
+    }); // learning
     mockGetStreak.mockResolvedValueOnce(null); // pulse_check
 
-    const result = await getStreakStats(USER.id);
+    const result = await getStreakStats(USER.id, TODAY);
 
     expect(result.learning).toEqual({ current: 5, longest: 12, freezesLeft: 1 });
     expect(result.pulseCheck).toEqual({ current: 0, longest: 0, freezesLeft: 2 });
+  });
+
+  it("still shows the streak as current the day after last activity, even though nothing has run since", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreak.mockResolvedValueOnce({
+      current: 5,
+      longest: 12,
+      freezesLeft: 2,
+      lastActiveDateIst: "2026-01-09", // yesterday - gap of 1, still within the window to extend today
+      freezesResetMonth: "2026-01",
+    });
+    mockGetStreak.mockResolvedValueOnce(null);
+
+    const result = await getStreakStats(USER.id, TODAY);
+
+    expect(result.learning).toEqual({ current: 5, longest: 12, freezesLeft: 2 });
+  });
+
+  it("still shows the streak as current when exactly one day was missed and a freeze is available to cover it", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreak.mockResolvedValueOnce({
+      current: 5,
+      longest: 12,
+      freezesLeft: 2,
+      lastActiveDateIst: "2026-01-08", // gap of 2 - one day (Jan 9) missed
+      freezesResetMonth: "2026-01",
+    });
+    mockGetStreak.mockResolvedValueOnce(null);
+
+    const result = await getStreakStats(USER.id, TODAY);
+
+    // Freeze is NOT actually consumed by a read - only a real activity
+    // (recordStreakActivity) consumes it. The read just reports "still alive".
+    expect(result.learning).toEqual({ current: 5, longest: 12, freezesLeft: 2 });
+  });
+
+  it("shows the streak as broken (0) once a single missed day can no longer be covered - no freezes left", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreak.mockResolvedValueOnce({
+      current: 5,
+      longest: 12,
+      freezesLeft: 0,
+      lastActiveDateIst: "2026-01-08", // gap of 2, no freeze available to cover it
+      freezesResetMonth: "2026-01",
+    });
+    mockGetStreak.mockResolvedValueOnce(null);
+
+    const result = await getStreakStats(USER.id, TODAY);
+
+    expect(result.learning).toEqual({ current: 0, longest: 12, freezesLeft: 0 });
+  });
+
+  it("shows the streak as broken (0) after a 10-day gap, regardless of freezes remaining - no retroactive freeze stacking", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreak.mockResolvedValueOnce({
+      current: 5,
+      longest: 12,
+      freezesLeft: 2, // both freezes still available and untouched
+      lastActiveDateIst: "2025-12-31", // 10 days before TODAY (2026-01-10)
+      freezesResetMonth: "2025-12",
+    });
+    mockGetStreak.mockResolvedValueOnce(null);
+
+    const result = await getStreakStats(USER.id, TODAY);
+
+    // Broken, and the freezes are reported untouched - a long gap never
+    // consumes them, it just breaks the streak.
+    expect(result.learning).toEqual({ current: 0, longest: 12, freezesLeft: 2 });
+  });
+
+  it("applies the lazy monthly freeze reset when computing whether a gap is still coverable", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreak.mockResolvedValueOnce({
+      current: 5,
+      longest: 12,
+      freezesLeft: 0, // exhausted in December
+      lastActiveDateIst: "2026-01-08", // gap of 2 from TODAY (2026-01-10)
+      freezesResetMonth: "2025-12", // stale - a new IST month has started
+    });
+    mockGetStreak.mockResolvedValueOnce(null);
+
+    const result = await getStreakStats(USER.id, TODAY);
+
+    // The allowance is treated as freshly reset for January, so the one
+    // missed day is still coverable and the streak still reads as current.
+    expect(result.learning).toEqual({ current: 5, longest: 12, freezesLeft: 2 });
   });
 });
