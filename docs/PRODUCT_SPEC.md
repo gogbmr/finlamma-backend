@@ -185,8 +185,43 @@ real numbers/topics, stored in an admin-editable table (draft → publish, logge
   (minimum sample size, e.g. ≥3 attempts) among topics attempted in the period; "superpower" is
   the highest, same rule.
 
+**Tone rule, binding on every coach-note template ever written (placeholder or real):** every
+template must be encouraging and age-appropriate — never shaming, pressuring, or framed as a
+punishment — and never comparative. A template may only reference the child's own numbers against
+their own past weeks; it must never mention percentile, rank, or how another learner is doing.
+Whoever authors the real copy (replacing the v1 placeholder templates) must follow this, and the
+admin template editor repeats the rule as help text at the point of authoring, so it isn't only
+discoverable by reading this doc.
+
 A future phase may explore AI-generated notes (with the same staff-review-before-publish pattern
-as news/quiz drafts), but v1 ships template-only.
+as news/quiz drafts, and the same tone rule above), but v1 ships template-only.
+
+### Weekly report card email to a verified parent — in scope for v1 (see ARCHITECTURE.md D33)
+Now that Phase 2a's parental-consent flow exists, the "future" opt-in email named earlier in this
+doc ships as part of the report card itself, scoped narrowly:
+- **Only for a currently-under-18 user.** Age is derived server-side from `users.dateOfBirth` in
+  IST **at send time, every week** — never decided once and cached — so a user who turns 18 simply
+  stops generating this email the next Monday, with no code change and no explicit "offboarding"
+  step. An 18+ learner never receives this, even against an old `consented` record from when they
+  were a minor.
+- **Also requires a currently-`consented` `consent_records` row right now.** A withdrawn or refused
+  parent, or a minor with no parent contact at all, never generates a send.
+- **Opt-in, off by default.** The parent chooses this when consenting (or later, on the
+  re-approval page) — a checkbox on the same public consent page from §7's flow, not something the
+  minor can turn on themselves, since the parent relationship is the parent's decision to make.
+- **The minor is never kept in the dark about it.** Profile shows, in-app, that a weekly report
+  goes to their parent, with the parent's email masked (e.g. `j***@gmail.com`) — visible, not a
+  secret arrangement, even though only the parent controls the opt-in itself.
+- **Contents are progress-only, against the child's own history, never a judgement or a
+  comparison**: this week's own numbers (lessons done, study time, streak, efficiency score)
+  framed only against *this same child's* past weeks. No absolute XP/VM total presented as a rank,
+  no percentile, no mention of how other learners are doing. Any coach notes included follow the
+  tone rule above.
+- **Every send includes the current withdraw-consent link** (CLAUDE.md rule 13, ARCHITECTURE.md
+  D15's follow-on rule) — this is the first email that rule actually applies to since Phase 2a.
+- **v1 send path**: the same Resend-or-console-log fallback every other parent email already uses
+  (`src/lib/email.ts`) — logs instead of actually sending until a verified Resend domain exists
+  (see `docs/STATUS.md`).
 
 ## 7. Settings
 How-to-use walkthrough, language, appearance, notifications, sound & haptics, data saver,
