@@ -31,9 +31,16 @@ vi.mock("@/server/economy/service", () => ({
     mockUpdateRewardRuleForAdmin(actor, kind, input, meta),
 }));
 
+const mockUpdateStreaksSettings = vi.fn();
+vi.mock("@/server/streaks/service", () => ({
+  updateStreaksSettings: (actor: unknown, input: unknown, meta: unknown) =>
+    mockUpdateStreaksSettings(actor, input, meta),
+}));
+
 import {
   updateLessonFlowScoringAction,
   updateRewardRuleAction,
+  updateStreaksSettingsAction,
   updateVmIssuanceMultiplierAction,
 } from "./actions";
 
@@ -82,6 +89,18 @@ describe("wrong role is rejected", () => {
     expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
     expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
     expect(mockUpdateRewardRuleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("updateStreaksSettingsAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+    );
+
+    const result = await updateStreaksSettingsAction({ streakFreezesPerMonth: 2 });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(mockUpdateStreaksSettings).not.toHaveBeenCalled();
   });
 });
 
@@ -179,5 +198,26 @@ describe("happy path", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateRewardRuleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("updateStreaksSettingsAction updates and revalidates", async () => {
+    mockUpdateStreaksSettings.mockResolvedValueOnce({ streakFreezesPerMonth: 3 });
+
+    const result = await updateStreaksSettingsAction({ streakFreezesPerMonth: 3 });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdateStreaksSettings).toHaveBeenCalledWith(
+      ACTOR,
+      { streakFreezesPerMonth: 3 },
+      expect.any(Object),
+    );
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("updateStreaksSettingsAction rejects a negative freeze count without calling the service", async () => {
+    const result = await updateStreaksSettingsAction({ streakFreezesPerMonth: -1 });
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdateStreaksSettings).not.toHaveBeenCalled();
   });
 });

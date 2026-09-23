@@ -172,8 +172,14 @@ skill for the full idempotency/reversal design)
   `quiz-attempts/service.ts`'s attempt-completion path for video/quiz/role_play/boss_quiz;
   story/doubt_zone credit from Checkpoint 3's own completion endpoint (no `quiz_attempts` row
   exists for those kinds, D23).
-- `streaks` (user_id, scope `learning`|`pulse_check` — two independent habit loops, same shape,
-  current, longest, last_active_date_ist, freezes_left, freezes_reset_on)
+- `streaks` (Phase 3 Checkpoint 4 — built; unique on (user_id, scope)) — user_id, scope
+  `learning`|`pulse_check` (two independent habit loops, same shape; `pulse_check` rows don't
+  exist until Phase 5's Pulse Check triggers one), current, longest, last_active_date_ist (a bare
+  `date`, already an IST calendar date computed server-side by `src/lib/ist-date.ts` before it
+  reaches this column — never re-derived from a stored timestamp), freezes_left, freezes_reset_month
+  (`YYYY-MM` IST — the freeze allowance's lazy monthly reset point). See `docs/ARCHITECTURE.md` D30
+  for the day-boundary/freeze/idempotency design and `docs/ECONOMY.md` decision 5 for exactly which
+  events extend the `learning` streak.
 - `badges`, `user_badges`
 - `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
   badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,

@@ -12,3 +12,4 @@ export * from "./questions";
 export * from "./quiz_attempts";
 export * from "./lesson_progress";
 export * from "./economy";
+export * from "./streaks";

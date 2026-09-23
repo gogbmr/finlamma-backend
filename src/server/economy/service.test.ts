@@ -24,6 +24,11 @@ vi.mock("./repo", () => ({
   creditLessonCompletionRow: (xp: unknown, vm: unknown) => mockCreditLessonCompletionRow(xp, vm),
 }));
 
+const mockRecordLearningActivity = vi.fn();
+vi.mock("@/server/streaks/service", () => ({
+  recordLearningActivity: (userId: unknown) => mockRecordLearningActivity(userId),
+}));
+
 import { AppError } from "@/lib/errors";
 import {
   activityKindForLessonKind,
@@ -202,6 +207,9 @@ describe("creditLessonCompletion", () => {
         metadata: expect.objectContaining({ activityKind: "video", xpAmount: 20, vmAmount: 45 }),
       }),
     );
+    // docs/ECONOMY.md decision 5: a real credit is exactly what "activity"
+    // means for the learning streak.
+    expect(mockRecordLearningActivity).toHaveBeenCalledWith("user_1");
   });
 
   it("uses the lesson's xpOverride/vmOverride instead of the rule's defaults when set", async () => {
@@ -246,6 +254,7 @@ describe("creditLessonCompletion", () => {
 
     expect(result).toEqual({ credited: false });
     expect(mockLogActivity).not.toHaveBeenCalled();
+    expect(mockRecordLearningActivity).not.toHaveBeenCalled();
   });
 
   it("maps doubt_zone lessons to the ai_chat reward rule", async () => {

@@ -3171,6 +3171,129 @@
         }
       }
     },
+    "/api/v1/me/stats/streak": {
+      "get": {
+        "summary": "Get my streak stats (World Home header STREAK tile, WH-02)",
+        "description": "Current/longest streak and freezes left, for both independent habit loops - `learning` (lesson completions, docs/ECONOMY.md decision 5) and `pulseCheck` (News' Pulse Check, Phase 5 - always 0/0/full freezes until that phase ships the events that trigger it). Day boundaries are computed server-side in IST (Asia/Kolkata) from the server's own clock - never a client-reported date or timezone.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's streak stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "learning": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 11
+                            },
+                            "freezesLeft": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest",
+                            "freezesLeft"
+                          ]
+                        },
+                        "pulseCheck": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 11
+                            },
+                            "freezesLeft": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest",
+                            "freezesLeft"
+                          ],
+                          "description": "Always 0/0/full freezes until Phase 5's Pulse Check exists to trigger it."
+                        }
+                      },
+                      "required": [
+                        "learning",
+                        "pulseCheck"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/webhooks/clerk": {
       "post": {
         "summary": "Clerk user webhook (consumer app)",

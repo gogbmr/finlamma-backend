@@ -11,6 +11,8 @@ import { RewardRuleUpdateSchema, VmIssuanceMultiplierSchema } from "@/server/eco
 import { updateRewardRuleForAdmin, updateVmIssuanceMultiplier } from "@/server/economy/service";
 import { LessonFlowScoringSchema } from "@/server/settings/schemas";
 import { updateLessonFlowScoringSettings } from "@/server/settings/service";
+import { StreaksSettingsSchema } from "@/server/streaks/schemas";
+import { updateStreaksSettings } from "@/server/streaks/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -56,6 +58,15 @@ export async function updateRewardRuleAction(
     const actor = await requireStaff("economy.manage");
     const parsed = RewardRuleUpdateSchema.parse(input);
     await updateRewardRuleForAdmin(actor, activityKind, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updateStreaksSettingsAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = StreaksSettingsSchema.parse(input);
+    await updateStreaksSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }

@@ -2,6 +2,7 @@ import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getSettingNumber, setSettingJson } from "@/lib/settings";
+import { recordLearningActivity } from "@/server/streaks/service";
 import {
   creditLessonCompletionRow,
   getRewardRule,
@@ -157,6 +158,10 @@ export async function creditLessonCompletion(
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
+    // docs/ECONOMY.md decision 5: a real, first-time credit is exactly what
+    // "activity" means for the learning streak - a replay or a below-pass-
+    // mark attempt never reaches this branch at all.
+    await recordLearningActivity(user.id);
   }
   return { credited };
 }

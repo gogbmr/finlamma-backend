@@ -42,6 +42,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/lessons/{id}/steps/{n}/serve` — Serve the next graded step of a lesson (starts or resumes an attempt)
 - `POST /api/v1/lessons/{id}/steps/{n}/answer` — Submit an answer for the current step and grade it
 - `GET /api/v1/me/current-lesson` — Get my current/resume lesson
+- `GET /api/v1/me/stats/streak` — Get my streak stats (World Home header STREAK tile, WH-02)
 
 **Webhooks**
 
@@ -1421,6 +1422,60 @@ Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's le
   "error": {
     "code": "NOT_FOUND",
     "message": "No published worlds yet"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/streak`
+
+**Get my streak stats (World Home header STREAK tile, WH-02)**
+
+Current/longest streak and freezes left, for both independent habit loops - `learning` (lesson completions, docs/ECONOMY.md decision 5) and `pulseCheck` (News' Pulse Check, Phase 5 - always 0/0/full freezes until that phase ships the events that trigger it). Day boundaries are computed server-side in IST (Asia/Kolkata) from the server's own clock - never a client-reported date or timezone.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's streak stats
+
+```json
+{
+  "data": {
+    "learning": {
+      "current": 4,
+      "longest": 11,
+      "freezesLeft": 2
+    },
+    "pulseCheck": {
+      "current": 4,
+      "longest": 11,
+      "freezesLeft": 2
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

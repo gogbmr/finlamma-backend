@@ -27,6 +27,7 @@ import "../src/app/api/v1/lessons/[id]/complete/route";
 import "../src/app/api/v1/lessons/[id]/steps/[n]/serve/route";
 import "../src/app/api/v1/lessons/[id]/steps/[n]/answer/route";
 import "../src/app/api/v1/me/current-lesson/route";
+import "../src/app/api/v1/me/stats/streak/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

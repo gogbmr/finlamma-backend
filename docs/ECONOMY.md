@@ -208,6 +208,30 @@ Every graded kind's pattern is identical: a failed attempt doesn't block anythin
 just starts a fresh attempt (new `attemptNumber`, same lesson id), and *that* attempt's success is
 what credits, since the idempotency key is per-lesson, not per-attempt.
 
+**5. What counts as "activity" for the learning streak (Phase 3 Checkpoint 4).** A day extends the
+`learning`-scope streak (`docs/ARCHITECTURE.md` D30) if and only if it contains **at least one
+real, first-time XP/VM credit** — i.e. `src/server/economy/service.ts`'s `creditLessonCompletion`
+actually inserted new `xp_events`/`vmoney_ledger` rows (`credited: true`), for *any* lesson kind
+(Video/Quiz/Role Play/Boss Quiz passing its pass mark per decision 4 above, or Story/Doubt Zone
+completing per Checkpoint 3's minimum-time rule). Deliberately **not** triggered by:
+- Opening the app, viewing a lesson, or starting an attempt with no completion.
+- A failed/below-pass-mark attempt (never credits, per decision 4 — so never extends the streak
+  either, matching the same "genuine engagement" bar rather than mere app usage).
+- A replay of an already-completed lesson (never re-credits, per `docs/ARCHITECTURE.md` D26's
+  idempotency — so it never re-triggers a streak update either, though this is moot in practice
+  since the streak update itself is also idempotent within a day regardless).
+
+This ties the streak to the same "successful completion" bar the ledger already uses, rather than
+inventing a separate, weaker "activity" concept — one real accomplishment a day keeps the streak
+alive, not just opening the app. `pulse_check`-scope streaks have no trigger yet (Phase 5's Pulse
+Check doesn't exist); the row structure exists (`streaks.scope`) but nothing writes to it today.
+
+**No XP/VM reward is credited for a streak itself in this checkpoint** — nothing above (or
+anywhere else in this document) defines a streak-length bonus amount, so none is invented here.
+If/when one is decided, it must be credited through the same `creditLessonCompletion`-style
+`(userId, sourceType, sourceId)` idempotency path as everything else (`docs/ARCHITECTURE.md` D26),
+never a separate ad hoc write to `xp_events`/`vmoney_ledger`.
+
 A lesson's `xpOverride`/`vmOverride` (nullable columns on `lessons`, `null` = use the kind's
 `reward_rules` default) let an individual lesson pay a different amount than its kind's default —
 decided in `docs/DATA_MODEL.md`'s `reward_rules` entry, no admin UI for setting them yet (the
