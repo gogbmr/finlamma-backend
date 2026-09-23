@@ -1,5 +1,35 @@
 # Status
 
+## 2026-09-23 — Decided: keep the single shared database for now (dev/preview/production), not a separate dev project
+
+Recorded in full as `docs/ARCHITECTURE.md` decision D27 - summary here for the dated record.
+
+Considered splitting off a dedicated dev database once Phase 3 Checkpoint 2 started writing to
+the append-only `xp_events`/`vmoney_ledger` tables, since local/preview test credits permanently
+accumulate there with no delete path. **Decided against it for now**: there are no real users
+yet, so a dedicated dev database isn't buying real protection today - it would just be earlier
+infrastructure than the risk currently justifies.
+
+**Consequences (also in D27, restated here since this is the entry someone will find first):**
+- `xp_events`/`vmoney_ledger` (and later Phase 4's `orders`/`holdings`) cannot be cleaned up -
+  only reversed with a new row, which still leaves the original test row in the table forever.
+- **Blocking pre-launch item added to `docs/ROADMAP.md`** (above the existing "separate dev
+  database" item): the production database must be recreated from migrations + seeds - fresh
+  Supabase project or a full reset - before real users sign up, so day-one ledgers are clean.
+- CLAUDE.md rule 8 (destructive migrations must wait for production deploy) stays exactly as
+  critical as before - nothing about this decision relaxes it, since every migration still lands
+  on the one real database immediately.
+- **Test learners created against this shared database from here on must be recorded here**,
+  by email or `clerkUserId`, at the time they're created - not because they can be cleaned up
+  (they can't, per the point above), but so they're identifiable rather than mistaken for real
+  activity when the recreate actually happens.
+
+**Test learners recorded so far: none.** No test learner (user) rows have been created against
+the shared database during Phase 3a work (Checkpoints 1-2 only touched schema/seed/settings rows
+- `reward_rules`, `settings_kv`, the `economy.manage` permission grant - which are real
+launch-intended data, not test learners). This section gets a new bullet the first time one is
+created.
+
 ## 2026-09-22 — Phase 2b merged to `main` and verified in production. Next: Phase 3a.
 
 `phase-2b-content` merged into `main` via merge commit `3b0d147` (21 commits, kept the branch),

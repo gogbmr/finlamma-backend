@@ -173,6 +173,16 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       questions, emails, consent pages) — the seed/draft copy written during development (e.g.
       `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
       reviewed by a native speaker.
+- [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
+      up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
+      reset of this one, then `pnpm db:migrate` + the full seed sequence
+      (`db:seed`/`seed:super-admin`/`seed:legal`/`seed:mentors`/`seed:worlds`/`seed:settings`/
+      `seed:reward-rules`). Necessary because the deliberate decision to keep one shared database
+      pre-launch (no separate dev project - see the next item) means every local/preview test
+      credit written to the append-only `xp_events`/`vmoney_ledger` tables (D26 - no delete path,
+      ever) permanently accumulates in what will become the production database. Check
+      `docs/STATUS.md`'s "Test learners recorded so far" list before recreating, to confirm
+      nothing real got mixed in with test data in the meantime.
 - [ ] **Real-Postgres concurrency test for world reorder**, once a separate dev database exists.
       `src/server/worlds/repo.test.ts`'s concurrent-move tests run against PGlite
       (`src/test/db.ts`), which is a single connection - two "concurrent" `db.transaction()` calls
