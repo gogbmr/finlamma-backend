@@ -23,18 +23,36 @@ self-only, tested including a zero-activity user (level 1, 0 XP, 0 balance, no r
 Percentile/rank omitted outright (not stubbed) - deferred to Phase 6's Arena leaderboard
 snapshot, as already planned in `docs/FEATURE_MAP.md`.
 
-**Migration note**: `pnpm db:migrate` hung indefinitely (not just slow - confirmed hung after a
-2-minute and a 5-minute attempt, and a third attempt with this session's own sandboxing fully
-disabled, ruling out a sandbox network restriction) trying to apply the new `rank_titles` table
-migration (`drizzle/0023_deep_champions.sql`, purely additive - one `CREATE TABLE`) against
-`DATABASE_URL_DIRECT`. Root cause not confirmed, but the symptom matches Supabase's direct
-connection being IPv6-only against a network with no IPv6 route. Worked around by having the
-founder run the `CREATE TABLE`/`ALTER TABLE ENABLE ROW LEVEL SECURITY`/`CREATE UNIQUE INDEX` SQL
-directly in the Supabase SQL Editor, plus a manually-computed `insert into
-drizzle.__drizzle_migrations` row (hash computed locally via the same sha256-of-file-content
-logic `drizzle-orm`'s own migrator uses) so `pnpm db:migrate`/`GET /api/v1/health`'s migration-
-drift check don't think it's still pending. **Worth root-causing before Phase 3b or Phase 4 add
-another migration**, in case this recurs.
+**Known limitation: `pnpm db:migrate` cannot reach the database from this machine/network -
+use the Supabase SQL Editor for migrations until resolved.** `pnpm db:migrate` hung
+indefinitely (not just slow - confirmed hung after a 2-minute attempt, a 5-minute attempt, and a
+third attempt with this session's sandboxing fully disabled, ruling out a sandbox-specific
+network restriction) trying to apply the new `rank_titles` table migration
+(`drizzle/0023_deep_champions.sql`, purely additive - one `CREATE TABLE`) against
+`DATABASE_URL_DIRECT`. Root cause not fully confirmed, but the symptom matches Supabase's
+**direct connection (port 5432, `db.<ref>.supabase.co`) being IPv6-only**, against a network with
+no working IPv6 route - a generic `curl` reachability probe from this same environment also
+failed for both IPv4 and IPv6 targets, consistent with (though not conclusive proof of) an
+IPv6-routing gap rather than something Supabase-side.
+
+**Workaround used**: ran the `CREATE TABLE`/`ALTER TABLE ENABLE ROW LEVEL SECURITY`/`CREATE
+UNIQUE INDEX` SQL directly in the Supabase SQL Editor, plus a manually-computed `insert into
+drizzle.__drizzle_migrations` row (hash computed locally via the exact sha256-of-file-content
+logic `drizzle-orm`'s own migrator uses, then independently re-verified by recomputing it a
+second time) so `pnpm db:migrate`/`GET /api/v1/health`'s migration-drift check don't think it's
+still pending. Do this for every migration until the connection issue is fixed.
+
+**Recommended fix (not applied - `drizzle.config.ts` still points at `DATABASE_URL_DIRECT`,
+pending founder decision)**: switch `drizzle.config.ts`'s `dbCredentials.url` to Supabase's
+**Session pooler** connection string (`aws-0-<region>.pooler.supabase.com:5432`, IPv4-compatible,
+one stable session per connection - unlike the Transaction pooler). Specifically **not** the
+Transaction pooler (port 6543, same host) - that one reassigns the backend connection between
+individual statements, which is the exact D13 incident's root cause applied to a different
+connection; a multi-statement `db:migrate` transaction is precisely the kind of thing that
+failure mode breaks. The Session pooler keeps a stable session (closer to what a direct
+connection gives you) while still being IPv4-reachable, which is the actual property migrations
+need. **Worth confirming/fixing before Phase 3b or Phase 4 add another migration**, in case this
+recurs.
 
 `pnpm typecheck`/`pnpm lint`/`pnpm test` all clean (985 tests, floor 890), `pnpm contract`
 regenerated (25 paths, 27 endpoints documented). Not yet merged - stop-and-audit is the next step
