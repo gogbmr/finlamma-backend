@@ -1,5 +1,45 @@
 # Status
 
+## 2026-09-23 — Phase 3a Checkpoint 5 (stat endpoints) built; Phase 3a complete pending merge/audit
+
+Two fixes done first, per founder feedback on Checkpoint 4's safeguards:
+- `tests/min-count.json`'s floor lowered from 902 (an exact match to the count at the time) to
+  890, with the `note` field rewritten to say why: the floor exists to catch a bulk accidental
+  loss (like the incident below), not to force a commit-time bump for every small deliberate
+  test removal.
+- Streak read staleness bug found and fixed - see `docs/ARCHITECTURE.md` D31. The write path
+  (D30) was already correct (no retroactive freeze stacking, proven with a new explicit 10-day-
+  gap test); the read path (`GET /me/stats/streak`) was not - it echoed the stored row as-is, so
+  a learner silent for 10+ days would see their old streak number until their next real activity
+  happened to recompute it. Fixed with a shared pure decision function used by both paths.
+
+Then Checkpoint 5 itself - `docs/ARCHITECTURE.md` D32 has the full design. Summary: level is
+always derived from `xp_events` via an admin-editable curve (`settings_kv.level_curve`, base 300/
+step 100), never stored; a new `rank_titles` table (admin-editable, keyed on level, not
+hardcoded) supplies Profile's rank title; V Money balance is summed live from `vmoney_ledger`,
+same as it always has been. Three new endpoints: `GET /me/stats/xp` (WH-04), `GET
+/me/stats/vmoney` (WH-03), `GET /me/profile/overview` (PR-01/PR-02) - all `requireFullAccess`,
+self-only, tested including a zero-activity user (level 1, 0 XP, 0 balance, no rank title).
+Percentile/rank omitted outright (not stubbed) - deferred to Phase 6's Arena leaderboard
+snapshot, as already planned in `docs/FEATURE_MAP.md`.
+
+**Migration note**: `pnpm db:migrate` hung indefinitely (not just slow - confirmed hung after a
+2-minute and a 5-minute attempt, and a third attempt with this session's own sandboxing fully
+disabled, ruling out a sandbox network restriction) trying to apply the new `rank_titles` table
+migration (`drizzle/0023_deep_champions.sql`, purely additive - one `CREATE TABLE`) against
+`DATABASE_URL_DIRECT`. Root cause not confirmed, but the symptom matches Supabase's direct
+connection being IPv6-only against a network with no IPv6 route. Worked around by having the
+founder run the `CREATE TABLE`/`ALTER TABLE ENABLE ROW LEVEL SECURITY`/`CREATE UNIQUE INDEX` SQL
+directly in the Supabase SQL Editor, plus a manually-computed `insert into
+drizzle.__drizzle_migrations` row (hash computed locally via the same sha256-of-file-content
+logic `drizzle-orm`'s own migrator uses) so `pnpm db:migrate`/`GET /api/v1/health`'s migration-
+drift check don't think it's still pending. **Worth root-causing before Phase 3b or Phase 4 add
+another migration**, in case this recurs.
+
+`pnpm typecheck`/`pnpm lint`/`pnpm test` all clean (985 tests, floor 890), `pnpm contract`
+regenerated (25 paths, 27 endpoints documented). Not yet merged - stop-and-audit is the next step
+per the founder's Checkpoint 5 instruction ("stop after Checkpoint 5, then we audit and merge").
+
 ## 2026-09-23 — Incident: a Write call overwrote an existing test file; safeguards added
 
 During Phase 3a Checkpoint 3, a `Write` tool call on

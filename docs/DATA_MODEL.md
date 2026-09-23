@@ -16,8 +16,12 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   the last change we applied, so the webhook can ignore stale/out-of-order redeliveries),
   deleted_at. On `user.deleted` from Clerk, the row is soft-deleted and anonymized in place
   (personal fields cleared) rather than removed, so ledger/trading/leaderboard history stays
-  intact. `level`, `total_xp`, `current_world_id` are added in Phase 3 (progress economy) once
-  `worlds` exists.
+  intact. **Not added in Phase 3, despite this section's original plan**: `level` and `total_xp`
+  are never stored columns — level is always derived from `xp_events`/`vmoney_ledger` sums at
+  read time (`src/server/leveling`, Phase 3 Checkpoint 5), so it re-derives instantly if the
+  level curve settings change, with no backfill. `current_world_id` was likewise never needed —
+  "current lesson" (`GET /api/v1/me/current-lesson`, Phase 2b) is derived from `lesson_progress`,
+  not a stored pointer on `users`.
 - `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
   `users` - staff never has a row in `users`), role_id, active
 - `roles`, `permissions` (key like `quiz.create`), `role_permissions`
@@ -179,7 +183,14 @@ skill for the full idempotency/reversal design)
   reaches this column — never re-derived from a stored timestamp), freezes_left, freezes_reset_month
   (`YYYY-MM` IST — the freeze allowance's lazy monthly reset point). See `docs/ARCHITECTURE.md` D30
   for the day-boundary/freeze/idempotency design and `docs/ECONOMY.md` decision 5 for exactly which
-  events extend the `learning` streak.
+  events extend the `learning` streak. A learner's displayed streak is also re-checked at *read*
+  time (not just at the next write) against today's IST date, so a long-silent learner doesn't see
+  a stale, already-broken streak number until their next activity happens to recompute it.
+- `rank_titles` (Phase 3 Checkpoint 5 — built; unique on min_level) — min_level (integer),
+  title jsonb `{en,hi,hx}`. Admin-editable (`/admin/settings`, `settings.manage`) — no `order`
+  column, since `min_level` itself is the ladder's order. A learner's displayed rank title
+  (Profile Overview, PR-01) is the row with the highest `min_level` still ≤ their derived level;
+  `null` (no title shown) if the table is empty or every row's `min_level` is above their level.
 - `badges`, `user_badges`
 - `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
   badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,
@@ -194,7 +205,9 @@ skill for the full idempotency/reversal design)
   default 3 (position, not a world id/name — D25, `docs/ARCHITECTURE.md`)
   — see Trading below; scoring constants `speed_bonus_threshold_pct` = 45,
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
-  `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values)
+  `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values;
+  `level_curve` — `{baseXp: 300, stepXp: 100}` (Phase 3 Checkpoint 5) — XP to advance from level L
+  to L+1 = baseXp + stepXp×(L−1); admin-editable, `src/server/leveling`)
 
 **Reporting**
 - `report_snapshots` (user_id, week_start_date IST, efficiency_score 0-100, sub_metrics jsonb

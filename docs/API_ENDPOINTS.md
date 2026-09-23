@@ -43,6 +43,9 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/lessons/{id}/steps/{n}/answer` — Submit an answer for the current step and grade it
 - `GET /api/v1/me/current-lesson` — Get my current/resume lesson
 - `GET /api/v1/me/stats/streak` — Get my streak stats (World Home header STREAK tile, WH-02)
+- `GET /api/v1/me/stats/xp` — Get my XP stats (World Home header XP tile, WH-04)
+- `GET /api/v1/me/stats/vmoney` — Get my V Money stats (World Home header V MONEY tile, WH-03)
+- `GET /api/v1/me/profile/overview` — Get my profile overview (Profile screen ID card, PR-01/PR-02)
 
 **Webhooks**
 
@@ -1453,6 +1456,158 @@ Current/longest streak and freezes left, for both independent habit loops - `lea
       "current": 4,
       "longest": 11,
       "freezesLeft": 2
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/xp`
+
+**Get my XP stats (World Home header XP tile, WH-04)**
+
+Total XP, current level and XP progress to the next level, plus XP earned in the trailing 7 days. Level is always derived from total XP using the admin-editable level curve (settings_kv) - it is never stored. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot to read it from (docs/FEATURE_MAP.md PR-03).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's XP stats
+
+```json
+{
+  "data": {
+    "level": 3,
+    "totalXp": 1000,
+    "xpIntoLevel": 300,
+    "xpToNextLevel": 200,
+    "weeklyXp": 180
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/vmoney`
+
+**Get my V Money stats (World Home header V MONEY tile, WH-03)**
+
+Balance and V Money earned/spent in the trailing 7 days. Balance is always summed live from vmoney_ledger (CLAUDE.md rule 2) - it is never a stored column. There is no spend path yet in this phase (trading is Phase 4+), so weeklySpent is currently always 0 - it starts reflecting real spends automatically once one exists, no API change needed. "Earned from trade" (also part of WH-03) is omitted entirely until trading exists.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's V Money stats
+
+```json
+{
+  "data": {
+    "balance": 210,
+    "weeklyEarned": 90,
+    "weeklySpent": 0
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/profile/overview`
+
+**Get my profile overview (Profile screen ID card, PR-01/PR-02)**
+
+Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, and the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet). Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's profile overview
+
+```json
+{
+  "data": {
+    "firstName": "Aarav",
+    "lastInitial": "S",
+    "joinedAt": "2026-01-05T09:12:00.000Z",
+    "level": 3,
+    "totalXp": 1000,
+    "xpIntoLevel": 300,
+    "xpToNextLevel": 200,
+    "rankTitle": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
     }
   }
 }

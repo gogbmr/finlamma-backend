@@ -7,6 +7,9 @@ import {
   creditLessonCompletionRow,
   getRewardRule,
   listRewardRules,
+  sumVmoneyBalance,
+  sumVmoneyEarnedSince,
+  sumVmoneySpentSince,
   updateRewardRule,
   type RewardActivityKind,
 } from "./repo";
@@ -74,6 +77,19 @@ export async function updateVmIssuanceMultiplier(
 
 export async function listRewardRulesForAdmin() {
   return listRewardRules();
+}
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+// WH-03's V Money tile.
+export async function getVmoneyStats(userId: string, at: Date = new Date()) {
+  const since = new Date(at.getTime() - SEVEN_DAYS_MS);
+  const [balance, weeklyEarned, weeklySpent] = await Promise.all([
+    sumVmoneyBalance(userId),
+    sumVmoneyEarnedSince(userId, since),
+    sumVmoneySpentSince(userId, since),
+  ]);
+  return { balance, weeklyEarned, weeklySpent };
 }
 
 export async function updateRewardRuleForAdmin(

@@ -17,11 +17,17 @@ const mockGetRewardRule = vi.fn();
 const mockListRewardRules = vi.fn();
 const mockUpdateRewardRule = vi.fn();
 const mockCreditLessonCompletionRow = vi.fn();
+const mockSumVmoneyBalance = vi.fn();
+const mockSumVmoneyEarnedSince = vi.fn();
+const mockSumVmoneySpentSince = vi.fn();
 vi.mock("./repo", () => ({
   getRewardRule: (kind: unknown) => mockGetRewardRule(kind),
   listRewardRules: () => mockListRewardRules(),
   updateRewardRule: (kind: unknown, input: unknown) => mockUpdateRewardRule(kind, input),
   creditLessonCompletionRow: (xp: unknown, vm: unknown) => mockCreditLessonCompletionRow(xp, vm),
+  sumVmoneyBalance: (userId: unknown) => mockSumVmoneyBalance(userId),
+  sumVmoneyEarnedSince: (userId: unknown, since: unknown) => mockSumVmoneyEarnedSince(userId, since),
+  sumVmoneySpentSince: (userId: unknown, since: unknown) => mockSumVmoneySpentSince(userId, since),
 }));
 
 const mockRecordLearningActivity = vi.fn();
@@ -34,6 +40,7 @@ import {
   activityKindForLessonKind,
   creditLessonCompletion,
   getVmIssuanceMultiplier,
+  getVmoneyStats,
   updateRewardRuleForAdmin,
   updateVmIssuanceMultiplier,
 } from "./service";
@@ -279,5 +286,41 @@ describe("creditLessonCompletion", () => {
     );
 
     expect(mockGetRewardRule).toHaveBeenCalledWith("ai_chat");
+  });
+});
+
+describe("getVmoneyStats", () => {
+  const AT = new Date("2026-01-10T00:00:00.000Z");
+
+  it("a zero-activity user gets balance 0 and both weekly figures 0", async () => {
+    mockSumVmoneyBalance.mockResolvedValueOnce(0);
+    mockSumVmoneyEarnedSince.mockResolvedValueOnce(0);
+    mockSumVmoneySpentSince.mockResolvedValueOnce(0);
+
+    const stats = await getVmoneyStats(USER.id, AT);
+
+    expect(stats).toEqual({ balance: 0, weeklyEarned: 0, weeklySpent: 0 });
+  });
+
+  it("combines balance, weekly earned and weekly spent from the ledger", async () => {
+    mockSumVmoneyBalance.mockResolvedValueOnce(210);
+    mockSumVmoneyEarnedSince.mockResolvedValueOnce(90);
+    mockSumVmoneySpentSince.mockResolvedValueOnce(15);
+
+    const stats = await getVmoneyStats(USER.id, AT);
+
+    expect(stats).toEqual({ balance: 210, weeklyEarned: 90, weeklySpent: 15 });
+  });
+
+  it("passes a since-date exactly 7 days before `at` to both weekly sums", async () => {
+    mockSumVmoneyBalance.mockResolvedValueOnce(0);
+    mockSumVmoneyEarnedSince.mockResolvedValueOnce(0);
+    mockSumVmoneySpentSince.mockResolvedValueOnce(0);
+
+    await getVmoneyStats(USER.id, AT);
+
+    const expectedSince = new Date("2026-01-03T00:00:00.000Z");
+    expect(mockSumVmoneyEarnedSince).toHaveBeenCalledWith(USER.id, expectedSince);
+    expect(mockSumVmoneySpentSince).toHaveBeenCalledWith(USER.id, expectedSince);
   });
 });

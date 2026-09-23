@@ -8,14 +8,23 @@
 // this repo mocked out.
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { rewardRules, users } from "@/db/schema";
+import { rewardRules, users, vmoneyLedger, xpEvents } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { creditLessonCompletionRow, getRewardRule, listRewardRules, updateRewardRule } =
-  await import("./repo");
+const {
+  creditLessonCompletionRow,
+  getRewardRule,
+  listRewardRules,
+  sumVmoneyBalance,
+  sumVmoneyEarnedSince,
+  sumVmoneySpentSince,
+  sumXpSince,
+  sumXpTotal,
+  updateRewardRule,
+} = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 afterAll(async () => {
@@ -179,5 +188,84 @@ describe("creditLessonCompletionRow", () => {
     );
     expect(reversed.xpRow?.amount).toBe(-20);
     expect(reversed.vmRow?.amount).toBe(-30);
+  });
+});
+
+describe("ledger sums (WH-03/WH-04 stat endpoints)", () => {
+  it("a user with no ledger rows sums to 0 everywhere", async () => {
+    const user = await makeUser();
+
+    expect(await sumXpTotal(user.id)).toBe(0);
+    expect(await sumXpSince(user.id, new Date("2000-01-01"))).toBe(0);
+    expect(await sumVmoneyBalance(user.id)).toBe(0);
+    expect(await sumVmoneyEarnedSince(user.id, new Date("2000-01-01"))).toBe(0);
+    expect(await sumVmoneySpentSince(user.id, new Date("2000-01-01"))).toBe(0);
+  });
+
+  it("sums total XP and VM balance across multiple rows for one user, ignoring other users", async () => {
+    const user = await makeUser();
+    const other = await makeUser();
+    await db.insert(xpEvents).values([
+      { userId: user.id, amount: 20, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amount: 30, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: other.id, amount: 999, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+    ]);
+    await db.insert(vmoneyLedger).values([
+      { userId: user.id, amount: 30, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amount: 45, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: other.id, amount: 999, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+    ]);
+
+    expect(await sumXpTotal(user.id)).toBe(50);
+    expect(await sumVmoneyBalance(user.id)).toBe(75);
+  });
+
+  it("a reversal (negative amount) nets out of the balance, never deletes or mutates the original row", async () => {
+    const user = await makeUser();
+    await db.insert(vmoneyLedger).values([
+      { userId: user.id, amount: 30, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amount: -30, sourceType: "reversal", sourceId: randomUUID(), reason: "reversed" },
+    ]);
+
+    expect(await sumVmoneyBalance(user.id)).toBe(0);
+  });
+
+  it("sinceDate excludes rows created before it and includes rows at/after it", async () => {
+    const user = await makeUser();
+    const cutoff = new Date("2026-01-08T00:00:00.000Z");
+    await db.insert(xpEvents).values([
+      {
+        userId: user.id,
+        amount: 20,
+        sourceType: "lesson_completion",
+        sourceId: randomUUID(),
+        reason: "old",
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      {
+        userId: user.id,
+        amount: 50,
+        sourceType: "lesson_completion",
+        sourceId: randomUUID(),
+        reason: "recent",
+        createdAt: new Date("2026-01-08T00:00:00.000Z"),
+      },
+    ]);
+
+    expect(await sumXpSince(user.id, cutoff)).toBe(50);
+    expect(await sumXpTotal(user.id)).toBe(70);
+  });
+
+  it("splits earned and spent by sign within the window, never mixing the two", async () => {
+    const user = await makeUser();
+    const cutoff = new Date("2026-01-01T00:00:00.000Z");
+    await db.insert(vmoneyLedger).values([
+      { userId: user.id, amount: 100, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "earn" },
+      { userId: user.id, amount: 40, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "earn" },
+      { userId: user.id, amount: -25, sourceType: "reversal", sourceId: randomUUID(), reason: "spend" },
+    ]);
+
+    expect(await sumVmoneyEarnedSince(user.id, cutoff)).toBe(140);
+    expect(await sumVmoneySpentSince(user.id, cutoff)).toBe(25); // reported as a positive magnitude
   });
 });

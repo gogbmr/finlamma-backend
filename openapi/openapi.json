@@ -3294,6 +3294,336 @@
         }
       }
     },
+    "/api/v1/me/stats/xp": {
+      "get": {
+        "summary": "Get my XP stats (World Home header XP tile, WH-04)",
+        "description": "Total XP, current level and XP progress to the next level, plus XP earned in the trailing 7 days. Level is always derived from total XP using the admin-editable level curve (settings_kv) - it is never stored. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot to read it from (docs/FEATURE_MAP.md PR-03).",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's XP stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "level": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 3
+                        },
+                        "totalXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1000
+                        },
+                        "xpIntoLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 300
+                        },
+                        "xpToNextLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 200
+                        },
+                        "weeklyXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "XP earned in the trailing 7 days.",
+                          "example": 180
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "totalXp",
+                        "xpIntoLevel",
+                        "xpToNextLevel",
+                        "weeklyXp"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/stats/vmoney": {
+      "get": {
+        "summary": "Get my V Money stats (World Home header V MONEY tile, WH-03)",
+        "description": "Balance and V Money earned/spent in the trailing 7 days. Balance is always summed live from vmoney_ledger (CLAUDE.md rule 2) - it is never a stored column. There is no spend path yet in this phase (trading is Phase 4+), so weeklySpent is currently always 0 - it starts reflecting real spends automatically once one exists, no API change needed. \"Earned from trade\" (also part of WH-03) is omitted entirely until trading exists.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's V Money stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "balance": {
+                          "type": "integer",
+                          "example": 210
+                        },
+                        "weeklyEarned": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "V Money earned in the trailing 7 days.",
+                          "example": 90
+                        },
+                        "weeklySpent": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "V Money spent in the trailing 7 days. Always 0 until a spend path exists.",
+                          "example": 0
+                        }
+                      },
+                      "required": [
+                        "balance",
+                        "weeklyEarned",
+                        "weeklySpent"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/profile/overview": {
+      "get": {
+        "summary": "Get my profile overview (Profile screen ID card, PR-01/PR-02)",
+        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, and the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet). Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's profile overview",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "firstName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "Aarav"
+                        },
+                        "lastInitial": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "S"
+                        },
+                        "joinedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2026-01-05T09:12:00.000Z"
+                        },
+                        "level": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 3
+                        },
+                        "totalXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1000
+                        },
+                        "xpIntoLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 300
+                        },
+                        "xpToNextLevel": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 200
+                        },
+                        "rankTitle": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ],
+                          "description": "The highest rank title the learner's current level qualifies for, or null if no rank_titles row has a minLevel at or below their level yet."
+                        }
+                      },
+                      "required": [
+                        "firstName",
+                        "lastInitial",
+                        "joinedAt",
+                        "level",
+                        "totalXp",
+                        "xpIntoLevel",
+                        "xpToNextLevel",
+                        "rankTitle"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/webhooks/clerk": {
       "post": {
         "summary": "Clerk user webhook (consumer app)",

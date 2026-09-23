@@ -80,7 +80,15 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       ledger. Flagged by the Phase 2b security audit (`docs/STATUS.md`) - low-impact today since
       XP is preview-only (D17) and each step grades once, idempotently, but a real abuse/
       resource-consumption vector once this phase wires XP to `vmoney_ledger`.
-- [ ] XP events, levels, world unlocks
+- [x] XP events, levels, world unlocks — `xp_events` (Checkpoint 2), world unlocks (Phase 2b
+      Checkpoint 6/D23-D24, built ahead of this phase), level (Checkpoint 5: always derived from
+      `xp_events` via an admin-editable level curve, `settings_kv.level_curve`, never stored -
+      `src/server/leveling`, D32)
+- [x] Stat endpoints: `GET /me/stats/xp` (WH-04), `GET /me/stats/vmoney` (WH-03), `GET
+      /me/stats/streak` (WH-02, Checkpoint 4), `GET /me/profile/overview` (PR-01/PR-02) - admin-
+      editable rank titles table (`rank_titles`, keyed on level, not hardcoded); V Money balance
+      and level both always summed/derived live, never stored columns; percentile/rank
+      deliberately deferred to Phase 6 (Arena's weekly leaderboard snapshot), not stubbed (D32)
 - [x] `reward_rules` (admin-editable default XP + VM per activity kind, seeded per
       `docs/ECONOMY.md`), V Money ledger; XP and VM earned independently (no conversion rate)
 - [x] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded

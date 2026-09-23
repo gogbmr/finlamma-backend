@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   rewardActivityKindEnum,
@@ -88,4 +88,65 @@ export async function creditLessonCompletionRow(
     const vmRow = await insertVmoneyLedgerEntryIfNew(tx, vm);
     return { xpRow, vmRow };
   });
+}
+
+// Postgres's SUM() over an integer/bigint column returns `numeric`, which
+// the driver can hand back as a string - Number(...) below normalizes
+// either shape. Safe for V Money at any balance we'll realistically ever
+// see (well under Number.MAX_SAFE_INTEGER), same as every other place in
+// this codebase that treats a bigint({mode:"number"}) column as a plain
+// number.
+function toNumber(value: string | number | null): number {
+  return Number(value ?? 0);
+}
+
+// Never a stored balance column (CLAUDE.md rule 2) - always summed live
+// from the append-only ledger. There is no spend path yet in this phase, so
+// this is currently always >= 0 in practice, but nothing here assumes that.
+export async function sumXpTotal(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string | number>`coalesce(sum(${xpEvents.amount}), 0)` })
+    .from(xpEvents)
+    .where(eq(xpEvents.userId, userId));
+  return toNumber(row?.total ?? 0);
+}
+
+export async function sumXpSince(userId: string, since: Date): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string | number>`coalesce(sum(${xpEvents.amount}), 0)` })
+    .from(xpEvents)
+    .where(and(eq(xpEvents.userId, userId), gte(xpEvents.createdAt, since)));
+  return toNumber(row?.total ?? 0);
+}
+
+export async function sumVmoneyBalance(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string | number>`coalesce(sum(${vmoneyLedger.amount}), 0)` })
+    .from(vmoneyLedger)
+    .where(eq(vmoneyLedger.userId, userId));
+  return toNumber(row?.total ?? 0);
+}
+
+// Split into earned/spent (rather than one signed delta) for the WH-03 V
+// Money tile, which shows both separately. There's no spend path yet in
+// this phase (trading is Phase 4+), so weeklySpent is always 0 today - that
+// will change automatically once something inserts a negative-amount row.
+export async function sumVmoneyEarnedSince(userId: string, since: Date): Promise<number> {
+  const [row] = await db
+    .select({
+      total: sql<string | number>`coalesce(sum(${vmoneyLedger.amount}) filter (where ${vmoneyLedger.amount} > 0), 0)`,
+    })
+    .from(vmoneyLedger)
+    .where(and(eq(vmoneyLedger.userId, userId), gte(vmoneyLedger.createdAt, since)));
+  return toNumber(row?.total ?? 0);
+}
+
+export async function sumVmoneySpentSince(userId: string, since: Date): Promise<number> {
+  const [row] = await db
+    .select({
+      total: sql<string | number>`coalesce(-sum(${vmoneyLedger.amount}) filter (where ${vmoneyLedger.amount} < 0), 0)`,
+    })
+    .from(vmoneyLedger)
+    .where(and(eq(vmoneyLedger.userId, userId), gte(vmoneyLedger.createdAt, since)));
+  return toNumber(row?.total ?? 0);
 }

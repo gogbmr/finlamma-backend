@@ -162,6 +162,13 @@
       "when": 1790153039776,
       "tag": "0022_nasty_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1790155277407,
+      "tag": "0023_deep_champions",
+      "breakpoints": true
     }
   ]
 }
