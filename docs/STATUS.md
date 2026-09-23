@@ -1,5 +1,34 @@
 # Status
 
+## 2026-09-23 — Incident: a Write call overwrote an existing test file; safeguards added
+
+During Phase 3a Checkpoint 3, a `Write` tool call on
+`src/server/lesson-progress/repo.test.ts` was made without reading the file first. The file
+already existed (pre-dating Checkpoint 3), so the write silently replaced its entire contents
+instead of extending it - deleting all test coverage for `completeLessonProgress`,
+`countInProgressLearners` and `countInProgressLearnersByLessonIds` (functions unrelated to
+Checkpoint 3, still used elsewhere). `pnpm test` still reported "passing" immediately afterward,
+since nothing checked for a minimum test count - the drop (859 tests before Checkpoint 3's other
+new tests, vs. 6 new added while 9 were silently deleted) was only caught by noticing `git commit`
+labelled the file a "rewrite (66%)" rather than a plain modification.
+
+**Fixed same-session**: the original 9 test cases were merged back in alongside the 6 new
+Checkpoint 3 ones (commit `eec5abb`) - 15 total, all passing. `git log --numstat` across the whole
+`phase-3a-economy-core` branch was then checked for every other `*.test.ts` file touched this
+phase (deletions vs. insertions per file, looking for the same "roughly equal delete/insert"
+signature) - confirmed this was the only file affected; every other test file this phase shows
+zero deletions (pure additions).
+
+**Safeguards added** (both same-day):
+- CLAUDE.md rule 14: never `Write` a test file without reading it first; use `Edit`/append on an
+  existing `*.test.ts` file.
+- `pnpm test`'s new `posttest` step (`scripts/check-test-count.mjs`) fails the run if the real
+  test count (from vitest's own JSON reporter, `tests/.last-run.json`) drops below the floor
+  committed in `tests/min-count.json` (currently 869). This is a backstop, not a substitute for
+  reading the file first - it only catches a *count* drop, not a rewrite that happens to net the
+  same or a higher count. `tests/min-count.json` must be bumped deliberately, in the same commit,
+  whenever tests are intentionally removed or consolidated.
+
 ## 2026-09-23 — Decided: keep the single shared database for now (dev/preview/production), not a separate dev project
 
 Recorded in full as `docs/ARCHITECTURE.md` decision D27 - summary here for the dated record.

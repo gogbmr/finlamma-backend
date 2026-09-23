@@ -150,6 +150,15 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
     re-acceptance notice on a new legal-document version, etc.), not only what exists today.
     See `docs/ARCHITECTURE.md` decision D15 (DPDP requires withdrawal to stay as easy as giving
     consent) for the reasoning.
+14. **Never write a test file without reading it first.** Use Edit (or append) on an existing
+    `*.test.ts` file, never a whole-file Write — a Write silently overwrites whatever was already
+    there instead of extending it. `pnpm test`'s `posttest` step (`scripts/check-test-count.mjs`,
+    floor in `tests/min-count.json`) fails the run if the total test count drops below the
+    committed floor, as a backstop — but it's a backstop, not a substitute for reading the file
+    first; it only catches a *count* drop, not a rewrite that happens to keep the count the same
+    or higher. (Incident: a Write call on `src/server/lesson-progress/repo.test.ts` during Phase
+    3a Checkpoint 3 silently deleted three functions' test coverage; the suite still reported
+    "passing" since nothing checked for a minimum count at the time — see `docs/STATUS.md`.)
 
 ## API endpoint documentation (required)
 `docs/API_ENDPOINTS.md` must always list **every** endpoint with method, path, summary, auth,

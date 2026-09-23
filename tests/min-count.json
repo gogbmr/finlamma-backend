@@ -1,0 +1,4 @@
+{
+  "minTestCount": 869,
+  "note": "The floor scripts/check-test-count.mjs (posttest) enforces - pnpm test fails if the real count drops below this. Update this value deliberately, in the same commit, whenever tests are intentionally removed or consolidated (never as a side effect of an unrelated change) - see CLAUDE.md's 'never write a test file without reading it first' rule, added after an incident where a Write call silently overwrote an existing test file and the count drop went unnoticed."
+}
