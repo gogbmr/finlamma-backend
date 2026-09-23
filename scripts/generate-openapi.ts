@@ -22,6 +22,8 @@ import "../src/app/api/v1/mentors/[key]/route";
 import "../src/app/api/v1/worlds/route";
 import "../src/app/api/v1/worlds/[id]/lessons/route";
 import "../src/app/api/v1/lessons/[id]/route";
+import "../src/app/api/v1/lessons/[id]/serve/route";
+import "../src/app/api/v1/lessons/[id]/complete/route";
 import "../src/app/api/v1/lessons/[id]/steps/[n]/serve/route";
 import "../src/app/api/v1/lessons/[id]/steps/[n]/answer/route";
 import "../src/app/api/v1/me/current-lesson/route";

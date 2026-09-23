@@ -112,12 +112,16 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   response never includes `questions.answer` or its explanation text until that specific question
   has been graded server-side (see `docs/ARCHITECTURE.md` D17 and Phase 2b's answer-leakage tests).
 - `lesson_progress` (user_id, lesson_id, status `in_progress`|`completed`, started_at, completed_at)
-  — one row per (user, lesson), written entirely as a byproduct of the quiz-attempts flow below
-  (`serveStep` starts it, `submitAnswer` completes it), so only lesson kinds with at least one
-  graded step (video/quiz/boss_quiz/role_play) ever get a row yet — `story`/`doubt_zone` have no
-  "mark as done" endpoint at all today, a known gap. Drives the admin unpublish-warning
-  (in-progress learner counts) — see `docs/ARCHITECTURE.md` D23. World unlock itself is judged on
-  `quiz_attempts.accuracy_pct` (below), not this table — see D24.
+  — one row per (user, lesson). For a graded kind (video/quiz/boss_quiz/role_play), it's written
+  entirely as a byproduct of the quiz-attempts flow below (`serveStep` starts it, `submitAnswer`
+  completes it). For Story/Doubt Zone — which have no graded questions at all — `POST
+  /api/v1/lessons/{id}/serve` and `.../complete` (Phase 3 Checkpoint 3, closing D23's original
+  gap) write it directly: `serve` stamps `started_at` server-side (the anti-farming anchor
+  `complete` measures elapsed time from, never a client-reported duration), and `complete` only
+  succeeds once `settings_kv.lesson_flow_scoring.storyMinCompletionSeconds`/
+  `doubtZoneMinCompletionSeconds` have genuinely elapsed since then — see `docs/ARCHITECTURE.md`
+  D29. Drives the admin unpublish-warning (in-progress learner counts) — see D23. World unlock
+  itself is judged on `quiz_attempts.accuracy_pct` (below), not this table — see D24.
 - `quiz_attempts` (user_id, lesson_id, attempt_number, is_first_pass, status `in_progress`|
   `completed`, started_at, completed_at, total_xp_preview, accuracy_pct — correct steps / total
   steps, 0-100, computed once at completion; a Boss Quiz's pass/fail is judged against this vs.

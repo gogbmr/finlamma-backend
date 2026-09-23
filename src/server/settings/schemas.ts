@@ -47,6 +47,16 @@ export const LessonFlowScoringSchema = z.object({
   // attempt (D26). Story/Doubt Zone have no accuracyPct at all (no graded
   // questions) and are unaffected - see Checkpoint 3's own completion rule.
   lessonPassMarkPct: z.number().nonnegative().max(100),
+  // Phase 3 Checkpoint 3: Story and Doubt Zone have no graded questions
+  // (D23), so they can't be gated by accuracy - instead, completing one for
+  // credit requires POST /lessons/{id}/serve to have been called first (the
+  // server-stamped `startedAt` anchor) AND at least this many seconds to
+  // have elapsed before POST /lessons/{id}/complete succeeds. Set well below
+  // docs/ECONOMY.md's LSTEP content length (Story 6min/360s, AI Chat
+  // 5min/300s) - roughly half - since reading/chat speed genuinely varies
+  // and this is an anti-instant-complete floor, not a reading-speed monitor.
+  storyMinCompletionSeconds: z.number().int().positive(),
+  doubtZoneMinCompletionSeconds: z.number().int().positive(),
   // D25 (docs/ARCHITECTURE.md): trading unlocks once the learner has passed
   // the Boss Quiz of the PUBLISHED world at this 1-based POSITION (not a
   // specific world id/name) - src/server/worlds/service.ts's
@@ -73,6 +83,8 @@ export const DEFAULT_LESSON_FLOW_SCORING: LessonFlowScoring = {
   feverMultiplier: 2,
   bossQuizPassMarkPct: 60,
   lessonPassMarkPct: 50,
+  storyMinCompletionSeconds: 180,
+  doubtZoneMinCompletionSeconds: 150,
   tradingUnlockAfterWorldPosition: 3,
 };
 

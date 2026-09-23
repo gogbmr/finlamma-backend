@@ -2512,6 +2512,309 @@
         }
       }
     },
+    "/api/v1/lessons/{id}/serve": {
+      "post": {
+        "summary": "Serve a Story or Doubt Zone lesson (starts its completion timer)",
+        "description": "For Story and Doubt Zone lessons only - these have no graded questions (docs/ARCHITECTURE.md D23), so unlike a Video/Quiz/Role Play/Boss Quiz lesson there is no POST .../steps/{n}/serve to call instead. The returned `startedAt` is server-stamped and never trusted from the client - POST /lessons/{id}/complete measures elapsed time from it, not from anything the app reports. Idempotent: re-serving an already-served (or already-completed) lesson returns the exact original startedAt, never a new one.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lesson's current progress, with its server-stamped startedAt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "lessonId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "in_progress",
+                            "completed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Server-stamped serve time (ISO 8601 UTC) - what .../complete measures elapsed time from."
+                        }
+                      },
+                      "required": [
+                        "lessonId",
+                        "status",
+                        "startedAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "This lesson isn't a Story or Doubt Zone kind - use the graded-step endpoints instead",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "\"quiz\" lessons use POST /lessons/{id}/steps/{n}/serve, not this endpoint"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/lessons/{id}/complete": {
+      "post": {
+        "summary": "Complete a Story or Doubt Zone lesson (credits XP/V Money)",
+        "description": "For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson to have been served first, and at least the kind's own admin-editable minimum time (settings_kv.lesson_flow_scoring.storyMinCompletionSeconds / doubtZoneMinCompletionSeconds) to have elapsed since that server-stamped serve time - never a client-reported duration (docs/ARCHITECTURE.md D21's server-timed reasoning applies here too). Credits at most once per user per lesson (docs/ECONOMY.md decision 4, D26): completing an already-completed lesson is an idempotent no-op, `credited: false`, never a second credit.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The lesson is now completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "lessonId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "completed"
+                          ]
+                        },
+                        "completedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "credited": {
+                          "type": "boolean",
+                          "description": "True only the first time this lesson was completed for this user - a later idempotent replay of an already-completed lesson returns credited: false (no re-credit)."
+                        }
+                      },
+                      "required": [
+                        "lessonId",
+                        "status",
+                        "completedAt",
+                        "credited"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published lesson with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not served yet - call POST /lessons/{id}/serve first",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Not served yet - call POST /lessons/{id}/serve first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Either too many requests, or not enough time has elapsed since serve yet (LESSON_TOO_SOON) - both mean: wait, then retry the exact same request",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "LESSON_TOO_SOON",
+                    "message": "Spend a bit more time here before completing (150s minimum, 40s so far)",
+                    "details": {
+                      "minSeconds": 150,
+                      "secondsElapsed": 40
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/lessons/{id}/steps/{n}/serve": {
       "post": {
         "summary": "Serve the next graded step of a lesson (starts or resumes an attempt)",

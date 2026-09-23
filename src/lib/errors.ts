@@ -29,6 +29,11 @@ export const ErrorCode = {
   // from "your parent already consented once, but a legal document changed
   // and needs a fresh approval" so it can show the right screen.
   PARENT_REAPPROVAL_REQUIRED: "PARENT_REAPPROVAL_REQUIRED",
+
+  // Story/Doubt Zone completion (src/server/lesson-progress) - the request
+  // itself is fine and will succeed if simply retried once enough time has
+  // passed, same "temporary, not a client mistake" shape as RESEND_TOO_SOON.
+  LESSON_TOO_SOON: "LESSON_TOO_SOON",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -51,6 +56,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   RESEND_TOO_SOON: 429,
   RESEND_LIMIT_REACHED: 429,
   PARENT_REAPPROVAL_REQUIRED: 403,
+  LESSON_TOO_SOON: 429,
 };
 
 export class AppError extends Error {

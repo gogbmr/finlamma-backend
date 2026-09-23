@@ -37,6 +37,8 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/worlds` — List published worlds
 - `GET /api/v1/worlds/{id}/lessons` — List a world's published lessons
 - `GET /api/v1/lessons/{id}` — Get a published lesson
+- `POST /api/v1/lessons/{id}/serve` — Serve a Story or Doubt Zone lesson (starts its completion timer)
+- `POST /api/v1/lessons/{id}/complete` — Complete a Story or Doubt Zone lesson (credits XP/V Money)
 - `POST /api/v1/lessons/{id}/steps/{n}/serve` — Serve the next graded step of a lesson (starts or resumes an attempt)
 - `POST /api/v1/lessons/{id}/steps/{n}/answer` — Submit an answer for the current step and grade it
 - `GET /api/v1/me/current-lesson` — Get my current/resume lesson
@@ -946,6 +948,183 @@ Full content for a single published lesson - what the Lesson Flow engine renders
   "error": {
     "code": "NOT_FOUND",
     "message": "No published lesson with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/serve`
+
+**Serve a Story or Doubt Zone lesson (starts its completion timer)**
+
+For Story and Doubt Zone lessons only - these have no graded questions (docs/ARCHITECTURE.md D23), so unlike a Video/Quiz/Role Play/Boss Quiz lesson there is no POST .../steps/{n}/serve to call instead. The returned `startedAt` is server-stamped and never trusted from the client - POST /lessons/{id}/complete measures elapsed time from it, not from anything the app reports. Idempotent: re-serving an already-served (or already-completed) lesson returns the exact original startedAt, never a new one.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The lesson's current progress, with its server-stamped startedAt
+
+```json
+{
+  "data": {
+    "lessonId": "00000000-0000-0000-0000-000000000000",
+    "status": "in_progress",
+    "startedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **400** — This lesson isn't a Story or Doubt Zone kind - use the graded-step endpoints instead
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "\"quiz\" lessons use POST /lessons/{id}/steps/{n}/serve, not this endpoint"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/lessons/{id}/complete`
+
+**Complete a Story or Doubt Zone lesson (credits XP/V Money)**
+
+For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson to have been served first, and at least the kind's own admin-editable minimum time (settings_kv.lesson_flow_scoring.storyMinCompletionSeconds / doubtZoneMinCompletionSeconds) to have elapsed since that server-stamped serve time - never a client-reported duration (docs/ARCHITECTURE.md D21's server-timed reasoning applies here too). Credits at most once per user per lesson (docs/ECONOMY.md decision 4, D26): completing an already-completed lesson is an idempotent no-op, `credited: false`, never a second credit.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The lesson is now completed
+
+```json
+{
+  "data": {
+    "lessonId": "00000000-0000-0000-0000-000000000000",
+    "status": "completed",
+    "completedAt": "2026-01-01T00:00:00.000Z",
+    "credited": true
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published lesson with this id"
+  }
+}
+```
+
+- **409** — Not served yet - call POST /lessons/{id}/serve first
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Not served yet - call POST /lessons/{id}/serve first"
+  }
+}
+```
+
+- **429** — Either too many requests, or not enough time has elapsed since serve yet (LESSON_TOO_SOON) - both mean: wait, then retry the exact same request
+
+```json
+{
+  "error": {
+    "code": "LESSON_TOO_SOON",
+    "message": "Spend a bit more time here before completing (150s minimum, 40s so far)",
+    "details": {
+      "minSeconds": 150,
+      "secondsElapsed": 40
+    }
   }
 }
 ```
