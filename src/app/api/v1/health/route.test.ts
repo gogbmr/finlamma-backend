@@ -23,6 +23,8 @@ const mockEnv = vi.hoisted(() => ({
   S3_BUCKET: undefined as string | undefined,
   S3_ACCESS_KEY_ID: undefined as string | undefined,
   S3_SECRET_ACCESS_KEY: undefined as string | undefined,
+  INNGEST_SIGNING_KEY: undefined as string | undefined,
+  INNGEST_DEV: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -89,6 +91,10 @@ beforeEach(() => {
   // "ok" by default - existing tests below don't need to know about the
   // redis warning field at all.
   mockCheckRedisReachable.mockReset().mockResolvedValue("ok");
+  // Configured by default - existing tests below don't need to know about
+  // the inngest warning field at all.
+  mockEnv.INNGEST_SIGNING_KEY = "test-signing-key";
+  mockEnv.INNGEST_DEV = undefined;
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -120,6 +126,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.storage).toBe("ok");
     expect(body.data.redis).toBe("ok");
     expect(body.data.worldsMissingBossQuiz).toEqual([]);
+    expect(body.data.inngest).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
   });
 
@@ -341,6 +348,39 @@ describe("GET /api/v1/health", () => {
 
       expect(res.status).toBe(200);
       expect((await res.json()).data.redis).toBe("unreachable");
+    });
+  });
+
+  describe("inngest", () => {
+    it("reports 'unconfigured' when neither INNGEST_SIGNING_KEY nor INNGEST_DEV is set", async () => {
+      mockEnv.INNGEST_SIGNING_KEY = undefined;
+      mockEnv.INNGEST_DEV = undefined;
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.inngest).toBe("unconfigured");
+    });
+
+    it("reports 'ok' when INNGEST_DEV is set even without a signing key (local dev)", async () => {
+      mockEnv.INNGEST_SIGNING_KEY = undefined;
+      mockEnv.INNGEST_DEV = "1";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.inngest).toBe("ok");
+    });
+
+    it("reports 'ok' when INNGEST_SIGNING_KEY is set", async () => {
+      mockEnv.INNGEST_SIGNING_KEY = "test-signing-key";
+      mockEnv.INNGEST_DEV = undefined;
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.inngest).toBe("ok");
     });
   });
 
