@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockEnv = vi.hoisted(() => ({
   RESEND_API_KEY: "re_test_key" as string | undefined,
   EMAIL_FROM: "Finlamma <consent@mail.finlamma.in>" as string | undefined,
+  NODE_ENV: "test" as string,
+  VERCEL_ENV: undefined as "production" | "preview" | "development" | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -15,7 +17,7 @@ vi.mock("resend", () => ({
   },
 }));
 
-import { sendEmail } from "./email";
+import { isRealProductionDeployment, sendEmail, sendEmailOrLog } from "./email";
 
 function fakeElement() {
   return { type: "div", props: {}, key: null } as unknown as React.ReactElement;
@@ -69,5 +71,86 @@ describe("sendEmail", () => {
     await expect(
       sendEmail({ to: "parent@example.com", subject: "Hi", react: fakeElement() }),
     ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+  });
+});
+
+describe("isRealProductionDeployment", () => {
+  beforeEach(() => {
+    mockEnv.NODE_ENV = "test";
+    mockEnv.VERCEL_ENV = undefined;
+  });
+
+  it("is true when VERCEL_ENV is production, regardless of NODE_ENV", () => {
+    mockEnv.VERCEL_ENV = "production";
+    expect(isRealProductionDeployment()).toBe(true);
+  });
+
+  it("is false on a Vercel preview deployment, even though NODE_ENV is production there too", () => {
+    mockEnv.VERCEL_ENV = "preview";
+    mockEnv.NODE_ENV = "production";
+    expect(isRealProductionDeployment()).toBe(false);
+  });
+
+  it("falls back to NODE_ENV outside Vercel (VERCEL_ENV unset)", () => {
+    mockEnv.VERCEL_ENV = undefined;
+    mockEnv.NODE_ENV = "production";
+    expect(isRealProductionDeployment()).toBe(true);
+  });
+});
+
+describe("sendEmailOrLog", () => {
+  beforeEach(() => {
+    mockEnv.NODE_ENV = "test";
+    mockEnv.VERCEL_ENV = undefined;
+    mockSend.mockReset();
+  });
+
+  it("logs instead of sending when Resend isn't configured on a non-production deployment", async () => {
+    mockEnv.RESEND_API_KEY = undefined;
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await sendEmailOrLog({
+      to: "parent@example.com",
+      subject: "Hi",
+      react: fakeElement(),
+      devLogLabel: "weekly report card",
+      devLogDetail: "user_1",
+    });
+
+    expect(mockSend).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("weekly report card"));
+    logSpy.mockRestore();
+  });
+
+  it("sends for real once Resend is configured", async () => {
+    mockEnv.RESEND_API_KEY = "re_test_key";
+    mockEnv.EMAIL_FROM = "Finlamma <consent@mail.finlamma.in>";
+    mockSend.mockResolvedValueOnce({ data: { id: "email_1" }, error: null });
+
+    await sendEmailOrLog({
+      to: "parent@example.com",
+      subject: "Hi",
+      react: fakeElement(),
+      devLogLabel: "weekly report card",
+      devLogDetail: "user_1",
+    });
+
+    expect(mockSend).toHaveBeenCalled();
+  });
+
+  it("sends for real (never silently skips) in a real production deployment, even if unconfigured", async () => {
+    mockEnv.RESEND_API_KEY = undefined;
+    mockEnv.VERCEL_ENV = "production";
+
+    await expect(
+      sendEmailOrLog({
+        to: "parent@example.com",
+        subject: "Hi",
+        react: fakeElement(),
+        devLogLabel: "weekly report card",
+        devLogDetail: "user_1",
+      }),
+    ).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" }); // fails closed, doesn't silently skip
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });

@@ -2017,6 +2017,223 @@
           "data"
         ]
       },
+      "ReportCardResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "current": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "weekStartDate": {
+                    "type": "string",
+                    "example": "2026-09-21",
+                    "description": "IST Monday."
+                  },
+                  "efficiencyScore": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100
+                  },
+                  "subMetrics": {
+                    "type": "object",
+                    "properties": {
+                      "retention": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "watchSpeed": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "quizAccuracy": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "consistency": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      }
+                    },
+                    "required": [
+                      "retention",
+                      "watchSpeed",
+                      "quizAccuracy",
+                      "consistency"
+                    ]
+                  },
+                  "moduleBreakdown": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "worldId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "worldTitle": {
+                          "type": "string"
+                        },
+                        "lessonsCompleted": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "minutesSpent": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "accuracyPct": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        },
+                        "grade": {
+                          "type": "string",
+                          "enum": [
+                            "S",
+                            "A",
+                            "B",
+                            "C"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "worldId",
+                        "worldTitle",
+                        "lessonsCompleted",
+                        "minutesSpent",
+                        "accuracyPct",
+                        "grade"
+                      ]
+                    }
+                  },
+                  "topicMastery": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "accuracyPct": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "topic",
+                        "accuracyPct"
+                      ]
+                    }
+                  },
+                  "coachNotes": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "strength",
+                            "gap",
+                            "opportunity",
+                            "habit"
+                          ]
+                        },
+                        "text": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ],
+                          "description": "The template with placeholders already filled in with this learner's own numbers."
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "text"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "weekStartDate",
+                  "efficiencyScore",
+                  "subMetrics",
+                  "moduleBreakdown",
+                  "topicMastery",
+                  "coachNotes"
+                ],
+                "description": "Null until the first Monday after signup has run."
+              },
+              "trend": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "weekStartDate": {
+                      "type": "string"
+                    },
+                    "efficiencyScore": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "weekStartDate",
+                    "efficiencyScore"
+                  ]
+                },
+                "description": "Up to the last 8 weeks, oldest first."
+              },
+              "sharedWithParent": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "properties": {
+                  "maskedEmail": {
+                    "type": "string",
+                    "example": "j***@gmail.com"
+                  }
+                },
+                "required": [
+                  "maskedEmail"
+                ],
+                "description": "Non-null only when this learner is currently under 18 with a consented, opted-in parent - see docs/ARCHITECTURE.md D33. Never a toggle the learner controls themselves."
+              }
+            },
+            "required": [
+              "current",
+              "trend",
+              "sharedWithParent"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -5061,6 +5278,64 @@
                 },
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/report-card": {
+      "get": {
+        "summary": "My weekly report card (PR-30/31/32/33)",
+        "description": "The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's report card",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportCardResponse"
                 }
               }
             }

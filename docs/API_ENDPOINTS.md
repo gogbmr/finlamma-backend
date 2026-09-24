@@ -56,6 +56,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/me/rewards/{id}/claim` — Claim a reward (PR-22)
 - `GET /api/v1/me/wallet` — Get my wallet summary (PR-21)
 - `GET /api/v1/me/wallet/history` — Get my V Money ledger history (PR-24)
+- `GET /api/v1/me/report-card` — My weekly report card (PR-30/31/32/33)
 
 **Webhooks**
 
@@ -2312,6 +2313,95 @@ The caller's full earn/spend ledger, newest first, cursor-paginated.
   "error": {
     "code": "VALIDATION_FAILED",
     "message": "Invalid cursor"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/report-card`
+
+**My weekly report card (PR-30/31/32/33)**
+
+The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's report card
+
+```json
+{
+  "data": {
+    "current": {
+      "weekStartDate": "2026-09-21",
+      "efficiencyScore": 0,
+      "subMetrics": {
+        "retention": 0,
+        "watchSpeed": 0,
+        "quizAccuracy": 0,
+        "consistency": 0
+      },
+      "moduleBreakdown": [
+        {
+          "worldId": "00000000-0000-0000-0000-000000000000",
+          "worldTitle": "string",
+          "lessonsCompleted": 0,
+          "minutesSpent": 0,
+          "accuracyPct": 0,
+          "grade": "S"
+        }
+      ],
+      "topicMastery": [
+        {
+          "topic": "string",
+          "accuracyPct": 0
+        }
+      ],
+      "coachNotes": [
+        {
+          "category": "strength",
+          "text": {
+            "en": "string",
+            "hi": "string",
+            "hx": "string"
+          }
+        }
+      ]
+    },
+    "trend": [
+      {
+        "weekStartDate": "string",
+        "efficiencyScore": 0
+      }
+    ],
+    "sharedWithParent": {
+      "maskedEmail": "j***@gmail.com"
+    }
   }
 }
 ```

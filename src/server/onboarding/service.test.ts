@@ -1061,6 +1061,48 @@ describe("notifyAffectedMinorsForReapproval", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ targetId: "minor2" }));
     consoleErrorSpy.mockRestore();
   });
+
+  it("an email-send failure for one candidate never aborts the rest of the batch", async () => {
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockListCandidatesForReapproval.mockResolvedValueOnce([
+      {
+        userId: "minor1",
+        dateOfBirth: "2015-01-01",
+        firstName: "Aarav",
+        parentContactId: "pc1",
+        parentEmail: "priya@example.com",
+        parentName: "Priya",
+      },
+      {
+        userId: "minor2",
+        dateOfBirth: "2015-01-01",
+        firstName: "Diya",
+        parentContactId: "pc2",
+        parentEmail: "raj@example.com",
+        parentName: "Raj",
+      },
+    ]);
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockClaimReapprovalRequestSlot
+      .mockResolvedValueOnce({ ok: true, record: { id: "rr1" } })
+      .mockResolvedValueOnce({ ok: true, record: { id: "rr2" } });
+    // Force the real sendEmail path (not the dev-log fallback) so a Resend
+    // failure actually reaches the loop.
+    mockEnv.RESEND_API_KEY = "re_test_key";
+    mockEnv.EMAIL_FROM = "Finlamma <consent@mail.finlamma.in>";
+    mockSendEmail.mockRejectedValueOnce(new Error("Resend rejected this address"));
+    mockSendEmail.mockResolvedValueOnce(undefined);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await notifyAffectedMinorsForReapproval("doc_2", META);
+
+    expect(result).toEqual({ notified: 1 });
+    expect(mockLogActivity).toHaveBeenCalledTimes(1);
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ targetId: "minor2" }));
+    consoleErrorSpy.mockRestore();
+    mockEnv.RESEND_API_KEY = undefined;
+    mockEnv.EMAIL_FROM = undefined;
+  });
 });
 
 describe("getReapprovalRequestView", () => {

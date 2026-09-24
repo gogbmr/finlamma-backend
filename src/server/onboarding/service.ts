@@ -737,30 +737,44 @@ export async function notifyAffectedMinorsForReapproval(
       continue;
     }
 
-    const withdrawToken = generateToken();
-    await setConsentRecordWithdrawTokenHash(candidate.userId, hashToken(withdrawToken));
+    // Isolated per candidate (Phase 7 ROADMAP item, pulled forward to run as
+    // an Inngest job instead of inline on publish - src/inngest/functions/
+    // legal-reapproval-emails.ts): a single candidate's email failure (e.g.
+    // Resend rejects one address) must never abort the rest of a
+    // potentially large batch - the slot is already claimed above, so a
+    // failure here is safe to skip and move on rather than retry, since
+    // retrying the whole job would otherwise re-attempt already-succeeded
+    // candidates too (claimReapprovalRequestSlot's cooldown would simply
+    // reject those, which is a reasonable enough natural skip, but isolating
+    // per-candidate is the more correct fix Inngest migration is for).
+    try {
+      const withdrawToken = generateToken();
+      await setConsentRecordWithdrawTokenHash(candidate.userId, hashToken(withdrawToken));
 
-    const childFirstName = candidate.firstName ?? "Your child";
-    await sendReapprovalEmail({
-      userId: candidate.userId,
-      parentEmail: candidate.parentEmail,
-      childFirstName,
-      documentLabel,
-      reapprovalUrl: `${env.APP_URL}/consent/reapprove?token=${token}`,
-      withdrawUrl: `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`,
-    });
+      const childFirstName = candidate.firstName ?? "Your child";
+      await sendReapprovalEmail({
+        userId: candidate.userId,
+        parentEmail: candidate.parentEmail,
+        childFirstName,
+        documentLabel,
+        reapprovalUrl: `${env.APP_URL}/consent/reapprove?token=${token}`,
+        withdrawUrl: `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`,
+      });
 
-    await logActivity({
-      actorType: "system",
-      action: "legal.reapproval_requested",
-      targetType: "user",
-      targetId: candidate.userId,
-      metadata: { legalDocumentId, type: doc.type, version: doc.version },
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-    });
+      await logActivity({
+        actorType: "system",
+        action: "legal.reapproval_requested",
+        targetType: "user",
+        targetId: candidate.userId,
+        metadata: { legalDocumentId, type: doc.type, version: doc.version },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
 
-    notified += 1;
+      notified += 1;
+    } catch (err) {
+      logInternalError("legal.reapproval_notify_send_failed", err);
+    }
   }
 
   return { notified };

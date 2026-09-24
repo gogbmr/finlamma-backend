@@ -40,6 +40,25 @@ export function istDateStartUtc(date: Date = new Date()): Date {
   return new Date(Date.parse(`${istDateString(date)}T00:00:00Z`) - IST_OFFSET_MS);
 }
 
+// The IST calendar date (YYYY-MM-DD) of the Monday starting the IST week
+// `date` falls in - src/server/report-card's weekly snapshot key
+// (PRODUCT_SPEC.md §6: "written by a weekly Inngest job, Monday IST").
+export function istWeekStartDate(date: Date = new Date()): string {
+  const dateStr = istDateString(date);
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const diffFromMonday = dow === 0 ? 6 : dow - 1;
+  d.setUTCDate(d.getUTCDate() - diffFromMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+// The UTC instant of IST midnight, the Monday starting the IST week `date`
+// falls in - the lower bound for "this week"'s queries.
+export function istWeekStartUtc(date: Date = new Date()): Date {
+  const weekStart = istWeekStartDate(date);
+  return new Date(Date.parse(`${weekStart}T00:00:00Z`) - IST_OFFSET_MS);
+}
+
 // The UTC instant of IST midnight, the 1st of the IST calendar month `date`
 // falls in - e.g. src/server/economy/service.ts's getMyWallet needs a UTC
 // boundary for "earned this (IST) month".

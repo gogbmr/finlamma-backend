@@ -4,6 +4,8 @@ import {
   istDateStartUtc,
   istDateString,
   istMonthStartUtc,
+  istWeekStartDate,
+  istWeekStartUtc,
   istYear,
   istYearMonth,
   istYearStartUtc,
@@ -55,6 +57,30 @@ describe("istYear", () => {
     // 2025-12-31T18:31:00Z is 2026-01-01 00:01 IST - already next year.
     expect(istYear(new Date("2025-12-31T18:31:00.000Z"))).toBe(2026);
     expect(istYear(new Date("2025-12-31T18:29:00.000Z"))).toBe(2025);
+  });
+});
+
+describe("istWeekStartDate", () => {
+  it("returns the Monday of the IST week for a mid-week date", () => {
+    // 2026-09-24 is a Thursday (IST); that week's Monday is 2026-09-21.
+    expect(istWeekStartDate(new Date("2026-09-24T10:00:00.000Z"))).toBe("2026-09-21");
+  });
+
+  it("returns the same date when it's already a Monday", () => {
+    expect(istWeekStartDate(new Date("2026-09-21T10:00:00.000Z"))).toBe("2026-09-21");
+  });
+
+  it("handles a Sunday correctly (rolls back to the PRECEDING Monday, not forward)", () => {
+    // 2026-09-27 is a Sunday - the same week as Sep 21-27.
+    expect(istWeekStartDate(new Date("2026-09-27T10:00:00.000Z"))).toBe("2026-09-21");
+  });
+});
+
+describe("istWeekStartUtc", () => {
+  it("returns the UTC instant of IST midnight on that Monday", () => {
+    expect(istWeekStartUtc(new Date("2026-09-24T10:00:00.000Z")).toISOString()).toBe(
+      "2026-09-20T18:30:00.000Z",
+    );
   });
 });
 

@@ -101,9 +101,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [x] Certificates on world completion — PDF via a browser-free renderer (e.g.
       `@react-pdf/renderer`, not a headless browser — Vercel-compatible), stored in storage,
       shared as a signed URL via the device share sheet (the student sends it, we never do)
-- [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
+- [x] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
       module breakdown, 8-week trend; `coach_note_templates` (admin-editable, draft → publish,
-      no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules
+      no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules.
+      Report card PDF/story-image export (PR-35) deferred — not built this checkpoint.
 - [x] `users.bio`, `users.preferences` (sound/haptics/data-saver); Settings screens that don't
       need their own backend (legal pages, contact, rate-app) ship as static/deep-link content
 
@@ -160,9 +161,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point
-- [ ] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
+- [x] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
       publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
-      affected parent inline during the admin publish Server Action)
+      affected parent inline during the admin publish Server Action). Pulled forward into
+      Phase 3b Checkpoint 7 alongside the weekly report card's own Inngest job.
 
 ## Phase 8 — Monetisation
 - [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`

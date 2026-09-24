@@ -39,3 +39,31 @@ export async function sendEmail(input: SendEmailInput) {
     throw new AppError("SERVICE_UNAVAILABLE", "Could not send email right now");
   }
 }
+
+// Deliberately checks VERCEL_ENV, not NODE_ENV: `next build` always sets
+// NODE_ENV=production, on a Vercel preview deployment too, so gating on
+// NODE_ENV alone would make the dev fallback below unreachable on preview -
+// exactly where it's needed to test an email flow before Resend is set up.
+export function isRealProductionDeployment(): boolean {
+  return env.VERCEL_ENV ? env.VERCEL_ENV === "production" : env.NODE_ENV === "production";
+}
+
+// Logs to the server console instead of sending, whenever Resend isn't
+// configured on a non-production deployment - keeps an email-driven flow
+// testable locally and on a Vercel preview before a Resend domain is
+// verified (see docs/STATUS.md). Production always sends for real (or fails
+// closed) - never silently skips a real email. Same fallback shape as
+// src/server/onboarding/service.ts's own sendConsentEmailOrLog (Phase 2a,
+// kept separate/untouched rather than refactored onto this - a minors-
+// safety-critical, already-shipped flow isn't worth the risk of a
+// reuse-driven change for this checkpoint's sake).
+export async function sendEmailOrLog(
+  input: SendEmailInput & { devLogLabel: string; devLogDetail: string },
+): Promise<void> {
+  const emailConfigured = Boolean(env.RESEND_API_KEY && env.EMAIL_FROM);
+  if (!emailConfigured && !isRealProductionDeployment()) {
+    console.log(`[dev] Email not configured - ${input.devLogLabel}: ${input.devLogDetail}`);
+    return;
+  }
+  await sendEmail(input);
+}

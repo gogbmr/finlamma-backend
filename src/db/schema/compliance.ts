@@ -117,6 +117,12 @@ export const parentContacts = pgTable(
     name: text("name").notNull(),
     email: text("email").notNull(),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    // D33 (docs/ARCHITECTURE.md): the parent's own opt-in for the weekly
+    // report-card email, off by default. Settable only from the parent-
+    // facing consent/reapproval pages (src/app/consent/actions.ts) - never
+    // from the minor's own app, since who the parent relationship's data
+    // flows to is the parent's decision, not the child's.
+    weeklyReportOptIn: boolean("weekly_report_opt_in").default(false).notNull(),
   },
   (t) => [
     uniqueIndex("parent_contacts_user_id_idx").on(t.userId),

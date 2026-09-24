@@ -8,6 +8,7 @@ import {
   Gift,
   Globe2,
   HelpCircle,
+  MessageSquareText,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -36,6 +37,7 @@ export type AdminNavVisibility = {
   settings: boolean;
   badges: boolean;
   rewards: boolean;
+  coachNotes: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -73,6 +75,17 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
       items: [
         { href: "/admin/badges", label: "Badges", icon: Award, visible: v.badges },
         { href: "/admin/rewards", label: "Rewards", icon: Gift, visible: v.rewards },
+      ],
+    },
+    {
+      label: "Report Card",
+      items: [
+        {
+          href: "/admin/coach-notes",
+          label: "Coach Notes",
+          icon: MessageSquareText,
+          visible: v.coachNotes,
+        },
       ],
     },
     {
