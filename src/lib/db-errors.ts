@@ -28,6 +28,34 @@ export function isUniqueViolation(err: unknown): boolean {
   return hasAnyCode(err, [POSTGRES_UNIQUE_VIOLATION]);
 }
 
+// Which unique index was actually violated, e.g. "worlds_code_unique" -
+// lets a caller give a specific message when a table has more than one
+// unique column (src/server/worlds/service.ts's createWorldDraft/
+// updateWorldDraft: order vs code), instead of a generic "already in use"
+// that could be misleading about which field the conflict is actually on.
+// Same `.cause` unwrapping as isUniqueViolation - see src/lib/http.ts's
+// SAFE_CAUSE_FIELDS for why this specific field is safe to read (never the
+// raw `message`, which embeds the offending value).
+export function uniqueViolationConstraintName(err: unknown): string | null {
+  if (hasCode(err, POSTGRES_UNIQUE_VIOLATION)) {
+    return typeof err === "object" && err !== null && "constraint_name" in err
+      ? String(err.constraint_name)
+      : null;
+  }
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "cause" in err &&
+    hasCode(err.cause, POSTGRES_UNIQUE_VIOLATION)
+  ) {
+    const cause = err.cause;
+    return typeof cause === "object" && cause !== null && "constraint_name" in cause
+      ? String(cause.constraint_name)
+      : null;
+  }
+  return null;
+}
+
 // A row was deleted (or otherwise changed) while something else still
 // referenced it via an `onDelete: "restrict"` FK - e.g.
 // src/server/worlds/service.ts's deleteWorld checks a world has zero

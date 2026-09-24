@@ -18,6 +18,7 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed-roles.ts",
     "db:verify-pool": "tsx scripts/verify-db-pool.ts",
+    "backfill:world-codes": "tsx scripts/backfill-world-codes.ts",
     "seed:super-admin": "tsx scripts/seed-super-admin.ts",
     "seed:legal": "tsx scripts/seed-legal-documents.ts",
     "seed:mentors": "tsx scripts/seed-mentors.ts",

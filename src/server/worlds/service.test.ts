@@ -103,6 +103,7 @@ function worldRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "world_1",
     order: 1,
+    code: "MW",
     title: { en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" },
     tagline: { en: "en tagline", hi: "hi tagline", hx: "hx tagline" },
     theme: "#7C3AED",
@@ -312,6 +313,27 @@ describe("createWorldDraft", () => {
     ).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
+
+  it("names the code specifically when the collision is on code, not order", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow());
+    mockInsertDraftWorld.mockRejectedValueOnce({ code: "23505", constraint_name: "worlds_code_unique" });
+
+    await expect(
+      createWorldDraft(
+        ACTOR,
+        {
+          order: 1,
+          code: "MW",
+          title: worldRow().title,
+          tagline: worldRow().tagline,
+          theme: "#7C3AED",
+          displayXpTarget: 5,
+          mentorId: MENTOR_ID,
+        },
+        META,
+      ),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringMatching(/code MW/i) });
+  });
 });
 
 describe("updateWorldDraft", () => {
@@ -482,6 +504,16 @@ describe("publishWorld", () => {
     });
     expect(mockPublishWorldRow).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("blocks publish when code is missing", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ code: null }));
+
+    await expect(publishWorld(ACTOR, "world_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { missingFields: ["code"] },
+    });
+    expect(mockPublishWorldRow).not.toHaveBeenCalled();
   });
 
   it("throws NOT_FOUND for an unknown world", async () => {

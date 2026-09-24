@@ -25,6 +25,15 @@ export const worlds = pgTable(
   {
     ...idAndTimestamps(),
     order: integer("order").notNull(),
+    // A stable 2-letter code (e.g. "MW" for Money World), staff-set, used
+    // only to build a certificate id (FL-<code>-<year>-<seq>, see
+    // src/server/certificates). Nullable so it doesn't retroactively break
+    // an already-published world (same "applies going forward only"
+    // reasoning as D24's boss-quiz-lesson publish check) - required by
+    // validateWorldForPublish for any NEW publish from here on. The 7
+    // pre-existing seeded/published worlds are backfilled once by
+    // scripts/backfill-world-codes.ts.
+    code: text("code").unique(),
     title: jsonb("title").$type<LocalizedText>().notNull(),
     tagline: jsonb("tagline").$type<LocalizedText>().notNull(),
     theme: text("theme").notNull(), // cosmetic accent color/key, e.g. "#7C3AED"

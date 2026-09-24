@@ -58,6 +58,7 @@ export default async function WorldsPage() {
         worlds={worlds.map((w) => ({
           id: w.id,
           order: w.order,
+          code: w.code,
           title: w.title,
           tagline: w.tagline,
           theme: w.theme,

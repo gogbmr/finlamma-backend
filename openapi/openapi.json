@@ -151,6 +151,15 @@
                 "example": false,
                 "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
               },
+              "inngest": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "unconfigured"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'unconfigured' means neither INNGEST_SIGNING_KEY nor INNGEST_DEV is set, so the /api/inngest route's serve() handler is in the SDK's default Cloud mode with no signing key - it will refuse every request (including legitimate ones from Inngest) until one is set. Background jobs (the weekly report card, parent re-approval emails) simply never run while this is 'unconfigured'."
+              },
               "timestamp": {
                 "type": "string",
                 "format": "date-time",
@@ -169,6 +178,7 @@
               "redis",
               "worldsMissingBossQuiz",
               "tradingUnlockWorldMissing",
+              "inngest",
               "timestamp"
             ]
           }
@@ -233,6 +243,45 @@
               "light"
             ],
             "example": "dark"
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 280,
+            "example": "Saving up for my first SIP!",
+            "description": "Free-text, self-editable, never shown on any public profile (kid-safe rule)."
+          },
+          "preferences": {
+            "type": "object",
+            "properties": {
+              "sound": {
+                "type": "boolean",
+                "example": true,
+                "description": "In-app sound effects on/off."
+              },
+              "haptics": {
+                "type": "boolean",
+                "example": true,
+                "description": "Haptic feedback on/off."
+              },
+              "dataSaver": {
+                "type": "boolean",
+                "example": false,
+                "description": "Serves lower-resolution lesson videos when on."
+              }
+            },
+            "required": [
+              "sound",
+              "haptics",
+              "dataSaver"
+            ],
+            "example": {
+              "sound": true,
+              "haptics": true,
+              "dataSaver": false
+            }
           }
         },
         "required": [
@@ -242,7 +291,9 @@
           "email",
           "phone",
           "language",
-          "theme"
+          "theme",
+          "bio",
+          "preferences"
         ]
       },
       "MeResponse": {
@@ -276,6 +327,45 @@
               "light"
             ],
             "example": "dark"
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 280,
+            "example": "Saving up for my first SIP!",
+            "description": "Free-text, self-editable, never shown on any public profile (kid-safe rule)."
+          },
+          "preferences": {
+            "type": "object",
+            "properties": {
+              "sound": {
+                "type": "boolean",
+                "example": true,
+                "description": "In-app sound effects on/off."
+              },
+              "haptics": {
+                "type": "boolean",
+                "example": true,
+                "description": "Haptic feedback on/off."
+              },
+              "dataSaver": {
+                "type": "boolean",
+                "example": false,
+                "description": "Serves lower-resolution lesson videos when on."
+              }
+            },
+            "required": [
+              "sound",
+              "haptics",
+              "dataSaver"
+            ],
+            "example": {
+              "sound": true,
+              "haptics": true,
+              "dataSaver": false
+            }
           }
         }
       },
@@ -1490,6 +1580,117 @@
           "data"
         ]
       },
+      "Certificate": {
+        "type": "object",
+        "properties": {
+          "worldId": {
+            "type": "string",
+            "format": "uuid",
+            "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+          },
+          "worldTitle": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "description": "Null only if the world was somehow deleted after issuance - never expected in practice."
+          },
+          "code": {
+            "type": "string",
+            "example": "FL-MW-2026-000001",
+            "description": "FL-<2-letter world code>-<year>-<6-digit sequence>, unique, never reused."
+          },
+          "xpEarned": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 1250,
+            "description": "The learner's total lifetime XP at the moment of issuance - a snapshot, never recomputed later."
+          },
+          "accuracyPct": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "example": 88,
+            "description": "The passing Boss Quiz attempt's own accuracy."
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-17T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "worldId",
+          "worldTitle",
+          "code",
+          "xpEarned",
+          "accuracyPct",
+          "issuedAt"
+        ]
+      },
+      "CertificateListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Certificate"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CertificateResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Certificate"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CertificatePdfResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Short-lived signed URL to the certificate PDF - the app downloads/shares this directly.",
+                "example": "https://xxx.supabase.co/storage/v1/s3/finlamma/certificates/..."
+              }
+            },
+            "required": [
+              "url"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -1618,7 +1819,7 @@
       },
       "patch": {
         "summary": "Update my preferences",
-        "description": "Updates language and/or theme - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook.",
+        "description": "Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged.",
         "tags": [
           "Users"
         ],
@@ -1657,7 +1858,7 @@
                     "message": "Request validation failed",
                     "details": {
                       "_errors": [
-                        "Provide at least one of language or theme"
+                        "Provide at least one of language, theme, bio or preferences"
                       ]
                     }
                   }
@@ -3486,8 +3687,8 @@
     },
     "/api/v1/me/profile/overview": {
       "get": {
-        "summary": "Get my profile overview (Profile screen ID card, PR-01/PR-02)",
-        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, and the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet). Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.",
+        "summary": "Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)",
+        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.",
         "tags": [
           "Learning"
         ],
@@ -3568,6 +3769,88 @@
                             "hx"
                           ],
                           "description": "The highest rank title the learner's current level qualifies for, or null if no rank_titles row has a minLevel at or below their level yet."
+                        },
+                        "streak": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 12
+                            },
+                            "freezesLeft": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 2
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest",
+                            "freezesLeft"
+                          ]
+                        },
+                        "lessons": {
+                          "type": "object",
+                          "properties": {
+                            "completed": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 18
+                            },
+                            "total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 40
+                            },
+                            "pct": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 100,
+                              "example": 45
+                            }
+                          },
+                          "required": [
+                            "completed",
+                            "total",
+                            "pct"
+                          ]
+                        },
+                        "quizAccuracyPct": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100,
+                          "example": 82,
+                          "description": "Null until the learner has answered at least one graded question."
+                        },
+                        "activityDotCalendar": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "date": {
+                                "type": "string",
+                                "example": "2026-09-17",
+                                "description": "IST calendar date."
+                              },
+                              "active": {
+                                "type": "boolean",
+                                "example": true
+                              }
+                            },
+                            "required": [
+                              "date",
+                              "active"
+                            ]
+                          }
                         }
                       },
                       "required": [
@@ -3578,7 +3861,11 @@
                         "totalXp",
                         "xpIntoLevel",
                         "xpToNextLevel",
-                        "rankTitle"
+                        "rankTitle",
+                        "streak",
+                        "lessons",
+                        "quizAccuracyPct",
+                        "activityDotCalendar"
                       ]
                     }
                   },
@@ -3613,6 +3900,250 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/certificates": {
+      "get": {
+        "summary": "List my certificates (PR-10/PR-36)",
+        "description": "Every world the caller has completed (passed that world's Boss Quiz), newest first. Each certificate's xpEarned/accuracyPct is a snapshot from the moment it was issued, never recomputed later.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's certificates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/certificates/{worldId}": {
+      "get": {
+        "summary": "Get my certificate for a world (PR-36)",
+        "description": "The caller's certificate for a specific world, if they've earned one.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "worldId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's certificate for this world",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No certificate for this world yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No certificate for this world yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/certificates/{worldId}/pdf": {
+      "get": {
+        "summary": "Get a signed download URL for my certificate PDF (PR-37/PR-38)",
+        "description": "Renders the PDF on first request (server-side, no headless browser) and uploads it to storage; every later call returns a fresh signed URL to the same file. The app downloads or shares this URL directly - Finlamma never sends it anywhere on the learner's behalf.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "worldId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A short-lived signed URL to the certificate PDF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CertificatePdfResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No certificate for this world yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No certificate for this world yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is not configured",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Storage is not configured"
                   }
                 },
                 "schema": {

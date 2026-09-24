@@ -339,3 +339,44 @@ describe("theme hex validation", () => {
     expect(mockCreateWorldDraft).toHaveBeenCalled();
   });
 });
+
+// Phase 3b: code builds a certificate id (FL-<code>-<year>-<seq>) - exactly
+// 2 uppercase letters, optional at the schema level (nullable at the column
+// level too - see src/db/schema/worlds.ts) but required by
+// validateWorldForPublish for a NEW publish.
+describe("world code validation", () => {
+  beforeEach(() => {
+    mockRequireStaff.mockResolvedValue(ACTOR);
+  });
+
+  it("rejects a lowercase code", async () => {
+    const result = await createWorldDraftAction({ ...VALID_INPUT, code: "mw" });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreateWorldDraft).not.toHaveBeenCalled();
+  });
+
+  it("rejects a code that isn't exactly 2 letters", async () => {
+    const result = await createWorldDraftAction({ ...VALID_INPUT, code: "MWX" });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreateWorldDraft).not.toHaveBeenCalled();
+  });
+
+  it("accepts omitting code entirely", async () => {
+    mockCreateWorldDraft.mockResolvedValueOnce({ id: WORLD_ID });
+
+    const result = await createWorldDraftAction(VALID_INPUT);
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("accepts a valid 2-letter code", async () => {
+    mockCreateWorldDraft.mockResolvedValueOnce({ id: WORLD_ID });
+
+    const result = await createWorldDraftAction({ ...VALID_INPUT, code: "MW" });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockCreateWorldDraft).toHaveBeenCalled();
+  });
+});

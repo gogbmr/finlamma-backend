@@ -1,6 +1,8 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
+import { logInternalError } from "@/lib/http";
 import type { requestMeta } from "@/lib/http";
+import { issueCertificateIfEligible } from "@/server/certificates/service";
 import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { extractQuestionIds } from "@/server/lessons/service";
@@ -313,6 +315,18 @@ export async function submitAnswer(
         successful,
         meta,
       );
+      // WH-16/PR-36-38: passing a Boss Quiz IS "world complete" (D24, the
+      // same signal world-unlock reads) - issue that world's certificate.
+      // Best-effort and isolated: a certificate-issuance failure must never
+      // surface as a failed lesson-answer response, since the learner's XP/
+      // VM credit above already succeeded.
+      if (lesson.kind === "boss_quiz" && successful) {
+        try {
+          await issueCertificateIfEligible(user, lesson.worldId, accuracyPct, meta);
+        } catch (err) {
+          logInternalError("certificates.issue_failed", err);
+        }
+      }
     } else {
       // Already completed by a concurrent duplicate last-step submit -
       // reflect the real, already-completed state rather than claiming

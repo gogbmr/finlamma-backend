@@ -27,6 +27,19 @@ export function istYearMonth(date: Date = new Date()): string {
   return istDateString(date).slice(0, 7);
 }
 
+// The current IST calendar year, as a number - e.g. 2026.
+export function istYear(date: Date = new Date()): number {
+  return Number(istDateString(date).slice(0, 4));
+}
+
+// The UTC instant of IST midnight, January 1st of the given year - e.g. a
+// "how many certificates were issued this IST year" count
+// (src/server/certificates/repo.ts) needs a UTC boundary to compare stored
+// UTC timestamps against, not a string.
+export function istYearStartUtc(year: number): Date {
+  return new Date(Date.UTC(year, 0, 1) - IST_OFFSET_MS);
+}
+
 // Whole calendar days between two IST date strings (b - a). Both are
 // parsed as UTC midnight purely as a stable anchor for subtraction - the
 // values themselves are already IST calendar dates (from istDateString),

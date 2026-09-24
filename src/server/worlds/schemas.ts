@@ -11,6 +11,15 @@ export const ThemeHexSchema = z
   .string()
   .regex(/^#[0-9A-Fa-f]{6}$/, "theme must be a 6-digit hex color, e.g. #7C3AED");
 
+// Certificate id prefix (FL-<code>-<year>-<seq>, see
+// src/server/certificates) - exactly 2 uppercase letters, staff-chosen,
+// unique across worlds. Nullable on the row itself (see
+// src/db/schema/worlds.ts's comment) but required by validateWorldForPublish
+// before any NEW publish.
+export const WorldCodeSchema = z
+  .string()
+  .regex(/^[A-Z]{2}$/, "code must be exactly 2 uppercase letters, e.g. MW");
+
 export const WorldPublicSchema = registry.register(
   "World",
   z.object({
@@ -63,6 +72,7 @@ export const WorldListResponseSchema = registry.register(
 
 export const CreateWorldDraftSchema = z.object({
   order: z.number().int().positive(),
+  code: WorldCodeSchema.nullable().optional(),
   title: LocalizedTextSchema,
   tagline: LocalizedTextSchema,
   theme: ThemeHexSchema,
@@ -74,6 +84,7 @@ export type CreateWorldDraftInput = z.infer<typeof CreateWorldDraftSchema>;
 export const UpdateWorldDraftSchema = z.object({
   id: z.string().uuid(),
   order: z.number().int().positive(),
+  code: WorldCodeSchema.nullable().optional(),
   title: LocalizedTextSchema,
   tagline: LocalizedTextSchema,
   theme: ThemeHexSchema,

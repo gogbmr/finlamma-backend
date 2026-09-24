@@ -14,3 +14,4 @@ export * from "./lesson_progress";
 export * from "./economy";
 export * from "./streaks";
 export * from "./rank_titles";
+export * from "./certificates";

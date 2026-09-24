@@ -80,6 +80,21 @@ vi.mock("@/server/economy/service", () => ({
   ) => mockCreditLessonCompletion(user, lesson, successful, meta),
 }));
 
+const mockIssueCertificateIfEligible = vi.fn();
+vi.mock("@/server/certificates/service", () => ({
+  issueCertificateIfEligible: (
+    user: unknown,
+    worldId: unknown,
+    accuracyPct: unknown,
+    meta: unknown,
+  ) => mockIssueCertificateIfEligible(user, worldId, accuracyPct, meta),
+}));
+
+const mockLogInternalError = vi.fn();
+vi.mock("@/lib/http", () => ({
+  logInternalError: (errorId: unknown, err: unknown) => mockLogInternalError(errorId, err),
+}));
+
 import { serveStep, submitAnswer } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -823,6 +838,95 @@ describe("submitAnswer", () => {
         true,
         META,
       );
+    });
+
+    it("issues a certificate for the world once a Boss Quiz passes (WH-16/PR-36)", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_1" }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+      mockIssueCertificateIfEligible.mockResolvedValueOnce({ id: "cert_1" });
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockIssueCertificateIfEligible).toHaveBeenCalledWith(USER, "world_1", 100, META);
+    });
+
+    it("never issues a certificate for a Boss Quiz that failed to pass", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_1" }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: false }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 0 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockIssueCertificateIfEligible).not.toHaveBeenCalled();
+    });
+
+    it("never issues a certificate for a non-boss-quiz lesson, even a successful one", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ worldId: "world_1" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockIssueCertificateIfEligible).not.toHaveBeenCalled();
+    });
+
+    it("a certificate-issuance failure never breaks the lesson-answer response", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_1" }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+      mockIssueCertificateIfEligible.mockRejectedValueOnce(new Error("s3 boom"));
+
+      const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(result.isAttemptComplete).toBe(true);
+      expect(mockLogInternalError).toHaveBeenCalledWith("certificates.issue_failed", expect.any(Error));
     });
 
     it("does NOT credit a Boss Quiz that completed below the pass mark - not successful", async () => {
