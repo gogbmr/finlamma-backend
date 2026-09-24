@@ -101,11 +101,14 @@ function toNumber(value: string | number | null): number {
   return Number(value ?? 0);
 }
 
-// Generic, non-lesson VM-only credit - badges (src/server/badges/service.ts)
-// and reward refunds (src/server/rewards/service.ts) both go through this
+// Generic, non-lesson VM-only credit, standalone (not part of a larger
+// transaction) - reward refunds (src/server/rewards/service.ts) use this
 // rather than reaching for creditLessonCompletionRow, which always bundles
-// an XP row too. Same (userId, sourceType, sourceId) idempotency mechanism
-// as every other ledger write (D26).
+// an XP row too. Badge unlocks need their award + credit to commit
+// atomically together, so they use insertVmoneyLedgerEntryIfNew directly
+// inside their own transaction instead (src/server/badges/repo.ts's
+// awardBadgeAndCreditVmoney). Same (userId, sourceType, sourceId)
+// idempotency mechanism as every other ledger write (D26).
 export async function creditVmoneyRow(input: CreditInput & { amount: number; multiplierApplied: number }) {
   return insertVmoneyLedgerEntryIfNew(db, input);
 }

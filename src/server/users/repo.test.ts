@@ -201,4 +201,25 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
     expect(row.dateOfBirth).toBeNull();
   });
+
+  it("clears bio on deletion - free text the learner wrote could contain real PII", async () => {
+    const clerkUserId = uniqueClerkUserId("bio-scrub");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    await db
+      .update(users)
+      .set({ bio: "I go to Delhi Public School, RK Puram - add me!" })
+      .where(eq(users.clerkUserId, clerkUserId));
+
+    await anonymizeUserFromClerk(clerkUserId);
+
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.bio).toBeNull();
+  });
 });

@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { badges, userBadges } from "@/db/schema";
+import { insertVmoneyLedgerEntryIfNew } from "@/server/economy/repo";
 import type { CreateBadgeDraftInput, UpdateBadgeDraftInput } from "./schemas";
 
 export async function listPublishedBadges() {
@@ -73,4 +74,39 @@ export async function insertUserBadgeIfAbsent(userId: string, badgeId: string) {
     .onConflictDoNothing({ target: [userBadges.userId, userBadges.badgeId] })
     .returning();
   return row ?? null;
+}
+
+// Awards a badge and credits its V Money reward in ONE transaction - a
+// security audit found these were two separate, non-atomic writes
+// (insertUserBadgeIfAbsent, then a standalone VM ledger insert): if the VM
+// credit failed after the badge award already committed, the badge showed
+// unlocked forever with no VM ever paid, and no retry path (the next
+// evaluation run sees the badge as already-unlocked via
+// listUnlockedBadgeIdsForUser and skips it entirely). Mirrors
+// creditLessonCompletionRow's shape (src/server/economy/repo.ts). Returns
+// null if a concurrent call already awarded this badge (lost the race) -
+// the transaction then has nothing else to commit, same as before.
+export async function awardBadgeAndCreditVmoney(
+  userId: string,
+  badgeId: string,
+  vmoney: {
+    sourceType: string;
+    sourceId: string;
+    ruleId: string | null;
+    reason: string;
+    amount: number;
+    multiplierApplied: number;
+  },
+) {
+  return db.transaction(async (tx) => {
+    const [userBadge] = await tx
+      .insert(userBadges)
+      .values({ userId, badgeId })
+      .onConflictDoNothing({ target: [userBadges.userId, userBadges.badgeId] })
+      .returning();
+    if (!userBadge) return null;
+
+    const vmRow = await insertVmoneyLedgerEntryIfNew(tx, { userId, ...vmoney });
+    return { userBadge, vmRow };
+  });
 }

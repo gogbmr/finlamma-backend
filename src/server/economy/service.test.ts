@@ -17,7 +17,6 @@ const mockGetRewardRule = vi.fn();
 const mockListRewardRules = vi.fn();
 const mockUpdateRewardRule = vi.fn();
 const mockCreditLessonCompletionRow = vi.fn();
-const mockCreditVmoneyRow = vi.fn();
 const mockSumVmoneyBalance = vi.fn();
 const mockSumVmoneyEarnedSince = vi.fn();
 const mockSumVmoneyEarnedSinceBySource = vi.fn();
@@ -28,7 +27,6 @@ vi.mock("./repo", () => ({
   listRewardRules: () => mockListRewardRules(),
   updateRewardRule: (kind: unknown, input: unknown) => mockUpdateRewardRule(kind, input),
   creditLessonCompletionRow: (xp: unknown, vm: unknown) => mockCreditLessonCompletionRow(xp, vm),
-  creditVmoneyRow: (input: unknown) => mockCreditVmoneyRow(input),
   sumVmoneyBalance: (userId: unknown) => mockSumVmoneyBalance(userId),
   sumVmoneyEarnedSince: (userId: unknown, since: unknown) => mockSumVmoneyEarnedSince(userId, since),
   sumVmoneyEarnedSinceBySource: (userId: unknown, since: unknown) =>
@@ -46,7 +44,6 @@ import { AppError } from "@/lib/errors";
 import {
   activityKindForLessonKind,
   creditLessonCompletion,
-  creditVmoney,
   getMyWallet,
   getMyWalletHistory,
   getVmIssuanceMultiplier,
@@ -332,41 +329,6 @@ describe("getVmoneyStats", () => {
     const expectedSince = new Date("2026-01-03T00:00:00.000Z");
     expect(mockSumVmoneyEarnedSince).toHaveBeenCalledWith(USER.id, expectedSince);
     expect(mockSumVmoneySpentSince).toHaveBeenCalledWith(USER.id, expectedSince);
-  });
-});
-
-describe("creditVmoney", () => {
-  it("applies the current VM issuance multiplier, same as every other credit path", async () => {
-    mockGetSettingNumber.mockResolvedValueOnce(2); // vm_issuance_multiplier = 2x
-    mockCreditVmoneyRow.mockResolvedValueOnce({ id: "ledger_1" });
-
-    const result = await creditVmoney({
-      userId: USER.id,
-      sourceType: "badge_unlock",
-      sourceId: "badge_1",
-      baseAmount: 50,
-      reason: "Badge unlocked: Pehla Kadam",
-    });
-
-    expect(mockCreditVmoneyRow).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 100, multiplierApplied: 2 }),
-    );
-    expect(result).toEqual({ credited: true, amount: 100 });
-  });
-
-  it("reports credited: false on a conflict (already credited for this source)", async () => {
-    mockGetSettingNumber.mockResolvedValueOnce(1);
-    mockCreditVmoneyRow.mockResolvedValueOnce(null);
-
-    const result = await creditVmoney({
-      userId: USER.id,
-      sourceType: "reward_refund",
-      sourceId: "claim_1",
-      baseAmount: 500,
-      reason: "refund",
-    });
-
-    expect(result.credited).toBe(false);
   });
 });
 

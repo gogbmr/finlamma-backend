@@ -30,10 +30,16 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
 
 **Compliance (parental consent & legal documents) — real, v1 scope, see PRODUCT_SPEC.md's
 Onboarding & parental consent section, decided at Phase 2a kickoff**
-- `parent_contacts` (user_id, name, email, verified_at) — **email only in v1, no phone.** The
-  email cannot equal the child's own `users.email`; one parent email can back at most
+- `parent_contacts` (user_id, name, email, verified_at, weekly_report_opt_in,
+  weekly_report_unsubscribe_token_hash) — **email only in v1, no phone.** The email cannot equal
+  the child's own `users.email`; one parent email can back at most
   `settings_kv.parent_email_max_children` (default 5) different `user_id`s, to limit one inbox
-  farming consent for many accounts.
+  farming consent for many accounts. `weekly_report_opt_in` (Phase 3b, default false) is the
+  parent's separate opt-in for the weekly report-card email (D33/D35, `docs/ARCHITECTURE.md`) —
+  settable only from the parent-facing consent/reapproval pages, additive-only on reapprove, always
+  cleared by declining or withdrawing consent. `weekly_report_unsubscribe_token_hash` backs a
+  separate, never-expiring, idempotent link (every weekly email carries it alongside the required
+  withdraw-consent link) that clears only this opt-in, never `consent_records`.
 - `consent_records` (user_id, parent_contact_id, method email_link — the only method in v1, kept
   as an enum for a future SMS method rather than hardcoded, status
   pending|consented|refused|withdrawn, legal_document_versions, token_hash, token_expires_at,
@@ -195,6 +201,11 @@ skill for the full idempotency/reversal design)
   column, since `min_level` itself is the ladder's order. A learner's displayed rank title
   (Profile Overview, PR-01) is the row with the highest `min_level` still ≤ their derived level;
   `null` (no title shown) if the table is empty or every row's `min_level` is above their level.
+- `session_time_daily` (Phase 3b Checkpoint 4 — built; unique on (user_id, date_ist)) — user_id,
+  date_ist (a bare `date`, IST calendar day, same pattern as `streaks.last_active_date_ist`),
+  seconds (upsert-incremented per client-reported session-end ping, capped at 3600/day). Low-stakes,
+  never reward-bearing on its own — backs the daily goal meter's `study_minutes` type
+  (`src/server/daily-goals/evaluators.ts`) and Profile's "today's study time" quick stat (PR-04).
 - `badges`, `user_badges`
 - `rewards` (name, category `finlamma`|`brand_partner` — v1 launches with `finlamma` only:
   badges/titles/cosmetic themes, no coupons, no fictional brands — price_vm **fixed, admin-set**,

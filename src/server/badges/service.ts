@@ -2,13 +2,13 @@ import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import { logInternalError } from "@/lib/http";
 import type { requestMeta } from "@/lib/http";
-import { creditVmoney } from "@/server/economy/service";
+import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { BADGE_CRITERIA_EVALUATORS } from "./evaluators";
 import {
+  awardBadgeAndCreditVmoney,
   getBadgeById,
   insertDraftBadge,
-  insertUserBadgeIfAbsent,
   listAllBadges,
   listPublishedBadges,
   listUnlockedBadgeIdsForUser,
@@ -118,14 +118,17 @@ export async function unpublishBadge(actor: { id: string }, id: string, meta: Re
 
 // The one entry point that decides "does this user now qualify for any
 // badge they don't already have". Idempotent by construction:
-// insertUserBadgeIfAbsent's unique constraint means re-running this for a
+// awardBadgeAndCreditVmoney's unique constraint means re-running this for a
 // user who already holds a badge is always a silent no-op for that badge,
-// never a second award or a second VM credit (creditVmoney's own
-// (userId, sourceType, sourceId) idempotency is the same guarantee for the
-// VM side specifically). Never throws for a single badge's own evaluation
-// failure - one bad criteria/evaluator must not stop every other badge from
-// being checked; the caller (src/server/quiz-attempts/service.ts) also
-// wraps the whole call so this can never break lesson crediting.
+// never a second award or a second VM credit - and the award + the VM
+// credit commit together in one transaction (a security audit found these
+// were previously two separate writes, so a credit failure after a
+// successful award could permanently strand a badge with no VM ever paid,
+// see src/server/badges/repo.ts's comment). Never throws for a single
+// badge's own evaluation failure - one bad criteria/evaluator must not stop
+// every other badge from being checked; the caller
+// (src/server/quiz-attempts/service.ts) also wraps the whole call so this
+// can never break lesson crediting.
 export async function evaluateBadgesForUser(user: { id: string }, meta: RequestMeta) {
   const [published, unlockedIds] = await Promise.all([
     listPublishedBadges(),
@@ -141,16 +144,18 @@ export async function evaluateBadgesForUser(user: { id: string }, meta: RequestM
       const progress = await evaluator(user.id);
       if (progress < badge.criteria.threshold) continue;
 
-      const awarded = await insertUserBadgeIfAbsent(user.id, badge.id);
-      if (!awarded) continue; // lost a race - another concurrent call already awarded it
-
-      const { amount } = await creditVmoney({
-        userId: user.id,
+      const multiplier = await getVmIssuanceMultiplier();
+      const amount = Math.round(badge.vmReward * multiplier);
+      const result = await awardBadgeAndCreditVmoney(user.id, badge.id, {
         sourceType: "badge_unlock",
         sourceId: badge.id,
-        baseAmount: badge.vmReward,
+        ruleId: null,
         reason: `Badge unlocked: ${badge.name.en}`,
+        amount,
+        multiplierApplied: multiplier,
       });
+      if (!result) continue; // lost a race - another concurrent call already awarded it
+
       await logActivity({
         actorType: "user",
         actorId: user.id,

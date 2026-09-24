@@ -165,6 +165,15 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
       affected parent inline during the admin publish Server Action). Pulled forward into
       Phase 3b Checkpoint 7 alongside the weekly report card's own Inngest job.
+- [ ] **Clerk/DB account-deletion reconciliation Inngest job** (flagged by Phase 2a's security
+      review, revisited and still open in the `/phase-audit 3b` security pass): `deleteMe`
+      (`src/server/users/service.ts`) deletes the Clerk identity first, then anonymizes our own
+      `users` row - if the Clerk delete succeeds but the anonymize write throws, the user is stuck
+      mid-deletion (their Clerk identity is gone, so `requireUser()` now fails and they can't
+      retry), with only the async `user.deleted` webhook redelivery as a path back to consistency.
+      Inngest now exists (Phase 3b Checkpoint 0) - this needs a scheduled reconciliation job that
+      finds any `users` row whose Clerk identity is confirmed gone but isn't yet anonymized, and
+      finishes the anonymize step for it.
 
 ## Phase 8 — Monetisation
 - [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`

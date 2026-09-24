@@ -7,7 +7,6 @@ import { getSettingNumber, setSettingJson } from "@/lib/settings";
 import { recordLearningActivity } from "@/server/streaks/service";
 import {
   creditLessonCompletionRow,
-  creditVmoneyRow,
   getRewardRule,
   listRewardRules,
   listVmoneyLedgerForUser,
@@ -186,33 +185,6 @@ export async function creditLessonCompletion(
     await recordLearningActivity(user.id);
   }
   return { credited };
-}
-
-// Generic VM-only credit, used by badge unlocks (src/server/badges/service.ts)
-// and reward refunds (src/server/rewards/service.ts) - the global VM
-// issuance multiplier applies here exactly like every other credit path
-// (creditLessonCompletion above), and `multiplierApplied` is stamped on the
-// row so the balance stays explainable even after the multiplier later
-// changes (same reasoning as docs/ARCHITECTURE.md D26).
-export async function creditVmoney(input: {
-  userId: string;
-  sourceType: string;
-  sourceId: string;
-  baseAmount: number;
-  reason: string;
-}): Promise<{ credited: boolean; amount: number }> {
-  const multiplier = await getVmIssuanceMultiplier();
-  const amount = Math.round(input.baseAmount * multiplier);
-  const row = await creditVmoneyRow({
-    userId: input.userId,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    ruleId: null,
-    reason: input.reason,
-    amount,
-    multiplierApplied: multiplier,
-  });
-  return { credited: row !== null, amount };
 }
 
 // PR-21 (Profile - Wallet): balance, VM earned this (IST) calendar month,

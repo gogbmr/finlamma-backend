@@ -94,6 +94,12 @@ export async function anonymizeUserFromClerk(clerkUserId: string) {
       // A minor's real birthdate is personal data too - cleared same as
       // everything else here (see docs/STATUS.md's Phase 2a audit).
       dateOfBirth: null,
+      // Free-text, self-editable (up to 280 chars) - a security audit found
+      // this was left un-scrubbed, and unlike the other fields here it could
+      // contain anything the learner chose to type (a real name, school,
+      // address, social handle, ...), so it's cleared on deletion the same
+      // as everything else.
+      bio: null,
     })
     .where(and(eq(users.clerkUserId, clerkUserId), isNull(users.deletedAt)))
     .returning();

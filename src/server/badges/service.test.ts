@@ -9,7 +9,7 @@ const mockListAllBadges = vi.fn();
 const mockListPublishedBadges = vi.fn();
 const mockListUnlockedBadgeIdsForUser = vi.fn();
 const mockListUserBadgesForUser = vi.fn();
-const mockInsertUserBadgeIfAbsent = vi.fn();
+const mockAwardBadgeAndCreditVmoney = vi.fn();
 vi.mock("./repo", () => ({
   getBadgeById: (id: unknown) => mockGetBadgeById(id),
   insertDraftBadge: (input: unknown) => mockInsertDraftBadge(input),
@@ -20,7 +20,8 @@ vi.mock("./repo", () => ({
   listPublishedBadges: () => mockListPublishedBadges(),
   listUnlockedBadgeIdsForUser: (userId: unknown) => mockListUnlockedBadgeIdsForUser(userId),
   listUserBadgesForUser: (userId: unknown) => mockListUserBadgesForUser(userId),
-  insertUserBadgeIfAbsent: (userId: unknown, badgeId: unknown) => mockInsertUserBadgeIfAbsent(userId, badgeId),
+  awardBadgeAndCreditVmoney: (userId: unknown, badgeId: unknown, vmoney: unknown) =>
+    mockAwardBadgeAndCreditVmoney(userId, badgeId, vmoney),
 }));
 
 const mockLessonsCompleted = vi.fn();
@@ -34,9 +35,9 @@ vi.mock("./evaluators", () => ({
   },
 }));
 
-const mockCreditVmoney = vi.fn();
+const mockGetVmIssuanceMultiplier = vi.fn();
 vi.mock("@/server/economy/service", () => ({
-  creditVmoney: (input: unknown) => mockCreditVmoney(input),
+  getVmIssuanceMultiplier: () => mockGetVmIssuanceMultiplier(),
 }));
 
 const mockLogActivity = vi.fn();
@@ -78,6 +79,7 @@ function badgeRow(overrides: Partial<Record<string, unknown>> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetVmIssuanceMultiplier.mockResolvedValue(1);
 });
 
 describe("publishBadge", () => {
@@ -130,21 +132,40 @@ describe("createBadgeDraft / updateBadgeDraft / unpublishBadge", () => {
 });
 
 describe("evaluateBadgesForUser", () => {
-  it("awards a badge once progress clears the threshold, crediting VM and logging", async () => {
+  it("awards a badge once progress clears the threshold, crediting VM (in one transaction) and logging", async () => {
     mockListPublishedBadges.mockResolvedValueOnce([badgeRow()]);
     mockListUnlockedBadgeIdsForUser.mockResolvedValueOnce(new Set());
     mockLessonsCompleted.mockResolvedValueOnce(5);
-    mockInsertUserBadgeIfAbsent.mockResolvedValueOnce({ id: "ub_1", userId: USER.id, badgeId: "badge_1" });
-    mockCreditVmoney.mockResolvedValueOnce({ credited: true, amount: 50 });
+    mockAwardBadgeAndCreditVmoney.mockResolvedValueOnce({
+      userBadge: { id: "ub_1", userId: USER.id, badgeId: "badge_1" },
+      vmRow: { id: "ledger_1" },
+    });
 
     const unlocked = await evaluateBadgesForUser(USER, META);
 
     expect(unlocked).toHaveLength(1);
-    expect(mockInsertUserBadgeIfAbsent).toHaveBeenCalledWith(USER.id, "badge_1");
-    expect(mockCreditVmoney).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: USER.id, sourceType: "badge_unlock", sourceId: "badge_1", baseAmount: 50 }),
+    expect(mockAwardBadgeAndCreditVmoney).toHaveBeenCalledWith(
+      USER.id,
+      "badge_1",
+      expect.objectContaining({ sourceType: "badge_unlock", sourceId: "badge_1", amount: 50, multiplierApplied: 1 }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "badge.unlocked" }));
+  });
+
+  it("applies the current VM issuance multiplier to the badge's base VM reward", async () => {
+    mockListPublishedBadges.mockResolvedValueOnce([badgeRow({ vmReward: 50 })]);
+    mockListUnlockedBadgeIdsForUser.mockResolvedValueOnce(new Set());
+    mockLessonsCompleted.mockResolvedValueOnce(5);
+    mockGetVmIssuanceMultiplier.mockResolvedValueOnce(2);
+    mockAwardBadgeAndCreditVmoney.mockResolvedValueOnce({ userBadge: { id: "ub_1" }, vmRow: { id: "ledger_1" } });
+
+    await evaluateBadgesForUser(USER, META);
+
+    expect(mockAwardBadgeAndCreditVmoney).toHaveBeenCalledWith(
+      USER.id,
+      "badge_1",
+      expect.objectContaining({ amount: 100, multiplierApplied: 2 }),
+    );
   });
 
   it("never re-awards a badge the user already has, without even evaluating it", async () => {
@@ -155,7 +176,7 @@ describe("evaluateBadgesForUser", () => {
 
     expect(unlocked).toHaveLength(0);
     expect(mockLessonsCompleted).not.toHaveBeenCalled();
-    expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+    expect(mockAwardBadgeAndCreditVmoney).not.toHaveBeenCalled();
   });
 
   it("running evaluation twice never re-awards or re-credits (idempotent)", async () => {
@@ -164,8 +185,7 @@ describe("evaluateBadgesForUser", () => {
 
     // First run: genuinely unlocks.
     mockListUnlockedBadgeIdsForUser.mockResolvedValueOnce(new Set());
-    mockInsertUserBadgeIfAbsent.mockResolvedValueOnce({ id: "ub_1" });
-    mockCreditVmoney.mockResolvedValueOnce({ credited: true, amount: 50 });
+    mockAwardBadgeAndCreditVmoney.mockResolvedValueOnce({ userBadge: { id: "ub_1" }, vmRow: { id: "ledger_1" } });
     const first = await evaluateBadgesForUser(USER, META);
     expect(first).toHaveLength(1);
 
@@ -174,8 +194,7 @@ describe("evaluateBadgesForUser", () => {
     const second = await evaluateBadgesForUser(USER, META);
 
     expect(second).toHaveLength(0);
-    expect(mockInsertUserBadgeIfAbsent).toHaveBeenCalledTimes(1);
-    expect(mockCreditVmoney).toHaveBeenCalledTimes(1);
+    expect(mockAwardBadgeAndCreditVmoney).toHaveBeenCalledTimes(1);
   });
 
   it("does not award a badge whose progress hasn't reached the threshold yet", async () => {
@@ -186,19 +205,19 @@ describe("evaluateBadgesForUser", () => {
     const unlocked = await evaluateBadgesForUser(USER, META);
 
     expect(unlocked).toHaveLength(0);
-    expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+    expect(mockAwardBadgeAndCreditVmoney).not.toHaveBeenCalled();
   });
 
-  it("skips a badge that lost the award race (insertUserBadgeIfAbsent returns null) without crediting twice", async () => {
+  it("skips a badge that lost the award race (awardBadgeAndCreditVmoney returns null) without logging a fake unlock", async () => {
     mockListPublishedBadges.mockResolvedValueOnce([badgeRow()]);
     mockListUnlockedBadgeIdsForUser.mockResolvedValueOnce(new Set());
     mockLessonsCompleted.mockResolvedValueOnce(5);
-    mockInsertUserBadgeIfAbsent.mockResolvedValueOnce(null);
+    mockAwardBadgeAndCreditVmoney.mockResolvedValueOnce(null);
 
     const unlocked = await evaluateBadgesForUser(USER, META);
 
     expect(unlocked).toHaveLength(0);
-    expect(mockCreditVmoney).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("one badge's evaluation failure never stops the others from being checked", async () => {
@@ -209,13 +228,36 @@ describe("evaluateBadgesForUser", () => {
     mockListUnlockedBadgeIdsForUser.mockResolvedValueOnce(new Set());
     mockLessonsCompleted.mockRejectedValueOnce(new Error("boom"));
     mockStreakDays.mockResolvedValueOnce(3);
-    mockInsertUserBadgeIfAbsent.mockResolvedValueOnce({ id: "ub_ok" });
-    mockCreditVmoney.mockResolvedValueOnce({ credited: true, amount: 50 });
+    mockAwardBadgeAndCreditVmoney.mockResolvedValueOnce({ userBadge: { id: "ub_ok" }, vmRow: { id: "ledger_1" } });
 
     const unlocked = await evaluateBadgesForUser(USER, META);
 
     expect(unlocked).toHaveLength(1);
     expect(unlocked[0]!.id).toBe("badge_ok");
+    expect(mockLogInternalError).toHaveBeenCalledWith("badges.evaluate_failed", expect.any(Error));
+  });
+
+  it("a credit failure inside the transaction never logs a fake unlock - the caller's try/catch still isolates this badge from the others", async () => {
+    mockListPublishedBadges.mockResolvedValueOnce([
+      badgeRow({ id: "badge_broken", criteria: { type: "lessons_completed", threshold: 1 } }),
+      badgeRow({ id: "badge_ok", criteria: { type: "streak_days", threshold: 3 } }),
+    ]);
+    mockListUnlockedBadgeIdsForUser.mockResolvedValueOnce(new Set());
+    mockLessonsCompleted.mockResolvedValueOnce(1);
+    mockStreakDays.mockResolvedValueOnce(3);
+    // Simulates the whole transaction (award + credit) failing/rolling back -
+    // the real repo function throws in that case (a rejected transaction
+    // promise), never returns a half-done result.
+    mockAwardBadgeAndCreditVmoney.mockRejectedValueOnce(new Error("db down"));
+    mockAwardBadgeAndCreditVmoney.mockResolvedValueOnce({ userBadge: { id: "ub_ok" }, vmRow: { id: "ledger_1" } });
+
+    const unlocked = await evaluateBadgesForUser(USER, META);
+
+    expect(unlocked).toHaveLength(1);
+    expect(unlocked[0]!.id).toBe("badge_ok");
+    expect(mockLogActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ targetId: "badge_broken" }),
+    );
     expect(mockLogInternalError).toHaveBeenCalledWith("badges.evaluate_failed", expect.any(Error));
   });
 });

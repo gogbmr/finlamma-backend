@@ -158,7 +158,7 @@
                   "unconfigured"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'unconfigured' means neither INNGEST_SIGNING_KEY nor INNGEST_DEV is set, so the /api/inngest route's serve() handler is in the SDK's default Cloud mode with no signing key - it will refuse every request (including legitimate ones from Inngest) until one is set. Background jobs (the weekly report card, parent re-approval emails) simply never run while this is 'unconfigured'."
+                "description": "A non-fatal warning (never causes a 503): checked only on a real Vercel deployment (env.VERCEL_ENV set) - local dev always reports 'ok' since src/lib/inngest.ts's client auto-detects Dev mode there. 'unconfigured' means a Vercel deployment (production or preview) is missing INNGEST_SIGNING_KEY, so the /api/inngest route's Cloud-mode serve() handler will refuse every request (including legitimate ones from Inngest) until it's set. Background jobs (the weekly report card, parent re-approval emails) simply never run while this is 'unconfigured'."
               },
               "timestamp": {
                 "type": "string",
