@@ -95,7 +95,7 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       on every ledger entry
 - [x] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month
 - [x] Daily goal meter
-- [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
+- [x] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
       admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
       brand-partner rewards later without a schema change
 - [x] Certificates on world completion — PDF via a browser-free renderer (e.g.
