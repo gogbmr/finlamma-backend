@@ -104,7 +104,7 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
       module breakdown, 8-week trend; `coach_note_templates` (admin-editable, draft → publish,
       no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules
-- [ ] `users.bio`, `users.preferences` (sound/haptics/data-saver); Settings screens that don't
+- [x] `users.bio`, `users.preferences` (sound/haptics/data-saver); Settings screens that don't
       need their own backend (legal pages, contact, rate-app) ship as static/deep-link content
 
 ## Phase 4 — Trading engine (needs the market relay for live prices)
