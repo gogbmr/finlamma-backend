@@ -94,7 +94,7 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [x] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
       on every ledger entry
 - [x] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month
-- [ ] Daily goal meter
+- [x] Daily goal meter
 - [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
       admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
       brand-partner rewards later without a schema change
