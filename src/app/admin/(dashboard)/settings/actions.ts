@@ -6,6 +6,8 @@ import { ZodError } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
+import { DailyGoalsSettingsSchema } from "@/server/daily-goals/schemas";
+import { updateDailyGoalsSettings } from "@/server/daily-goals/service";
 import type { RewardActivityKind } from "@/server/economy/repo";
 import { RewardRuleUpdateSchema, VmIssuanceMultiplierSchema } from "@/server/economy/schemas";
 import { updateRewardRuleForAdmin, updateVmIssuanceMultiplier } from "@/server/economy/service";
@@ -75,6 +77,15 @@ export async function updateStreaksSettingsAction(input: unknown): Promise<Actio
     const actor = await requireStaff("settings.manage");
     const parsed = StreaksSettingsSchema.parse(input);
     await updateStreaksSettings(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updateDailyGoalsSettingsAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = DailyGoalsSettingsSchema.parse(input);
+    await updateDailyGoalsSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }
