@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, gte, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { lessons, questionAnswers, quizAttempts } from "@/db/schema";
 
@@ -154,4 +154,23 @@ export async function getWorldIdsWithPassedBossQuiz(
       ),
     );
   return new Set(rows.map((r) => r.worldId));
+}
+
+// PR-07 (Profile Overview - quiz accuracy %): every graded, answered step
+// across every lesson the user has ever attempted (video pop-quizzes,
+// practice quiz, boss quiz, role play alike) - counts, not attempt-level
+// accuracyPct averages, so a lesson retried several times weighs by actual
+// questions answered rather than once per attempt.
+export async function getQuizAccuracyTotalsForUser(
+  userId: string,
+): Promise<{ correct: number; total: number }> {
+  const [row] = await db
+    .select({
+      total: count(),
+      correct: sql<number>`count(*) filter (where ${questionAnswers.isCorrect})`,
+    })
+    .from(questionAnswers)
+    .innerJoin(quizAttempts, eq(quizAttempts.id, questionAnswers.attemptId))
+    .where(and(eq(quizAttempts.userId, userId), isNotNull(questionAnswers.answeredAt)));
+  return { correct: Number(row?.correct ?? 0), total: Number(row?.total ?? 0) };
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { lessons } from "@/db/schema";
 import type { CreateLessonDraftInput, HotfixLessonInput, UpdateLessonDraftInput } from "./schemas";
@@ -85,6 +85,13 @@ export async function listPublishedLessonsByWorldId(worldId: string) {
 // this full-table scan to remain cheap.
 export async function listAllPublishedLessons() {
   return db.select().from(lessons).where(eq(lessons.status, "published"));
+}
+
+// PR-06 (Profile Overview - lessons completed/total): a count-only query,
+// cheaper than listAllPublishedLessons() when only the total is needed.
+export async function countPublishedLessons(): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(lessons).where(eq(lessons.status, "published"));
+  return row?.n ?? 0;
 }
 
 export async function insertDraftLesson(input: CreateLessonDraftInput) {
