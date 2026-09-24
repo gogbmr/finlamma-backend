@@ -1691,6 +1691,89 @@
           "data"
         ]
       },
+      "RecordSessionTimeRequest": {
+        "type": "object",
+        "properties": {
+          "seconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 3600,
+            "example": 240,
+            "description": "Duration of one finished session (a lesson/screen, not a heartbeat) - sent once when the session ends, capped at 1 hour per call."
+          }
+        },
+        "required": [
+          "seconds"
+        ]
+      },
+      "RecordSessionTimeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "todaySeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 1140,
+                "description": "Running total for today (IST), after adding this ping."
+              }
+            },
+            "required": [
+              "todaySeconds"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DailyGoalsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "study_minutes",
+                    "lesson_completed",
+                    "pulse_check"
+                  ],
+                  "example": "study_minutes"
+                },
+                "target": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "example": 20
+                },
+                "current": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "example": 12
+                },
+                "completed": {
+                  "type": "boolean",
+                  "example": false
+                }
+              },
+              "required": [
+                "type",
+                "target",
+                "current",
+                "completed"
+              ]
+            },
+            "description": "Only the goal types staff have turned on right now - renders however many come back, never assumes a fixed count."
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -4144,6 +4227,147 @@
                   "error": {
                     "code": "SERVICE_UNAVAILABLE",
                     "message": "Storage is not configured"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/session-time": {
+      "post": {
+        "summary": "Report a finished session's duration (World Home gap #5)",
+        "description": "Sent once when a session (a lesson/screen, not a heartbeat) ends - adds to today's (IST) running total, feeding the daily goal meter's study-minutes target and the weekly report card's watch-speed sub-metric. Not reward-bearing (no XP/VM derives from this), so this is a client-reported, best-effort signal, capped at 1 hour per call.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordSessionTimeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated running total for today",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordSessionTimeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "seconds out of range",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "seconds must be between 1 and 3600"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/daily-goals": {
+      "get": {
+        "summary": "Get today's daily goal progress (PR-09)",
+        "description": "Today's (IST) progress on every currently-active daily goal, admin-configured via settings_kv (target and on/off per type - see docs/PRODUCT_SPEC.md §2). Never awards XP or V Money - a pure progress display over rewards the underlying activity already paid.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Today's active goals with progress",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyGoalsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
                   }
                 },
                 "schema": {

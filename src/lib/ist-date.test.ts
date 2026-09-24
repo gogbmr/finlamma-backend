@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { daysBetweenIstDates, istDateString, istYear, istYearMonth, istYearStartUtc } from "./ist-date";
+import {
+  daysBetweenIstDates,
+  istDateStartUtc,
+  istDateString,
+  istYear,
+  istYearMonth,
+  istYearStartUtc,
+} from "./ist-date";
 
 describe("istDateString", () => {
   it("18:29 UTC is still the same IST calendar day (23:59 IST)", () => {
@@ -54,6 +61,23 @@ describe("istYearStartUtc", () => {
   it("returns the UTC instant of IST midnight, January 1st", () => {
     // 2026-01-01 00:00:00 IST = 2025-12-31 18:30:00 UTC
     expect(istYearStartUtc(2026).toISOString()).toBe("2025-12-31T18:30:00.000Z");
+  });
+});
+
+describe("istDateStartUtc", () => {
+  it("returns the UTC instant of IST midnight for the day the input falls on", () => {
+    // 2026-09-24T10:00:00Z is 2026-09-24 15:30 IST - same IST day.
+    // IST midnight that day = 2026-09-23T18:30:00Z.
+    expect(istDateStartUtc(new Date("2026-09-24T10:00:00.000Z")).toISOString()).toBe(
+      "2026-09-23T18:30:00.000Z",
+    );
+  });
+
+  it("rolls over correctly right at the IST day boundary", () => {
+    // 2026-09-23T18:30:00Z is already 2026-09-24 00:00 IST.
+    expect(istDateStartUtc(new Date("2026-09-23T18:30:00.000Z")).toISOString()).toBe(
+      "2026-09-23T18:30:00.000Z",
+    );
   });
 });
 

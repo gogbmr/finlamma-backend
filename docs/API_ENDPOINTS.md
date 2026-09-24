@@ -49,6 +49,8 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/certificates` — List my certificates (PR-10/PR-36)
 - `GET /api/v1/me/certificates/{worldId}` — Get my certificate for a world (PR-36)
 - `GET /api/v1/me/certificates/{worldId}/pdf` — Get a signed download URL for my certificate PDF (PR-37/PR-38)
+- `POST /api/v1/me/session-time` — Report a finished session's duration (World Home gap #5)
+- `GET /api/v1/me/daily-goals` — Get today's daily goal progress (PR-09)
 
 **Webhooks**
 
@@ -1875,6 +1877,124 @@ Renders the PDF on first request (server-side, no headless browser) and uploads 
   "error": {
     "code": "SERVICE_UNAVAILABLE",
     "message": "Storage is not configured"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/session-time`
+
+**Report a finished session's duration (World Home gap #5)**
+
+Sent once when a session (a lesson/screen, not a heartbeat) ends - adds to today's (IST) running total, feeding the daily goal meter's study-minutes target and the weekly report card's watch-speed sub-metric. Not reward-bearing (no XP/VM derives from this), so this is a client-reported, best-effort signal, capped at 1 hour per call.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `seconds` | integer | yes | Duration of one finished session (a lesson/screen, not a heartbeat) - sent once when the session ends, capped at 1 hour per call. |
+
+```json
+{
+  "seconds": 240
+}
+```
+
+**Responses**
+
+- **200** — Updated running total for today
+
+```json
+{
+  "data": {
+    "todaySeconds": 1140
+  }
+}
+```
+
+- **400** — seconds out of range
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "seconds must be between 1 and 3600"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/daily-goals`
+
+**Get today's daily goal progress (PR-09)**
+
+Today's (IST) progress on every currently-active daily goal, admin-configured via settings_kv (target and on/off per type - see docs/PRODUCT_SPEC.md §2). Never awards XP or V Money - a pure progress display over rewards the underlying activity already paid.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Today's active goals with progress
+
+```json
+{
+  "data": [
+    {
+      "type": "study_minutes",
+      "target": 20,
+      "current": 12,
+      "completed": false
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

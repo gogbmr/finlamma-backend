@@ -32,6 +32,14 @@ export function istYear(date: Date = new Date()): number {
   return Number(istDateString(date).slice(0, 4));
 }
 
+// The UTC instant of IST midnight for the IST calendar day `date` falls in -
+// e.g. src/server/daily-goals/service.ts needs a UTC boundary to compare
+// stored UTC timestamps against ("did this happen today, IST") for a raw
+// count, not a string.
+export function istDateStartUtc(date: Date = new Date()): Date {
+  return new Date(Date.parse(`${istDateString(date)}T00:00:00Z`) - IST_OFFSET_MS);
+}
+
 // The UTC instant of IST midnight, January 1st of the given year - e.g. a
 // "how many certificates were issued this IST year" count
 // (src/server/certificates/repo.ts) needs a UTC boundary to compare stored

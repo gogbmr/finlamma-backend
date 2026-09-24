@@ -34,6 +34,8 @@ import "../src/app/api/v1/me/profile/overview/route";
 import "../src/app/api/v1/me/certificates/route";
 import "../src/app/api/v1/me/certificates/[worldId]/route";
 import "../src/app/api/v1/me/certificates/[worldId]/pdf/route";
+import "../src/app/api/v1/me/session-time/route";
+import "../src/app/api/v1/me/daily-goals/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 
