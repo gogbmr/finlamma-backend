@@ -387,7 +387,14 @@ export async function confirmParentConsent(
   // to false, so there's nothing to clear on a fresh consent. See
   // setParentContactWeeklyReportOptIn's comment in repo.ts for why this is a
   // best-effort follow-up rather than folded into the transaction above.
-  if (weeklyReportOptIn) {
+  // Strict `=== true` (not a truthy check): a Server Action argument crosses
+  // a serialization boundary where TS's `boolean` param type isn't actually
+  // enforced at runtime, so a non-boolean truthy value (e.g. a stray string)
+  // must never be able to opt someone in - see docs/ARCHITECTURE.md D35's
+  // security-review note. The action layer (src/app/consent/actions.ts)
+  // already normalizes this with Zod before it reaches here; this is
+  // defense-in-depth for any other caller.
+  if (weeklyReportOptIn === true) {
     const changed = await setParentContactWeeklyReportOptIn(record.userId, true);
     if (changed) {
       await logActivity({
@@ -933,7 +940,8 @@ export async function approveReapproval(token: string, meta: RequestMeta, weekly
     userAgent: meta.userAgent,
   });
 
-  if (weeklyReportOptIn) {
+  // Strict `=== true`, same reasoning as confirmParentConsent above.
+  if (weeklyReportOptIn === true) {
     const changed = await setParentContactWeeklyReportOptIn(record.userId, true);
     if (changed) {
       await logActivity({

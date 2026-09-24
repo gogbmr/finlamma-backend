@@ -465,11 +465,22 @@ export async function getParentContactForReview(userId: string) {
 // consent_records row down with it, and that row is deliberately kept as
 // durable proof of consent. The email is made unique per row (not a single
 // shared placeholder) so anonymized rows can never look like "the same
-// parent" to any future query keyed on email.
+// parent" to any future query keyed on email. Also clears the weekly-report
+// opt-in and its unsubscribe token hash, same as every other piece of this
+// row's PII - a security audit found these were left stale on an anonymized
+// row (dead state today, since listActiveUsersForReportCard already
+// excludes deleted users and every consent-page entry point already checks
+// isUserDeleted first, but worth closing for defense-in-depth rather than
+// leaving a still-"true" flag sitting on a row that otherwise looks scrubbed).
 export async function anonymizeParentContact(parentContactId: string): Promise<void> {
   await db
     .update(parentContacts)
-    .set({ name: "[deleted]", email: `deleted+${parentContactId}@anonymized.invalid` })
+    .set({
+      name: "[deleted]",
+      email: `deleted+${parentContactId}@anonymized.invalid`,
+      weeklyReportOptIn: false,
+      weeklyReportUnsubscribeTokenHash: null,
+    })
     .where(eq(parentContacts.id, parentContactId));
 }
 

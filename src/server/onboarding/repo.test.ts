@@ -19,6 +19,7 @@ import { uniqueClerkUserId, uniqueEmail } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  anonymizeParentContact,
   approveReapprovalAndRecordAcceptance,
   declineReapprovalAndRefuseConsent,
   getParentContactByWeeklyReportUnsubscribeTokenHash,
@@ -318,6 +319,23 @@ describe("unsubscribeParentContactFromWeeklyReport", () => {
     const result = await unsubscribeParentContactFromWeeklyReport(parentContact.id);
 
     expect(result).toBeNull();
+  });
+});
+
+describe("anonymizeParentContact", () => {
+  it("clears weeklyReportOptIn and the unsubscribe token hash, same as the name/email", async () => {
+    const { parentContact } = await makeUserWithParentContact(true);
+    await db
+      .update(parentContacts)
+      .set({ weeklyReportUnsubscribeTokenHash: "some-live-hash" })
+      .where(eq(parentContacts.id, parentContact.id));
+
+    await anonymizeParentContact(parentContact.id);
+
+    const [row] = await db.select().from(parentContacts).where(eq(parentContacts.id, parentContact.id));
+    expect(row.name).toBe("[deleted]");
+    expect(row.weeklyReportOptIn).toBe(false);
+    expect(row.weeklyReportUnsubscribeTokenHash).toBeNull();
   });
 });
 

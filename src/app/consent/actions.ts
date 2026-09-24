@@ -1,6 +1,7 @@
 "use server";
 
 import { headers } from "next/headers";
+import { z } from "zod";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
@@ -11,6 +12,15 @@ import {
   unsubscribeWeeklyReport,
   withdrawParentConsent,
 } from "@/server/onboarding/service";
+
+// A Server Action is a real, directly-callable HTTP endpoint - Next.js's
+// wire protocol doesn't enforce a parameter's TS type at runtime, so a
+// crafted request could send anything in this argument's place. `.catch(false)`
+// coerces anything that isn't literally a boolean to the safe default
+// (opted out) rather than throwing - matches the "unticked by default"
+// design (docs/ARCHITECTURE.md D35) instead of erroring the whole action out
+// over a malformed opt-in flag.
+const WeeklyReportOptInSchema = z.boolean().catch(false);
 
 type ChildResult = { ok: true; childFirstName: string } | { ok: false; error: string };
 type WithdrawResult =
@@ -30,10 +40,11 @@ type UnsubscribeResult =
 // choice (D33) - it never gates whether consent itself succeeds.
 export async function confirmParentConsentAction(
   token: string,
-  weeklyReportOptIn = false,
+  weeklyReportOptIn: unknown = false,
 ): Promise<ChildResult> {
   try {
-    const result = await confirmParentConsent(token, requestMeta(await headers()), weeklyReportOptIn);
+    const optIn = WeeklyReportOptInSchema.parse(weeklyReportOptIn);
+    const result = await confirmParentConsent(token, requestMeta(await headers()), optIn);
     return { ok: true, childFirstName: result.childFirstName };
   } catch (err) {
     if (err instanceof AppError) return { ok: false, error: err.message };
@@ -66,10 +77,11 @@ export async function withdrawParentConsentAction(token: string): Promise<Withdr
 // existing opt-in off.
 export async function approveReapprovalAction(
   token: string,
-  weeklyReportOptIn = false,
+  weeklyReportOptIn: unknown = false,
 ): Promise<ChildResult> {
   try {
-    const result = await approveReapproval(token, requestMeta(await headers()), weeklyReportOptIn);
+    const optIn = WeeklyReportOptInSchema.parse(weeklyReportOptIn);
+    const result = await approveReapproval(token, requestMeta(await headers()), optIn);
     return { ok: true, childFirstName: result.childFirstName };
   } catch (err) {
     if (err instanceof AppError) return { ok: false, error: err.message };

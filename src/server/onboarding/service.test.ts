@@ -681,6 +681,26 @@ describe("confirmParentConsent", () => {
     );
   });
 
+  it("a truthy non-boolean value never opts someone in - strict === true, not a truthy check", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+
+    // The action layer (src/app/consent/actions.ts) already normalizes this
+    // with Zod, but this function is defense-in-depth for any other caller.
+    await confirmParentConsent("t", META, "true" as unknown as boolean);
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
+  });
+
   it("does not log a weekly-report opt-in change when it was already on (no-op)", async () => {
     mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
       id: "cr1",
@@ -1409,6 +1429,17 @@ describe("approveReapproval", () => {
         metadata: { method: "reapproval_approved" },
       }),
     );
+  });
+
+  it("a truthy non-boolean value never opts someone in - strict === true, not a truthy check", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockApproveReapprovalAndRecordAcceptance.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    await approveReapproval("t", META, "true" as unknown as boolean);
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
   });
 });
 

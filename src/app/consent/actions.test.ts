@@ -57,6 +57,24 @@ describe("confirmParentConsentAction", () => {
 
     expect(result).toEqual({ ok: false, error: "This consent link is invalid" });
   });
+
+  it("a truthy non-boolean value never opts someone in - coerced to false, not passed through", async () => {
+    mockConfirmParentConsent.mockResolvedValueOnce({ childFirstName: "Aarav" });
+
+    // Simulates a crafted Server Action call bypassing the checkbox's real
+    // boolean type - Next.js doesn't enforce a param's TS type at runtime.
+    await confirmParentConsentAction("tok", "true" as unknown as boolean);
+
+    expect(mockConfirmParentConsent).toHaveBeenCalledWith("tok", expect.any(Object), false);
+  });
+
+  it("a non-boolean object value never opts someone in either", async () => {
+    mockConfirmParentConsent.mockResolvedValueOnce({ childFirstName: "Aarav" });
+
+    await confirmParentConsentAction("tok", { on: true } as unknown as boolean);
+
+    expect(mockConfirmParentConsent).toHaveBeenCalledWith("tok", expect.any(Object), false);
+  });
 });
 
 describe("approveReapprovalAction", () => {
@@ -74,6 +92,14 @@ describe("approveReapprovalAction", () => {
     await approveReapprovalAction("tok", true);
 
     expect(mockApproveReapproval).toHaveBeenCalledWith("tok", expect.any(Object), true);
+  });
+
+  it("a truthy non-boolean value never opts someone in - coerced to false, not passed through", async () => {
+    mockApproveReapproval.mockResolvedValueOnce({ childFirstName: "Aarav" });
+
+    await approveReapprovalAction("tok", "true" as unknown as boolean);
+
+    expect(mockApproveReapproval).toHaveBeenCalledWith("tok", expect.any(Object), false);
   });
 });
 
