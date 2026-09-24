@@ -273,10 +273,13 @@ describe("getEligibleParentContactForWeeklyReport - D33: age re-checked every se
   });
 
   it("an 18+ learner never gets a parent send, even with consent and opt-in on file", async () => {
-    // Today is 2026-09-24 - this DOB makes the learner 20 years old.
-    mockGetConsentRecord.mockResolvedValueOnce({ status: "consented" });
-    mockGetParentContact.mockResolvedValueOnce({ email: "parent@example.com", weeklyReportOptIn: true });
-
+    // Today is 2026-09-24 - this DOB makes the learner 20 years old. Deliberately
+    // NOT queuing a mockGetConsentRecord/mockGetParentContact return value here -
+    // this test asserts below that neither is ever called, and a vi.fn() queued
+    // via mockResolvedValueOnce but never consumed survives vi.clearAllMocks()
+    // (clearMock resets call history, not queued implementations), so it would
+    // otherwise leak into whichever later test in this file calls these mocks
+    // next - a real bug this test previously had.
     const result = await getEligibleParentContactForWeeklyReport({ id: USER_ID, dateOfBirth: "2006-01-01" });
 
     expect(result).toBeNull();
@@ -350,5 +353,29 @@ describe("getMyReportCard", () => {
       { weekStartDate: "2026-09-14", efficiencyScore: 60 },
       { weekStartDate: "2026-09-21", efficiencyScore: 80 },
     ]);
+  });
+
+  it("shows the masked email and weeklyEmailOn:false for a minor with a verified parent who has the weekly email off", async () => {
+    mockGetReportSnapshot.mockResolvedValueOnce(null);
+    mockListReportSnapshotsForUser.mockResolvedValueOnce([]);
+    mockGetConsentRecord.mockResolvedValueOnce({ status: "consented" });
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com", weeklyReportOptIn: false });
+
+    const result = await getMyReportCard({ id: USER_ID, dateOfBirth: "2015-01-01" }, AT);
+
+    // Non-null even though the weekly email is off - a verified parent
+    // relationship exists regardless of the current opt-in state.
+    expect(result.sharedWithParent).toEqual({ maskedEmail: "p***@example.com", weeklyEmailOn: false });
+  });
+
+  it("shows weeklyEmailOn:true for a minor with a verified, opted-in parent", async () => {
+    mockGetReportSnapshot.mockResolvedValueOnce(null);
+    mockListReportSnapshotsForUser.mockResolvedValueOnce([]);
+    mockGetConsentRecord.mockResolvedValueOnce({ status: "consented" });
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com", weeklyReportOptIn: true });
+
+    const result = await getMyReportCard({ id: USER_ID, dateOfBirth: "2015-01-01" }, AT);
+
+    expect(result.sharedWithParent).toEqual({ maskedEmail: "p***@example.com", weeklyEmailOn: true });
   });
 });

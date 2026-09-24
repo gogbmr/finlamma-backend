@@ -8,12 +8,16 @@ import {
   confirmParentConsent,
   declineParentConsent,
   declineReapproval,
+  unsubscribeWeeklyReport,
   withdrawParentConsent,
 } from "@/server/onboarding/service";
 
 type ChildResult = { ok: true; childFirstName: string } | { ok: false; error: string };
 type WithdrawResult =
   | { ok: true; childFirstName: string; alreadyWithdrawn: boolean }
+  | { ok: false; error: string };
+type UnsubscribeResult =
+  | { ok: true; childFirstName: string; alreadyUnsubscribed: boolean }
   | { ok: false; error: string };
 
 // Public - no requireUser/requireStaff. The token itself is the only
@@ -22,9 +26,14 @@ type WithdrawResult =
 // called on page render (GET) - only from an actual button press, per the
 // GET-must-be-side-effect-free rule (email security scanners prefetch
 // links).
-export async function confirmParentConsentAction(token: string): Promise<ChildResult> {
+// weeklyReportOptIn is the parent's separate, unticked-by-default checkbox
+// choice (D33) - it never gates whether consent itself succeeds.
+export async function confirmParentConsentAction(
+  token: string,
+  weeklyReportOptIn = false,
+): Promise<ChildResult> {
   try {
-    const result = await confirmParentConsent(token, requestMeta(await headers()));
+    const result = await confirmParentConsent(token, requestMeta(await headers()), weeklyReportOptIn);
     return { ok: true, childFirstName: result.childFirstName };
   } catch (err) {
     if (err instanceof AppError) return { ok: false, error: err.message };
@@ -52,9 +61,15 @@ export async function withdrawParentConsentAction(token: string): Promise<Withdr
   }
 }
 
-export async function approveReapprovalAction(token: string): Promise<ChildResult> {
+// weeklyReportOptIn here is additive-only (see approveReapproval's comment):
+// checking it turns the weekly email on, leaving it unchecked never turns an
+// existing opt-in off.
+export async function approveReapprovalAction(
+  token: string,
+  weeklyReportOptIn = false,
+): Promise<ChildResult> {
   try {
-    const result = await approveReapproval(token, requestMeta(await headers()));
+    const result = await approveReapproval(token, requestMeta(await headers()), weeklyReportOptIn);
     return { ok: true, childFirstName: result.childFirstName };
   } catch (err) {
     if (err instanceof AppError) return { ok: false, error: err.message };
@@ -66,6 +81,18 @@ export async function declineReapprovalAction(token: string): Promise<ChildResul
   try {
     const result = await declineReapproval(token, requestMeta(await headers()));
     return { ok: true, childFirstName: result.childFirstName };
+  } catch (err) {
+    if (err instanceof AppError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+// Public - same "token is the only credential" reasoning as every other
+// action here. Stops ONLY the weekly report email; never touches consent.
+export async function unsubscribeWeeklyReportAction(token: string): Promise<UnsubscribeResult> {
+  try {
+    const result = await unsubscribeWeeklyReport(token, requestMeta(await headers()));
+    return { ok: true, childFirstName: result.childFirstName, alreadyUnsubscribed: result.alreadyUnsubscribed };
   } catch (err) {
     if (err instanceof AppError) return { ok: false, error: err.message };
     throw err;

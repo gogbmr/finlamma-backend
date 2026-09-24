@@ -2,7 +2,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { WeeklyReportCardEmail } from "@/emails/weekly-report-card";
 import { sendEmailOrLog } from "@/lib/email";
 import { env } from "@/lib/env";
-import { getUserFirstName, setConsentRecordWithdrawTokenHash } from "@/server/onboarding/repo";
+import {
+  getUserFirstName,
+  setConsentRecordWithdrawTokenHash,
+  setParentContactWeeklyReportUnsubscribeTokenHash,
+} from "@/server/onboarding/repo";
 import { getStreakStats } from "@/server/streaks/service";
 import type { reportSnapshots } from "@/db/schema";
 
@@ -42,6 +46,14 @@ export async function sendWeeklyReportParentEmail(
   await setConsentRecordWithdrawTokenHash(user.id, hashToken(withdrawToken));
   const withdrawUrl = `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`;
 
+  // Rotated on every send too (same reasoning as the withdraw token above) -
+  // separate link that stops ONLY this weekly email, never full consent
+  // (docs/ARCHITECTURE.md D33, CLAUDE.md rule 13: every email to a verified
+  // parent still carries the full withdraw link as well).
+  const unsubscribeToken = generateToken();
+  await setParentContactWeeklyReportUnsubscribeTokenHash(user.id, hashToken(unsubscribeToken));
+  const unsubscribeUrl = `${env.APP_URL}/consent/weekly-report/unsubscribe?token=${unsubscribeToken}`;
+
   const totalLessonsThisWeek = snapshot.moduleBreakdown.reduce((sum, m) => sum + m.lessonsCompleted, 0);
 
   await sendEmailOrLog({
@@ -54,8 +66,9 @@ export async function sendWeeklyReportParentEmail(
       lessonsCompleted: totalLessonsThisWeek,
       streakDays: streakStats.learning.current,
       withdrawUrl,
+      unsubscribeUrl,
     }),
     devLogLabel: `weekly report card for user ${user.id}`,
-    devLogDetail: withdrawUrl,
+    devLogDetail: `withdraw: ${withdrawUrl} | unsubscribe (weekly only): ${unsubscribeUrl}`,
   });
 }

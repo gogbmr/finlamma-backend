@@ -16,10 +16,13 @@ vi.mock("@/lib/env", () => ({
 
 const mockGetUserFirstName = vi.fn();
 const mockSetConsentRecordWithdrawTokenHash = vi.fn();
+const mockSetParentContactWeeklyReportUnsubscribeTokenHash = vi.fn();
 vi.mock("@/server/onboarding/repo", () => ({
   getUserFirstName: (userId: unknown) => mockGetUserFirstName(userId),
   setConsentRecordWithdrawTokenHash: (userId: unknown, hash: unknown) =>
     mockSetConsentRecordWithdrawTokenHash(userId, hash),
+  setParentContactWeeklyReportUnsubscribeTokenHash: (userId: unknown, hash: unknown) =>
+    mockSetParentContactWeeklyReportUnsubscribeTokenHash(userId, hash),
 }));
 
 const mockGetStreakStats = vi.fn();
@@ -62,6 +65,23 @@ describe("sendWeeklyReportParentEmail", () => {
 
     const emailProps = mockWeeklyReportCardEmail.mock.calls[0][0];
     expect(emailProps.withdrawUrl).toMatch(/^https:\/\/app\.finlamma\.example\/consent\/withdraw\?token=.+/);
+  });
+
+  it("also mints a fresh, separate unsubscribe token and includes its URL in the email", async () => {
+    await sendWeeklyReportParentEmail(USER, "parent@example.com", SNAPSHOT);
+
+    expect(mockSetParentContactWeeklyReportUnsubscribeTokenHash).toHaveBeenCalledTimes(1);
+    const [userId, hash] = mockSetParentContactWeeklyReportUnsubscribeTokenHash.mock.calls[0];
+    expect(userId).toBe(USER.id);
+    expect(typeof hash).toBe("string");
+    expect(hash).toHaveLength(64); // sha256 hex digest
+
+    const emailProps = mockWeeklyReportCardEmail.mock.calls[0][0];
+    expect(emailProps.unsubscribeUrl).toMatch(
+      /^https:\/\/app\.finlamma\.example\/consent\/weekly-report\/unsubscribe\?token=.+/,
+    );
+    // The withdraw and unsubscribe tokens must never be the same link.
+    expect(emailProps.unsubscribeUrl).not.toBe(emailProps.withdrawUrl);
   });
 
   it("sums lessonsCompleted across every module in the snapshot's breakdown", async () => {

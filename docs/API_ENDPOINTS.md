@@ -2400,7 +2400,8 @@ The current IST week's efficiency snapshot (null until the first Monday after si
       }
     ],
     "sharedWithParent": {
-      "maskedEmail": "j***@gmail.com"
+      "maskedEmail": "j***@gmail.com",
+      "weeklyEmailOn": true
     }
   }
 }

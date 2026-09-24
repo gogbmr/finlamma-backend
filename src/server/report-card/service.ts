@@ -302,28 +302,44 @@ function maskEmail(email: string): string {
 }
 
 // D33 (docs/ARCHITECTURE.md): re-checked on every call, never cached or
-// decided once - a learner who turns 18, or whose parent withdraws/never
-// opted in, simply stops qualifying the very next check, with no explicit
-// offboarding step. Used by BOTH the in-app masked display
-// (getSharedWithParentInfo below) and the weekly Inngest job's real send
-// (src/inngest/functions/weekly-report-card.ts) - one eligibility rule, not
-// two that could drift apart.
-export async function getEligibleParentContactForWeeklyReport(
+// decided once - a learner who turns 18, or whose parent withdraws, simply
+// stops qualifying the very next check, with no explicit offboarding step.
+// Deliberately NOT gated on weeklyReportOptIn - this only tells you whether
+// a verified parent relationship exists (minor + consented), which the
+// minor's own in-app "shared with parent" display shows regardless of
+// whether the weekly email happens to be on right now (see
+// getSharedWithParentInfo below, which reads weeklyEmailOn separately).
+async function getVerifiedParentContact(
   user: { id: string; dateOfBirth: string | null },
-): Promise<{ email: string } | null> {
+): Promise<{ email: string; weeklyReportOptIn: boolean } | null> {
   if (!user.dateOfBirth || !isMinor(user.dateOfBirth)) return null;
 
   const [consent, parentContact] = await Promise.all([getConsentRecord(user.id), getParentContact(user.id)]);
-  if (consent?.status !== "consented" || !parentContact?.weeklyReportOptIn) return null;
+  if (consent?.status !== "consented" || !parentContact) return null;
 
-  return { email: parentContact.email };
+  return { email: parentContact.email, weeklyReportOptIn: parentContact.weeklyReportOptIn };
 }
 
+// The weekly Inngest job's real send gate (src/inngest/functions/
+// weekly-report-card.ts) - a verified parent AND the opt-in currently on.
+export async function getEligibleParentContactForWeeklyReport(
+  user: { id: string; dateOfBirth: string | null },
+): Promise<{ email: string } | null> {
+  const contact = await getVerifiedParentContact(user);
+  return contact?.weeklyReportOptIn ? { email: contact.email } : null;
+}
+
+// The minor's own in-app display (GET /me/report-card) - shows the masked
+// address whenever a verified parent relationship exists, and separately
+// whether the weekly email is currently ON, so a minor whose parent has a
+// verified relationship but has the weekly email off still sees the
+// relationship (not just silently null, indistinguishable from "no
+// relationship at all").
 async function getSharedWithParentInfo(
   user: { id: string; dateOfBirth: string | null },
-): Promise<{ maskedEmail: string } | null> {
-  const eligible = await getEligibleParentContactForWeeklyReport(user);
-  return eligible ? { maskedEmail: maskEmail(eligible.email) } : null;
+): Promise<{ maskedEmail: string; weeklyEmailOn: boolean } | null> {
+  const contact = await getVerifiedParentContact(user);
+  return contact ? { maskedEmail: maskEmail(contact.email), weeklyEmailOn: contact.weeklyReportOptIn } : null;
 }
 
 // PR-30/31/32/33: the caller's own weekly report card - current week's

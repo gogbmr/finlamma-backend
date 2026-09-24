@@ -70,12 +70,21 @@ export const ReportCardResponseSchema = registry.register(
         .array(z.object({ weekStartDate: z.string(), efficiencyScore: z.number().int() }))
         .openapi({ description: "Up to the last 8 weeks, oldest first." }),
       sharedWithParent: z
-        .object({ maskedEmail: z.string().openapi({ example: "j***@gmail.com" }) })
+        .object({
+          maskedEmail: z.string().openapi({ example: "j***@gmail.com" }),
+          weeklyEmailOn: z.boolean().openapi({
+            description:
+              "Whether the parent currently receives the weekly report email - the parent's own " +
+              "choice, set on the consent/reapproval pages or an unsubscribe link, never a toggle " +
+              "the learner controls themselves.",
+          }),
+        })
         .nullable()
         .openapi({
           description:
-            "Non-null only when this learner is currently under 18 with a consented, opted-in " +
-            "parent - see docs/ARCHITECTURE.md D33. Never a toggle the learner controls themselves.",
+            "Non-null whenever this learner is currently under 18 with a consented parent - see " +
+            "docs/ARCHITECTURE.md D33. Non-null does not mean the weekly email is sending; check " +
+            "weeklyEmailOn for that.",
         }),
     }),
   }),

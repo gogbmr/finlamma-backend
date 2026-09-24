@@ -19,7 +19,9 @@ import {
 // email's copy is not a coach-note template, but it follows the same
 // "encouraging, never a judgement" spirit). Every email to an already-
 // verified parent must also carry the current withdraw link (CLAUDE.md
-// rule 13 / D15's follow-on rule), so this one does too.
+// rule 13 / D15's follow-on rule), so this one does too - alongside a
+// SEPARATE unsubscribe link that stops only these weekly emails, without
+// touching consent at all (D33).
 export type WeeklyReportCardEmailProps = {
   childFirstName: string;
   weekLabel: string;
@@ -27,6 +29,7 @@ export type WeeklyReportCardEmailProps = {
   lessonsCompleted: number;
   streakDays: number;
   withdrawUrl: string;
+  unsubscribeUrl: string;
 };
 
 export function WeeklyReportCardEmail({
@@ -36,6 +39,7 @@ export function WeeklyReportCardEmail({
   lessonsCompleted,
   streakDays,
   withdrawUrl,
+  unsubscribeUrl,
 }: WeeklyReportCardEmailProps) {
   return (
     <Html>
@@ -59,9 +63,18 @@ export function WeeklyReportCardEmail({
           </Text>
           <Hr style={hr} />
           <Text style={smallText}>
-            You&apos;re receiving this because you opted in when you gave consent for{" "}
-            {childFirstName} to use Finlamma. You can withdraw your consent entirely at any time,
-            which immediately returns the account to limited access:
+            You&apos;re receiving this because you opted in to weekly emails when you gave (or
+            re-confirmed) consent for {childFirstName} to use Finlamma.
+          </Text>
+          <Text style={smallText}>
+            <Link href={unsubscribeUrl} style={link}>
+              Stop these weekly emails
+            </Link>{" "}
+            (keeps {childFirstName}&apos;s account and your consent unchanged)
+          </Text>
+          <Text style={smallText}>
+            Or, you can withdraw your consent entirely at any time, which immediately returns the
+            account to limited access:
           </Text>
           <Text style={smallText}>
             <Link href={withdrawUrl} style={link}>

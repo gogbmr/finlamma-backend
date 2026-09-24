@@ -121,12 +121,24 @@ export const parentContacts = pgTable(
     // report-card email, off by default. Settable only from the parent-
     // facing consent/reapproval pages (src/app/consent/actions.ts) - never
     // from the minor's own app, since who the parent relationship's data
-    // flows to is the parent's decision, not the child's.
+    // flows to is the parent's decision, not the child's. Declining or
+    // withdrawing consent always clears this back to false (see
+    // src/server/onboarding/service.ts).
     weeklyReportOptIn: boolean("weekly_report_opt_in").default(false).notNull(),
+    // Backs the "unsubscribe from just the weekly email" link every weekly
+    // report email carries alongside the full withdraw-consent link (CLAUDE.md
+    // rule 13) - rotated on every send (src/server/report-card/parent-email.ts),
+    // same no-expiry lifetime as consent_records.withdraw_token_hash above.
+    // Turning this off never touches consent_records - it only ever clears
+    // weekly_report_opt_in.
+    weeklyReportUnsubscribeTokenHash: text("weekly_report_unsubscribe_token_hash"),
   },
   (t) => [
     uniqueIndex("parent_contacts_user_id_idx").on(t.userId),
     index("parent_contacts_email_idx").on(t.email),
+    uniqueIndex("parent_contacts_weekly_report_unsubscribe_token_hash_idx").on(
+      t.weeklyReportUnsubscribeTokenHash,
+    ),
   ],
 ).enableRLS();
 

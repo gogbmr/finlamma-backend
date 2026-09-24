@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   consentRecords,
@@ -93,6 +93,62 @@ export async function countChildrenForParentEmail(email: string): Promise<number
     .innerJoin(users, eq(users.id, parentContacts.userId))
     .where(and(eq(parentContacts.email, email), isNull(users.deletedAt)));
   return rows.length;
+}
+
+// Best-effort, non-transactional follow-up called from service.ts after the
+// core consent mutation (confirm/decline/withdraw/reapproval) already
+// committed - deliberately NOT folded into those transactions, so this
+// change never risks the already-shipped, security-audited atomicity of
+// confirmConsentAndRecordAcceptances/declineConsentRecord/withdrawConsentRecord/
+// approveReapprovalAndRecordAcceptance/declineReapprovalAndRefuseConsent. A
+// crash in the narrow window between the core write and this one just means
+// the parent's weekly-report preference reverts to its safe default (off),
+// never the reverse. Returns true only if the value actually changed, so
+// callers can decide whether a real preference change happened (and is
+// therefore worth an activity-log entry) or this was a no-op.
+export async function setParentContactWeeklyReportOptIn(userId: string, optIn: boolean): Promise<boolean> {
+  const [row] = await db
+    .update(parentContacts)
+    .set({ weeklyReportOptIn: optIn })
+    .where(and(eq(parentContacts.userId, userId), ne(parentContacts.weeklyReportOptIn, optIn)))
+    .returning();
+  return Boolean(row);
+}
+
+export async function getParentContactByWeeklyReportUnsubscribeTokenHash(tokenHash: string) {
+  const [row] = await db
+    .select()
+    .from(parentContacts)
+    .where(eq(parentContacts.weeklyReportUnsubscribeTokenHash, tokenHash))
+    .limit(1);
+  return row ?? null;
+}
+
+// Rotated on every weekly-report email send (src/server/report-card/
+// parent-email.ts), mirroring setConsentRecordWithdrawTokenHash's rotation
+// of the full withdraw link below - every email to an already-verified
+// parent always carries a currently-valid link (CLAUDE.md rule 13).
+export async function setParentContactWeeklyReportUnsubscribeTokenHash(
+  userId: string,
+  tokenHash: string,
+): Promise<void> {
+  await db
+    .update(parentContacts)
+    .set({ weeklyReportUnsubscribeTokenHash: tokenHash })
+    .where(eq(parentContacts.userId, userId));
+}
+
+// Idempotent - returns null (a safe no-op, not an error) if this parent
+// contact was already opted out, so a re-clicked or shared old unsubscribe
+// link never double-logs. Never touches consent_records - this only ever
+// stops the weekly email, per the D33 design (see docs/ARCHITECTURE.md).
+export async function unsubscribeParentContactFromWeeklyReport(parentContactId: string) {
+  const [row] = await db
+    .update(parentContacts)
+    .set({ weeklyReportOptIn: false })
+    .where(and(eq(parentContacts.id, parentContactId), eq(parentContacts.weeklyReportOptIn, true)))
+    .returning();
+  return row ?? null;
 }
 
 export async function getConsentRecord(userId: string) {

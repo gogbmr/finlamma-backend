@@ -206,12 +206,20 @@ doc ships as part of the report card itself, scoped narrowly:
   were a minor.
 - **Also requires a currently-`consented` `consent_records` row right now.** A withdrawn or refused
   parent, or a minor with no parent contact at all, never generates a send.
-- **Opt-in, off by default.** The parent chooses this when consenting (or later, on the
-  re-approval page) — a checkbox on the same public consent page from §7's flow, not something the
-  minor can turn on themselves, since the parent relationship is the parent's decision to make.
+- **Opt-in, off by default, always unticked, never bundled into the consent/approve button.** The
+  parent chooses this via a separate checkbox on the consent page (when first consenting) or the
+  re-approval page (a later touch point) — never something the minor can turn on themselves, since
+  the parent relationship is the parent's decision to make. On the re-approval page the checkbox is
+  **additive-only**: checking it turns the email on, but leaving it unchecked never turns off an
+  opt-in the parent already set up — only declining consent, withdrawing consent, or the
+  unsubscribe link below ever turn it off (see ARCHITECTURE.md D35).
+- **A separate unsubscribe link, in every weekly email, stops only the weekly email — never full
+  consent.** It sits alongside the required withdraw-consent link (CLAUDE.md rule 13), works
+  without any Finlamma sign-in, and is safe to reuse (re-clicking an old copy is a harmless no-op).
 - **The minor is never kept in the dark about it.** Profile shows, in-app, that a weekly report
-  goes to their parent, with the parent's email masked (e.g. `j***@gmail.com`) — visible, not a
-  secret arrangement, even though only the parent controls the opt-in itself.
+  goes to their parent whenever a verified parent relationship exists, with the parent's email
+  masked (e.g. `j***@gmail.com`), and separately whether the weekly email is currently on — visible,
+  not a secret arrangement, even though only the parent controls the opt-in itself.
 - **Contents are progress-only, against the child's own history, never a judgement or a
   comparison**: this week's own numbers (lessons done, study time, streak, efficiency score)
   framed only against *this same child's* past weeks. No absolute XP/VM total presented as a rank,
