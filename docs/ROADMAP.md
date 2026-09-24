@@ -98,7 +98,7 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
       admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
       brand-partner rewards later without a schema change
-- [ ] Certificates on world completion — PDF via a browser-free renderer (e.g.
+- [x] Certificates on world completion — PDF via a browser-free renderer (e.g.
       `@react-pdf/renderer`, not a headless browser — Vercel-compatible), stored in storage,
       shared as a signed URL via the device share sheet (the student sends it, we never do)
 - [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
