@@ -24,7 +24,7 @@ const mockEnv = vi.hoisted(() => ({
   S3_ACCESS_KEY_ID: undefined as string | undefined,
   S3_SECRET_ACCESS_KEY: undefined as string | undefined,
   INNGEST_SIGNING_KEY: undefined as string | undefined,
-  INNGEST_DEV: undefined as string | undefined,
+  VERCEL_ENV: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -94,7 +94,7 @@ beforeEach(() => {
   // Configured by default - existing tests below don't need to know about
   // the inngest warning field at all.
   mockEnv.INNGEST_SIGNING_KEY = "test-signing-key";
-  mockEnv.INNGEST_DEV = undefined;
+  mockEnv.VERCEL_ENV = undefined;
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -352,9 +352,9 @@ describe("GET /api/v1/health", () => {
   });
 
   describe("inngest", () => {
-    it("reports 'unconfigured' when neither INNGEST_SIGNING_KEY nor INNGEST_DEV is set", async () => {
+    it("reports 'unconfigured' on a Vercel deployment with no signing key", async () => {
       mockEnv.INNGEST_SIGNING_KEY = undefined;
-      mockEnv.INNGEST_DEV = undefined;
+      mockEnv.VERCEL_ENV = "production";
       mockHealthyDb();
 
       const res = await GET();
@@ -363,9 +363,19 @@ describe("GET /api/v1/health", () => {
       expect((await res.json()).data.inngest).toBe("unconfigured");
     });
 
-    it("reports 'ok' when INNGEST_DEV is set even without a signing key (local dev)", async () => {
+    it("reports 'unconfigured' on a Vercel preview deployment with no signing key too", async () => {
       mockEnv.INNGEST_SIGNING_KEY = undefined;
-      mockEnv.INNGEST_DEV = "1";
+      mockEnv.VERCEL_ENV = "preview";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.inngest).toBe("unconfigured");
+    });
+
+    it("reports 'ok' outside Vercel even without a signing key (local dev auto-detects Dev mode)", async () => {
+      mockEnv.INNGEST_SIGNING_KEY = undefined;
+      mockEnv.VERCEL_ENV = undefined;
       mockHealthyDb();
 
       const res = await GET();
@@ -373,9 +383,9 @@ describe("GET /api/v1/health", () => {
       expect((await res.json()).data.inngest).toBe("ok");
     });
 
-    it("reports 'ok' when INNGEST_SIGNING_KEY is set", async () => {
+    it("reports 'ok' on a Vercel deployment when INNGEST_SIGNING_KEY is set", async () => {
       mockEnv.INNGEST_SIGNING_KEY = "test-signing-key";
-      mockEnv.INNGEST_DEV = undefined;
+      mockEnv.VERCEL_ENV = "production";
       mockHealthyDb();
 
       const res = await GET();

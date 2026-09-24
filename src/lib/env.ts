@@ -94,21 +94,23 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 
-  // Jobs (Inngest) - optional until an Inngest app exists. The SDK defaults to
-  // "Cloud mode" (signature verification ON, refuses to run without a signing
-  // key) unless INNGEST_DEV=1 explicitly switches it to Dev mode - this is the
-  // SDK's own fail-closed default, not something this codebase re-implements;
-  // see src/lib/inngest.ts. INNGEST_EVENT_KEY is only needed to *send* events
-  // from a deployed (non-dev) environment - local dev sends against the
-  // Inngest Dev Server (`pnpm inngest:dev`) without one.
+  // Jobs (Inngest) - INNGEST_SIGNING_KEY is required in production/preview
+  // only: src/lib/inngest.ts sets the client's mode explicitly (`isDev:
+  // !env.VERCEL_ENV`), so Cloud mode (signature verification ON) always
+  // applies on a real Vercel deployment and always needs this key there, while
+  // local dev automatically runs in Dev mode with no key needed at all -
+  // GET /api/v1/health's `inngest` field surfaces "unconfigured" if a Vercel
+  // deployment is missing it. INNGEST_EVENT_KEY is only needed to *send*
+  // events from a deployed (non-dev) environment - local dev sends against
+  // the Inngest Dev Server (`pnpm inngest:dev`) without one.
   INNGEST_SIGNING_KEY: z.string().optional(),
   INNGEST_EVENT_KEY: z.string().optional(),
-  // Set to "1" in .env.local only, never in a deployed environment - switches
-  // the SDK to Dev mode (talks to the local Inngest Dev Server, signature
-  // verification off). Vercel deployments (preview and production alike) must
-  // never have this set, which is exactly why it's a separate opt-in var
-  // rather than derived from NODE_ENV (NODE_ENV is "production" for every
-  // `next build`, preview deployments included).
+  // No longer required for local dev to work (src/lib/inngest.ts's `isDev`
+  // already auto-detects "not on Vercel") - kept only as an explicit,
+  // harmless manual override for Dev mode. Never set this in a deployed
+  // environment (Vercel preview or production): src/lib/inngest.ts doesn't
+  // read it at all, so setting it there does nothing either way, but it's
+  // documented as local-only to avoid ever implying otherwise.
   INNGEST_DEV: z.string().optional(),
 
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).

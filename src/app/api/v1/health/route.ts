@@ -98,11 +98,13 @@ const HealthDataSchema = z.object({
   inngest: z.enum(["ok", "unconfigured"]).openapi({
     example: "ok",
     description:
-      "A non-fatal warning (never causes a 503): 'unconfigured' means neither INNGEST_SIGNING_KEY " +
-      "nor INNGEST_DEV is set, so the /api/inngest route's serve() handler is in the SDK's default " +
-      "Cloud mode with no signing key - it will refuse every request (including legitimate ones " +
-      "from Inngest) until one is set. Background jobs (the weekly report card, parent " +
-      "re-approval emails) simply never run while this is 'unconfigured'.",
+      "A non-fatal warning (never causes a 503): checked only on a real Vercel deployment " +
+      "(env.VERCEL_ENV set) - local dev always reports 'ok' since src/lib/inngest.ts's client " +
+      "auto-detects Dev mode there. 'unconfigured' means a Vercel deployment (production or " +
+      "preview) is missing INNGEST_SIGNING_KEY, so the /api/inngest route's Cloud-mode serve() " +
+      "handler will refuse every request (including legitimate ones from Inngest) until it's " +
+      "set. Background jobs (the weekly report card, parent re-approval emails) simply never " +
+      "run while this is 'unconfigured'.",
   }),
   timestamp: z.string().datetime().openapi({ example: "2026-01-01T00:00:00.000Z" }),
 });
@@ -327,7 +329,10 @@ export const GET = withErrors(async () => {
   const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
   const tradingUnlockWorldMissing = await checkTradingUnlockWorldMissing();
   const redis = await checkRedisReachable();
-  const inngest = env.INNGEST_SIGNING_KEY || env.INNGEST_DEV ? ("ok" as const) : ("unconfigured" as const);
+  // Matches src/lib/inngest.ts's own isDev logic: only a real Vercel
+  // deployment (VERCEL_ENV set) is ever in Cloud mode and actually needs a
+  // signing key - local dev is unconditionally fine.
+  const inngest = !env.VERCEL_ENV || env.INNGEST_SIGNING_KEY ? ("ok" as const) : ("unconfigured" as const);
 
   return ok({
     status: "ok" as const,
