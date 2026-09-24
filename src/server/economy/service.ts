@@ -1,16 +1,22 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { decodeCursor } from "@/lib/http";
+import { istMonthStartUtc } from "@/lib/ist-date";
 import { getSettingNumber, setSettingJson } from "@/lib/settings";
 import { recordLearningActivity } from "@/server/streaks/service";
 import {
   creditLessonCompletionRow,
+  creditVmoneyRow,
   getRewardRule,
   listRewardRules,
+  listVmoneyLedgerForUser,
   sumVmoneyBalance,
   sumVmoneyEarnedSince,
+  sumVmoneyEarnedSinceBySource,
   sumVmoneySpentSince,
   updateRewardRule,
+  type VmoneyLedgerCursor,
   type RewardActivityKind,
 } from "./repo";
 import {
@@ -180,4 +186,50 @@ export async function creditLessonCompletion(
     await recordLearningActivity(user.id);
   }
   return { credited };
+}
+
+// Generic VM-only credit, used by badge unlocks (src/server/badges/service.ts)
+// and reward refunds (src/server/rewards/service.ts) - the global VM
+// issuance multiplier applies here exactly like every other credit path
+// (creditLessonCompletion above), and `multiplierApplied` is stamped on the
+// row so the balance stays explainable even after the multiplier later
+// changes (same reasoning as docs/ARCHITECTURE.md D26).
+export async function creditVmoney(input: {
+  userId: string;
+  sourceType: string;
+  sourceId: string;
+  baseAmount: number;
+  reason: string;
+}): Promise<{ credited: boolean; amount: number }> {
+  const multiplier = await getVmIssuanceMultiplier();
+  const amount = Math.round(input.baseAmount * multiplier);
+  const row = await creditVmoneyRow({
+    userId: input.userId,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    ruleId: null,
+    reason: input.reason,
+    amount,
+    multiplierApplied: multiplier,
+  });
+  return { credited: row !== null, amount };
+}
+
+// PR-21 (Profile - Wallet): balance, VM earned this (IST) calendar month,
+// and an earn-source breakdown - see sumVmoneyEarnedSinceBySource's comment
+// on why the breakdown only ever shows sourceTypes that actually exist yet.
+export async function getMyWallet(userId: string, at: Date = new Date()) {
+  const monthStart = istMonthStartUtc(at);
+  const [balance, earnedThisMonth, earnedBySource] = await Promise.all([
+    sumVmoneyBalance(userId),
+    sumVmoneyEarnedSince(userId, monthStart),
+    sumVmoneyEarnedSinceBySource(userId, monthStart),
+  ]);
+  return { balance, earnedThisMonth, earnedBySource };
+}
+
+// PR-24 (Profile - Wallet): the caller's full ledger history, newest first.
+export async function getMyWalletHistory(userId: string, opts: { limit: number; cursor: string | null }) {
+  const cursor = decodeCursor<VmoneyLedgerCursor>(opts.cursor);
+  return listVmoneyLedgerForUser(userId, { limit: opts.limit, cursor });
 }

@@ -61,3 +61,38 @@ export const VmoneyStatsResponseSchema = z.object({
     }),
   }),
 });
+
+// PR-21 (Profile - Wallet): a monthly-scoped view distinct from WH-03's
+// weekly tile above, plus an earn-source breakdown.
+export const WalletResponseSchema = z.object({
+  data: z.object({
+    balance: z.number().int().openapi({ example: 1250 }),
+    earnedThisMonth: z.number().int().nonnegative().openapi({ example: 300 }),
+    earnedBySource: z
+      .array(
+        z.object({
+          sourceType: z.string().openapi({ example: "lesson_completion" }),
+          amount: z.number().int().nonnegative().openapi({ example: 300 }),
+        }),
+      )
+      .openapi({
+        description: "Only sourceTypes that actually have an earning this month appear here.",
+      }),
+  }),
+});
+
+const VmoneyLedgerEntrySchema = z.object({
+  id: z.uuid(),
+  amount: z.number().int().openapi({ example: -500, description: "Positive = earned, negative = spent." }),
+  sourceType: z.string().openapi({ example: "reward_claim" }),
+  reason: z.string().openapi({ example: "Reward claimed" }),
+  createdAt: z.string().datetime(),
+});
+
+// PR-24 (Profile - Wallet): cursor-paginated, newest first - same shape as
+// every other cursor-paginated list in this API (src/lib/http.ts's
+// okList/encodeCursor/decodeCursor).
+export const WalletHistoryResponseSchema = z.object({
+  data: z.array(VmoneyLedgerEntrySchema),
+  nextCursor: z.string().nullable(),
+});

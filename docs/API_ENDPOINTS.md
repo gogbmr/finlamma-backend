@@ -51,6 +51,11 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/certificates/{worldId}/pdf` — Get a signed download URL for my certificate PDF (PR-37/PR-38)
 - `POST /api/v1/me/session-time` — Report a finished session's duration (World Home gap #5)
 - `GET /api/v1/me/daily-goals` — Get today's daily goal progress (PR-09)
+- `GET /api/v1/me/badges` — List my badges, unlocked and locked (PR-16/17/18/19/20)
+- `GET /api/v1/me/rewards` — List my rewards catalog (PR-21/22/23)
+- `POST /api/v1/me/rewards/{id}/claim` — Claim a reward (PR-22)
+- `GET /api/v1/me/wallet` — Get my wallet summary (PR-21)
+- `GET /api/v1/me/wallet/history` — Get my V Money ledger history (PR-24)
 
 **Webhooks**
 
@@ -1974,6 +1979,340 @@ Today's (IST) progress on every currently-active daily goal, admin-configured vi
       "completed": false
     }
   ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/badges`
+
+**List my badges, unlocked and locked (PR-16/17/18/19/20)**
+
+Every published badge with the caller's own progress and unlock state. A locked badge shows real progress toward its threshold (e.g. "7/10"), not just 0, so the app can render progress rings for badges not yet earned.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's badges
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "description": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "category": "learning",
+      "vmReward": 100,
+      "iconKey": "string",
+      "target": 10,
+      "progress": 7,
+      "unlocked": true,
+      "unlockedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/rewards`
+
+**List my rewards catalog (PR-21/22/23)**
+
+Every published reward with a fixed, admin-set price and whether the caller has already claimed it - a reward can be claimed at most once per learner.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The reward catalog
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "description": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "category": "finlamma",
+      "priceVm": 500,
+      "iconKey": "string",
+      "claimed": true
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/rewards/{id}/claim`
+
+**Claim a reward (PR-22)**
+
+Debits the reward's price_vm from the caller's balance and records the claim. A reward can be claimed at most once per learner - calling this again on an already-claimed reward is an idempotent replay (alreadyClaimed: true, no second debit), never a second charge. Balance can never go negative: the debit runs inside a locked transaction, so two concurrent claims for the same learner can never both succeed if only one can be afforded.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — Claimed (or already claimed)
+
+```json
+{
+  "data": {
+    "rewardId": "00000000-0000-0000-0000-000000000000",
+    "pricePaid": 0,
+    "alreadyClaimed": true,
+    "claimedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published reward with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published reward with this id"
+  }
+}
+```
+
+- **409** — Insufficient V Money balance
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_VMONEY",
+    "message": "Not enough V Money - this costs 500, you have 200"
+  }
+}
+```
+
+- **429** — Too many claim attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many claim attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/wallet`
+
+**Get my wallet summary (PR-21)**
+
+V Money balance (always summed live from the ledger, never a stored balance), V Money earned this IST calendar month, and an earn-source breakdown - only sourceTypes with a real earning this month appear in the breakdown.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's wallet summary
+
+```json
+{
+  "data": {
+    "balance": 1250,
+    "earnedThisMonth": 300,
+    "earnedBySource": [
+      {
+        "sourceType": "lesson_completion",
+        "amount": 300
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/wallet/history`
+
+**Get my V Money ledger history (PR-24)**
+
+The caller's full earn/spend ledger, newest first, cursor-paginated.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's ledger history
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "amount": -500,
+      "sourceType": "reward_claim",
+      "reason": "Reward claimed",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
+  }
 }
 ```
 

@@ -1774,6 +1774,249 @@
           "data"
         ]
       },
+      "Badge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "description": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "learning",
+              "streak",
+              "trading",
+              "news"
+            ]
+          },
+          "vmReward": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 100
+          },
+          "iconKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 10,
+            "description": "The criteria threshold - shown so the app can render \"7/10\" progress."
+          },
+          "progress": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 7
+          },
+          "unlocked": {
+            "type": "boolean"
+          },
+          "unlockedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "category",
+          "vmReward",
+          "iconKey",
+          "target",
+          "progress",
+          "unlocked",
+          "unlockedAt"
+        ]
+      },
+      "BadgeListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Badge"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "Reward": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "description": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "finlamma",
+              "brand_partner"
+            ]
+          },
+          "priceVm": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 500,
+            "description": "Fixed, admin-set - never computed from the viewing learner's own balance."
+          },
+          "iconKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimed": {
+            "type": "boolean",
+            "description": "Whether the caller has already claimed this reward - a reward can be claimed at most once."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "category",
+          "priceVm",
+          "iconKey",
+          "claimed"
+        ]
+      },
+      "RewardListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Reward"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ClaimRewardResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "rewardId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "pricePaid": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "description": "Snapshotted at claim time - unaffected by any later price change."
+              },
+              "alreadyClaimed": {
+                "type": "boolean",
+                "description": "True if this reward was already claimed before this call (idempotent replay, no second debit)."
+              },
+              "claimedAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "rewardId",
+              "pricePaid",
+              "alreadyClaimed",
+              "claimedAt"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -4340,6 +4583,484 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DailyGoalsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/badges": {
+      "get": {
+        "summary": "List my badges, unlocked and locked (PR-16/17/18/19/20)",
+        "description": "Every published badge with the caller's own progress and unlock state. A locked badge shows real progress toward its threshold (e.g. \"7/10\"), not just 0, so the app can render progress rings for badges not yet earned.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's badges",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadgeListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/rewards": {
+      "get": {
+        "summary": "List my rewards catalog (PR-21/22/23)",
+        "description": "Every published reward with a fixed, admin-set price and whether the caller has already claimed it - a reward can be claimed at most once per learner.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The reward catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RewardListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/rewards/{id}/claim": {
+      "post": {
+        "summary": "Claim a reward (PR-22)",
+        "description": "Debits the reward's price_vm from the caller's balance and records the claim. A reward can be claimed at most once per learner - calling this again on an already-claimed reward is an idempotent replay (alreadyClaimed: true, no second debit), never a second charge. Balance can never go negative: the debit runs inside a locked transaction, so two concurrent claims for the same learner can never both succeed if only one can be afforded.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Claimed (or already claimed)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimRewardResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published reward with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published reward with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Insufficient V Money balance",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "INSUFFICIENT_VMONEY",
+                    "message": "Not enough V Money - this costs 500, you have 200"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many claim attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many claim attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/wallet": {
+      "get": {
+        "summary": "Get my wallet summary (PR-21)",
+        "description": "V Money balance (always summed live from the ledger, never a stored balance), V Money earned this IST calendar month, and an earn-source breakdown - only sourceTypes with a real earning this month appear in the breakdown.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's wallet summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "balance": {
+                          "type": "integer",
+                          "example": 1250
+                        },
+                        "earnedThisMonth": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 300
+                        },
+                        "earnedBySource": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "sourceType": {
+                                "type": "string",
+                                "example": "lesson_completion"
+                              },
+                              "amount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 300
+                              }
+                            },
+                            "required": [
+                              "sourceType",
+                              "amount"
+                            ]
+                          },
+                          "description": "Only sourceTypes that actually have an earning this month appear here."
+                        }
+                      },
+                      "required": [
+                        "balance",
+                        "earnedThisMonth",
+                        "earnedBySource"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/wallet/history": {
+      "get": {
+        "summary": "Get my V Money ledger history (PR-24)",
+        "description": "The caller's full earn/spend ledger, newest first, cursor-paginated.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's ledger history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "amount": {
+                            "type": "integer",
+                            "example": -500,
+                            "description": "Positive = earned, negative = spent."
+                          },
+                          "sourceType": {
+                            "type": "string",
+                            "example": "reward_claim"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "example": "Reward claimed"
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "amount",
+                          "sourceType",
+                          "reason",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit or cursor",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid cursor"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

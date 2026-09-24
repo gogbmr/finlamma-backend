@@ -2,6 +2,7 @@ import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import { logInternalError } from "@/lib/http";
 import type { requestMeta } from "@/lib/http";
+import { evaluateBadgesForUser } from "@/server/badges/service";
 import { issueCertificateIfEligible } from "@/server/certificates/service";
 import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
@@ -309,7 +310,7 @@ export async function submitAnswer(
       const passMark =
         lesson.kind === "boss_quiz" ? settings.bossQuizPassMarkPct : settings.lessonPassMarkPct;
       const successful = accuracyPct >= passMark;
-      await creditLessonCompletion(
+      const { credited } = await creditLessonCompletion(
         user,
         { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
         successful,
@@ -325,6 +326,18 @@ export async function submitAnswer(
           await issueCertificateIfEligible(user, lesson.worldId, accuracyPct, meta);
         } catch (err) {
           logInternalError("certificates.issue_failed", err);
+        }
+      }
+      // Badges: re-evaluated after every real credit (any lesson kind, not
+      // just Boss Quiz), same best-effort/isolated reasoning as
+      // certificates above - evaluateBadgesForUser is itself idempotent
+      // (src/server/badges/service.ts), so re-running it here on a retry
+      // never re-awards or re-credits anything.
+      if (credited) {
+        try {
+          await evaluateBadgesForUser(user, meta);
+        } catch (err) {
+          logInternalError("badges.evaluate_failed", err);
         }
       }
     } else {

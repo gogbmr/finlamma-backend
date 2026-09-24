@@ -25,6 +25,11 @@ vi.mock("@/server/economy/service", () => ({
   creditLessonCompletion: (...args: unknown[]) => mockCreditLessonCompletion(...args),
 }));
 
+const mockEvaluateBadgesForUser = vi.fn();
+vi.mock("@/server/badges/service", () => ({
+  evaluateBadgesForUser: (user: unknown, meta: unknown) => mockEvaluateBadgesForUser(user, meta),
+}));
+
 const mockLogActivity = vi.fn();
 vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
@@ -48,6 +53,9 @@ function storyLesson(overrides: Partial<Record<string, unknown>> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetLessonFlowScoringSettings.mockResolvedValue(SETTINGS);
+  // Default: not credited - tests that need the badge-evaluation hook to
+  // fire override this with { credited: true } for that specific call.
+  mockCreditLessonCompletion.mockResolvedValue({ credited: false });
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
 });
@@ -218,5 +226,46 @@ describe("completeUngradedLesson", () => {
       true,
       META,
     );
+  });
+
+  it("evaluates badges after a real credit", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson());
+    const startedAt = new Date("2026-01-01T00:05:00.000Z");
+    mockGetLessonProgress.mockResolvedValueOnce({ status: "in_progress", startedAt });
+    mockCompleteUngradedLessonProgressIfEligible.mockResolvedValueOnce({
+      status: "completed",
+      completedAt: new Date(),
+    });
+    mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true });
+
+    await completeUngradedLesson(USER, LESSON_ID, META);
+
+    expect(mockEvaluateBadgesForUser).toHaveBeenCalledWith(USER, META);
+  });
+
+  it("never evaluates badges on an idempotent replay (nothing credited)", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson());
+    const completedAt = new Date("2026-01-01T00:09:59.000Z");
+    mockGetLessonProgress.mockResolvedValueOnce({ status: "completed", completedAt });
+
+    await completeUngradedLesson(USER, LESSON_ID, META);
+
+    expect(mockEvaluateBadgesForUser).not.toHaveBeenCalled();
+  });
+
+  it("a badge-evaluation failure never breaks the lesson-completion response", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson());
+    const startedAt = new Date("2026-01-01T00:05:00.000Z");
+    mockGetLessonProgress.mockResolvedValueOnce({ status: "in_progress", startedAt });
+    mockCompleteUngradedLessonProgressIfEligible.mockResolvedValueOnce({
+      status: "completed",
+      completedAt: new Date(),
+    });
+    mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true });
+    mockEvaluateBadgesForUser.mockRejectedValueOnce(new Error("boom"));
+
+    const result = await completeUngradedLesson(USER, LESSON_ID, META);
+
+    expect(result.credited).toBe(true);
   });
 });

@@ -36,6 +36,11 @@ import "../src/app/api/v1/me/certificates/[worldId]/route";
 import "../src/app/api/v1/me/certificates/[worldId]/pdf/route";
 import "../src/app/api/v1/me/session-time/route";
 import "../src/app/api/v1/me/daily-goals/route";
+import "../src/app/api/v1/me/badges/route";
+import "../src/app/api/v1/me/rewards/route";
+import "../src/app/api/v1/me/rewards/[id]/claim/route";
+import "../src/app/api/v1/me/wallet/route";
+import "../src/app/api/v1/me/wallet/history/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

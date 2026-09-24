@@ -1,6 +1,8 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { logInternalError } from "@/lib/http";
+import { evaluateBadgesForUser } from "@/server/badges/service";
 import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
@@ -129,12 +131,23 @@ export async function completeUngradedLesson(user: { id: string }, lessonId: str
 
   // Story/Doubt Zone have no accuracy concept at all (D23/D28) - reaching
   // this point (served, minimum time elapsed) already IS "successful".
-  await creditLessonCompletion(
+  const { credited } = await creditLessonCompletion(
     user,
     { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
     true,
     meta,
   );
+  // Badges: same best-effort/isolated reasoning as
+  // src/server/quiz-attempts/service.ts's identical hook - a badge-
+  // evaluation failure must never surface as a failed lesson-completion
+  // response, and evaluateBadgesForUser is itself idempotent.
+  if (credited) {
+    try {
+      await evaluateBadgesForUser(user, meta);
+    } catch (err) {
+      logInternalError("badges.evaluate_failed", err);
+    }
+  }
 
   return {
     lessonId,

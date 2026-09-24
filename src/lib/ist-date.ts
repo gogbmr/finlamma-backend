@@ -40,6 +40,14 @@ export function istDateStartUtc(date: Date = new Date()): Date {
   return new Date(Date.parse(`${istDateString(date)}T00:00:00Z`) - IST_OFFSET_MS);
 }
 
+// The UTC instant of IST midnight, the 1st of the IST calendar month `date`
+// falls in - e.g. src/server/economy/service.ts's getMyWallet needs a UTC
+// boundary for "earned this (IST) month".
+export function istMonthStartUtc(date: Date = new Date()): Date {
+  const [year, month] = istYearMonth(date).split("-").map(Number);
+  return new Date(Date.UTC(year!, month! - 1, 1) - IST_OFFSET_MS);
+}
+
 // The UTC instant of IST midnight, January 1st of the given year - e.g. a
 // "how many certificates were issued this IST year" count
 // (src/server/certificates/repo.ts) needs a UTC boundary to compare stored

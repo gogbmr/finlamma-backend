@@ -34,6 +34,10 @@ export const ErrorCode = {
   // itself is fine and will succeed if simply retried once enough time has
   // passed, same "temporary, not a client mistake" shape as RESEND_TOO_SOON.
   LESSON_TOO_SOON: "LESSON_TOO_SOON",
+
+  // Rewards (src/server/rewards) - the learner's V Money balance is below a
+  // reward's price_vm at claim time.
+  INSUFFICIENT_VMONEY: "INSUFFICIENT_VMONEY",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -57,6 +61,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   RESEND_LIMIT_REACHED: 429,
   PARENT_REAPPROVAL_REQUIRED: 403,
   LESSON_TOO_SOON: 429,
+  INSUFFICIENT_VMONEY: 409,
 };
 
 export class AppError extends Error {

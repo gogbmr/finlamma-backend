@@ -17,17 +17,24 @@ const mockGetRewardRule = vi.fn();
 const mockListRewardRules = vi.fn();
 const mockUpdateRewardRule = vi.fn();
 const mockCreditLessonCompletionRow = vi.fn();
+const mockCreditVmoneyRow = vi.fn();
 const mockSumVmoneyBalance = vi.fn();
 const mockSumVmoneyEarnedSince = vi.fn();
+const mockSumVmoneyEarnedSinceBySource = vi.fn();
 const mockSumVmoneySpentSince = vi.fn();
+const mockListVmoneyLedgerForUser = vi.fn();
 vi.mock("./repo", () => ({
   getRewardRule: (kind: unknown) => mockGetRewardRule(kind),
   listRewardRules: () => mockListRewardRules(),
   updateRewardRule: (kind: unknown, input: unknown) => mockUpdateRewardRule(kind, input),
   creditLessonCompletionRow: (xp: unknown, vm: unknown) => mockCreditLessonCompletionRow(xp, vm),
+  creditVmoneyRow: (input: unknown) => mockCreditVmoneyRow(input),
   sumVmoneyBalance: (userId: unknown) => mockSumVmoneyBalance(userId),
   sumVmoneyEarnedSince: (userId: unknown, since: unknown) => mockSumVmoneyEarnedSince(userId, since),
+  sumVmoneyEarnedSinceBySource: (userId: unknown, since: unknown) =>
+    mockSumVmoneyEarnedSinceBySource(userId, since),
   sumVmoneySpentSince: (userId: unknown, since: unknown) => mockSumVmoneySpentSince(userId, since),
+  listVmoneyLedgerForUser: (userId: unknown, opts: unknown) => mockListVmoneyLedgerForUser(userId, opts),
 }));
 
 const mockRecordLearningActivity = vi.fn();
@@ -39,6 +46,9 @@ import { AppError } from "@/lib/errors";
 import {
   activityKindForLessonKind,
   creditLessonCompletion,
+  creditVmoney,
+  getMyWallet,
+  getMyWalletHistory,
   getVmIssuanceMultiplier,
   getVmoneyStats,
   updateRewardRuleForAdmin,
@@ -322,5 +332,80 @@ describe("getVmoneyStats", () => {
     const expectedSince = new Date("2026-01-03T00:00:00.000Z");
     expect(mockSumVmoneyEarnedSince).toHaveBeenCalledWith(USER.id, expectedSince);
     expect(mockSumVmoneySpentSince).toHaveBeenCalledWith(USER.id, expectedSince);
+  });
+});
+
+describe("creditVmoney", () => {
+  it("applies the current VM issuance multiplier, same as every other credit path", async () => {
+    mockGetSettingNumber.mockResolvedValueOnce(2); // vm_issuance_multiplier = 2x
+    mockCreditVmoneyRow.mockResolvedValueOnce({ id: "ledger_1" });
+
+    const result = await creditVmoney({
+      userId: USER.id,
+      sourceType: "badge_unlock",
+      sourceId: "badge_1",
+      baseAmount: 50,
+      reason: "Badge unlocked: Pehla Kadam",
+    });
+
+    expect(mockCreditVmoneyRow).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 100, multiplierApplied: 2 }),
+    );
+    expect(result).toEqual({ credited: true, amount: 100 });
+  });
+
+  it("reports credited: false on a conflict (already credited for this source)", async () => {
+    mockGetSettingNumber.mockResolvedValueOnce(1);
+    mockCreditVmoneyRow.mockResolvedValueOnce(null);
+
+    const result = await creditVmoney({
+      userId: USER.id,
+      sourceType: "reward_refund",
+      sourceId: "claim_1",
+      baseAmount: 500,
+      reason: "refund",
+    });
+
+    expect(result.credited).toBe(false);
+  });
+});
+
+describe("getMyWallet", () => {
+  it("combines balance, VM earned this IST month, and the earn-source breakdown", async () => {
+    mockSumVmoneyBalance.mockResolvedValueOnce(1250);
+    mockSumVmoneyEarnedSince.mockResolvedValueOnce(300);
+    mockSumVmoneyEarnedSinceBySource.mockResolvedValueOnce([{ sourceType: "lesson_completion", amount: 300 }]);
+
+    const wallet = await getMyWallet(USER.id, new Date("2026-09-24T10:00:00.000Z"));
+
+    expect(wallet).toEqual({
+      balance: 1250,
+      earnedThisMonth: 300,
+      earnedBySource: [{ sourceType: "lesson_completion", amount: 300 }],
+    });
+  });
+});
+
+describe("getMyWalletHistory", () => {
+  it("decodes the cursor and forwards it with the limit", async () => {
+    const cursor = Buffer.from(JSON.stringify({ createdAt: "2026-01-01T00:00:00.000Z", id: "row_1" })).toString(
+      "base64url",
+    );
+    mockListVmoneyLedgerForUser.mockResolvedValueOnce({ data: [], nextCursor: null });
+
+    await getMyWalletHistory(USER.id, { limit: 20, cursor });
+
+    expect(mockListVmoneyLedgerForUser).toHaveBeenCalledWith(USER.id, {
+      limit: 20,
+      cursor: { createdAt: "2026-01-01T00:00:00.000Z", id: "row_1" },
+    });
+  });
+
+  it("passes a null cursor through when none is given", async () => {
+    mockListVmoneyLedgerForUser.mockResolvedValueOnce({ data: [], nextCursor: null });
+
+    await getMyWalletHistory(USER.id, { limit: 20, cursor: null });
+
+    expect(mockListVmoneyLedgerForUser).toHaveBeenCalledWith(USER.id, { limit: 20, cursor: null });
   });
 });

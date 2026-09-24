@@ -109,3 +109,14 @@ export const LESSON_STEP_RATE_LIMIT: RateLimitConfig = {
   window: "10 s",
   prefix: "ratelimit:lesson-step",
 };
+
+// src/server/rewards/service.ts's claimReward - a money-spending endpoint,
+// so this is always called with failOpen: false (src/lib/redis.ts's own
+// checkRateLimit doc comment names reward claims as exactly the case that
+// needs this). A generous-but-real cap: legitimate use is a handful of
+// claims ever, not a tight per-second budget like the lesson-step limiter.
+export const REWARD_CLAIM_RATE_LIMIT: RateLimitConfig = {
+  requests: 10,
+  window: "60 s",
+  prefix: "ratelimit:reward-claim",
+};

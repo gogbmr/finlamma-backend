@@ -3,6 +3,7 @@ import {
   daysBetweenIstDates,
   istDateStartUtc,
   istDateString,
+  istMonthStartUtc,
   istYear,
   istYearMonth,
   istYearStartUtc,
@@ -54,6 +55,23 @@ describe("istYear", () => {
     // 2025-12-31T18:31:00Z is 2026-01-01 00:01 IST - already next year.
     expect(istYear(new Date("2025-12-31T18:31:00.000Z"))).toBe(2026);
     expect(istYear(new Date("2025-12-31T18:29:00.000Z"))).toBe(2025);
+  });
+});
+
+describe("istMonthStartUtc", () => {
+  it("returns the UTC instant of IST midnight, the 1st of the month", () => {
+    // 2026-09-15 12:00 IST is 2026-09-15T06:30:00Z; month start = 2026-09-01
+    // 00:00 IST = 2026-08-31T18:30:00Z.
+    expect(istMonthStartUtc(new Date("2026-09-15T06:30:00.000Z")).toISOString()).toBe(
+      "2026-08-31T18:30:00.000Z",
+    );
+  });
+
+  it("rolls into the next month right at the IST month boundary", () => {
+    // 2026-08-31T18:30:00Z is already 2026-09-01 00:00 IST.
+    expect(istMonthStartUtc(new Date("2026-08-31T18:30:00.000Z")).toISOString()).toBe(
+      "2026-08-31T18:30:00.000Z",
+    );
   });
 });
 
