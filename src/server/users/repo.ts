@@ -1,12 +1,14 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { users, type UserPreferences } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 
 export type UserPrefsUpdate = {
   language?: "en" | "hi" | "hx";
   theme?: "dark" | "light";
+  bio?: string | null;
+  preferences?: UserPreferences;
 };
 
 // UpdateMeRequestSchema (src/server/users/schemas.ts) already guarantees at

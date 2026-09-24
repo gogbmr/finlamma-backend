@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { languageEnum, themeEnum } from "@/db/schema";
+import { DEFAULT_USER_PREFERENCES, languageEnum, themeEnum } from "@/db/schema";
 import { registry } from "@/lib/openapi";
 
 const LanguageSchema = z.enum(languageEnum.enumValues).openapi({
@@ -7,6 +7,30 @@ const LanguageSchema = z.enum(languageEnum.enumValues).openapi({
   description: "en (English), hi (Hindi) or hx (Hinglish).",
 });
 const ThemeSchema = z.enum(themeEnum.enumValues).openapi({ example: "dark" });
+
+// SET-08/09/10: sound/haptics/data-saver toggles, one small jsonb blob per
+// docs/DATA_MODEL.md rather than three narrow columns.
+const PreferencesSchema = z
+  .object({
+    sound: z.boolean().openapi({ example: true, description: "In-app sound effects on/off." }),
+    haptics: z.boolean().openapi({ example: true, description: "Haptic feedback on/off." }),
+    dataSaver: z.boolean().openapi({
+      example: false,
+      description: "Serves lower-resolution lesson videos when on.",
+    }),
+  })
+  .openapi({ example: DEFAULT_USER_PREFERENCES });
+
+const BIO_MAX_LENGTH = 280;
+const BioSchema = z
+  .string()
+  .trim()
+  .max(BIO_MAX_LENGTH, `Bio must be ${BIO_MAX_LENGTH} characters or fewer`)
+  .nullable()
+  .openapi({
+    example: "Saving up for my first SIP!",
+    description: "Free-text, self-editable, never shown on any public profile (kid-safe rule).",
+  });
 
 export const MeDataSchema = registry.register(
   "Me",
@@ -21,6 +45,8 @@ export const MeDataSchema = registry.register(
     phone: z.string().nullable().openapi({ example: "+919876543210" }),
     language: LanguageSchema,
     theme: ThemeSchema,
+    bio: BioSchema,
+    preferences: PreferencesSchema,
   }),
 );
 
@@ -29,20 +55,31 @@ export const MeResponseSchema = registry.register(
   z.object({ data: MeDataSchema }),
 );
 
-// Only language/theme - the fields our DB owns outright. Name, email and
-// phone are Clerk-owned identity fields: they're changed through Clerk's
-// own UI on the mobile app and flow in automatically via the existing
-// user.updated webhook, so there's no second write path to keep in sync.
+// language/theme/bio/preferences - the fields our DB owns outright. Name,
+// email and phone are Clerk-owned identity fields: they're changed through
+// Clerk's own UI on the mobile app and flow in automatically via the
+// existing user.updated webhook, so there's no second write path to keep in
+// sync. `preferences` is always sent whole (not deep-merged) - the app
+// already holds the full current object from GET /me before it ever shows a
+// toggle to change one field of it, so a partial-merge endpoint would only
+// add complexity for a case the client never actually has.
 export const UpdateMeRequestSchema = registry.register(
   "UpdateMeRequest",
   z
     .object({
       language: LanguageSchema.optional(),
       theme: ThemeSchema.optional(),
+      bio: BioSchema.optional(),
+      preferences: PreferencesSchema.optional(),
     })
-    .refine((v) => v.language !== undefined || v.theme !== undefined, {
-      message: "Provide at least one of language or theme",
-    }),
+    .refine(
+      (v) =>
+        v.language !== undefined ||
+        v.theme !== undefined ||
+        v.bio !== undefined ||
+        v.preferences !== undefined,
+      { message: "Provide at least one of language, theme, bio or preferences" },
+    ),
 );
 
 export type UpdateMeInput = z.infer<typeof UpdateMeRequestSchema>;

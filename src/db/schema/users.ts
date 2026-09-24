@@ -1,8 +1,19 @@
-import { date, pgEnum, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { date, jsonb, pgEnum, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
 import { idAndTimestamps } from "./_helpers";
 
 export const languageEnum = pgEnum("language", ["en", "hi", "hx"]);
 export const themeEnum = pgEnum("theme", ["dark", "light"]);
+
+// Small booleans, same "one jsonb column, not three" reasoning as
+// LocalizedText - Settings' sound/haptics/data-saver toggles (SET-08/09/10)
+// have no independent lifecycle, versioning or query need of their own, so a
+// jsonb blob avoids three narrow columns for values nothing ever queries by.
+export type UserPreferences = { sound: boolean; haptics: boolean; dataSaver: boolean };
+export const DEFAULT_USER_PREFERENCES: UserPreferences = {
+  sound: true,
+  haptics: true,
+  dataSaver: false,
+};
 
 // One row per Clerk identity. Clerk supports email, phone, Google, Apple and
 // username sign-in on this app - a user may have email, phone, both, or
@@ -33,6 +44,11 @@ export const users = pgTable("users", {
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   language: languageEnum("language").default("hx").notNull(),
   theme: themeEnum("theme").default("dark").notNull(),
+  // Free-text, self-editable, never shown publicly (Arena's public profile
+  // projection is first-name + last-initial only, per CLAUDE.md rule 10 -
+  // bio is a Settings/account-page field, not a social one).
+  bio: text("bio"),
+  preferences: jsonb("preferences").$type<UserPreferences>().default(DEFAULT_USER_PREFERENCES).notNull(),
   // Clerk's own updated_at for the last change we applied, so the Clerk
   // webhook can ignore an out-of-order/stale redelivery instead of
   // overwriting newer data with older data.

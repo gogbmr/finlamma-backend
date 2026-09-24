@@ -206,6 +206,8 @@ const USER_ROW = {
   onboardingCompletedAt: null,
   language: "en" as const,
   theme: "dark" as const,
+  bio: null,
+  preferences: { sound: true, haptics: true, dataSaver: false },
   clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
   deletedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -222,6 +224,8 @@ describe("getMe", () => {
       phone: null,
       language: "en",
       theme: "dark",
+      bio: null,
+      preferences: { sound: true, haptics: true, dataSaver: false },
     });
   });
 });
@@ -247,6 +251,27 @@ describe("updateMe", () => {
       userAgent: "FinlammaApp/1.0",
     });
     expect(result.language).toBe("hi");
+  });
+
+  it("persists a bio update", async () => {
+    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, bio: "Saving up!" });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    const result = await updateMe(USER_ROW, { bio: "Saving up!" }, META);
+
+    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { bio: "Saving up!" });
+    expect(result.bio).toBe("Saving up!");
+  });
+
+  it("persists a whole-object preferences update", async () => {
+    const preferences = { sound: false, haptics: false, dataSaver: true };
+    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, preferences });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    const result = await updateMe(USER_ROW, { preferences }, META);
+
+    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { preferences });
+    expect(result.preferences).toEqual(preferences);
   });
 });
 

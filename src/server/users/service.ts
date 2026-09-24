@@ -19,6 +19,8 @@ function toMeResponse(user: UserRow) {
     phone: user.phone,
     language: user.language,
     theme: user.theme,
+    bio: user.bio,
+    preferences: user.preferences,
   };
 }
 
