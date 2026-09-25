@@ -117,6 +117,19 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
+
+  // Market data (Phase 4 Checkpoint 2, docs/ARCHITECTURE.md D38) - optional
+  // until the founder confirms Twelve Data's NSE tier/cost
+  // (scripts/check-twelvedata-nse-access.ts); src/server/market/providers/
+  // twelvedata.ts fails closed with a clear error if a call is attempted
+  // before this is set, same lazy pattern as S3/Resend above. Never called
+  // directly outside that one adapter file - see MarketDataProvider
+  // (src/server/market/types.ts).
+  TWELVEDATA_API_KEY: z.string().optional(),
+  // RELAY_SHARED_SECRET is added in Checkpoint 4 (docs/ROADMAP.md), which
+  // also builds the GET /api/v1/relay/config endpoint it authenticates -
+  // deliberately not wired in yet, per the agreed stop point for that
+  // checkpoint's new-env-var/new-service review.
 });
 
 function loadEnv() {

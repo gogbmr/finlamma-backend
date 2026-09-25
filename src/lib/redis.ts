@@ -120,3 +120,35 @@ export const REWARD_CLAIM_RATE_LIMIT: RateLimitConfig = {
   window: "60 s",
   prefix: "ratelimit:reward-claim",
 };
+
+// Generic read-through JSON cache, used by src/server/market/cache.ts to
+// avoid calling the market-data vendor (rate-limited, credit-metered) on
+// every request. Always fails OPEN like the rate limiter above - a cache is
+// a performance optimization, not a safety control, so an unconfigured or
+// unreachable Redis must never block a quote/candle request, only make it
+// slower (falls through to calling `compute` directly every time).
+export async function getOrSetJsonCache<T>(
+  key: string,
+  ttlSeconds: number,
+  compute: () => Promise<T>,
+): Promise<T> {
+  const redis = getRedisClient();
+  if (!redis) return compute();
+
+  try {
+    const cached = await redis.get<T>(key);
+    if (cached !== null && cached !== undefined) return cached;
+  } catch (err) {
+    logInternalError("redis.cache_read_failed", err);
+  }
+
+  const value = await compute();
+
+  try {
+    await redis.set(key, value, { ex: ttlSeconds });
+  } catch (err) {
+    logInternalError("redis.cache_write_failed", err);
+  }
+
+  return value;
+}

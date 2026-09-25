@@ -5381,6 +5381,606 @@
         }
       }
     },
+    "/api/v1/trade/instruments": {
+      "get": {
+        "summary": "List tradeable instruments with live quotes (Explore mode, TR-02/08)",
+        "description": "Every active instrument with its live quote merged in. Visible regardless of the learner's trading-unlock progress (explore mode, PRODUCT_SPEC.md §4) - only placing an order is gated. `quote` is null when the market-data vendor has no data for a symbol right now; the app should show the instrument's own last-known display fields, never a synthetic price (no volatility control, ever).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active instruments with live quotes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "symbol": {
+                            "type": "string",
+                            "example": "RELIANCE"
+                          },
+                          "exchange": {
+                            "type": "string",
+                            "example": "NSE"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "Reliance Industries Ltd"
+                          },
+                          "sector": {
+                            "type": "string",
+                            "example": "Oil, Gas & Conglomerate"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "NIFTY 50",
+                              "Large cap"
+                            ]
+                          },
+                          "lotSize": {
+                            "type": "integer",
+                            "example": 1
+                          },
+                          "halted": {
+                            "type": "boolean"
+                          },
+                          "quote": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "pricePaise": {
+                                "type": "integer",
+                                "description": "Last traded price, in paise.",
+                                "example": 284510
+                              },
+                              "changePaise": {
+                                "type": "integer",
+                                "example": 1250
+                              },
+                              "changePercent": {
+                                "type": "number",
+                                "example": 0.44
+                              },
+                              "openPaise": {
+                                "type": "integer",
+                                "example": 283000
+                              },
+                              "highPaise": {
+                                "type": "integer",
+                                "example": 285200
+                              },
+                              "lowPaise": {
+                                "type": "integer",
+                                "example": 282500
+                              },
+                              "previousClosePaise": {
+                                "type": "integer",
+                                "example": 283260
+                              },
+                              "volume": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 5231400
+                              },
+                              "asOf": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "When this quote was captured by the market-data vendor."
+                              }
+                            },
+                            "required": [
+                              "pricePaise",
+                              "changePaise",
+                              "changePercent",
+                              "openPaise",
+                              "highPaise",
+                              "lowPaise",
+                              "previousClosePaise",
+                              "volume",
+                              "asOf"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "symbol",
+                          "exchange",
+                          "name",
+                          "sector",
+                          "tags",
+                          "lotSize",
+                          "halted",
+                          "quote"
+                        ]
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/instruments/{symbol}": {
+      "get": {
+        "summary": "Get one instrument's detail with a live quote (TR-15/17/19/20)",
+        "description": "Instrument fundamentals (sector, about, tip, market cap, P/E), a live quote, and the trading disclaimer. `about`/`tip` are admin-curated, educational-only copy - never a buy/sell signal (CLAUDE.md, docs/ROADMAP.md's pre-launch legal-review checklist item).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "RELIANCE"
+            },
+            "required": true,
+            "name": "symbol",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The instrument's detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "symbol": {
+                          "type": "string",
+                          "example": "RELIANCE"
+                        },
+                        "exchange": {
+                          "type": "string",
+                          "example": "NSE"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Reliance Industries Ltd"
+                        },
+                        "sector": {
+                          "type": "string",
+                          "example": "Oil, Gas & Conglomerate"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "NIFTY 50",
+                            "Large cap"
+                          ]
+                        },
+                        "lotSize": {
+                          "type": "integer",
+                          "example": 1
+                        },
+                        "halted": {
+                          "type": "boolean"
+                        },
+                        "quote": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "pricePaise": {
+                              "type": "integer",
+                              "description": "Last traded price, in paise.",
+                              "example": 284510
+                            },
+                            "changePaise": {
+                              "type": "integer",
+                              "example": 1250
+                            },
+                            "changePercent": {
+                              "type": "number",
+                              "example": 0.44
+                            },
+                            "openPaise": {
+                              "type": "integer",
+                              "example": 283000
+                            },
+                            "highPaise": {
+                              "type": "integer",
+                              "example": 285200
+                            },
+                            "lowPaise": {
+                              "type": "integer",
+                              "example": 282500
+                            },
+                            "previousClosePaise": {
+                              "type": "integer",
+                              "example": 283260
+                            },
+                            "volume": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 5231400
+                            },
+                            "asOf": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this quote was captured by the market-data vendor."
+                            }
+                          },
+                          "required": [
+                            "pricePaise",
+                            "changePaise",
+                            "changePercent",
+                            "openPaise",
+                            "highPaise",
+                            "lowPaise",
+                            "previousClosePaise",
+                            "volume",
+                            "asOf"
+                          ]
+                        },
+                        "about": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "tip": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "mcap": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "description": "Whole rupees.",
+                          "example": 1925000000000
+                        },
+                        "pe": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "example": 24.3
+                        }
+                      },
+                      "required": [
+                        "symbol",
+                        "exchange",
+                        "name",
+                        "sector",
+                        "tags",
+                        "lotSize",
+                        "halted",
+                        "quote",
+                        "about",
+                        "tip",
+                        "mcap",
+                        "pe"
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active instrument with this symbol",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No instrument with this symbol"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/instruments/{symbol}/candles": {
+      "get": {
+        "summary": "Get candlestick history for an instrument (TR-05/16)",
+        "description": "OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "RELIANCE"
+            },
+            "required": true,
+            "name": "symbol",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1D",
+                "1W",
+                "1M",
+                "3M",
+                "1Y"
+              ],
+              "description": "Chart timeframe.",
+              "example": "1M"
+            },
+            "required": false,
+            "description": "Chart timeframe.",
+            "name": "tf",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OHLCV candles, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "openPaise": {
+                            "type": "integer"
+                          },
+                          "highPaise": {
+                            "type": "integer"
+                          },
+                          "lowPaise": {
+                            "type": "integer"
+                          },
+                          "closePaise": {
+                            "type": "integer"
+                          },
+                          "volume": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "timestamp",
+                          "openPaise",
+                          "highPaise",
+                          "lowPaise",
+                          "closePaise",
+                          "volume"
+                        ]
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid timeframe",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid tf - must be one of 1D, 1W, 1M, 3M, 1Y"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active instrument with this symbol",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No instrument with this symbol"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/webhooks/clerk": {
       "post": {
         "summary": "Clerk user webhook (consumer app)",

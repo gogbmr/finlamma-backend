@@ -120,9 +120,14 @@ own repo later, hosted on Railway.
       permission, no draft/publish split - edits apply immediately). Halting a symbol and the
       feed-mode/global-halt controls are Checkpoint 9 (Ops console, `trading.ops`), not this
       checkpoint - `instruments.halted`/`market_controls` are readable now, written later.
-- [ ] Checkpoint 2: Twelve Data REST integration (quotes + `/time_series` candles), Redis-cached
-      per symbol+interval. `GET /trade/instruments`, `/instruments/{symbol}`,
-      `/instruments/{symbol}/candles`, `/trade/indices`, `/trade/indices/{symbol}/candles`.
+- [x] Checkpoint 2: Twelve Data REST integration (quotes + `/time_series` candles), Redis-cached
+      per symbol+timeframe. `GET /trade/instruments`, `/instruments/{symbol}`,
+      `/instruments/{symbol}/candles` built, each carrying a server-driven TR-56 disclaimer.
+      Vendor isolated behind `MarketDataProvider` (`src/server/market/types.ts` +
+      `provider.ts`) per D38 - a future vendor swap (e.g. an Indian broker API, if Twelve
+      Data's NSE tier is too expensive) touches one adapter file, not the trading domain.
+      `/trade/indices`, `/trade/indices/{symbol}/candles` deferred to Checkpoint 7 alongside
+      `instrument_daily_bars` (no DB row exists for indices yet - not tradeable instruments).
 - [ ] Checkpoint 3: Market status (`GET /trade/market-status`) - NSE hours 09:15-15:30 IST Mon-Fri
       minus `market_holidays`, feed mode, halt state; explore mode + `isTradingUnlocked()` wiring
       (already built in Phase 2b ahead of this phase) — position-based

@@ -58,6 +58,12 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/wallet/history` — Get my V Money ledger history (PR-24)
 - `GET /api/v1/me/report-card` — My weekly report card (PR-30/31/32/33)
 
+**Trade**
+
+- `GET /api/v1/trade/instruments` — List tradeable instruments with live quotes (Explore mode, TR-02/08)
+- `GET /api/v1/trade/instruments/{symbol}` — Get one instrument's detail with a live quote (TR-15/17/19/20)
+- `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
+
 **Webhooks**
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
@@ -2425,6 +2431,253 @@ The current IST week's efficiency snapshot (null until the first Monday after si
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+## Trade
+
+### `GET /api/v1/trade/instruments`
+
+**List tradeable instruments with live quotes (Explore mode, TR-02/08)**
+
+Every active instrument with its live quote merged in. Visible regardless of the learner's trading-unlock progress (explore mode, PRODUCT_SPEC.md §4) - only placing an order is gated. `quote` is null when the market-data vendor has no data for a symbol right now; the app should show the instrument's own last-known display fields, never a synthetic price (no volatility control, ever).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active instruments with live quotes
+
+```json
+{
+  "data": [
+    {
+      "symbol": "RELIANCE",
+      "exchange": "NSE",
+      "name": "Reliance Industries Ltd",
+      "sector": "Oil, Gas & Conglomerate",
+      "tags": [
+        "NIFTY 50",
+        "Large cap"
+      ],
+      "lotSize": 1,
+      "halted": true,
+      "quote": {
+        "pricePaise": 284510,
+        "changePaise": 1250,
+        "changePercent": 0.44,
+        "openPaise": 283000,
+        "highPaise": 285200,
+        "lowPaise": 282500,
+        "previousClosePaise": 283260,
+        "volume": 5231400,
+        "asOf": "2026-01-01T00:00:00.000Z"
+      }
+    }
+  ],
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/instruments/{symbol}`
+
+**Get one instrument's detail with a live quote (TR-15/17/19/20)**
+
+Instrument fundamentals (sector, about, tip, market cap, P/E), a live quote, and the trading disclaimer. `about`/`tip` are admin-curated, educational-only copy - never a buy/sell signal (CLAUDE.md, docs/ROADMAP.md's pre-launch legal-review checklist item).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `symbol` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The instrument's detail
+
+```json
+{
+  "data": {
+    "symbol": "RELIANCE",
+    "exchange": "NSE",
+    "name": "Reliance Industries Ltd",
+    "sector": "Oil, Gas & Conglomerate",
+    "tags": [
+      "NIFTY 50",
+      "Large cap"
+    ],
+    "lotSize": 1,
+    "halted": true,
+    "quote": {
+      "pricePaise": 284510,
+      "changePaise": 1250,
+      "changePercent": 0.44,
+      "openPaise": 283000,
+      "highPaise": 285200,
+      "lowPaise": 282500,
+      "previousClosePaise": 283260,
+      "volume": 5231400,
+      "asOf": "2026-01-01T00:00:00.000Z"
+    },
+    "about": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "tip": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "mcap": 1925000000000,
+    "pe": 24.3
+  },
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No active instrument with this symbol
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No instrument with this symbol"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/instruments/{symbol}/candles`
+
+**Get candlestick history for an instrument (TR-05/16)**
+
+OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `symbol` | path | string | yes |  |
+| `tf` | query | string (1D, 1W, 1M, 3M, 1Y) | no | Chart timeframe. |
+
+**Responses**
+
+- **200** — OHLCV candles, oldest first
+
+```json
+{
+  "data": [
+    {
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "openPaise": 0,
+      "highPaise": 0,
+      "lowPaise": 0,
+      "closePaise": 0,
+      "volume": 0
+    }
+  ],
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **400** — Invalid timeframe
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid tf - must be one of 1D, 1W, 1M, 3M, 1Y"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No active instrument with this symbol
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No instrument with this symbol"
   }
 }
 ```
