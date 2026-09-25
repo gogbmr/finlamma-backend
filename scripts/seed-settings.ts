@@ -8,6 +8,7 @@
 import "../envConfig";
 import { db } from "../src/db/client";
 import { settingsKv } from "../src/db/schema";
+import { DAILY_GOALS_SETTINGS_KEY, DEFAULT_DAILY_GOALS } from "../src/server/daily-goals/schemas";
 import {
   DEFAULT_VM_ISSUANCE_MULTIPLIER,
   VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,
@@ -51,6 +52,14 @@ const SETTINGS = [
     description:
       "Streak freeze allowance per IST calendar month. See docs/ARCHITECTURE.md D30. Editable " +
       "only by super_admin (settings.manage), logged.",
+  },
+  {
+    key: DAILY_GOALS_SETTINGS_KEY,
+    value: DEFAULT_DAILY_GOALS,
+    description:
+      "Daily goal meter (PR-09): which goal types are active and their targets. Evaluators live " +
+      "in code (src/server/daily-goals/evaluators.ts) - this only controls which of them run. " +
+      "Editable only by super_admin (settings.manage), logged.",
   },
 ] as const;
 

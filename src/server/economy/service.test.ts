@@ -19,7 +19,9 @@ const mockUpdateRewardRule = vi.fn();
 const mockCreditLessonCompletionRow = vi.fn();
 const mockSumVmoneyBalance = vi.fn();
 const mockSumVmoneyEarnedSince = vi.fn();
+const mockSumVmoneyEarnedSinceBySource = vi.fn();
 const mockSumVmoneySpentSince = vi.fn();
+const mockListVmoneyLedgerForUser = vi.fn();
 vi.mock("./repo", () => ({
   getRewardRule: (kind: unknown) => mockGetRewardRule(kind),
   listRewardRules: () => mockListRewardRules(),
@@ -27,7 +29,10 @@ vi.mock("./repo", () => ({
   creditLessonCompletionRow: (xp: unknown, vm: unknown) => mockCreditLessonCompletionRow(xp, vm),
   sumVmoneyBalance: (userId: unknown) => mockSumVmoneyBalance(userId),
   sumVmoneyEarnedSince: (userId: unknown, since: unknown) => mockSumVmoneyEarnedSince(userId, since),
+  sumVmoneyEarnedSinceBySource: (userId: unknown, since: unknown) =>
+    mockSumVmoneyEarnedSinceBySource(userId, since),
   sumVmoneySpentSince: (userId: unknown, since: unknown) => mockSumVmoneySpentSince(userId, since),
+  listVmoneyLedgerForUser: (userId: unknown, opts: unknown) => mockListVmoneyLedgerForUser(userId, opts),
 }));
 
 const mockRecordLearningActivity = vi.fn();
@@ -39,6 +44,8 @@ import { AppError } from "@/lib/errors";
 import {
   activityKindForLessonKind,
   creditLessonCompletion,
+  getMyWallet,
+  getMyWalletHistory,
   getVmIssuanceMultiplier,
   getVmoneyStats,
   updateRewardRuleForAdmin,
@@ -322,5 +329,45 @@ describe("getVmoneyStats", () => {
     const expectedSince = new Date("2026-01-03T00:00:00.000Z");
     expect(mockSumVmoneyEarnedSince).toHaveBeenCalledWith(USER.id, expectedSince);
     expect(mockSumVmoneySpentSince).toHaveBeenCalledWith(USER.id, expectedSince);
+  });
+});
+
+describe("getMyWallet", () => {
+  it("combines balance, VM earned this IST month, and the earn-source breakdown", async () => {
+    mockSumVmoneyBalance.mockResolvedValueOnce(1250);
+    mockSumVmoneyEarnedSince.mockResolvedValueOnce(300);
+    mockSumVmoneyEarnedSinceBySource.mockResolvedValueOnce([{ sourceType: "lesson_completion", amount: 300 }]);
+
+    const wallet = await getMyWallet(USER.id, new Date("2026-09-24T10:00:00.000Z"));
+
+    expect(wallet).toEqual({
+      balance: 1250,
+      earnedThisMonth: 300,
+      earnedBySource: [{ sourceType: "lesson_completion", amount: 300 }],
+    });
+  });
+});
+
+describe("getMyWalletHistory", () => {
+  it("decodes the cursor and forwards it with the limit", async () => {
+    const cursor = Buffer.from(JSON.stringify({ createdAt: "2026-01-01T00:00:00.000Z", id: "row_1" })).toString(
+      "base64url",
+    );
+    mockListVmoneyLedgerForUser.mockResolvedValueOnce({ data: [], nextCursor: null });
+
+    await getMyWalletHistory(USER.id, { limit: 20, cursor });
+
+    expect(mockListVmoneyLedgerForUser).toHaveBeenCalledWith(USER.id, {
+      limit: 20,
+      cursor: { createdAt: "2026-01-01T00:00:00.000Z", id: "row_1" },
+    });
+  });
+
+  it("passes a null cursor through when none is given", async () => {
+    mockListVmoneyLedgerForUser.mockResolvedValueOnce({ data: [], nextCursor: null });
+
+    await getMyWalletHistory(USER.id, { limit: 20, cursor: null });
+
+    expect(mockListVmoneyLedgerForUser).toHaveBeenCalledWith(USER.id, { limit: 20, cursor: null });
   });
 });

@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CONFIRM_COPY, LANGUAGE_LABELS, type ConsentLang } from "../copy";
+import { CONFIRM_COPY, LANGUAGE_LABELS, WEEKLY_REPORT_OPT_IN_COPY, type ConsentLang } from "../copy";
 import { confirmParentConsentAction, declineParentConsentAction } from "../actions";
 
 type ConsentDocument = {
@@ -36,11 +36,15 @@ export function ConsentPageClient({
   const [lang, setLang] = useState<ConsentLang>("en");
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // Unticked by default, never pre-checked - a fresh, optional choice
+  // separate from the consent decision itself (docs/ARCHITECTURE.md D33).
+  const [weeklyReportOptIn, setWeeklyReportOptIn] = useState(false);
   const copy = CONFIRM_COPY[lang];
+  const optInCopy = WEEKLY_REPORT_OPT_IN_COPY[lang];
 
   function handleConsent() {
     startTransition(async () => {
-      const res = await confirmParentConsentAction(token);
+      const res = await confirmParentConsentAction(token, weeklyReportOptIn);
       setResult(
         res.ok
           ? { ok: true, message: copy.consentSuccess(res.childFirstName) }
@@ -101,17 +105,36 @@ export function ConsentPageClient({
           {result.message}
         </div>
       ) : (
-        <div className="mt-8 space-y-3">
+        <div className="mt-8 space-y-6">
           {result && !result.ok && <p className="text-sm text-red-700">{result.message}</p>}
-          <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={handleConsent} disabled={isPending}>
-              {copy.consentButton}
-            </Button>
-            <Button type="button" variant="outline" onClick={handleDecline} disabled={isPending}>
-              {copy.declineButton}
-            </Button>
+
+          {/* Separate, unticked-by-default, optional - never part of the
+              consent button below (docs/ARCHITECTURE.md D33). */}
+          <label className="flex items-start gap-3 rounded-lg border border-neutral-200 p-4 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={weeklyReportOptIn}
+              onChange={(e) => setWeeklyReportOptIn(e.target.checked)}
+              disabled={isPending}
+            />
+            <span>
+              <span className="font-medium text-neutral-900">{optInCopy.label}</span>
+              <span className="mt-1 block text-xs text-neutral-500">{optInCopy.helpText}</span>
+            </span>
+          </label>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" onClick={handleConsent} disabled={isPending}>
+                {copy.consentButton}
+              </Button>
+              <Button type="button" variant="outline" onClick={handleDecline} disabled={isPending}>
+                {copy.declineButton}
+              </Button>
+            </div>
+            <p className="text-xs text-neutral-500">{copy.declineHelp}</p>
           </div>
-          <p className="text-xs text-neutral-500">{copy.declineHelp}</p>
         </div>
       )}
     </main>

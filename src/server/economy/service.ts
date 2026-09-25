@@ -1,16 +1,21 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { decodeCursor } from "@/lib/http";
+import { istMonthStartUtc } from "@/lib/ist-date";
 import { getSettingNumber, setSettingJson } from "@/lib/settings";
 import { recordLearningActivity } from "@/server/streaks/service";
 import {
   creditLessonCompletionRow,
   getRewardRule,
   listRewardRules,
+  listVmoneyLedgerForUser,
   sumVmoneyBalance,
   sumVmoneyEarnedSince,
+  sumVmoneyEarnedSinceBySource,
   sumVmoneySpentSince,
   updateRewardRule,
+  type VmoneyLedgerCursor,
   type RewardActivityKind,
 } from "./repo";
 import {
@@ -180,4 +185,23 @@ export async function creditLessonCompletion(
     await recordLearningActivity(user.id);
   }
   return { credited };
+}
+
+// PR-21 (Profile - Wallet): balance, VM earned this (IST) calendar month,
+// and an earn-source breakdown - see sumVmoneyEarnedSinceBySource's comment
+// on why the breakdown only ever shows sourceTypes that actually exist yet.
+export async function getMyWallet(userId: string, at: Date = new Date()) {
+  const monthStart = istMonthStartUtc(at);
+  const [balance, earnedThisMonth, earnedBySource] = await Promise.all([
+    sumVmoneyBalance(userId),
+    sumVmoneyEarnedSince(userId, monthStart),
+    sumVmoneyEarnedSinceBySource(userId, monthStart),
+  ]);
+  return { balance, earnedThisMonth, earnedBySource };
+}
+
+// PR-24 (Profile - Wallet): the caller's full ledger history, newest first.
+export async function getMyWalletHistory(userId: string, opts: { limit: number; cursor: string | null }) {
+  const cursor = decodeCursor<VmoneyLedgerCursor>(opts.cursor);
+  return listVmoneyLedgerForUser(userId, { limit: opts.limit, cursor });
 }

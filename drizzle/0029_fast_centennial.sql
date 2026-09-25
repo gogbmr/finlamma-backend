@@ -1,0 +1,2 @@
+ALTER TABLE "parent_contacts" ADD COLUMN "weekly_report_unsubscribe_token_hash" text;--> statement-breakpoint
+CREATE UNIQUE INDEX "parent_contacts_weekly_report_unsubscribe_token_hash_idx" ON "parent_contacts" USING btree ("weekly_report_unsubscribe_token_hash");

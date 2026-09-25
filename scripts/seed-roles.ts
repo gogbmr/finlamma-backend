@@ -116,6 +116,20 @@ const PERMISSIONS = [
       "multiplier - changes what every learner earns immediately. Same narrow trust bar as " +
       "settings.manage - granted to super_admin only.",
   },
+  {
+    key: "coach_note.manage",
+    description:
+      "Create coach-note templates and edit a template's draft fields (category, wording). " +
+      "Cannot edit a template that's currently published - unpublish it first. Every template " +
+      "must follow the tone rule (encouraging, never comparative - docs/ARCHITECTURE.md D34).",
+  },
+  {
+    key: "coach_note.publish",
+    description:
+      "Publish or unpublish a coach-note template, making it eligible for (or removed from) the " +
+      "weekly report card's random per-category pick. Same narrow trust bar as settings.manage - " +
+      "granted to super_admin only, since this reaches minors directly.",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -138,6 +152,8 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "question.publish",
     "settings.manage",
     "economy.manage",
+    "coach_note.manage",
+    "coach_note.publish",
   ],
   user_manager: ["consent.view"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],

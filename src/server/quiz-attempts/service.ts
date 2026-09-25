@@ -1,6 +1,9 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
+import { logInternalError } from "@/lib/http";
 import type { requestMeta } from "@/lib/http";
+import { evaluateBadgesForUser } from "@/server/badges/service";
+import { issueCertificateIfEligible } from "@/server/certificates/service";
 import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
 import { extractQuestionIds } from "@/server/lessons/service";
@@ -307,12 +310,36 @@ export async function submitAnswer(
       const passMark =
         lesson.kind === "boss_quiz" ? settings.bossQuizPassMarkPct : settings.lessonPassMarkPct;
       const successful = accuracyPct >= passMark;
-      await creditLessonCompletion(
+      const { credited } = await creditLessonCompletion(
         user,
         { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
         successful,
         meta,
       );
+      // WH-16/PR-36-38: passing a Boss Quiz IS "world complete" (D24, the
+      // same signal world-unlock reads) - issue that world's certificate.
+      // Best-effort and isolated: a certificate-issuance failure must never
+      // surface as a failed lesson-answer response, since the learner's XP/
+      // VM credit above already succeeded.
+      if (lesson.kind === "boss_quiz" && successful) {
+        try {
+          await issueCertificateIfEligible(user, lesson.worldId, accuracyPct, meta);
+        } catch (err) {
+          logInternalError("certificates.issue_failed", err);
+        }
+      }
+      // Badges: re-evaluated after every real credit (any lesson kind, not
+      // just Boss Quiz), same best-effort/isolated reasoning as
+      // certificates above - evaluateBadgesForUser is itself idempotent
+      // (src/server/badges/service.ts), so re-running it here on a retry
+      // never re-awards or re-credits anything.
+      if (credited) {
+        try {
+          await evaluateBadgesForUser(user, meta);
+        } catch (err) {
+          logInternalError("badges.evaluate_failed", err);
+        }
+      }
     } else {
       // Already completed by a concurrent duplicate last-step submit -
       // reflect the real, already-completed state rather than claiming

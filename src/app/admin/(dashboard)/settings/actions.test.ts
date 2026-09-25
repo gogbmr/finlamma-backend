@@ -43,6 +43,12 @@ vi.mock("@/server/leveling/service", () => ({
     mockUpdateLevelCurveSettings(actor, input, meta),
 }));
 
+const mockUpdateDailyGoalsSettings = vi.fn();
+vi.mock("@/server/daily-goals/service", () => ({
+  updateDailyGoalsSettings: (actor: unknown, input: unknown, meta: unknown) =>
+    mockUpdateDailyGoalsSettings(actor, input, meta),
+}));
+
 const mockCreateRankTitleForAdmin = vi.fn();
 const mockUpdateRankTitleForAdmin = vi.fn();
 const mockDeleteRankTitleForAdmin = vi.fn();
@@ -58,6 +64,7 @@ vi.mock("@/server/rank-titles/service", () => ({
 import {
   createRankTitleAction,
   deleteRankTitleAction,
+  updateDailyGoalsSettingsAction,
   updateLessonFlowScoringAction,
   updateLevelCurveSettingsAction,
   updateRankTitleAction,
@@ -83,6 +90,19 @@ describe("wrong role is rejected", () => {
     expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
     expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
     expect(mockUpdateLessonFlowScoringSettings).not.toHaveBeenCalled();
+  });
+
+  it("updateDailyGoalsSettingsAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+    );
+
+    const result = await updateDailyGoalsSettingsAction([
+      { type: "study_minutes", target: 20, active: true },
+    ]);
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockUpdateDailyGoalsSettings).not.toHaveBeenCalled();
   });
 
   it("updateVmIssuanceMultiplierAction: requires economy.manage", async () => {
@@ -286,6 +306,27 @@ describe("happy path", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateStreaksSettings).not.toHaveBeenCalled();
+  });
+
+  it("updateDailyGoalsSettingsAction updates and revalidates", async () => {
+    const goals = [{ type: "study_minutes" as const, target: 30, active: true }];
+    mockUpdateDailyGoalsSettings.mockResolvedValueOnce(goals);
+
+    const result = await updateDailyGoalsSettingsAction(goals);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdateDailyGoalsSettings).toHaveBeenCalledWith(ACTOR, goals, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("updateDailyGoalsSettingsAction rejects a duplicate goal type without calling the service", async () => {
+    const result = await updateDailyGoalsSettingsAction([
+      { type: "study_minutes", target: 20, active: true },
+      { type: "study_minutes", target: 40, active: false },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdateDailyGoalsSettings).not.toHaveBeenCalled();
   });
 
   it("updateLevelCurveSettingsAction updates and revalidates", async () => {

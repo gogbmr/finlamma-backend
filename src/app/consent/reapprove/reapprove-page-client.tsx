@@ -9,7 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { LANGUAGE_LABELS, REAPPROVE_COPY, reapproveDocumentLabel, type ConsentLang } from "../copy";
+import {
+  LANGUAGE_LABELS,
+  REAPPROVE_COPY,
+  reapproveDocumentLabel,
+  WEEKLY_REPORT_OPT_IN_COPY,
+  type ConsentLang,
+} from "../copy";
 import { approveReapprovalAction, declineReapprovalAction } from "../actions";
 
 export function ReapprovePageClient({
@@ -28,12 +34,19 @@ export function ReapprovePageClient({
   const [lang, setLang] = useState<ConsentLang>("en");
   const [isPending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  // Always starts unticked, even for a parent who already has the weekly
+  // email on - approving here is additive-only (see approveReapprovalAction's
+  // comment): checking this turns it on, leaving it unchecked never turns an
+  // existing opt-in off. Re-approving a legal document must never silently
+  // change a preference the parent set up separately.
+  const [weeklyReportOptIn, setWeeklyReportOptIn] = useState(false);
   const copy = REAPPROVE_COPY[lang];
+  const optInCopy = WEEKLY_REPORT_OPT_IN_COPY[lang];
   const documentLabel = reapproveDocumentLabel(lang, documentType);
 
   function handleApprove() {
     startTransition(async () => {
-      const res = await approveReapprovalAction(token);
+      const res = await approveReapprovalAction(token, weeklyReportOptIn);
       setResult(
         res.ok
           ? { ok: true, message: copy.approveSuccess(res.childFirstName) }
@@ -85,17 +98,38 @@ export function ReapprovePageClient({
           {result.message}
         </div>
       ) : (
-        <div className="mt-8 space-y-3">
+        <div className="mt-8 space-y-6">
           {result && !result.ok && <p className="text-sm text-red-700">{result.message}</p>}
-          <div className="flex flex-wrap gap-3">
-            <Button type="button" onClick={handleApprove} disabled={isPending}>
-              {copy.approveButton}
-            </Button>
-            <Button type="button" variant="outline" onClick={handleDecline} disabled={isPending}>
-              {copy.declineButton}
-            </Button>
+
+          {/* Separate, unticked-by-default, optional - never part of the
+              approve button below. Checking this turns the weekly email ON;
+              it never turns off an opt-in you already have (see the
+              WEEKLY_REPORT_OPT_IN_COPY helpText). */}
+          <label className="flex items-start gap-3 rounded-lg border border-neutral-200 p-4 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4"
+              checked={weeklyReportOptIn}
+              onChange={(e) => setWeeklyReportOptIn(e.target.checked)}
+              disabled={isPending}
+            />
+            <span>
+              <span className="font-medium text-neutral-900">{optInCopy.label}</span>
+              <span className="mt-1 block text-xs text-neutral-500">{optInCopy.helpText}</span>
+            </span>
+          </label>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3">
+              <Button type="button" onClick={handleApprove} disabled={isPending}>
+                {copy.approveButton}
+              </Button>
+              <Button type="button" variant="outline" onClick={handleDecline} disabled={isPending}>
+                {copy.declineButton}
+              </Button>
+            </div>
+            <p className="text-xs text-neutral-500">{copy.declineHelp}</p>
           </div>
-          <p className="text-xs text-neutral-500">{copy.declineHelp}</p>
         </div>
       )}
     </main>

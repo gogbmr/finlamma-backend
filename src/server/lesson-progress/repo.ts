@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, lte } from "drizzle-orm";
+import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { lessonProgress } from "@/db/schema";
 
@@ -102,4 +102,39 @@ export async function countInProgressLearnersByLessonIds(
     .where(and(inArray(lessonProgress.lessonId, lessonIds), eq(lessonProgress.status, "in_progress")))
     .groupBy(lessonProgress.lessonId);
   return new Map(rows.map((r) => [r.lessonId, r.n]));
+}
+
+// PR-06 (Profile Overview - lessons completed/total): lesson_progress
+// covers every lesson kind by this point (video/quiz/boss_quiz/role_play via
+// quiz-attempts, story/doubt_zone via completeUngradedLessonProgressIfEligible,
+// D23/D29) - one COUNT, no per-kind branching needed.
+export async function countCompletedLessonsForUser(userId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(lessonProgress)
+    .where(and(eq(lessonProgress.userId, userId), eq(lessonProgress.status, "completed")));
+  return row?.n ?? 0;
+}
+
+// PR-08 (Profile Overview - 7-day activity dot calendar): raw completion
+// timestamps since `since`, bucketed into IST calendar dates by the caller
+// (src/lib/ist-date.ts's istDateString) rather than in SQL - same "compute
+// IST in application code" convention docs/ARCHITECTURE.md D30 already
+// established for streaks. A coarser signal than PRODUCT_SPEC §6's
+// per-question "completed lesson step" wording (this is whole-lesson
+// completion), acceptable here since PR-08 only needs "did something today"
+// - revisit if the weekly report card's Consistency sub-metric (Checkpoint 6)
+// needs finer granularity.
+export async function listLessonCompletionTimestampsForUser(userId: string, since: Date): Promise<Date[]> {
+  const rows = await db
+    .select({ completedAt: lessonProgress.completedAt })
+    .from(lessonProgress)
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, "completed"),
+        gte(lessonProgress.completedAt, since),
+      ),
+    );
+  return rows.map((r) => r.completedAt).filter((d): d is Date => d !== null);
 }

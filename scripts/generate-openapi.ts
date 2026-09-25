@@ -31,6 +31,17 @@ import "../src/app/api/v1/me/stats/streak/route";
 import "../src/app/api/v1/me/stats/xp/route";
 import "../src/app/api/v1/me/stats/vmoney/route";
 import "../src/app/api/v1/me/profile/overview/route";
+import "../src/app/api/v1/me/certificates/route";
+import "../src/app/api/v1/me/certificates/[worldId]/route";
+import "../src/app/api/v1/me/certificates/[worldId]/pdf/route";
+import "../src/app/api/v1/me/session-time/route";
+import "../src/app/api/v1/me/daily-goals/route";
+import "../src/app/api/v1/me/badges/route";
+import "../src/app/api/v1/me/rewards/route";
+import "../src/app/api/v1/me/rewards/[id]/claim/route";
+import "../src/app/api/v1/me/wallet/route";
+import "../src/app/api/v1/me/wallet/history/route";
+import "../src/app/api/v1/me/report-card/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 
@@ -40,7 +51,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "0.2.0",
+    version: "0.3.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

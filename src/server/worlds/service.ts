@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
-import { isForeignKeyViolation, isTransactionConflict, isUniqueViolation } from "@/lib/db-errors";
+import {
+  isForeignKeyViolation,
+  isTransactionConflict,
+  isUniqueViolation,
+  uniqueViolationConstraintName,
+} from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
@@ -83,7 +88,10 @@ export async function getPublicWorlds(userId: string) {
 
 // Publish is blocked until every trilingual text leaf has en/hi/hx all
 // filled (non-empty after trimming) - errors name the exact field, same
-// pattern as src/server/mentors/service.ts's validateMentorForPublish.
+// pattern as src/server/mentors/service.ts's validateMentorForPublish. `code`
+// (a plain field, not a translation) is required from here on too - see
+// src/db/schema/worlds.ts's comment on why it's nullable at the column level
+// but not at publish time.
 function validateWorldForPublish(world: WorldRow): void {
   const missing: string[] = [];
   const checkLocalized = (fieldName: string, value: LocalizedText) => {
@@ -93,11 +101,12 @@ function validateWorldForPublish(world: WorldRow): void {
   };
   checkLocalized("title", world.title);
   checkLocalized("tagline", world.tagline);
+  if (!world.code) missing.push("code");
 
   if (missing.length > 0) {
     throw new AppError(
       "VALIDATION_FAILED",
-      `Cannot publish: missing translation${missing.length > 1 ? "s" : ""} for ${missing.join(", ")}`,
+      `Cannot publish: missing ${missing.join(", ")}`,
       { missingFields: missing },
     );
   }
@@ -118,6 +127,17 @@ async function assertMentorExists(mentorId: string): Promise<void> {
   if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
 }
 
+// worlds has two independent unique columns (order, code) - names which one
+// actually collided rather than a generic "already in use" that could
+// misdirect staff at the wrong field.
+function worldUniqueViolationMessage(err: unknown, input: { order: number; code?: string | null }): string {
+  const constraint = uniqueViolationConstraintName(err);
+  if (constraint === "worlds_code_unique") {
+    return `Code ${input.code} is already in use by another world`;
+  }
+  return `Order ${input.order} is already in use by another world`;
+}
+
 export async function createWorldDraft(
   actor: { id: string },
   input: CreateWorldDraftInput,
@@ -130,7 +150,7 @@ export async function createWorldDraft(
     created = await insertDraftWorld(input);
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw new AppError("CONFLICT", `Order ${input.order} is already in use by another world`);
+      throw new AppError("CONFLICT", worldUniqueViolationMessage(err, input));
     }
     throw err;
   }
@@ -159,7 +179,7 @@ export async function updateWorldDraft(
     updated = await updateDraftWorld(input);
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw new AppError("CONFLICT", `Order ${input.order} is already in use by another world`);
+      throw new AppError("CONFLICT", worldUniqueViolationMessage(err, input));
     }
     throw err;
   }

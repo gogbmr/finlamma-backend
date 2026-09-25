@@ -16,10 +16,14 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   creditLessonCompletionRow,
+  creditVmoneyRow,
   getRewardRule,
   listRewardRules,
+  listVmoneyLedgerForUser,
   sumVmoneyBalance,
+  sumVmoneyBalanceTx,
   sumVmoneyEarnedSince,
+  sumVmoneyEarnedSinceBySource,
   sumVmoneySpentSince,
   sumXpSince,
   sumXpTotal,
@@ -267,5 +271,92 @@ describe("ledger sums (WH-03/WH-04 stat endpoints)", () => {
 
     expect(await sumVmoneyEarnedSince(user.id, cutoff)).toBe(140);
     expect(await sumVmoneySpentSince(user.id, cutoff)).toBe(25); // reported as a positive magnitude
+  });
+});
+
+describe("creditVmoneyRow", () => {
+  it("is idempotent on (userId, sourceType, sourceId), same as every other ledger write", async () => {
+    const user = await makeUser();
+    const input = {
+      userId: user.id,
+      sourceType: "badge_unlock",
+      sourceId: randomUUID(),
+      ruleId: null,
+      reason: "Badge unlocked",
+      amount: 100,
+      multiplierApplied: 2,
+    };
+
+    const first = await creditVmoneyRow(input);
+    const second = await creditVmoneyRow(input);
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    expect(await sumVmoneyBalance(user.id)).toBe(100);
+  });
+});
+
+describe("sumVmoneyBalanceTx", () => {
+  it("reads the same live balance as sumVmoneyBalance, from inside a transaction", async () => {
+    const user = await makeUser();
+    await db.insert(vmoneyLedger).values({ userId: user.id, amount: 250, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" });
+
+    await db.transaction(async (tx) => {
+      // sumVmoneyBalanceTx's DbOrTx type is derived from the real
+      // (postgres-js) db singleton in src/db/client.ts - structurally
+      // identical at runtime to PGlite's tx (both are plain Drizzle query
+      // builders), but TypeScript sees two different driver type params.
+      // The cast is purely a test-only type reconciliation, not a runtime
+      // concern - this file already replaces @/db/client with a PGlite
+      // instance for the whole test run (createTestDb(), see the vi.mock
+      // above).
+      expect(await sumVmoneyBalanceTx(tx as never, user.id)).toBe(250);
+    });
+  });
+});
+
+describe("sumVmoneyEarnedSinceBySource", () => {
+  it("groups only positive (earned) amounts by sourceType within the window", async () => {
+    const user = await makeUser();
+    const cutoff = new Date("2026-01-01T00:00:00.000Z");
+    await db.insert(vmoneyLedger).values([
+      { userId: user.id, amount: 100, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amount: 50, sourceType: "badge_unlock", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amount: -30, sourceType: "reward_claim", sourceId: randomUUID(), reason: "x" },
+    ]);
+
+    const breakdown = await sumVmoneyEarnedSinceBySource(user.id, cutoff);
+
+    expect(breakdown.sort((a, b) => a.sourceType.localeCompare(b.sourceType))).toEqual([
+      { sourceType: "badge_unlock", amount: 50 },
+      { sourceType: "lesson_completion", amount: 100 },
+    ]);
+  });
+});
+
+describe("listVmoneyLedgerForUser", () => {
+  it("paginates newest-first with a stable cursor", async () => {
+    const user = await makeUser();
+    for (let i = 0; i < 3; i++) {
+      await db.insert(vmoneyLedger).values({
+        userId: user.id,
+        amount: 10,
+        sourceType: "lesson_completion",
+        sourceId: randomUUID(),
+        reason: `entry ${i}`,
+        createdAt: new Date(2026, 0, i + 1),
+      });
+    }
+
+    const page1 = await listVmoneyLedgerForUser(user.id, { limit: 2, cursor: null });
+    expect(page1.data).toHaveLength(2);
+    expect(page1.data[0]!.reason).toBe("entry 2");
+    expect(page1.nextCursor).not.toBeNull();
+
+    const cursor = JSON.parse(Buffer.from(page1.nextCursor!, "base64url").toString("utf8"));
+    const page2 = await listVmoneyLedgerForUser(user.id, { limit: 2, cursor });
+    expect(page2.data).toHaveLength(1);
+    expect(page2.data[0]!.reason).toBe("entry 0");
+    expect(page2.nextCursor).toBeNull();
   });
 });

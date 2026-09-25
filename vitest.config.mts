@@ -10,7 +10,7 @@ export default defineConfig({
     // inside the repo (e.g. .kilo/) in addition to vitest's own defaults
     // (node_modules, dist, .git, ...), so a leftover checkout there never
     // gets picked up as a second, colliding copy of the test suite.
-    exclude: [...configDefaults.exclude, "**/.kilo/**"],
+    exclude: [...configDefaults.exclude, "**/.kilo/**", "**/.claude/worktrees/**"],
     // Capped well below the machine's core count (4) - the growing set of
     // PGlite-backed *.repo.test.ts files (each spins up its own in-process
     // WASM Postgres, src/test/db.ts) was OOM-crashing a worker fork under

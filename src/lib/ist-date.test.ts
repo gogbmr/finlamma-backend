@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { daysBetweenIstDates, istDateString, istYearMonth } from "./ist-date";
+import {
+  daysBetweenIstDates,
+  istDateStartUtc,
+  istDateString,
+  istMonthStartUtc,
+  istWeekStartDate,
+  istWeekStartUtc,
+  istYear,
+  istYearMonth,
+  istYearStartUtc,
+} from "./ist-date";
 
 describe("istDateString", () => {
   it("18:29 UTC is still the same IST calendar day (23:59 IST)", () => {
@@ -39,6 +49,79 @@ describe("istYearMonth", () => {
     // 2026-01-31T18:31:00Z is 2026-02-01 00:01 IST - already February.
     expect(istYearMonth(new Date("2026-01-31T18:31:00.000Z"))).toBe("2026-02");
     expect(istYearMonth(new Date("2026-01-31T18:29:00.000Z"))).toBe("2026-01");
+  });
+});
+
+describe("istYear", () => {
+  it("respects the same day-boundary rules as istDateString", () => {
+    // 2025-12-31T18:31:00Z is 2026-01-01 00:01 IST - already next year.
+    expect(istYear(new Date("2025-12-31T18:31:00.000Z"))).toBe(2026);
+    expect(istYear(new Date("2025-12-31T18:29:00.000Z"))).toBe(2025);
+  });
+});
+
+describe("istWeekStartDate", () => {
+  it("returns the Monday of the IST week for a mid-week date", () => {
+    // 2026-09-24 is a Thursday (IST); that week's Monday is 2026-09-21.
+    expect(istWeekStartDate(new Date("2026-09-24T10:00:00.000Z"))).toBe("2026-09-21");
+  });
+
+  it("returns the same date when it's already a Monday", () => {
+    expect(istWeekStartDate(new Date("2026-09-21T10:00:00.000Z"))).toBe("2026-09-21");
+  });
+
+  it("handles a Sunday correctly (rolls back to the PRECEDING Monday, not forward)", () => {
+    // 2026-09-27 is a Sunday - the same week as Sep 21-27.
+    expect(istWeekStartDate(new Date("2026-09-27T10:00:00.000Z"))).toBe("2026-09-21");
+  });
+});
+
+describe("istWeekStartUtc", () => {
+  it("returns the UTC instant of IST midnight on that Monday", () => {
+    expect(istWeekStartUtc(new Date("2026-09-24T10:00:00.000Z")).toISOString()).toBe(
+      "2026-09-20T18:30:00.000Z",
+    );
+  });
+});
+
+describe("istMonthStartUtc", () => {
+  it("returns the UTC instant of IST midnight, the 1st of the month", () => {
+    // 2026-09-15 12:00 IST is 2026-09-15T06:30:00Z; month start = 2026-09-01
+    // 00:00 IST = 2026-08-31T18:30:00Z.
+    expect(istMonthStartUtc(new Date("2026-09-15T06:30:00.000Z")).toISOString()).toBe(
+      "2026-08-31T18:30:00.000Z",
+    );
+  });
+
+  it("rolls into the next month right at the IST month boundary", () => {
+    // 2026-08-31T18:30:00Z is already 2026-09-01 00:00 IST.
+    expect(istMonthStartUtc(new Date("2026-08-31T18:30:00.000Z")).toISOString()).toBe(
+      "2026-08-31T18:30:00.000Z",
+    );
+  });
+});
+
+describe("istYearStartUtc", () => {
+  it("returns the UTC instant of IST midnight, January 1st", () => {
+    // 2026-01-01 00:00:00 IST = 2025-12-31 18:30:00 UTC
+    expect(istYearStartUtc(2026).toISOString()).toBe("2025-12-31T18:30:00.000Z");
+  });
+});
+
+describe("istDateStartUtc", () => {
+  it("returns the UTC instant of IST midnight for the day the input falls on", () => {
+    // 2026-09-24T10:00:00Z is 2026-09-24 15:30 IST - same IST day.
+    // IST midnight that day = 2026-09-23T18:30:00Z.
+    expect(istDateStartUtc(new Date("2026-09-24T10:00:00.000Z")).toISOString()).toBe(
+      "2026-09-23T18:30:00.000Z",
+    );
+  });
+
+  it("rolls over correctly right at the IST day boundary", () => {
+    // 2026-09-23T18:30:00Z is already 2026-09-24 00:00 IST.
+    expect(istDateStartUtc(new Date("2026-09-23T18:30:00.000Z")).toISOString()).toBe(
+      "2026-09-23T18:30:00.000Z",
+    );
   });
 });
 

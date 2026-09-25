@@ -21,10 +21,9 @@ vi.mock("@/server/legal/service", () => ({
   upsertLegalDraft: vi.fn(),
 }));
 
-const mockNotifyAffectedMinorsForReapproval = vi.fn();
-vi.mock("@/server/onboarding/service", () => ({
-  notifyAffectedMinorsForReapproval: (legalDocumentId: unknown, meta: unknown) =>
-    mockNotifyAffectedMinorsForReapproval(legalDocumentId, meta),
+const mockInngestSend = vi.fn();
+vi.mock("@/lib/inngest", () => ({
+  inngest: { send: (input: unknown) => mockInngestSend(input) },
 }));
 
 import { publishLegalDocumentAction } from "./actions";
@@ -42,7 +41,7 @@ describe("publishLegalDocumentAction - the Yes/No re-approval choice", () => {
 
     expect(result.ok).toBe(false);
     expect(mockPublishLegalDocument).not.toHaveBeenCalled();
-    expect(mockNotifyAffectedMinorsForReapproval).not.toHaveBeenCalled();
+    expect(mockInngestSend).not.toHaveBeenCalled();
     expect(mockRevalidatePath).not.toHaveBeenCalled();
   });
 
@@ -75,11 +74,11 @@ describe("publishLegalDocumentAction - the Yes/No re-approval choice", () => {
 
     expect(result.ok).toBe(true);
     expect(mockPublishLegalDocument).toHaveBeenCalledWith(ACTOR, "terms", false, expect.any(Object));
-    expect(mockNotifyAffectedMinorsForReapproval).not.toHaveBeenCalled();
+    expect(mockInngestSend).not.toHaveBeenCalled();
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/legal");
   });
 
-  it("publishes and triggers re-approval notification when requiresParentReapproval is explicitly true", async () => {
+  it("publishes and fires the re-approval notification event when requiresParentReapproval is explicitly true", async () => {
     mockPublishLegalDocument.mockResolvedValueOnce({
       id: "doc_2",
       type: "terms",
@@ -91,7 +90,10 @@ describe("publishLegalDocumentAction - the Yes/No re-approval choice", () => {
 
     expect(result.ok).toBe(true);
     expect(mockPublishLegalDocument).toHaveBeenCalledWith(ACTOR, "terms", true, expect.any(Object));
-    expect(mockNotifyAffectedMinorsForReapproval).toHaveBeenCalledWith("doc_2", expect.any(Object));
+    expect(mockInngestSend).toHaveBeenCalledWith({
+      name: "legal/document.published_requiring_reapproval",
+      data: { legalDocumentId: "doc_2" },
+    });
   });
 
   // publishLegalDocument (src/server/legal/repo.ts publishDraft) forces
@@ -111,7 +113,7 @@ describe("publishLegalDocumentAction - the Yes/No re-approval choice", () => {
     const result = await publishLegalDocumentAction({ type: "terms", requiresParentReapproval: true });
 
     expect(result.ok).toBe(true);
-    expect(mockNotifyAffectedMinorsForReapproval).not.toHaveBeenCalled();
+    expect(mockInngestSend).not.toHaveBeenCalled();
   });
 
   it("never calls publishLegalDocument at all if the caller isn't legal.manage staff", async () => {

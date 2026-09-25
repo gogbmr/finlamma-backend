@@ -37,9 +37,10 @@ registry.registerPath({
   path: "/api/v1/me",
   summary: "Update my preferences",
   description:
-    "Updates language and/or theme - the only profile fields this API owns. Name, email and " +
-    "phone are Clerk-owned identity fields, changed through the app's account settings and " +
-    "synced in automatically by the Clerk webhook.",
+    "Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile " +
+    "fields this API owns. Name, email and phone are Clerk-owned identity fields, changed " +
+    "through the app's account settings and synced in automatically by the Clerk webhook. " +
+    "`preferences` is replaced whole, not deep-merged.",
   tags: ["Users"],
   security: [{ bearerAuth: [] }],
   request: {
@@ -59,7 +60,7 @@ registry.registerPath({
             error: {
               code: "VALIDATION_FAILED",
               message: "Request validation failed",
-              details: { _errors: ["Provide at least one of language or theme"] },
+              details: { _errors: ["Provide at least one of language, theme, bio or preferences"] },
             },
           },
         },

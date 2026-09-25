@@ -169,6 +169,48 @@
       "when": 1790155277407,
       "tag": "0023_deep_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790182240521,
+      "tag": "0024_crazy_nextwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790225868036,
+      "tag": "0025_cool_whirlwind",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790228312340,
+      "tag": "0026_worthless_ultron",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790229980605,
+      "tag": "0027_violet_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790243479059,
+      "tag": "0028_plain_wither",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790249771145,
+      "tag": "0029_fast_centennial",
+      "breakpoints": true
     }
   ]
 }

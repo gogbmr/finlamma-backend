@@ -19,6 +19,8 @@ function toMeResponse(user: UserRow) {
     phone: user.phone,
     language: user.language,
     theme: user.theme,
+    bio: user.bio,
+    preferences: user.preferences,
   };
 }
 
@@ -50,12 +52,14 @@ export async function updateMe(user: UserRow, input: UpdateMeInput, meta: Reques
 // the caller sees the effect immediately. anonymizeUserFromClerk is
 // idempotent, so the webhook redelivery is a harmless no-op.
 //
-// Known gap (flagged by security review, not fixed here - needs a
-// reconciliation job, which needs Inngest, not yet set up in this phase):
-// if the Clerk delete above succeeds but the anonymize below throws, the
-// user is stuck - requireUser() now fails (Clerk identity gone) before
-// they can retry, and the only remaining path to consistency is the async
-// user.deleted webhook eventually arriving. Revisit once Inngest exists.
+// Known gap (flagged by security review, still open - tracked in
+// docs/ROADMAP.md Phase 7 as "Clerk/DB account-deletion reconciliation
+// Inngest job"): if the Clerk delete above succeeds but the anonymize below
+// throws, the user is stuck - requireUser() now fails (Clerk identity gone)
+// before they can retry, and the only remaining path to consistency is the
+// async user.deleted webhook eventually arriving. Inngest exists now
+// (Phase 3b Checkpoint 0) but this reconciliation job itself hasn't been
+// built yet - see the ROADMAP item for what it needs to do.
 export async function deleteMe(user: UserRow, meta: RequestMeta) {
   await deleteConsumerClerkUser(user.clerkUserId);
   const anonymized = await anonymizeUserFromClerk(user.clerkUserId);

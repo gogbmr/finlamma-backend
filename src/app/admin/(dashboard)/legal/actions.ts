@@ -6,9 +6,9 @@ import { ZodError } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
+import { inngest } from "@/lib/inngest";
 import { PublishLegalDocumentSchema, SaveLegalDraftSchema } from "@/server/legal/schemas";
 import { publishLegalDocument, upsertLegalDraft } from "@/server/legal/service";
-import { notifyAffectedMinorsForReapproval } from "@/server/onboarding/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -42,7 +42,14 @@ export async function publishLegalDocumentAction(input: unknown): Promise<Action
     const meta = requestMeta(await headers());
     const published = await publishLegalDocument(actor, parsed.type, parsed.requiresParentReapproval, meta);
     if (published.requiresParentReapproval) {
-      await notifyAffectedMinorsForReapproval(published.id, meta);
+      // Phase 7 ROADMAP item, pulled forward: fires an event instead of
+      // awaiting the notify loop inline, so a large affected-minors batch
+      // never makes this Server Action's response wait on sending every
+      // email - see src/inngest/functions/legal-reapproval-emails.ts.
+      await inngest.send({
+        name: "legal/document.published_requiring_reapproval",
+        data: { legalDocumentId: published.id },
+      });
     }
     revalidatePath("/admin/legal");
   });

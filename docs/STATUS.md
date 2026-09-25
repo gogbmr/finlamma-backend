@@ -1,5 +1,93 @@
 # Status
 
+## 2026-09-25 — Decided: `users.bio` is never shown to other learners, ever (D36)
+
+Follow-up to the `/phase-audit 3b` finding below (bio's own schema comment said "never shown on
+any public profile," but `docs/FEATURE_MAP.md` row AR-20 - Arena's Phase 6 public player profile -
+had `bio` listed as a field shown to *other* learners, a real, unfixed contradiction). Decided:
+
+- **Free-text `bio` is never shown to other learners, now or ever.** `users.bio` stays private to
+  the owner, `GET`/`PATCH /me` only. Recorded as `docs/ARCHITECTURE.md` D36.
+- **AR-20's public player profile (Phase 6) is corrected**, not built: display name (first name +
+  last initial), level, rank title, badges, stats - and a set of **preset "about me" chips** picked
+  from an admin-managed catalog, never free text. `docs/FEATURE_MAP.md`'s AR-20 row and
+  `docs/ROADMAP.md`'s Phase 6 scope both updated to the chip design; nothing built yet.
+- **Reasoning**: free text authored by a minor and shown to other minors is a real child-safety
+  risk (contact details, school names, a grooming vector) that contradicts this app's existing
+  kid-safe rules (no photos, no chat between users, kid-safe display names only - CLAUDE.md rule
+  10). Sustained human moderation of child-authored free text isn't a realistic pre-launch
+  commitment; a fixed, admin-curated chip list gives a learner real personality with zero ongoing
+  moderation burden.
+- **The schema comment is now the settled rule, not an aspiration** - `src/server/users/schemas.ts`'s
+  `BioSchema` and `docs/DATA_MODEL.md`'s `users` bullet both point at D36 explicitly, so any future
+  reader of either file sees this was decided, not just phrased that way once and left unenforced.
+- **Pre-launch checklist item added**: "Confirm no learner-authored free text is ever rendered to
+  another learner" - re-check specifically when AR-20 ships, and for any future feature that
+  surfaces one learner's content to another.
+
+No code behavior changes today - `bio` was never actually wired into any public-facing view, so
+this decision locks the design before Phase 6 builds AR-20 the wrong way, rather than fixing a live
+bug.
+
+## 2026-09-24 — `/phase-audit 3b` complete: 2 Medium + 3 Low fixes applied, ready to merge
+
+Audited every commit on `phase-3b-daily-engagement` since it diverged from `main`
+(`88e6ba2`..`31acd58`, 12 commits: Inngest bootstrap, `users.bio`/`preferences`, Profile Overview
+extension, certificates, session-time, daily goals, badges & rewards, the weekly report card +
+parent weekly-report opt-in, and the Inngest local-dev-mode fix). Full report covered ROADMAP/
+FEATURE_MAP cross-check, code health (typecheck/lint/test/build), database state (migrations,
+schema drift, RLS, security advisors - all via the Supabase MCP, read-only), API surface,
+production checks against the live deployment, a dedicated `security-auditor` subagent pass, and
+docs-vs-reality.
+
+**Result: no Critical/High findings, 2 Medium + 3 Low, all now fixed:**
+- **[Medium, money integrity - fixed]** Badge unlock and its V Money credit were two separate,
+  non-atomic writes (`src/server/badges/service.ts`): if the VM credit failed after the badge
+  award already committed, the badge showed unlocked forever with no VM ever paid, and the next
+  evaluation run skipped it (already-unlocked) with no retry path. Fixed by wrapping both writes
+  in one transaction (`awardBadgeAndCreditVmoney`, `src/server/badges/repo.ts`), the same shape as
+  `creditLessonCompletionRow`. `creditVmoney` (`src/server/economy/service.ts`) is removed - badge
+  unlocks were its only caller. Covered by a new PGlite test that injects a failure between the two
+  writes and proves the badge award rolls back with it (real Postgres rollback, not a mock).
+- **[Medium, minor privacy - fixed]** Account deletion (`anonymizeUserFromClerk`,
+  `src/server/users/repo.ts`) cleared email/phone/name/date-of-birth but never `users.bio` -
+  free-text, up to 280 chars, self-editable, so a kid's real name/school/handle typed into it
+  would survive deletion indefinitely. Fixed: `bio: null` added to the anonymize write, covered by
+  a new test. **Follow-up decision needed before Phase 6, not fixed here**: `bio` is currently
+  self-only (never read outside `GET/PATCH /me`, confirmed by reading every reference to it in the
+  codebase) and its own schema comment says "never shown on any public profile" - but
+  `docs/FEATURE_MAP.md` row AR-20 (Arena, Phase 6) already plans to show `bio` on a public player
+  profile bottom sheet opened by *other* learners. That's a real conflict: free text with no
+  content moderation, shown to other kids, on a kid-safe app. Needs a founder decision (moderation
+  pipeline, or drop free text for a curated safe-choice list) before AR-20 is built - flagged here,
+  not decided by this audit. `users.preferences` has no free text (booleans only, no exposure
+  concern) and no other learner-authored free-text field exists yet.
+- **[Low, doc drift - fixed]** `openapi/openapi.json`'s `health.inngest` field description was
+  stale (the code's description text changed in the Inngest dev-mode fix commit, contract never
+  regenerated after). Fixed: ran `pnpm contract`, committed.
+- **[Low, doc drift - fixed]** `docs/DATA_MODEL.md` didn't document `session_time_daily` or
+  `parent_contacts`' two new weekly-report columns. Both added.
+- **[Low, informational - fixed]** `src/server/users/service.ts`'s `deleteMe` comment said "needs
+  Inngest, not yet set up in this phase, revisit once Inngest exists" for a known Clerk/DB
+  deletion-reconciliation gap - Inngest now exists (this same phase) but the gap was never
+  revisited. Added a ROADMAP ticket (Phase 7: "Clerk/DB account-deletion reconciliation Inngest
+  job") and pointed the comment at it instead of the stale "not yet set up" framing.
+
+**FEATURE_MAP.md Status column updated** for 25 rows this phase actually delivers: PR-04..09
+(session-time/streak/lessons/quiz-accuracy/dot-calendar/daily-goals quick stats, via the extended
+`GET /me/profile/overview` + `GET /me/daily-goals`), PR-12 (efficiency score, partially - surfaced
+via the report card, not a standalone `/me/profile/stats`), PR-16..24 (badges + rewards + wallet),
+PR-30..38 (report card + certificates; PR-34 partially - reuses `/me/wallet/history` rather than
+being embedded; PR-35 partially - the parent-email half is built, PDF/story-card export is
+deferred), SET-08..10 (sound/haptics/data-saver/bio), SET-22 (extended note on the weekly-report
+opt-in), WH-14 (stale row predating this phase, caught while auditing - `reward_rules` + per-lesson
+override were already built in 2b/3a, never marked here).
+
+Production check note: `GET /api/v1/me/badges`/`report-card`/etc. correctly return 404 (not 401)
+against the live deployment, since `main` doesn't have Phase 3b yet - re-verify these return 401
+without a token once merged. `GET /api/v1/health`'s `version` field matched `origin/main`'s commit
+exactly (`83b4722`) at audit time, confirming production was current with `main`.
+
 ## 2026-09-23 — `/phase-audit 3a` complete: 2 Low fixes applied, ready to merge
 
 Audited every commit on `phase-3a-economy-core` since it diverged from `main` (`8ff65b0`..`28f4b8b`,

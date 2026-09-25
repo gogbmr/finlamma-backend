@@ -27,6 +27,54 @@ export function istYearMonth(date: Date = new Date()): string {
   return istDateString(date).slice(0, 7);
 }
 
+// The current IST calendar year, as a number - e.g. 2026.
+export function istYear(date: Date = new Date()): number {
+  return Number(istDateString(date).slice(0, 4));
+}
+
+// The UTC instant of IST midnight for the IST calendar day `date` falls in -
+// e.g. src/server/daily-goals/service.ts needs a UTC boundary to compare
+// stored UTC timestamps against ("did this happen today, IST") for a raw
+// count, not a string.
+export function istDateStartUtc(date: Date = new Date()): Date {
+  return new Date(Date.parse(`${istDateString(date)}T00:00:00Z`) - IST_OFFSET_MS);
+}
+
+// The IST calendar date (YYYY-MM-DD) of the Monday starting the IST week
+// `date` falls in - src/server/report-card's weekly snapshot key
+// (PRODUCT_SPEC.md §6: "written by a weekly Inngest job, Monday IST").
+export function istWeekStartDate(date: Date = new Date()): string {
+  const dateStr = istDateString(date);
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const dow = d.getUTCDay(); // 0=Sun..6=Sat
+  const diffFromMonday = dow === 0 ? 6 : dow - 1;
+  d.setUTCDate(d.getUTCDate() - diffFromMonday);
+  return d.toISOString().slice(0, 10);
+}
+
+// The UTC instant of IST midnight, the Monday starting the IST week `date`
+// falls in - the lower bound for "this week"'s queries.
+export function istWeekStartUtc(date: Date = new Date()): Date {
+  const weekStart = istWeekStartDate(date);
+  return new Date(Date.parse(`${weekStart}T00:00:00Z`) - IST_OFFSET_MS);
+}
+
+// The UTC instant of IST midnight, the 1st of the IST calendar month `date`
+// falls in - e.g. src/server/economy/service.ts's getMyWallet needs a UTC
+// boundary for "earned this (IST) month".
+export function istMonthStartUtc(date: Date = new Date()): Date {
+  const [year, month] = istYearMonth(date).split("-").map(Number);
+  return new Date(Date.UTC(year!, month! - 1, 1) - IST_OFFSET_MS);
+}
+
+// The UTC instant of IST midnight, January 1st of the given year - e.g. a
+// "how many certificates were issued this IST year" count
+// (src/server/certificates/repo.ts) needs a UTC boundary to compare stored
+// UTC timestamps against, not a string.
+export function istYearStartUtc(year: number): Date {
+  return new Date(Date.UTC(year, 0, 1) - IST_OFFSET_MS);
+}
+
 // Whole calendar days between two IST date strings (b - a). Both are
 // parsed as UTC midnight purely as a stable anchor for subtraction - the
 // values themselves are already IST calendar dates (from istDateString),

@@ -32,6 +32,7 @@ import {
 type WorldRow = {
   id: string;
   order: number;
+  code: string | null;
   title: LocalizedText;
   tagline: LocalizedText;
   theme: string;
@@ -177,6 +178,7 @@ function MentorSelect({
 function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState("");
+  const [code, setCode] = useState("");
   const [theme, setTheme] = useState("");
   const [displayXpTarget, setDisplayXpTarget] = useState("");
   const [mentorId, setMentorId] = useState("");
@@ -187,6 +189,7 @@ function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
     startTransition(async () => {
       const result = await createWorldDraftAction({
         order: Number(order),
+        code: code || null,
         theme,
         displayXpTarget: Number(displayXpTarget),
         mentorId,
@@ -199,6 +202,7 @@ function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
       }
       toast.success("World created as a draft");
       setOrder("");
+      setCode("");
       setTheme("");
       setDisplayXpTarget("");
       setMentorId("");
@@ -213,6 +217,19 @@ function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
         <div className="space-y-1">
           <Label>Display order</Label>
           <Input type="number" value={order} onChange={(e) => setOrder(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label>Certificate code</Label>
+          <Input
+            value={code}
+            maxLength={2}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="MW"
+          />
+          <p className="text-xs text-muted-foreground">
+            2 uppercase letters, unique - required before this world can publish. Used only to
+            build a certificate id (e.g. FL-MW-2026-000123).
+          </p>
         </div>
         <div className="space-y-1">
           <Label>Theme (cosmetic accent color/key)</Label>
@@ -260,6 +277,7 @@ function WorldForm({
 }) {
   const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState(String(world.order));
+  const [code, setCode] = useState(world.code ?? "");
   const [theme, setTheme] = useState(world.theme);
   const [displayXpTarget, setDisplayXpTarget] = useState(String(world.displayXpTarget));
   const [mentorId, setMentorId] = useState(world.mentorId);
@@ -304,6 +322,7 @@ function WorldForm({
       const result = await updateWorldDraftAction({
         id: world.id,
         order: Number(order),
+        code: code || null,
         theme,
         displayXpTarget: Number(displayXpTarget),
         mentorId,
@@ -449,6 +468,19 @@ function WorldForm({
             disabled={!editable}
             onChange={(e) => setOrder(e.target.value)}
           />
+        </div>
+        <div className="space-y-1">
+          <Label>Certificate code</Label>
+          <Input
+            value={code}
+            maxLength={2}
+            disabled={!editable}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            placeholder="MW"
+          />
+          <p className="text-xs text-muted-foreground">
+            2 uppercase letters, unique - required before this world can publish.
+          </p>
         </div>
         <div className="space-y-1">
           <Label>Theme (cosmetic accent color/key)</Label>

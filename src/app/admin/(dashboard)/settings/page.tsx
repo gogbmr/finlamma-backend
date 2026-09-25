@@ -1,6 +1,7 @@
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
+import { getDailyGoalsSettings } from "@/server/daily-goals/service";
 import { getVmIssuanceMultiplier, listRewardRulesForAdmin } from "@/server/economy/service";
 import { getLevelCurveSettings } from "@/server/leveling/service";
 import { listRankTitlesForAdmin } from "@/server/rank-titles/service";
@@ -9,6 +10,7 @@ import { roleHasPermission } from "@/server/staff/repo";
 import { getStreaksSettings } from "@/server/streaks/service";
 import { EconomySettingsEditor } from "./economy-settings-editor";
 import { LevelCurveSettingsEditor } from "./level-curve-settings-editor";
+import { DailyGoalsSettingsEditor } from "./daily-goals-settings-editor";
 import { RankTitlesEditor } from "./rank-titles-editor";
 import { ScoringSettingsEditor } from "./scoring-settings-editor";
 import { StreaksSettingsEditor } from "./streaks-settings-editor";
@@ -35,6 +37,7 @@ export default async function SettingsPage() {
   const streaksSettings = await getStreaksSettings();
   const levelCurveSettings = await getLevelCurveSettings();
   const rankTitles = await listRankTitlesForAdmin();
+  const dailyGoalsSettings = await getDailyGoalsSettings();
 
   return (
     <div className="space-y-8">
@@ -47,6 +50,7 @@ export default async function SettingsPage() {
       <ScoringSettingsEditor scoring={scoring} />
       {canManageEconomy && <EconomyManagedSettings />}
       <StreaksSettingsEditor settings={streaksSettings} />
+      <DailyGoalsSettingsEditor settings={dailyGoalsSettings} />
       <LevelCurveSettingsEditor settings={levelCurveSettings} />
       <RankTitlesEditor rankTitles={rankTitles} />
     </div>

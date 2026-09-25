@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.2.0) on 2026-09-23.
+> Generated from `openapi/openapi.json` (version 0.3.0) on 2026-09-25.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -45,7 +45,18 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/stats/streak` — Get my streak stats (World Home header STREAK tile, WH-02)
 - `GET /api/v1/me/stats/xp` — Get my XP stats (World Home header XP tile, WH-04)
 - `GET /api/v1/me/stats/vmoney` — Get my V Money stats (World Home header V MONEY tile, WH-03)
-- `GET /api/v1/me/profile/overview` — Get my profile overview (Profile screen ID card, PR-01/PR-02)
+- `GET /api/v1/me/profile/overview` — Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)
+- `GET /api/v1/me/certificates` — List my certificates (PR-10/PR-36)
+- `GET /api/v1/me/certificates/{worldId}` — Get my certificate for a world (PR-36)
+- `GET /api/v1/me/certificates/{worldId}/pdf` — Get a signed download URL for my certificate PDF (PR-37/PR-38)
+- `POST /api/v1/me/session-time` — Report a finished session's duration (World Home gap #5)
+- `GET /api/v1/me/daily-goals` — Get today's daily goal progress (PR-09)
+- `GET /api/v1/me/badges` — List my badges, unlocked and locked (PR-16/17/18/19/20)
+- `GET /api/v1/me/rewards` — List my rewards catalog (PR-21/22/23)
+- `POST /api/v1/me/rewards/{id}/claim` — Claim a reward (PR-22)
+- `GET /api/v1/me/wallet` — Get my wallet summary (PR-21)
+- `GET /api/v1/me/wallet/history` — Get my V Money ledger history (PR-24)
+- `GET /api/v1/me/report-card` — My weekly report card (PR-30/31/32/33)
 
 **Webhooks**
 
@@ -80,6 +91,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "redis": "ok",
     "worldsMissingBossQuiz": [],
     "tradingUnlockWorldMissing": false,
+    "inngest": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
 }
@@ -122,7 +134,13 @@ Returns the signed-in user's own profile.
     "email": "chirag@example.com",
     "phone": "+919876543210",
     "language": "en",
-    "theme": "dark"
+    "theme": "dark",
+    "bio": "Saving up for my first SIP!",
+    "preferences": {
+      "sound": true,
+      "haptics": true,
+      "dataSaver": false
+    }
   }
 }
 ```
@@ -145,7 +163,7 @@ Returns the signed-in user's own profile.
 
 **Update my preferences**
 
-Updates language and/or theme - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook.
+Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged.
 
 **Auth:** bearerAuth
 
@@ -155,11 +173,22 @@ Updates language and/or theme - the only profile fields this API owns. Name, ema
 |---|---|---|---|
 | `language` | string (en, hi, hx) | no | en (English), hi (Hindi) or hx (Hinglish). |
 | `theme` | string (dark, light) | no |  |
+| `bio` | string or null | no | Free-text, self-editable, private to the owner - never shown to any other learner. |
+| `preferences` | object | no |  |
+| `preferences.sound` | boolean | yes | In-app sound effects on/off. |
+| `preferences.haptics` | boolean | yes | Haptic feedback on/off. |
+| `preferences.dataSaver` | boolean | yes | Serves lower-resolution lesson videos when on. |
 
 ```json
 {
   "language": "en",
-  "theme": "dark"
+  "theme": "dark",
+  "bio": "Saving up for my first SIP!",
+  "preferences": {
+    "sound": true,
+    "haptics": true,
+    "dataSaver": false
+  }
 }
 ```
 
@@ -176,7 +205,13 @@ Updates language and/or theme - the only profile fields this API owns. Name, ema
     "email": "chirag@example.com",
     "phone": "+919876543210",
     "language": "en",
-    "theme": "dark"
+    "theme": "dark",
+    "bio": "Saving up for my first SIP!",
+    "preferences": {
+      "sound": true,
+      "haptics": true,
+      "dataSaver": false
+    }
   }
 }
 ```
@@ -190,7 +225,7 @@ Updates language and/or theme - the only profile fields this API owns. Name, ema
     "message": "Request validation failed",
     "details": {
       "_errors": [
-        "Provide at least one of language or theme"
+        "Provide at least one of language, theme, bio or preferences"
       ]
     }
   }
@@ -1584,9 +1619,9 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
 
 ### `GET /api/v1/me/profile/overview`
 
-**Get my profile overview (Profile screen ID card, PR-01/PR-02)**
+**Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)**
 
-Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, and the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet). Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.
+Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.
 
 **Auth:** bearerAuth
 
@@ -1608,6 +1643,765 @@ Kid-safe identity (first name + last initial only - never a full name or photo, 
       "en": "string",
       "hi": "string",
       "hx": "string"
+    },
+    "streak": {
+      "current": 4,
+      "longest": 12,
+      "freezesLeft": 2
+    },
+    "lessons": {
+      "completed": 18,
+      "total": 40,
+      "pct": 45
+    },
+    "quizAccuracyPct": 82,
+    "activityDotCalendar": [
+      {
+        "date": "2026-09-17",
+        "active": true
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/certificates`
+
+**List my certificates (PR-10/PR-36)**
+
+Every world the caller has completed (passed that world's Boss Quiz), newest first. Each certificate's xpEarned/accuracyPct is a snapshot from the moment it was issued, never recomputed later.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's certificates
+
+```json
+{
+  "data": [
+    {
+      "worldId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+      "worldTitle": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "code": "FL-MW-2026-000001",
+      "xpEarned": 1250,
+      "accuracyPct": 88,
+      "issuedAt": "2026-04-17T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/certificates/{worldId}`
+
+**Get my certificate for a world (PR-36)**
+
+The caller's certificate for a specific world, if they've earned one.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `worldId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The caller's certificate for this world
+
+```json
+{
+  "data": {
+    "worldId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+    "worldTitle": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "code": "FL-MW-2026-000001",
+    "xpEarned": 1250,
+    "accuracyPct": 88,
+    "issuedAt": "2026-04-17T12:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No certificate for this world yet
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No certificate for this world yet"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/certificates/{worldId}/pdf`
+
+**Get a signed download URL for my certificate PDF (PR-37/PR-38)**
+
+Renders the PDF on first request (server-side, no headless browser) and uploads it to storage; every later call returns a fresh signed URL to the same file. The app downloads or shares this URL directly - Finlamma never sends it anywhere on the learner's behalf.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `worldId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — A short-lived signed URL to the certificate PDF
+
+```json
+{
+  "data": {
+    "url": "https://xxx.supabase.co/storage/v1/s3/finlamma/certificates/..."
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No certificate for this world yet
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No certificate for this world yet"
+  }
+}
+```
+
+- **503** — Storage is not configured
+
+```json
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Storage is not configured"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/session-time`
+
+**Report a finished session's duration (World Home gap #5)**
+
+Sent once when a session (a lesson/screen, not a heartbeat) ends - adds to today's (IST) running total, feeding the daily goal meter's study-minutes target and the weekly report card's watch-speed sub-metric. Not reward-bearing (no XP/VM derives from this), so this is a client-reported, best-effort signal, capped at 1 hour per call.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `seconds` | integer | yes | Duration of one finished session (a lesson/screen, not a heartbeat) - sent once when the session ends, capped at 1 hour per call. |
+
+```json
+{
+  "seconds": 240
+}
+```
+
+**Responses**
+
+- **200** — Updated running total for today
+
+```json
+{
+  "data": {
+    "todaySeconds": 1140
+  }
+}
+```
+
+- **400** — seconds out of range
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "seconds must be between 1 and 3600"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/daily-goals`
+
+**Get today's daily goal progress (PR-09)**
+
+Today's (IST) progress on every currently-active daily goal, admin-configured via settings_kv (target and on/off per type - see docs/PRODUCT_SPEC.md §2). Never awards XP or V Money - a pure progress display over rewards the underlying activity already paid.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Today's active goals with progress
+
+```json
+{
+  "data": [
+    {
+      "type": "study_minutes",
+      "target": 20,
+      "current": 12,
+      "completed": false
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/badges`
+
+**List my badges, unlocked and locked (PR-16/17/18/19/20)**
+
+Every published badge with the caller's own progress and unlock state. A locked badge shows real progress toward its threshold (e.g. "7/10"), not just 0, so the app can render progress rings for badges not yet earned.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's badges
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "description": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "category": "learning",
+      "vmReward": 100,
+      "iconKey": "string",
+      "target": 10,
+      "progress": 7,
+      "unlocked": true,
+      "unlockedAt": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/rewards`
+
+**List my rewards catalog (PR-21/22/23)**
+
+Every published reward with a fixed, admin-set price and whether the caller has already claimed it - a reward can be claimed at most once per learner.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The reward catalog
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "description": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "category": "finlamma",
+      "priceVm": 500,
+      "iconKey": "string",
+      "claimed": true
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/rewards/{id}/claim`
+
+**Claim a reward (PR-22)**
+
+Debits the reward's price_vm from the caller's balance and records the claim. A reward can be claimed at most once per learner - calling this again on an already-claimed reward is an idempotent replay (alreadyClaimed: true, no second debit), never a second charge. Balance can never go negative: the debit runs inside a locked transaction, so two concurrent claims for the same learner can never both succeed if only one can be afforded.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — Claimed (or already claimed)
+
+```json
+{
+  "data": {
+    "rewardId": "00000000-0000-0000-0000-000000000000",
+    "pricePaid": 0,
+    "alreadyClaimed": true,
+    "claimedAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published reward with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published reward with this id"
+  }
+}
+```
+
+- **409** — Insufficient V Money balance
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_VMONEY",
+    "message": "Not enough V Money - this costs 500, you have 200"
+  }
+}
+```
+
+- **429** — Too many claim attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many claim attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/wallet`
+
+**Get my wallet summary (PR-21)**
+
+V Money balance (always summed live from the ledger, never a stored balance), V Money earned this IST calendar month, and an earn-source breakdown - only sourceTypes with a real earning this month appear in the breakdown.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's wallet summary
+
+```json
+{
+  "data": {
+    "balance": 1250,
+    "earnedThisMonth": 300,
+    "earnedBySource": [
+      {
+        "sourceType": "lesson_completion",
+        "amount": 300
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/wallet/history`
+
+**Get my V Money ledger history (PR-24)**
+
+The caller's full earn/spend ledger, newest first, cursor-paginated.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's ledger history
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "amount": -500,
+      "sourceType": "reward_claim",
+      "reason": "Reward claimed",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/report-card`
+
+**My weekly report card (PR-30/31/32/33)**
+
+The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's report card
+
+```json
+{
+  "data": {
+    "current": {
+      "weekStartDate": "2026-09-21",
+      "efficiencyScore": 0,
+      "subMetrics": {
+        "retention": 0,
+        "watchSpeed": 0,
+        "quizAccuracy": 0,
+        "consistency": 0
+      },
+      "moduleBreakdown": [
+        {
+          "worldId": "00000000-0000-0000-0000-000000000000",
+          "worldTitle": "string",
+          "lessonsCompleted": 0,
+          "minutesSpent": 0,
+          "accuracyPct": 0,
+          "grade": "S"
+        }
+      ],
+      "topicMastery": [
+        {
+          "topic": "string",
+          "accuracyPct": 0
+        }
+      ],
+      "coachNotes": [
+        {
+          "category": "strength",
+          "text": {
+            "en": "string",
+            "hi": "string",
+            "hx": "string"
+          }
+        }
+      ]
+    },
+    "trend": [
+      {
+        "weekStartDate": "string",
+        "efficiencyScore": 0
+      }
+    ],
+    "sharedWithParent": {
+      "maskedEmail": "j***@gmail.com",
+      "weeklyEmailOn": true
     }
   }
 }

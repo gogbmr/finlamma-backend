@@ -14,3 +14,8 @@ export * from "./lesson_progress";
 export * from "./economy";
 export * from "./streaks";
 export * from "./rank_titles";
+export * from "./certificates";
+export * from "./session_time";
+export * from "./badges";
+export * from "./rewards";
+export * from "./report_card";

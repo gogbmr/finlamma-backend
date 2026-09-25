@@ -25,6 +25,7 @@ import {
   getConsentRecordByTokenHash,
   getConsentRecordByWithdrawTokenHash,
   getParentContact,
+  getParentContactByWeeklyReportUnsubscribeTokenHash,
   getParentContactForReview,
   getReapprovalRequestByTokenHash,
   getUserFirstName,
@@ -36,7 +37,9 @@ import {
   setConsentRecordParentEmailHmac,
   setConsentRecordWithdrawTokenHash,
   setDateOfBirthOnce,
+  setParentContactWeeklyReportOptIn,
   sumRequestsTodayForParentEmail,
+  unsubscribeParentContactFromWeeklyReport,
   upsertParentContact,
   withdrawConsentRecord,
 } from "./repo";
@@ -334,7 +337,15 @@ export async function getConsentRequestView(token: string): Promise<ConsentReque
 // in one transaction (see repo.ts) - a security audit found an earlier
 // version did these as separate steps, risking a consented-but-missing-
 // acceptances state if something failed in between.
-export async function confirmParentConsent(token: string, meta: RequestMeta) {
+// `weeklyReportOptIn` is the parent's own separate, unticked-by-default
+// checkbox choice on the confirm page (docs/ARCHITECTURE.md D33) - it never
+// gates whether consent itself succeeds, and defaults to false (not opted
+// in) if the caller omits it.
+export async function confirmParentConsent(
+  token: string,
+  meta: RequestMeta,
+  weeklyReportOptIn = false,
+) {
   const record = await getConsentRecordByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This consent link is invalid");
   if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
@@ -370,6 +381,33 @@ export async function confirmParentConsent(token: string, meta: RequestMeta) {
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // Additive-only: only ever turns the weekly-report opt-in ON when
+  // requested, never off - parentContacts.weeklyReportOptIn already defaults
+  // to false, so there's nothing to clear on a fresh consent. See
+  // setParentContactWeeklyReportOptIn's comment in repo.ts for why this is a
+  // best-effort follow-up rather than folded into the transaction above.
+  // Strict `=== true` (not a truthy check): a Server Action argument crosses
+  // a serialization boundary where TS's `boolean` param type isn't actually
+  // enforced at runtime, so a non-boolean truthy value (e.g. a stray string)
+  // must never be able to opt someone in - see docs/ARCHITECTURE.md D35's
+  // security-review note. The action layer (src/app/consent/actions.ts)
+  // already normalizes this with Zod before it reaches here; this is
+  // defense-in-depth for any other caller.
+  if (weeklyReportOptIn === true) {
+    const changed = await setParentContactWeeklyReportOptIn(record.userId, true);
+    if (changed) {
+      await logActivity({
+        actorType: "system",
+        action: "consent.weekly_report_opted_in",
+        targetType: "user",
+        targetId: record.userId,
+        metadata: { method: "consent_confirm" },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    }
+  }
 
   const [childFirstName, parentContact] = await Promise.all([
     getUserFirstName(record.userId),
@@ -430,6 +468,23 @@ export async function declineParentConsent(token: string, meta: RequestMeta) {
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // Declining consent always clears any weekly-report opt-in too - see
+  // setParentContactWeeklyReportOptIn's comment for why this is a
+  // best-effort follow-up rather than part of declineConsentRecord's own
+  // transaction.
+  const optOutChanged = await setParentContactWeeklyReportOptIn(record.userId, false);
+  if (optOutChanged) {
+    await logActivity({
+      actorType: "system",
+      action: "consent.weekly_report_opted_out",
+      targetType: "user",
+      targetId: record.userId,
+      metadata: { method: "consent_declined" },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
 
   const childFirstName = await getUserFirstName(record.userId);
   return { childFirstName: childFirstName ?? "your child" };
@@ -506,6 +561,22 @@ export async function withdrawParentConsent(token: string, meta: RequestMeta) {
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // Withdrawing consent always clears any weekly-report opt-in too - only on
+  // this genuine-new-withdrawal path, never on the idempotent
+  // already-withdrawn early returns above (those never reach here).
+  const optOutChanged = await setParentContactWeeklyReportOptIn(record.userId, false);
+  if (optOutChanged) {
+    await logActivity({
+      actorType: "system",
+      action: "consent.weekly_report_opted_out",
+      targetType: "user",
+      targetId: record.userId,
+      metadata: { method: "consent_withdrawn" },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
 
   const [childFirstName, parentContact] = await Promise.all([
     getUserFirstName(record.userId),
@@ -737,30 +808,44 @@ export async function notifyAffectedMinorsForReapproval(
       continue;
     }
 
-    const withdrawToken = generateToken();
-    await setConsentRecordWithdrawTokenHash(candidate.userId, hashToken(withdrawToken));
+    // Isolated per candidate (Phase 7 ROADMAP item, pulled forward to run as
+    // an Inngest job instead of inline on publish - src/inngest/functions/
+    // legal-reapproval-emails.ts): a single candidate's email failure (e.g.
+    // Resend rejects one address) must never abort the rest of a
+    // potentially large batch - the slot is already claimed above, so a
+    // failure here is safe to skip and move on rather than retry, since
+    // retrying the whole job would otherwise re-attempt already-succeeded
+    // candidates too (claimReapprovalRequestSlot's cooldown would simply
+    // reject those, which is a reasonable enough natural skip, but isolating
+    // per-candidate is the more correct fix Inngest migration is for).
+    try {
+      const withdrawToken = generateToken();
+      await setConsentRecordWithdrawTokenHash(candidate.userId, hashToken(withdrawToken));
 
-    const childFirstName = candidate.firstName ?? "Your child";
-    await sendReapprovalEmail({
-      userId: candidate.userId,
-      parentEmail: candidate.parentEmail,
-      childFirstName,
-      documentLabel,
-      reapprovalUrl: `${env.APP_URL}/consent/reapprove?token=${token}`,
-      withdrawUrl: `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`,
-    });
+      const childFirstName = candidate.firstName ?? "Your child";
+      await sendReapprovalEmail({
+        userId: candidate.userId,
+        parentEmail: candidate.parentEmail,
+        childFirstName,
+        documentLabel,
+        reapprovalUrl: `${env.APP_URL}/consent/reapprove?token=${token}`,
+        withdrawUrl: `${env.APP_URL}/consent/withdraw?token=${withdrawToken}`,
+      });
 
-    await logActivity({
-      actorType: "system",
-      action: "legal.reapproval_requested",
-      targetType: "user",
-      targetId: candidate.userId,
-      metadata: { legalDocumentId, type: doc.type, version: doc.version },
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-    });
+      await logActivity({
+        actorType: "system",
+        action: "legal.reapproval_requested",
+        targetType: "user",
+        targetId: candidate.userId,
+        metadata: { legalDocumentId, type: doc.type, version: doc.version },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
 
-    notified += 1;
+      notified += 1;
+    } catch (err) {
+      logInternalError("legal.reapproval_notify_send_failed", err);
+    }
   }
 
   return { notified };
@@ -814,7 +899,14 @@ export async function getReapprovalRequestView(token: string): Promise<Reapprova
 // them could permanently burn the single-use token while never actually
 // recording the parent's acceptance, stranding the minor's account with no
 // way to retry.
-export async function approveReapproval(token: string, meta: RequestMeta) {
+// `weeklyReportOptIn`: same additive-only, unticked-by-default checkbox as
+// confirmParentConsent, offered again here since the reapproval page is the
+// other parent-facing "consent-management" touch point (D33). Checking it
+// turns the weekly email ON; leaving it unchecked makes NO CHANGE to
+// whatever the parent already had - re-approving a legal document must never
+// silently turn off an opt-in the parent set up earlier (only decline/
+// withdraw/the unsubscribe link do that).
+export async function approveReapproval(token: string, meta: RequestMeta, weeklyReportOptIn = false) {
   const record = await getReapprovalRequestByTokenHash(hashToken(token));
   if (!record) throw new AppError("NOT_FOUND", "This link is invalid");
   if (record.status !== "pending" || record.usedAt || (await isUserDeleted(record.userId))) {
@@ -847,6 +939,22 @@ export async function approveReapproval(token: string, meta: RequestMeta) {
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // Strict `=== true`, same reasoning as confirmParentConsent above.
+  if (weeklyReportOptIn === true) {
+    const changed = await setParentContactWeeklyReportOptIn(record.userId, true);
+    if (changed) {
+      await logActivity({
+        actorType: "system",
+        action: "consent.weekly_report_opted_in",
+        targetType: "user",
+        targetId: record.userId,
+        metadata: { method: "reapproval_approved" },
+        ip: meta.ip,
+        userAgent: meta.userAgent,
+      });
+    }
+  }
 
   const childFirstName = await getUserFirstName(record.userId);
   return { childFirstName: childFirstName ?? "your child" };
@@ -890,6 +998,22 @@ export async function declineReapproval(token: string, meta: RequestMeta) {
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // declineReapprovalAndRefuseConsent revokes the parent's original consent
+  // entirely (condition 5 above) - so this is a real consent decline, and
+  // clears any weekly-report opt-in the same way declineParentConsent does.
+  const optOutChanged = await setParentContactWeeklyReportOptIn(record.userId, false);
+  if (optOutChanged) {
+    await logActivity({
+      actorType: "system",
+      action: "consent.weekly_report_opted_out",
+      targetType: "user",
+      targetId: record.userId,
+      metadata: { method: "reapproval_declined" },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
 
   const childFirstName = await getUserFirstName(record.userId);
   return { childFirstName: childFirstName ?? "your child" };
@@ -975,4 +1099,74 @@ export async function resendReapprovalRequests(user: MeUser, meta: RequestMeta) 
   }
 
   return { resent };
+}
+
+// --- Weekly report card email unsubscribe (D33) - separate from consent
+// withdrawal entirely: stops only the weekly email, never touches
+// consent_records. Same public, token-only, GET-must-be-side-effect-free
+// shape as every other consent-page entry point - see
+// src/app/consent/weekly-report/unsubscribe. ---
+
+export type WeeklyReportUnsubscribeView =
+  | { state: "invalid" }
+  | { state: "already_unsubscribed" }
+  | { state: "valid"; childFirstName: string };
+
+// Read-only lookup for the public unsubscribe page's GET render - never
+// records anything (see getWithdrawRequestView's comment for why: email
+// security scanners prefetch links). A deleted account is treated the same
+// as already-unsubscribed, same "don't reveal why" reasoning as
+// getWithdrawRequestView.
+export async function getWeeklyReportUnsubscribeView(token: string): Promise<WeeklyReportUnsubscribeView> {
+  const contact = await getParentContactByWeeklyReportUnsubscribeTokenHash(hashToken(token));
+  if (!contact) return { state: "invalid" };
+  if (!contact.weeklyReportOptIn || (await isUserDeleted(contact.userId))) {
+    return { state: "already_unsubscribed" };
+  }
+
+  const childFirstName = await getUserFirstName(contact.userId);
+  return { state: "valid", childFirstName: childFirstName ?? "your child" };
+}
+
+// Idempotent by design, same reasoning as withdrawParentConsent: a parent
+// re-clicking an old unsubscribe email (or one from before they'd already
+// used a newer one) isn't an attack, just a normal re-confirmation, so it's
+// a success either way. This link's token never expires and is never
+// consumed/burned - unlike the single-use confirm/reapprove tokens, there's
+// no downside to it staying valid indefinitely (it can only ever turn the
+// weekly email OFF, never back on) - so a parent who's lost every other way
+// to reach Finlamma (no account, no active consent link) can always use
+// whichever copy of this link they still have.
+export async function unsubscribeWeeklyReport(
+  token: string,
+  meta: RequestMeta,
+): Promise<{ childFirstName: string; alreadyUnsubscribed: boolean }> {
+  const contact = await getParentContactByWeeklyReportUnsubscribeTokenHash(hashToken(token));
+  if (!contact) throw new AppError("NOT_FOUND", "This link is invalid");
+
+  if (!contact.weeklyReportOptIn || (await isUserDeleted(contact.userId))) {
+    const childFirstName = await getUserFirstName(contact.userId);
+    return { childFirstName: childFirstName ?? "your child", alreadyUnsubscribed: true };
+  }
+
+  const updated = await unsubscribeParentContactFromWeeklyReport(contact.id);
+  if (!updated) {
+    // Lost a race to a concurrent unsubscribe - same idempotent shape as
+    // withdrawParentConsent's own race-loss branch.
+    const childFirstName = await getUserFirstName(contact.userId);
+    return { childFirstName: childFirstName ?? "your child", alreadyUnsubscribed: true };
+  }
+
+  await logActivity({
+    actorType: "system",
+    action: "consent.weekly_report_opted_out",
+    targetType: "user",
+    targetId: contact.userId,
+    metadata: { method: "unsubscribe_link" },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  const childFirstName = await getUserFirstName(contact.userId);
+  return { childFirstName: childFirstName ?? "your child", alreadyUnsubscribed: false };
 }

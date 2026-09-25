@@ -94,17 +94,18 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [x] Global VM issuance multiplier (`settings_kv.vm_issuance_multiplier`, default 1.0), recorded
       on every ledger entry
 - [x] Streaks (IST days, `scope`: learning + separate pulse_check) + 2 freezes/month
-- [ ] Daily goal meter
-- [ ] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
+- [x] Daily goal meter
+- [x] Badges and rewards — **Finlamma-only at launch** (badges/titles/cosmetic themes, fixed
       admin-set V Money price each), no brand coupons; `rewards.category` supports adding real
       brand-partner rewards later without a schema change
-- [ ] Certificates on world completion — PDF via a browser-free renderer (e.g.
+- [x] Certificates on world completion — PDF via a browser-free renderer (e.g.
       `@react-pdf/renderer`, not a headless browser — Vercel-compatible), stored in storage,
       shared as a signed URL via the device share sheet (the student sends it, we never do)
-- [ ] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
+- [x] Weekly report card: `report_snapshots` Inngest job (Monday IST), efficiency score,
       module breakdown, 8-week trend; `coach_note_templates` (admin-editable, draft → publish,
-      no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules
-- [ ] `users.bio`, `users.preferences` (sound/haptics/data-saver); Settings screens that don't
+      no AI) — see `docs/PRODUCT_SPEC.md` §6 for the exact formula and template rules.
+      Report card PDF/story-image export (PR-35) deferred — not built this checkpoint.
+- [x] `users.bio`, `users.preferences` (sound/haptics/data-saver); Settings screens that don't
       need their own backend (legal pages, contact, rate-app) ship as static/deep-link content
 
 ## Phase 4 — Trading engine (needs the market relay for live prices)
@@ -151,6 +152,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost)
 - [ ] Cheers (+5 XP, notification) — one cheer per recipient per sender per day, a daily
       per-receiver XP cap from cheers, un-cheer/re-cheer never re-awards XP
+- [ ] Public player profile (FEATURE_MAP AR-20): display name, level, rank title, badges, stats -
+      and a set of **preset "about me" chips** picked from an admin-managed catalog, never
+      free-text `bio` (`docs/ARCHITECTURE.md` D36 - `users.bio` stays private to the owner
+      forever). Needs a chip-catalog admin page and a per-user chip-selection table/column
 - [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
       admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
       currency) — depends on Phase 4's order execution primitives
@@ -160,9 +165,19 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point
-- [ ] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
+- [x] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
       publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
-      affected parent inline during the admin publish Server Action)
+      affected parent inline during the admin publish Server Action). Pulled forward into
+      Phase 3b Checkpoint 7 alongside the weekly report card's own Inngest job.
+- [ ] **Clerk/DB account-deletion reconciliation Inngest job** (flagged by Phase 2a's security
+      review, revisited and still open in the `/phase-audit 3b` security pass): `deleteMe`
+      (`src/server/users/service.ts`) deletes the Clerk identity first, then anonymizes our own
+      `users` row - if the Clerk delete succeeds but the anonymize write throws, the user is stuck
+      mid-deletion (their Clerk identity is gone, so `requireUser()` now fails and they can't
+      retry), with only the async `user.deleted` webhook redelivery as a path back to consistency.
+      Inngest now exists (Phase 3b Checkpoint 0) - this needs a scheduled reconciliation job that
+      finds any `users` row whose Clerk identity is confirmed gone but isn't yet anonymized, and
+      finishes the anonymize step for it.
 
 ## Phase 8 — Monetisation
 - [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
@@ -173,6 +188,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Confirm no learner-authored free text is ever rendered to another learner** (D36,
+      `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
+      specifically when Phase 6's public player profile (AR-20) ships, and again for any future
+      feature that surfaces one learner's content to another.
 - [ ] **Review the 8 unindexed-foreign-key and 15 unused-index Supabase advisor findings**
       (`INFO` level, flagged by the Phase 2b audit, `docs/STATUS.md`) - low-traffic pre-launch
       noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,

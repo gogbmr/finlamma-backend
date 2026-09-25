@@ -46,6 +46,30 @@ const RankTitleRefSchema = LocalizedTextSchema.nullable().openapi({
     "rank_titles row has a minLevel at or below their level yet.",
 });
 
+// PR-05: the learning-scope streak only (docs/ARCHITECTURE.md's `streaks`
+// table also tracks a separate `pulse_check` scope, not relevant to this
+// screen - see GET /me/stats/streak for both).
+const StreakSummarySchema = z.object({
+  current: z.number().int().nonnegative().openapi({ example: 4 }),
+  longest: z.number().int().nonnegative().openapi({ example: 12 }),
+  freezesLeft: z.number().int().nonnegative().openapi({ example: 2 }),
+});
+
+// PR-06: total is every currently-published lesson across every world, not
+// scoped to worlds the learner has reached yet - matches the prototype's
+// "lectures completed / total" framing.
+const LessonsProgressSchema = z.object({
+  completed: z.number().int().nonnegative().openapi({ example: 18 }),
+  total: z.number().int().nonnegative().openapi({ example: 40 }),
+  pct: z.number().int().min(0).max(100).openapi({ example: 45 }),
+});
+
+// PR-08: oldest-first, always exactly 7 entries (today included).
+const ActivityDotSchema = z.object({
+  date: z.string().openapi({ example: "2026-09-17", description: "IST calendar date." }),
+  active: z.boolean().openapi({ example: true }),
+});
+
 export const ProfileOverviewResponseSchema = z.object({
   data: z.object({
     firstName: z.string().nullable().openapi({ example: "Aarav" }),
@@ -56,5 +80,12 @@ export const ProfileOverviewResponseSchema = z.object({
     xpIntoLevel: z.number().int().nonnegative().openapi({ example: 300 }),
     xpToNextLevel: z.number().int().nonnegative().openapi({ example: 200 }),
     rankTitle: RankTitleRefSchema,
+    streak: StreakSummarySchema,
+    lessons: LessonsProgressSchema,
+    quizAccuracyPct: z.number().int().min(0).max(100).nullable().openapi({
+      example: 82,
+      description: "Null until the learner has answered at least one graded question.",
+    }),
+    activityDotCalendar: z.array(ActivityDotSchema).length(7),
   }),
 });

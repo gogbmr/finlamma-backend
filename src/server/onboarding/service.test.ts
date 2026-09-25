@@ -36,6 +36,9 @@ const mockListPendingReapprovalRequestsForUser = vi.fn();
 const mockApproveReapprovalAndRecordAcceptance = vi.fn();
 const mockDeclineReapprovalAndRefuseConsent = vi.fn();
 const mockSetConsentRecordWithdrawTokenHash = vi.fn();
+const mockSetParentContactWeeklyReportOptIn = vi.fn();
+const mockGetParentContactByWeeklyReportUnsubscribeTokenHash = vi.fn();
+const mockUnsubscribeParentContactFromWeeklyReport = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
   markOnboardingCompletedOnce: (id: unknown) => mockMarkOnboardingCompletedOnce(id),
@@ -70,6 +73,12 @@ vi.mock("./repo", () => ({
   declineReapprovalAndRefuseConsent: (input: unknown) => mockDeclineReapprovalAndRefuseConsent(input),
   setConsentRecordWithdrawTokenHash: (userId: unknown, hash: unknown) =>
     mockSetConsentRecordWithdrawTokenHash(userId, hash),
+  setParentContactWeeklyReportOptIn: (userId: unknown, optIn: unknown) =>
+    mockSetParentContactWeeklyReportOptIn(userId, optIn),
+  getParentContactByWeeklyReportUnsubscribeTokenHash: (hash: unknown) =>
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash(hash),
+  unsubscribeParentContactFromWeeklyReport: (parentContactId: unknown) =>
+    mockUnsubscribeParentContactFromWeeklyReport(parentContactId),
 }));
 
 const mockLogActivity = vi.fn();
@@ -108,6 +117,7 @@ import {
   getConsentRequestView,
   getConsentReviewList,
   getReapprovalRequestView,
+  getWeeklyReportUnsubscribeView,
   getWithdrawRequestView,
   isMinor,
   notifyAffectedMinorsForReapproval,
@@ -117,6 +127,7 @@ import {
   revealParentContact,
   scrubConsentDataForDeletedUser,
   setDateOfBirth,
+  unsubscribeWeeklyReport,
   withdrawParentConsent,
 } from "./service";
 
@@ -625,6 +636,91 @@ describe("confirmParentConsent", () => {
     expect(result).toEqual({ childFirstName: "Aarav" });
     consoleErrorSpy.mockRestore();
   });
+
+  it("default off - never touches the weekly-report opt-in when the caller omits it", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+
+    await confirmParentConsent("t", META); // no third argument
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
+  });
+
+  it("opt-in path - checking the box sets weekly-report opt-in and logs the change", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(true);
+
+    await confirmParentConsent("t", META, true);
+
+    expect(mockSetParentContactWeeklyReportOptIn).toHaveBeenCalledWith("u1", true);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.weekly_report_opted_in",
+        targetId: "u1",
+        metadata: { method: "consent_confirm" },
+      }),
+    );
+  });
+
+  it("a truthy non-boolean value never opts someone in - strict === true, not a truthy check", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+
+    // The action layer (src/app/consent/actions.ts) already normalizes this
+    // with Zod, but this function is defense-in-depth for any other caller.
+    await confirmParentConsent("t", META, "true" as unknown as boolean);
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
+  });
+
+  it("does not log a weekly-report opt-in change when it was already on (no-op)", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockListPublishedDocuments.mockResolvedValueOnce([]);
+    mockConfirmConsentAndRecordAcceptances.mockResolvedValueOnce({ id: "cr1", status: "consented" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockGetParentContact.mockResolvedValueOnce(null);
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(false); // no-op, already true
+
+    await confirmParentConsent("t", META, true);
+
+    expect(mockLogActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "consent.weekly_report_opted_in" }),
+    );
+  });
 });
 
 describe("requireFullAccess", () => {
@@ -734,6 +830,49 @@ describe("declineParentConsent", () => {
     expect(result).toEqual({ childFirstName: "Aarav" });
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "consent.refused", targetId: "u1" }),
+    );
+  });
+
+  it("decline clears opt-in - a real change is cleared and logged", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockDeclineConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "refused" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(true); // was on, now cleared
+
+    await declineParentConsent("t", META);
+
+    expect(mockSetParentContactWeeklyReportOptIn).toHaveBeenCalledWith("u1", false);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.weekly_report_opted_out",
+        targetId: "u1",
+        metadata: { method: "consent_declined" },
+      }),
+    );
+  });
+
+  it("decline is a no-op for weekly-report opt-in when it was already off", async () => {
+    mockGetConsentRecordByTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "pending",
+      usedAt: null,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+    mockDeclineConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "refused" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(false);
+
+    await declineParentConsent("t", META);
+
+    expect(mockLogActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "consent.weekly_report_opted_out" }),
     );
   });
 });
@@ -854,6 +993,40 @@ describe("withdrawParentConsent", () => {
 
     expect(result).toEqual({ childFirstName: "Aarav", alreadyWithdrawn: true });
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("withdrawal clears opt-in - a genuine new withdrawal clears a real opt-in and logs it", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({
+      id: "cr1",
+      userId: "u1",
+      status: "consented",
+    });
+    mockWithdrawConsentRecord.mockResolvedValueOnce({ id: "cr1", status: "withdrawn" });
+    mockGetUserFirstName.mockResolvedValue("Aarav");
+    mockGetParentContact.mockResolvedValueOnce({ email: "priya@example.com" });
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(true);
+    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await withdrawParentConsent("t", META);
+
+    expect(mockSetParentContactWeeklyReportOptIn).toHaveBeenCalledWith("u1", false);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.weekly_report_opted_out",
+        targetId: "u1",
+        metadata: { method: "consent_withdrawn" },
+      }),
+    );
+    consoleSpy.mockRestore();
+  });
+
+  it("never touches the weekly-report opt-in on the idempotent already-withdrawn path", async () => {
+    mockGetConsentRecordByWithdrawTokenHash.mockResolvedValueOnce({ status: "withdrawn", userId: "u1" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    await withdrawParentConsent("t", META);
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
   });
 });
 
@@ -1061,6 +1234,48 @@ describe("notifyAffectedMinorsForReapproval", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ targetId: "minor2" }));
     consoleErrorSpy.mockRestore();
   });
+
+  it("an email-send failure for one candidate never aborts the rest of the batch", async () => {
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockListCandidatesForReapproval.mockResolvedValueOnce([
+      {
+        userId: "minor1",
+        dateOfBirth: "2015-01-01",
+        firstName: "Aarav",
+        parentContactId: "pc1",
+        parentEmail: "priya@example.com",
+        parentName: "Priya",
+      },
+      {
+        userId: "minor2",
+        dateOfBirth: "2015-01-01",
+        firstName: "Diya",
+        parentContactId: "pc2",
+        parentEmail: "raj@example.com",
+        parentName: "Raj",
+      },
+    ]);
+    mockGetSettingNumber.mockResolvedValueOnce(5);
+    mockClaimReapprovalRequestSlot
+      .mockResolvedValueOnce({ ok: true, record: { id: "rr1" } })
+      .mockResolvedValueOnce({ ok: true, record: { id: "rr2" } });
+    // Force the real sendEmail path (not the dev-log fallback) so a Resend
+    // failure actually reaches the loop.
+    mockEnv.RESEND_API_KEY = "re_test_key";
+    mockEnv.EMAIL_FROM = "Finlamma <consent@mail.finlamma.in>";
+    mockSendEmail.mockRejectedValueOnce(new Error("Resend rejected this address"));
+    mockSendEmail.mockResolvedValueOnce(undefined);
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await notifyAffectedMinorsForReapproval("doc_2", META);
+
+    expect(result).toEqual({ notified: 1 });
+    expect(mockLogActivity).toHaveBeenCalledTimes(1);
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ targetId: "minor2" }));
+    consoleErrorSpy.mockRestore();
+    mockEnv.RESEND_API_KEY = undefined;
+    mockEnv.EMAIL_FROM = undefined;
+  });
 });
 
 describe("getReapprovalRequestView", () => {
@@ -1185,6 +1400,47 @@ describe("approveReapproval", () => {
     await expect(approveReapproval("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
+
+  it("is additive-only - omitting weeklyReportOptIn never touches an existing opt-in", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockApproveReapprovalAndRecordAcceptance.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    await approveReapproval("t", META); // no third argument - same as an unchecked box
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
+  });
+
+  it("checking the box sets weekly-report opt-in on and logs it", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockApproveReapprovalAndRecordAcceptance.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(true);
+
+    await approveReapproval("t", META, true);
+
+    expect(mockSetParentContactWeeklyReportOptIn).toHaveBeenCalledWith("u1", true);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.weekly_report_opted_in",
+        targetId: "u1",
+        metadata: { method: "reapproval_approved" },
+      }),
+    );
+  });
+
+  it("a truthy non-boolean value never opts someone in - strict === true, not a truthy check", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockGetLegalDocumentById.mockResolvedValueOnce(REAPPROVAL_DOC);
+    mockApproveReapprovalAndRecordAcceptance.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "approved" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    await approveReapproval("t", META, "true" as unknown as boolean);
+
+    expect(mockSetParentContactWeeklyReportOptIn).not.toHaveBeenCalled();
+  });
 });
 
 describe("declineReapproval", () => {
@@ -1224,6 +1480,24 @@ describe("declineReapproval", () => {
 
     await expect(declineReapproval("t", META)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("decline clears opt-in - revoking consent this way also clears a real opt-in and logs it", async () => {
+    mockGetReapprovalRequestByTokenHash.mockResolvedValueOnce(PENDING_REQUEST);
+    mockDeclineReapprovalAndRefuseConsent.mockResolvedValueOnce({ ...PENDING_REQUEST, status: "declined" });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    mockSetParentContactWeeklyReportOptIn.mockResolvedValueOnce(true);
+
+    await declineReapproval("t", META);
+
+    expect(mockSetParentContactWeeklyReportOptIn).toHaveBeenCalledWith("u1", false);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.weekly_report_opted_out",
+        targetId: "u1",
+        metadata: { method: "reapproval_declined" },
+      }),
+    );
   });
 });
 
@@ -1272,5 +1546,118 @@ describe("resendReapprovalRequests", () => {
     await expect(
       resendReapprovalRequests({ id: "u1", email: null, firstName: "Aarav", dateOfBirth: "2015-01-01" }, META),
     ).rejects.toMatchObject({ code: "RESEND_TOO_SOON", details: { retryAfterSeconds: 30 } });
+  });
+});
+
+describe("getWeeklyReportUnsubscribeView", () => {
+  it("returns invalid when no parent contact matches the token", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce(null);
+    expect(await getWeeklyReportUnsubscribeView("bad")).toEqual({ state: "invalid" });
+  });
+
+  it("returns already_unsubscribed when the opt-in is already off", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: false,
+    });
+    expect(await getWeeklyReportUnsubscribeView("t")).toEqual({ state: "already_unsubscribed" });
+  });
+
+  it("returns already_unsubscribed when the account has been deleted, even though opt-in is still true", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: true,
+    });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+    expect(await getWeeklyReportUnsubscribeView("t")).toEqual({ state: "already_unsubscribed" });
+  });
+
+  it("returns the valid view with the child's name when opt-in is currently on", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: true,
+    });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+    expect(await getWeeklyReportUnsubscribeView("t")).toEqual({ state: "valid", childFirstName: "Aarav" });
+  });
+});
+
+describe("unsubscribeWeeklyReport", () => {
+  it("throws NOT_FOUND for an unknown token", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce(null);
+    await expect(unsubscribeWeeklyReport("bad", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("is idempotent - re-unsubscribing an already-off contact succeeds without writing again", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: false,
+    });
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await unsubscribeWeeklyReport("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyUnsubscribed: true });
+    expect(mockUnsubscribeParentContactFromWeeklyReport).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("stops weekly emails but keeps consent - on success, only weeklyReportOptIn is touched, and it's logged", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: true,
+    });
+    mockUnsubscribeParentContactFromWeeklyReport.mockResolvedValueOnce({ id: "pc1", userId: "u1" });
+    mockGetUserFirstName.mockResolvedValue("Aarav");
+
+    const result = await unsubscribeWeeklyReport("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyUnsubscribed: false });
+    expect(mockUnsubscribeParentContactFromWeeklyReport).toHaveBeenCalledWith("pc1");
+    // Never touches consent - no consent_records repo function is called at all.
+    expect(mockWithdrawConsentRecord).not.toHaveBeenCalled();
+    expect(mockDeclineConsentRecord).not.toHaveBeenCalled();
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "consent.weekly_report_opted_out",
+        targetId: "u1",
+        metadata: { method: "unsubscribe_link" },
+      }),
+    );
+  });
+
+  it("reports alreadyUnsubscribed:true when a concurrent request wins the race", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: true,
+    });
+    mockUnsubscribeParentContactFromWeeklyReport.mockResolvedValueOnce(null);
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await unsubscribeWeeklyReport("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyUnsubscribed: true });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("reports alreadyUnsubscribed:true (not an error) when the account has been deleted", async () => {
+    mockGetParentContactByWeeklyReportUnsubscribeTokenHash.mockResolvedValueOnce({
+      id: "pc1",
+      userId: "u1",
+      weeklyReportOptIn: true,
+    });
+    mockIsUserDeleted.mockResolvedValueOnce(true);
+    mockGetUserFirstName.mockResolvedValueOnce("Aarav");
+
+    const result = await unsubscribeWeeklyReport("t", META);
+
+    expect(result).toEqual({ childFirstName: "Aarav", alreadyUnsubscribed: true });
+    expect(mockUnsubscribeParentContactFromWeeklyReport).not.toHaveBeenCalled();
   });
 });

@@ -93,6 +93,45 @@ describe("PATCH /api/v1/me", () => {
     const body = await res.json();
     expect(body.data.language).toBe("hi");
   });
+
+  it("updates bio", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockUpdateMe.mockResolvedValueOnce({ id: "u1", language: "en", theme: "dark", bio: "Hi!" });
+
+    const res = await PATCH(makeRequest("PATCH", { bio: "Hi!" }));
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateMe).toHaveBeenCalledWith(USER, { bio: "Hi!" }, { ip: null, userAgent: null });
+  });
+
+  it("rejects a bio over 280 characters", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+
+    const res = await PATCH(makeRequest("PATCH", { bio: "a".repeat(281) }));
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateMe).not.toHaveBeenCalled();
+  });
+
+  it("updates preferences as a whole object, not merged", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    const preferences = { sound: false, haptics: true, dataSaver: true };
+    mockUpdateMe.mockResolvedValueOnce({ id: "u1", language: "en", theme: "dark", preferences });
+
+    const res = await PATCH(makeRequest("PATCH", { preferences }));
+
+    expect(res.status).toBe(200);
+    expect(mockUpdateMe).toHaveBeenCalledWith(USER, { preferences }, { ip: null, userAgent: null });
+  });
+
+  it("rejects preferences missing a required field", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+
+    const res = await PATCH(makeRequest("PATCH", { preferences: { sound: true } }));
+
+    expect(res.status).toBe(400);
+    expect(mockUpdateMe).not.toHaveBeenCalled();
+  });
 });
 
 describe("DELETE /api/v1/me", () => {

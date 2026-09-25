@@ -59,6 +59,13 @@ describe("GET /api/v1/me/profile/overview", () => {
       xpIntoLevel: 300,
       xpToNextLevel: 200,
       rankTitle: { en: "Sprout", hi: "x", hx: "x" },
+      streak: { current: 4, longest: 12, freezesLeft: 2 },
+      lessons: { completed: 18, total: 40, pct: 45 },
+      quizAccuracyPct: 82,
+      activityDotCalendar: Array.from({ length: 7 }, (_, i) => ({
+        date: `2026-09-${17 + i}`,
+        active: i % 2 === 0,
+      })),
     });
 
     const res = await GET(makeRequest());
@@ -68,6 +75,10 @@ describe("GET /api/v1/me/profile/overview", () => {
     expect(body.data.firstName).toBe("Aarav");
     expect(body.data.level).toBe(3);
     expect(body.data.rankTitle).toEqual({ en: "Sprout", hi: "x", hx: "x" });
+    expect(body.data.streak).toEqual({ current: 4, longest: 12, freezesLeft: 2 });
+    expect(body.data.lessons).toEqual({ completed: 18, total: 40, pct: 45 });
+    expect(body.data.quizAccuracyPct).toBe(82);
+    expect(body.data.activityDotCalendar).toHaveLength(7);
     expect(mockGetProfileOverview).toHaveBeenCalledWith(USER);
   });
 

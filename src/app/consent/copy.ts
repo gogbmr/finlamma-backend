@@ -201,6 +201,38 @@ export const REAPPROVE_COPY: Record<ConsentLang, ReapproveCopy> = {
   },
 };
 
+// D33 (docs/ARCHITECTURE.md): the same optional, unticked-by-default weekly
+// report opt-in checkbox shown on both the confirm and reapprove pages -
+// deliberately plain and separate from the consent/approve button's own
+// copy, never implying it's required.
+type WeeklyReportOptInCopy = {
+  label: string;
+  helpText: string;
+};
+
+export const WEEKLY_REPORT_OPT_IN_COPY: Record<ConsentLang, WeeklyReportOptInCopy> = {
+  en: {
+    label: "Also email me a weekly summary of my child's learning progress.",
+    helpText:
+      "Optional - your consent above works the same whether or not you check this. You can stop " +
+      "these weekly emails anytime from a link in each one, without affecting your consent.",
+  },
+  hi: {
+    label: "Mujhe mere bachche ki learning progress ka weekly summary email bhi karein.",
+    helpText:
+      "Optional hai - upar di gayi aapki sahamati is checkbox se juda nahi hai. Aap in weekly " +
+      "emails ko kabhi bhi, har email mein diye gaye link se rok sakte hain, aapki sahamati par " +
+      "iska koi asar nahi padega.",
+  },
+  hx: {
+    label: "Mujhe mere child ki learning progress ka weekly summary email bhi karein.",
+    helpText:
+      "Yeh optional hai - aapki upar wali consent isse independent hai, chahe aap check karein ya " +
+      "na karein. Aap in weekly emails ko kabhi bhi, har email ke link se stop kar sakte hain - " +
+      "isse aapki consent par koi farak nahi padega.",
+  },
+};
+
 type WithdrawCopy = {
   pageTitle: string;
   intro: (childFirstName: string) => string;
@@ -249,5 +281,51 @@ export const WITHDRAW_COPY: Record<ConsentLang, WithdrawCopy> = {
     invalidBody: "Yeh withdrawal link kisi record se match nahi karta.",
     notApplicableTitle: "Withdraw karne ke liye kuch nahi",
     notApplicableBody: "Is request par withdraw karne ke liye koi active consent nahi hai.",
+  },
+};
+
+type WeeklyReportUnsubscribeCopy = {
+  pageTitle: string;
+  intro: (childFirstName: string) => string;
+  unsubscribeButton: string;
+  success: (childFirstName: string) => string;
+  alreadyUnsubscribed: (childFirstName: string) => string;
+  invalidTitle: string;
+  invalidBody: string;
+};
+
+// D33: stops ONLY the weekly report email - explicitly says so, since a
+// parent seeing an "unsubscribe" link might otherwise assume it withdraws
+// their full consent the way /consent/withdraw does.
+export const WEEKLY_REPORT_UNSUBSCRIBE_COPY: Record<ConsentLang, WeeklyReportUnsubscribeCopy> = {
+  en: {
+    pageTitle: "Stop weekly progress emails",
+    intro: (name) =>
+      `You're getting a weekly email with ${name}'s learning progress. This only turns that off - it does not withdraw your consent for ${name} to use Finlamma.`,
+    unsubscribeButton: "Stop weekly emails",
+    success: (name) => `Done - you won't get any more weekly progress emails for ${name}. Your consent for ${name} to use Finlamma is unchanged.`,
+    alreadyUnsubscribed: (name) => `You're already not getting weekly progress emails for ${name} - nothing more to do.`,
+    invalidTitle: "Invalid link",
+    invalidBody: "This unsubscribe link doesn't match any record.",
+  },
+  hi: {
+    pageTitle: "Weekly progress emails band karein",
+    intro: (name) =>
+      `Aapko ${name} ki learning progress ka weekly email milta hai. Yeh sirf usse band karta hai - iska ${name} ke Finlamma use karne ki sahamati par koi asar nahi padta.`,
+    unsubscribeButton: "Weekly emails band karein",
+    success: (name) => `Ho gaya - ab aapko ${name} ke liye aur weekly progress email nahi milenge. ${name} ke Finlamma use karne ki aapki sahamati waisi hi hai.`,
+    alreadyUnsubscribed: (name) => `Aapko pehle se hi ${name} ke liye weekly progress email nahi mil rahe - kuch aur karne ki zaroorat nahi.`,
+    invalidTitle: "Amany link",
+    invalidBody: "Yeh unsubscribe link kisi bhi record se mel nahi khata.",
+  },
+  hx: {
+    pageTitle: "Weekly progress emails stop karein",
+    intro: (name) =>
+      `Aapko ${name} ki learning progress ka weekly email milta hai. Yeh sirf usko stop karta hai - iska ${name} ke Finlamma use karne ki consent par koi effect nahi hai.`,
+    unsubscribeButton: "Weekly emails stop karein",
+    success: (name) => `Done - ab aapko ${name} ke liye aur weekly progress emails nahi milenge. ${name} ke liye aapki consent waisi hi rahegi.`,
+    alreadyUnsubscribed: (name) => `Aapko pehle se hi ${name} ke liye weekly progress emails nahi mil rahe - kuch aur karne ki zaroorat nahi.`,
+    invalidTitle: "Invalid link",
+    invalidBody: "Yeh unsubscribe link kisi record se match nahi karta.",
   },
 };

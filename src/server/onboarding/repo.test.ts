@@ -18,7 +18,14 @@ import { uniqueClerkUserId, uniqueEmail } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { approveReapprovalAndRecordAcceptance, declineReapprovalAndRefuseConsent } = await import("./repo");
+const {
+  anonymizeParentContact,
+  approveReapprovalAndRecordAcceptance,
+  declineReapprovalAndRefuseConsent,
+  getParentContactByWeeklyReportUnsubscribeTokenHash,
+  setParentContactWeeklyReportOptIn,
+  unsubscribeParentContactFromWeeklyReport,
+} = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 // The vi.mock factory above runs once for this file, so this is a single
@@ -251,5 +258,101 @@ describe("declineReapprovalAndRefuseConsent", () => {
 
     const [consentRecord] = await db.select().from(consentRecords).where(eq(consentRecords.userId, user.id));
     expect(consentRecord.status).toBe("consented"); // unchanged, never flipped to "refused"
+  });
+});
+
+async function makeUserWithParentContact(weeklyReportOptIn = false) {
+  const [user] = await db
+    .insert(users)
+    .values({
+      clerkUserId: uniqueClerkUserId("weekly-report-opt-in"),
+      clerkUpdatedAt: new Date(),
+      firstName: "Aarav",
+      lastInitial: "S",
+      email: null,
+      dateOfBirth: "2015-01-01",
+    })
+    .returning();
+
+  const [parentContact] = await db
+    .insert(parentContacts)
+    .values({ userId: user.id, name: "Priya", email: uniqueEmail("parent"), weeklyReportOptIn })
+    .returning();
+
+  return { user, parentContact };
+}
+
+describe("setParentContactWeeklyReportOptIn", () => {
+  it("returns true and writes the value on a genuine change", async () => {
+    const { user } = await makeUserWithParentContact(false);
+
+    const changed = await setParentContactWeeklyReportOptIn(user.id, true);
+
+    expect(changed).toBe(true);
+    const [row] = await db.select().from(parentContacts).where(eq(parentContacts.userId, user.id));
+    expect(row.weeklyReportOptIn).toBe(true);
+  });
+
+  it("returns false and writes nothing when the value is already what was asked for", async () => {
+    const { user } = await makeUserWithParentContact(true);
+
+    const changed = await setParentContactWeeklyReportOptIn(user.id, true);
+
+    expect(changed).toBe(false);
+  });
+});
+
+describe("unsubscribeParentContactFromWeeklyReport", () => {
+  it("clears the opt-in and returns the row when it was on", async () => {
+    const { user, parentContact } = await makeUserWithParentContact(true);
+
+    const result = await unsubscribeParentContactFromWeeklyReport(parentContact.id);
+
+    expect(result).not.toBeNull();
+    const [row] = await db.select().from(parentContacts).where(eq(parentContacts.userId, user.id));
+    expect(row.weeklyReportOptIn).toBe(false);
+  });
+
+  it("is idempotent - returns null (a no-op) when already off", async () => {
+    const { parentContact } = await makeUserWithParentContact(false);
+
+    const result = await unsubscribeParentContactFromWeeklyReport(parentContact.id);
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("anonymizeParentContact", () => {
+  it("clears weeklyReportOptIn and the unsubscribe token hash, same as the name/email", async () => {
+    const { parentContact } = await makeUserWithParentContact(true);
+    await db
+      .update(parentContacts)
+      .set({ weeklyReportUnsubscribeTokenHash: "some-live-hash" })
+      .where(eq(parentContacts.id, parentContact.id));
+
+    await anonymizeParentContact(parentContact.id);
+
+    const [row] = await db.select().from(parentContacts).where(eq(parentContacts.id, parentContact.id));
+    expect(row.name).toBe("[deleted]");
+    expect(row.weeklyReportOptIn).toBe(false);
+    expect(row.weeklyReportUnsubscribeTokenHash).toBeNull();
+  });
+});
+
+describe("getParentContactByWeeklyReportUnsubscribeTokenHash", () => {
+  it("finds the parent contact by its rotated unsubscribe token hash", async () => {
+    const { user, parentContact } = await makeUserWithParentContact(true);
+    await db
+      .update(parentContacts)
+      .set({ weeklyReportUnsubscribeTokenHash: "hash-for-" + user.id })
+      .where(eq(parentContacts.id, parentContact.id));
+
+    const found = await getParentContactByWeeklyReportUnsubscribeTokenHash("hash-for-" + user.id);
+
+    expect(found?.id).toBe(parentContact.id);
+  });
+
+  it("returns null for an unknown hash", async () => {
+    expect(await getParentContactByWeeklyReportUnsubscribeTokenHash("no-such-hash")).toBeNull();
   });
 });

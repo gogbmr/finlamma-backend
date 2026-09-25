@@ -1,12 +1,14 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { users } from "@/db/schema";
+import { users, type UserPreferences } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 
 export type UserPrefsUpdate = {
   language?: "en" | "hi" | "hx";
   theme?: "dark" | "light";
+  bio?: string | null;
+  preferences?: UserPreferences;
 };
 
 // UpdateMeRequestSchema (src/server/users/schemas.ts) already guarantees at
@@ -92,6 +94,12 @@ export async function anonymizeUserFromClerk(clerkUserId: string) {
       // A minor's real birthdate is personal data too - cleared same as
       // everything else here (see docs/STATUS.md's Phase 2a audit).
       dateOfBirth: null,
+      // Free-text, self-editable (up to 280 chars) - a security audit found
+      // this was left un-scrubbed, and unlike the other fields here it could
+      // contain anything the learner chose to type (a real name, school,
+      // address, social handle, ...), so it's cleared on deletion the same
+      // as everything else.
+      bio: null,
     })
     .where(and(eq(users.clerkUserId, clerkUserId), isNull(users.deletedAt)))
     .returning();
