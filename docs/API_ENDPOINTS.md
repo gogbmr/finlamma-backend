@@ -1585,9 +1585,9 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
 ```json
 {
   "data": {
-    "balance": 210,
-    "weeklyEarned": 90,
-    "weeklySpent": 0
+    "balancePaise": 21000,
+    "weeklyEarnedPaise": 9000,
+    "weeklySpentPaise": 0
   }
 }
 ```
@@ -2235,12 +2235,12 @@ V Money balance (always summed live from the ledger, never a stored balance), V 
 ```json
 {
   "data": {
-    "balance": 1250,
-    "earnedThisMonth": 300,
+    "balancePaise": 125000,
+    "earnedThisMonthPaise": 30000,
     "earnedBySource": [
       {
         "sourceType": "lesson_completion",
-        "amount": 300
+        "amountPaise": 30000
       }
     ]
   }
@@ -2296,7 +2296,7 @@ The caller's full earn/spend ledger, newest first, cursor-paginated.
   "data": [
     {
       "id": "00000000-0000-0000-0000-000000000000",
-      "amount": -500,
+      "amountPaise": -50000,
       "sourceType": "reward_claim",
       "reason": "Reward claimed",
       "createdAt": "2026-01-01T00:00:00.000Z"

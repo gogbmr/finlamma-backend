@@ -21,6 +21,7 @@ import {
 import {
   DEFAULT_VM_ISSUANCE_MULTIPLIER,
   VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,
+  VM_TO_LEDGER_PAISE,
   type RewardRuleUpdateInput,
 } from "./schemas";
 
@@ -86,15 +87,16 @@ export async function listRewardRulesForAdmin() {
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
-// WH-03's V Money tile.
+// WH-03's V Money tile. All amounts in paise (D37) - see
+// VmoneyStatsResponseSchema's comment.
 export async function getVmoneyStats(userId: string, at: Date = new Date()) {
   const since = new Date(at.getTime() - SEVEN_DAYS_MS);
-  const [balance, weeklyEarned, weeklySpent] = await Promise.all([
+  const [balancePaise, weeklyEarnedPaise, weeklySpentPaise] = await Promise.all([
     sumVmoneyBalance(userId),
     sumVmoneyEarnedSince(userId, since),
     sumVmoneySpentSince(userId, since),
   ]);
-  return { balance, weeklyEarned, weeklySpent };
+  return { balancePaise, weeklyEarnedPaise, weeklySpentPaise };
 }
 
 export async function updateRewardRuleForAdmin(
@@ -149,7 +151,10 @@ export async function creditLessonCompletion(
   const xpAmount = lesson.xpOverride ?? rule.defaultXp;
   const vmBaseAmount = lesson.vmOverride ?? rule.defaultVm;
   const multiplier = await getVmIssuanceMultiplier();
-  const vmAmount = Math.round(vmBaseAmount * multiplier);
+  // Rounds at paise scale (D37), not whole-VM scale - a 100x finer grid
+  // means a fractional multiplier (e.g. 1.5) essentially never needs to
+  // round at all in practice, unlike rounding a whole-VM amount first.
+  const vmAmountPaise = Math.round(vmBaseAmount * VM_TO_LEDGER_PAISE * multiplier);
 
   const shared = {
     userId: user.id,
@@ -160,7 +165,7 @@ export async function creditLessonCompletion(
   };
   const { xpRow, vmRow } = await creditLessonCompletionRow(
     { ...shared, amount: xpAmount },
-    { ...shared, amount: vmAmount, multiplierApplied: multiplier },
+    { ...shared, amountPaise: vmAmountPaise, multiplierApplied: multiplier },
   );
 
   // Both inserts share the same (userId, sourceType, sourceId) idempotency
@@ -175,7 +180,7 @@ export async function creditLessonCompletion(
       action: "economy.lesson_credited",
       targetType: "lesson",
       targetId: lesson.id,
-      metadata: { activityKind, xpAmount, vmAmount, multiplierApplied: multiplier, ruleId: rule.id },
+      metadata: { activityKind, xpAmount, vmAmountPaise, multiplierApplied: multiplier, ruleId: rule.id },
       ip: meta.ip,
       userAgent: meta.userAgent,
     });
@@ -190,14 +195,15 @@ export async function creditLessonCompletion(
 // PR-21 (Profile - Wallet): balance, VM earned this (IST) calendar month,
 // and an earn-source breakdown - see sumVmoneyEarnedSinceBySource's comment
 // on why the breakdown only ever shows sourceTypes that actually exist yet.
+// All amounts in paise (D37).
 export async function getMyWallet(userId: string, at: Date = new Date()) {
   const monthStart = istMonthStartUtc(at);
-  const [balance, earnedThisMonth, earnedBySource] = await Promise.all([
+  const [balancePaise, earnedThisMonthPaise, earnedBySource] = await Promise.all([
     sumVmoneyBalance(userId),
     sumVmoneyEarnedSince(userId, monthStart),
     sumVmoneyEarnedSinceBySource(userId, monthStart),
   ]);
-  return { balance, earnedThisMonth, earnedBySource };
+  return { balancePaise, earnedThisMonthPaise, earnedBySource };
 }
 
 // PR-24 (Profile - Wallet): the caller's full ledger history, newest first.

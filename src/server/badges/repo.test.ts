@@ -87,19 +87,19 @@ describe("awardBadgeAndCreditVmoney", () => {
       sourceId: badge.id,
       ruleId: null,
       reason: "Badge unlocked: Pehla Kadam",
-      amount: 50,
+      amountPaise: 5000,
       multiplierApplied: 1,
     });
 
     expect(result?.userBadge).not.toBeNull();
-    expect(result?.vmRow?.amount).toBe(50);
+    expect(result?.vmRow?.amountPaise).toBe(5000);
     const unlocked = await listUnlockedBadgeIdsForUser(user.id);
     expect(unlocked.has(badge.id)).toBe(true);
     const [ledgerRow] = await db
       .select()
       .from(vmoneyLedger)
       .where(and(eq(vmoneyLedger.userId, user.id), eq(vmoneyLedger.sourceId, badge.id)));
-    expect(ledgerRow?.amount).toBe(50);
+    expect(ledgerRow?.amountPaise).toBe(5000);
   });
 
   // Simulates the exact failure a security audit found: a crash between the
@@ -139,7 +139,7 @@ describe("awardBadgeAndCreditVmoney", () => {
         sourceId: badge.id,
         ruleId: null,
         reason: "Badge unlocked: Pehla Kadam",
-        amount: 50,
+        amountPaise: 5000,
         multiplierApplied: 1,
       }),
     ).rejects.toThrow("simulated crash");

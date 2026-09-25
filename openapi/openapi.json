@@ -4167,27 +4167,28 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "balance": {
+                        "balancePaise": {
                           "type": "integer",
-                          "example": 210
+                          "description": "V Money balance, in paise (100 = 1 V Money). Never rounded by the backend.",
+                          "example": 21000
                         },
-                        "weeklyEarned": {
+                        "weeklyEarnedPaise": {
                           "type": "integer",
                           "minimum": 0,
-                          "description": "V Money earned in the trailing 7 days.",
-                          "example": 90
+                          "description": "V Money earned in the trailing 7 days, in paise.",
+                          "example": 9000
                         },
-                        "weeklySpent": {
+                        "weeklySpentPaise": {
                           "type": "integer",
                           "minimum": 0,
-                          "description": "V Money spent in the trailing 7 days. Always 0 until a spend path exists.",
+                          "description": "V Money spent in the trailing 7 days, in paise. Always 0 until a spend path exists.",
                           "example": 0
                         }
                       },
                       "required": [
-                        "balance",
-                        "weeklyEarned",
-                        "weeklySpent"
+                        "balancePaise",
+                        "weeklyEarnedPaise",
+                        "weeklySpentPaise"
                       ]
                     }
                   },
@@ -5100,14 +5101,14 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "balance": {
+                        "balancePaise": {
                           "type": "integer",
-                          "example": 1250
+                          "example": 125000
                         },
-                        "earnedThisMonth": {
+                        "earnedThisMonthPaise": {
                           "type": "integer",
                           "minimum": 0,
-                          "example": 300
+                          "example": 30000
                         },
                         "earnedBySource": {
                           "type": "array",
@@ -5118,23 +5119,23 @@
                                 "type": "string",
                                 "example": "lesson_completion"
                               },
-                              "amount": {
+                              "amountPaise": {
                                 "type": "integer",
                                 "minimum": 0,
-                                "example": 300
+                                "example": 30000
                               }
                             },
                             "required": [
                               "sourceType",
-                              "amount"
+                              "amountPaise"
                             ]
                           },
                           "description": "Only sourceTypes that actually have an earning this month appear here."
                         }
                       },
                       "required": [
-                        "balance",
-                        "earnedThisMonth",
+                        "balancePaise",
+                        "earnedThisMonthPaise",
                         "earnedBySource"
                       ]
                     }
@@ -5229,10 +5230,10 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "amount": {
+                          "amountPaise": {
                             "type": "integer",
-                            "example": -500,
-                            "description": "Positive = earned, negative = spent."
+                            "example": -50000,
+                            "description": "Positive = earned, negative = spent. In paise (100 = 1 V Money)."
                           },
                           "sourceType": {
                             "type": "string",
@@ -5249,7 +5250,7 @@
                         },
                         "required": [
                           "id",
-                          "amount",
+                          "amountPaise",
                           "sourceType",
                           "reason",
                           "createdAt"

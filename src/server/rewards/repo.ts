@@ -2,6 +2,7 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { rewardClaims, rewards, users } from "@/db/schema";
 import { insertVmoneyLedgerEntryIfNew, sumVmoneyBalanceTx } from "@/server/economy/repo";
+import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import type { CreateRewardDraftInput, UpdateRewardDraftInput } from "./schemas";
 
 export async function listPublishedRewards() {
@@ -72,7 +73,7 @@ export async function listRecentRewardClaims(limit: number) {
 
 export type ClaimRewardResult =
   | { status: "already_claimed"; claim: typeof rewardClaims.$inferSelect }
-  | { status: "insufficient_balance"; balance: number }
+  | { status: "insufficient_balance"; balancePaise: number }
   | { status: "claimed"; claim: typeof rewardClaims.$inferSelect };
 
 // The whole claim, atomically: lock this user's row first (serializes every
@@ -101,8 +102,9 @@ export async function claimRewardTx(input: {
       .limit(1);
     if (existing) return { status: "already_claimed", claim: existing };
 
-    const balance = await sumVmoneyBalanceTx(tx, input.userId);
-    if (balance < input.priceVm) return { status: "insufficient_balance", balance };
+    const balancePaise = await sumVmoneyBalanceTx(tx, input.userId);
+    const priceVmPaise = input.priceVm * VM_TO_LEDGER_PAISE;
+    if (balancePaise < priceVmPaise) return { status: "insufficient_balance", balancePaise };
 
     const [claim] = await tx
       .insert(rewardClaims)
@@ -128,7 +130,7 @@ export async function claimRewardTx(input: {
       sourceId: claim.id,
       ruleId: null,
       reason: "Reward claimed",
-      amount: -input.priceVm,
+      amountPaise: -priceVmPaise,
       multiplierApplied: 1,
     });
 

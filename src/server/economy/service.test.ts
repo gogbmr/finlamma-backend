@@ -205,7 +205,7 @@ describe("creditLessonCompletion", () => {
     mockGetSettingNumber.mockResolvedValueOnce(1.5);
     mockCreditLessonCompletionRow.mockResolvedValueOnce({
       xpRow: { id: "xp_1", amount: 20 },
-      vmRow: { id: "vm_1", amount: 45 },
+      vmRow: { id: "vm_1", amountPaise: 4500 },
     });
 
     const result = await creditLessonCompletion(USER, LESSON, true, META);
@@ -213,12 +213,12 @@ describe("creditLessonCompletion", () => {
     expect(result).toEqual({ credited: true });
     expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "user_1", sourceType: "lesson_completion", sourceId: "lesson_1", ruleId: "rule_1", amount: 20 }),
-      expect.objectContaining({ amount: 45, multiplierApplied: 1.5 }),
+      expect.objectContaining({ amountPaise: 4500, multiplierApplied: 1.5 }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "economy.lesson_credited",
-        metadata: expect.objectContaining({ activityKind: "video", xpAmount: 20, vmAmount: 45 }),
+        metadata: expect.objectContaining({ activityKind: "video", xpAmount: 20, vmAmountPaise: 4500 }),
       }),
     );
     // docs/ECONOMY.md decision 5: a real credit is exactly what "activity"
@@ -237,7 +237,7 @@ describe("creditLessonCompletion", () => {
     mockGetSettingNumber.mockResolvedValueOnce(1);
     mockCreditLessonCompletionRow.mockResolvedValueOnce({
       xpRow: { id: "xp_1", amount: 999 },
-      vmRow: { id: "vm_1", amount: 500 },
+      vmRow: { id: "vm_1", amountPaise: 50000 },
     });
 
     await creditLessonCompletion(
@@ -249,7 +249,7 @@ describe("creditLessonCompletion", () => {
 
     expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 999 }),
-      expect.objectContaining({ amount: 500 }),
+      expect.objectContaining({ amountPaise: 50000 }),
     );
   });
 
@@ -306,7 +306,7 @@ describe("getVmoneyStats", () => {
 
     const stats = await getVmoneyStats(USER.id, AT);
 
-    expect(stats).toEqual({ balance: 0, weeklyEarned: 0, weeklySpent: 0 });
+    expect(stats).toEqual({ balancePaise: 0, weeklyEarnedPaise: 0, weeklySpentPaise: 0 });
   });
 
   it("combines balance, weekly earned and weekly spent from the ledger", async () => {
@@ -316,7 +316,7 @@ describe("getVmoneyStats", () => {
 
     const stats = await getVmoneyStats(USER.id, AT);
 
-    expect(stats).toEqual({ balance: 210, weeklyEarned: 90, weeklySpent: 15 });
+    expect(stats).toEqual({ balancePaise: 210, weeklyEarnedPaise: 90, weeklySpentPaise: 15 });
   });
 
   it("passes a since-date exactly 7 days before `at` to both weekly sums", async () => {
@@ -336,14 +336,16 @@ describe("getMyWallet", () => {
   it("combines balance, VM earned this IST month, and the earn-source breakdown", async () => {
     mockSumVmoneyBalance.mockResolvedValueOnce(1250);
     mockSumVmoneyEarnedSince.mockResolvedValueOnce(300);
-    mockSumVmoneyEarnedSinceBySource.mockResolvedValueOnce([{ sourceType: "lesson_completion", amount: 300 }]);
+    mockSumVmoneyEarnedSinceBySource.mockResolvedValueOnce([
+      { sourceType: "lesson_completion", amountPaise: 300 },
+    ]);
 
     const wallet = await getMyWallet(USER.id, new Date("2026-09-24T10:00:00.000Z"));
 
     expect(wallet).toEqual({
-      balance: 1250,
-      earnedThisMonth: 300,
-      earnedBySource: [{ sourceType: "lesson_completion", amount: 300 }],
+      balancePaise: 1250,
+      earnedThisMonthPaise: 300,
+      earnedBySource: [{ sourceType: "lesson_completion", amountPaise: 300 }],
     });
   });
 });

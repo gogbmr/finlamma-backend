@@ -94,7 +94,7 @@ export async function awardBadgeAndCreditVmoney(
     sourceId: string;
     ruleId: string | null;
     reason: string;
-    amount: number;
+    amountPaise: number;
     multiplierApplied: number;
   },
 ) {

@@ -2,6 +2,7 @@ import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import { logInternalError } from "@/lib/http";
 import type { requestMeta } from "@/lib/http";
+import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { BADGE_CRITERIA_EVALUATORS } from "./evaluators";
@@ -145,13 +146,15 @@ export async function evaluateBadgesForUser(user: { id: string }, meta: RequestM
       if (progress < badge.criteria.threshold) continue;
 
       const multiplier = await getVmIssuanceMultiplier();
-      const amount = Math.round(badge.vmReward * multiplier);
+      // D37: rounds at paise scale, not whole-VM scale - see
+      // src/server/economy/service.ts's creditLessonCompletion comment.
+      const amountPaise = Math.round(badge.vmReward * VM_TO_LEDGER_PAISE * multiplier);
       const result = await awardBadgeAndCreditVmoney(user.id, badge.id, {
         sourceType: "badge_unlock",
         sourceId: badge.id,
         ruleId: null,
         reason: `Badge unlocked: ${badge.name.en}`,
-        amount,
+        amountPaise,
         multiplierApplied: multiplier,
       });
       if (!result) continue; // lost a race - another concurrent call already awarded it
@@ -162,7 +165,7 @@ export async function evaluateBadgesForUser(user: { id: string }, meta: RequestM
         action: "badge.unlocked",
         targetType: "badge",
         targetId: badge.id,
-        metadata: { name: badge.name.en, vmAwarded: amount },
+        metadata: { name: badge.name.en, vmAwardedPaise: amountPaise },
         ip: meta.ip,
         userAgent: meta.userAgent,
       });

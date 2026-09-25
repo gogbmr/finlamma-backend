@@ -62,9 +62,15 @@ async function insertXpEventIfNew(txDb: DbOrTx, input: CreditInput & { amount: n
   return row ?? null;
 }
 
+// D37 (docs/ARCHITECTURE.md): `amountPaise` is the ledger's real unit from
+// here on - exact paise, pegged 1:1 with rupees (100 = 1 V Money), so a
+// trade's cost/proceeds need zero rounding at the point they're written.
+// `amount` (the old whole-VM column) is intentionally never written by this
+// function - see economy.ts schema's comment for why it stays nullable
+// rather than being dropped yet.
 export async function insertVmoneyLedgerEntryIfNew(
   txDb: DbOrTx,
-  input: CreditInput & { amount: number; multiplierApplied: number },
+  input: CreditInput & { amountPaise: number; multiplierApplied: number },
 ) {
   const [row] = await txDb
     .insert(vmoneyLedger)
@@ -82,7 +88,7 @@ export async function insertVmoneyLedgerEntryIfNew(
 // after the other succeeded.
 export async function creditLessonCompletionRow(
   xp: CreditInput & { amount: number },
-  vm: CreditInput & { amount: number; multiplierApplied: number },
+  vm: CreditInput & { amountPaise: number; multiplierApplied: number },
 ) {
   return db.transaction(async (tx) => {
     const xpRow = await insertXpEventIfNew(tx, xp);
@@ -109,7 +115,9 @@ function toNumber(value: string | number | null): number {
 // inside their own transaction instead (src/server/badges/repo.ts's
 // awardBadgeAndCreditVmoney). Same (userId, sourceType, sourceId)
 // idempotency mechanism as every other ledger write (D26).
-export async function creditVmoneyRow(input: CreditInput & { amount: number; multiplierApplied: number }) {
+export async function creditVmoneyRow(
+  input: CreditInput & { amountPaise: number; multiplierApplied: number },
+) {
   return insertVmoneyLedgerEntryIfNew(db, input);
 }
 
@@ -120,7 +128,7 @@ export async function creditVmoneyRow(input: CreditInput & { amount: number; mul
 // can never be stale relative to a concurrent claim on the same user.
 export async function sumVmoneyBalanceTx(txDb: DbOrTx, userId: string): Promise<number> {
   const [row] = await txDb
-    .select({ total: sql<string | number>`coalesce(sum(${vmoneyLedger.amount}), 0)` })
+    .select({ total: sql<string | number>`coalesce(sum(${vmoneyLedger.amountPaise}), 0)` })
     .from(vmoneyLedger)
     .where(eq(vmoneyLedger.userId, userId));
   return toNumber(row?.total ?? 0);
@@ -147,7 +155,7 @@ export async function sumXpSince(userId: string, since: Date): Promise<number> {
 
 export async function sumVmoneyBalance(userId: string): Promise<number> {
   const [row] = await db
-    .select({ total: sql<string | number>`coalesce(sum(${vmoneyLedger.amount}), 0)` })
+    .select({ total: sql<string | number>`coalesce(sum(${vmoneyLedger.amountPaise}), 0)` })
     .from(vmoneyLedger)
     .where(eq(vmoneyLedger.userId, userId));
   return toNumber(row?.total ?? 0);
@@ -160,7 +168,7 @@ export async function sumVmoneyBalance(userId: string): Promise<number> {
 export async function sumVmoneyEarnedSince(userId: string, since: Date): Promise<number> {
   const [row] = await db
     .select({
-      total: sql<string | number>`coalesce(sum(${vmoneyLedger.amount}) filter (where ${vmoneyLedger.amount} > 0), 0)`,
+      total: sql<string | number>`coalesce(sum(${vmoneyLedger.amountPaise}) filter (where ${vmoneyLedger.amountPaise} > 0), 0)`,
     })
     .from(vmoneyLedger)
     .where(and(eq(vmoneyLedger.userId, userId), gte(vmoneyLedger.createdAt, since)));
@@ -174,24 +182,28 @@ export async function sumVmoneyEarnedSince(userId: string, since: Date): Promise
 export async function sumVmoneyEarnedSinceBySource(
   userId: string,
   since: Date,
-): Promise<{ sourceType: string; amount: number }[]> {
+): Promise<{ sourceType: string; amountPaise: number }[]> {
   const rows = await db
     .select({
       sourceType: vmoneyLedger.sourceType,
-      total: sql<string | number>`coalesce(sum(${vmoneyLedger.amount}), 0)`,
+      total: sql<string | number>`coalesce(sum(${vmoneyLedger.amountPaise}), 0)`,
     })
     .from(vmoneyLedger)
     .where(
-      and(eq(vmoneyLedger.userId, userId), gte(vmoneyLedger.createdAt, since), sql`${vmoneyLedger.amount} > 0`),
+      and(
+        eq(vmoneyLedger.userId, userId),
+        gte(vmoneyLedger.createdAt, since),
+        sql`${vmoneyLedger.amountPaise} > 0`,
+      ),
     )
     .groupBy(vmoneyLedger.sourceType);
-  return rows.map((r) => ({ sourceType: r.sourceType, amount: toNumber(r.total) }));
+  return rows.map((r) => ({ sourceType: r.sourceType, amountPaise: toNumber(r.total) }));
 }
 
 export async function sumVmoneySpentSince(userId: string, since: Date): Promise<number> {
   const [row] = await db
     .select({
-      total: sql<string | number>`coalesce(-sum(${vmoneyLedger.amount}) filter (where ${vmoneyLedger.amount} < 0), 0)`,
+      total: sql<string | number>`coalesce(-sum(${vmoneyLedger.amountPaise}) filter (where ${vmoneyLedger.amountPaise} < 0), 0)`,
     })
     .from(vmoneyLedger)
     .where(and(eq(vmoneyLedger.userId, userId), gte(vmoneyLedger.createdAt, since)));
@@ -219,8 +231,18 @@ export async function listVmoneyLedgerForUser(
     );
   }
 
+  // Explicit column list (not select()) - deliberately never exposes the
+  // deprecated `amount` column (D37, stale/null depending on when the row
+  // was written) or internal fields (userId, sourceId, ruleId,
+  // multiplierApplied) the API response was never documented to include.
   const rows = await db
-    .select()
+    .select({
+      id: vmoneyLedger.id,
+      amountPaise: vmoneyLedger.amountPaise,
+      sourceType: vmoneyLedger.sourceType,
+      reason: vmoneyLedger.reason,
+      createdAt: vmoneyLedger.createdAt,
+    })
     .from(vmoneyLedger)
     .where(and(...conditions))
     .orderBy(desc(vmoneyLedger.createdAt), desc(vmoneyLedger.id))
