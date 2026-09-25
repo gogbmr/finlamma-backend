@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { findAdviceLikePhrases } from "@/server/trading/advice-language";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { createInstrumentAction, updateInstrumentAction } from "./actions";
 
@@ -43,13 +44,23 @@ function LocalizedFields({
   onChange,
   disabled,
   helpText,
+  checkForAdviceLanguage,
 }: {
   label: string;
   value: LocalizedText;
   onChange: (value: LocalizedText) => void;
   disabled: boolean;
   helpText?: string;
+  // Soft, non-blocking heuristic (src/server/trading/advice-language.ts) -
+  // only used for about/tip, which reach the app's Trade tab and must stay
+  // educational-only (PRODUCT_SPEC.md, CLAUDE.md's "never investment
+  // advice" rule). Never prevents saving - see that file's own comment.
+  checkForAdviceLanguage?: boolean;
 }) {
+  const flagged = checkForAdviceLanguage
+    ? Array.from(new Set(LANGUAGES.flatMap((lang) => findAdviceLikePhrases(value[lang]))))
+    : [];
+
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-foreground">{label}</p>
@@ -64,6 +75,12 @@ function LocalizedFields({
           />
         </div>
       ))}
+      {flagged.length > 0 && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+          Sounds like it might read as advice ({flagged.join(", ")}) - double-check this is
+          purely educational before saving. This is a reminder only, not a block.
+        </p>
+      )}
     </div>
   );
 }
@@ -184,13 +201,20 @@ function NewInstrumentForm() {
         <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="NIFTY 50, Large cap" />
       </div>
 
-      <LocalizedFields label="About" value={about} onChange={setAbout} disabled={false} />
+      <LocalizedFields
+        label="About"
+        value={about}
+        onChange={setAbout}
+        disabled={false}
+        checkForAdviceLanguage
+      />
       <LocalizedFields
         label="Tip"
         value={tip}
         onChange={setTip}
         disabled={false}
         helpText="Purely educational - what the company does, or a finance concept it illustrates. Never a buy/sell signal or valuation opinion (CLAUDE.md: never investment advice)."
+        checkForAdviceLanguage
       />
 
       <Button type="button" onClick={create} disabled={isPending || !symbol || !name || !sector}>
@@ -295,13 +319,20 @@ function InstrumentForm({ instrument, canManage }: { instrument: InstrumentRow; 
         <Input value={tags} disabled={!canManage} onChange={(e) => setTags(e.target.value)} />
       </div>
 
-      <LocalizedFields label="About" value={about} onChange={setAbout} disabled={!canManage} />
+      <LocalizedFields
+        label="About"
+        value={about}
+        onChange={setAbout}
+        disabled={!canManage}
+        checkForAdviceLanguage
+      />
       <LocalizedFields
         label="Tip"
         value={tip}
         onChange={setTip}
         disabled={!canManage}
         helpText="Purely educational - what the company does, or a finance concept it illustrates. Never a buy/sell signal or valuation opinion (CLAUDE.md: never investment advice)."
+        checkForAdviceLanguage
       />
 
       <div className="flex items-center gap-2">

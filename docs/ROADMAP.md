@@ -230,9 +230,16 @@ once approved)
       `question_answers.question_id` have no covering index), but worth a real pass once query
       patterns and data volume are closer to production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
-      questions, emails, consent pages) — the seed/draft copy written during development (e.g.
-      `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
-      reviewed by a native speaker.
+      questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`)
+      — the seed/draft copy written during development (e.g. `scripts/seed-mentors.ts`'s
+      Hindi/Hinglish bios) is a best-effort approximation, not reviewed by a native speaker.
+- [ ] **Legal/compliance review of every `instruments.about`/`instruments.tip` field for
+      advice-like language** (target prices, "buy now", growth predictions, etc.) before launch.
+      The admin editor shows a non-blocking keyword-heuristic warning while staff author this
+      copy (`src/server/trading/advice-language.ts`) and every schema field carries the "never
+      investment advice" reminder as help text, but neither is a substitute for a real review -
+      the heuristic only catches a fixed phrase list and can't verify tone/intent. Re-run this
+      check any time an instrument's about/tip copy changes after launch, not just once.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence
