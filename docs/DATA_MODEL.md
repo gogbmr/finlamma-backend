@@ -11,7 +11,9 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   never change their own date of birth again; only staff can correct it, with a required reason,
   logged via `activity_logs`), state (nullable, optional, shown with an explanation at collection
   time, used only for the Arena state leaderboard scope, never exposed on any public profile),
-  language, theme, bio (text, nullable), preferences jsonb (sound, haptics, data_saver — small
+  language, theme, bio (text, nullable — **D36, `docs/ARCHITECTURE.md`: private to the owner
+  forever, never rendered to any other learner, including Arena's Phase 6 public player profile**),
+  preferences jsonb (sound, haptics, data_saver — small
   booleans, same jsonb pattern as translatable text), clerk_updated_at (Clerk's own updated_at for
   the last change we applied, so the webhook can ignore stale/out-of-order redeliveries),
   deleted_at. On `user.deleted` from Clerk, the row is soft-deleted and anonymized in place

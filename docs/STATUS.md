@@ -1,5 +1,34 @@
 # Status
 
+## 2026-09-25 — Decided: `users.bio` is never shown to other learners, ever (D36)
+
+Follow-up to the `/phase-audit 3b` finding below (bio's own schema comment said "never shown on
+any public profile," but `docs/FEATURE_MAP.md` row AR-20 - Arena's Phase 6 public player profile -
+had `bio` listed as a field shown to *other* learners, a real, unfixed contradiction). Decided:
+
+- **Free-text `bio` is never shown to other learners, now or ever.** `users.bio` stays private to
+  the owner, `GET`/`PATCH /me` only. Recorded as `docs/ARCHITECTURE.md` D36.
+- **AR-20's public player profile (Phase 6) is corrected**, not built: display name (first name +
+  last initial), level, rank title, badges, stats - and a set of **preset "about me" chips** picked
+  from an admin-managed catalog, never free text. `docs/FEATURE_MAP.md`'s AR-20 row and
+  `docs/ROADMAP.md`'s Phase 6 scope both updated to the chip design; nothing built yet.
+- **Reasoning**: free text authored by a minor and shown to other minors is a real child-safety
+  risk (contact details, school names, a grooming vector) that contradicts this app's existing
+  kid-safe rules (no photos, no chat between users, kid-safe display names only - CLAUDE.md rule
+  10). Sustained human moderation of child-authored free text isn't a realistic pre-launch
+  commitment; a fixed, admin-curated chip list gives a learner real personality with zero ongoing
+  moderation burden.
+- **The schema comment is now the settled rule, not an aspiration** - `src/server/users/schemas.ts`'s
+  `BioSchema` and `docs/DATA_MODEL.md`'s `users` bullet both point at D36 explicitly, so any future
+  reader of either file sees this was decided, not just phrased that way once and left unenforced.
+- **Pre-launch checklist item added**: "Confirm no learner-authored free text is ever rendered to
+  another learner" - re-check specifically when AR-20 ships, and for any future feature that
+  surfaces one learner's content to another.
+
+No code behavior changes today - `bio` was never actually wired into any public-facing view, so
+this decision locks the design before Phase 6 builds AR-20 the wrong way, rather than fixing a live
+bug.
+
 ## 2026-09-24 — `/phase-audit 3b` complete: 2 Medium + 3 Low fixes applied, ready to merge
 
 Audited every commit on `phase-3b-daily-engagement` since it diverged from `main`

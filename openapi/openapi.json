@@ -251,7 +251,7 @@
             ],
             "maxLength": 280,
             "example": "Saving up for my first SIP!",
-            "description": "Free-text, self-editable, never shown on any public profile (kid-safe rule)."
+            "description": "Free-text, self-editable, private to the owner - never shown to any other learner."
           },
           "preferences": {
             "type": "object",
@@ -335,7 +335,7 @@
             ],
             "maxLength": 280,
             "example": "Saving up for my first SIP!",
-            "description": "Free-text, self-editable, never shown on any public profile (kid-safe rule)."
+            "description": "Free-text, self-editable, private to the owner - never shown to any other learner."
           },
           "preferences": {
             "type": "object",

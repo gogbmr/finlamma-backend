@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.2.0) on 2026-09-24.
+> Generated from `openapi/openapi.json` (version 0.2.0) on 2026-09-25.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -173,7 +173,7 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
 |---|---|---|---|
 | `language` | string (en, hi, hx) | no | en (English), hi (Hindi) or hx (Hinglish). |
 | `theme` | string (dark, light) | no |  |
-| `bio` | string or null | no | Free-text, self-editable, never shown on any public profile (kid-safe rule). |
+| `bio` | string or null | no | Free-text, self-editable, private to the owner - never shown to any other learner. |
 | `preferences` | object | no |  |
 | `preferences.sound` | boolean | yes | In-app sound effects on/off. |
 | `preferences.haptics` | boolean | yes | Haptic feedback on/off. |

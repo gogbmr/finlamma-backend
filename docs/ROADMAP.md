@@ -152,6 +152,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost)
 - [ ] Cheers (+5 XP, notification) — one cheer per recipient per sender per day, a daily
       per-receiver XP cap from cheers, un-cheer/re-cheer never re-awards XP
+- [ ] Public player profile (FEATURE_MAP AR-20): display name, level, rank title, badges, stats -
+      and a set of **preset "about me" chips** picked from an admin-managed catalog, never
+      free-text `bio` (`docs/ARCHITECTURE.md` D36 - `users.bio` stays private to the owner
+      forever). Needs a chip-catalog admin page and a per-user chip-selection table/column
 - [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
       admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
       currency) — depends on Phase 4's order execution primitives
@@ -184,6 +188,10 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Confirm no learner-authored free text is ever rendered to another learner** (D36,
+      `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
+      specifically when Phase 6's public player profile (AR-20) ships, and again for any future
+      feature that surfaces one learner's content to another.
 - [ ] **Review the 8 unindexed-foreign-key and 15 unused-index Supabase advisor findings**
       (`INFO` level, flagged by the Phase 2b audit, `docs/STATUS.md`) - low-traffic pre-launch
       noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,

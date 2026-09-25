@@ -21,6 +21,15 @@ const PreferencesSchema = z
   })
   .openapi({ example: DEFAULT_USER_PREFERENCES });
 
+// docs/ARCHITECTURE.md D36 (settled, not aspirational): this field is NEVER
+// rendered to any other learner, in this endpoint or any future one -
+// including Arena's public player profile (Phase 6, FEATURE_MAP AR-20),
+// which shows a set of admin-curated preset chips instead of this free text.
+// Free text a minor writes, shown to other minors, with no moderation
+// pipeline, is a child-safety risk (contact details, school names, a
+// grooming vector) this app does not take on. If a future feature ever
+// needs to surface something learner-authored to other learners, it must be
+// a new, separately-reviewed field/mechanism - never this one.
 const BIO_MAX_LENGTH = 280;
 const BioSchema = z
   .string()
@@ -29,7 +38,7 @@ const BioSchema = z
   .nullable()
   .openapi({
     example: "Saving up for my first SIP!",
-    description: "Free-text, self-editable, never shown on any public profile (kid-safe rule).",
+    description: "Free-text, self-editable, private to the owner - never shown to any other learner.",
   });
 
 export const MeDataSchema = registry.register(
