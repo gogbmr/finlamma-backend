@@ -50,6 +50,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     economyManage,
     coachNoteManage,
     coachNotePublish,
+    instrumentManage,
     role,
   ] = await Promise.all([
     roleHasPermission(staff.roleId, "world.manage"),
@@ -68,6 +69,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     roleHasPermission(staff.roleId, "economy.manage"),
     roleHasPermission(staff.roleId, "coach_note.manage"),
     roleHasPermission(staff.roleId, "coach_note.publish"),
+    roleHasPermission(staff.roleId, "instrument.manage"),
     getRoleById(staff.roleId),
   ]);
 
@@ -84,6 +86,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     badges: economyManage,
     rewards: economyManage,
     coachNotes: coachNoteManage || coachNotePublish,
+    instruments: instrumentManage,
   };
 
   return (

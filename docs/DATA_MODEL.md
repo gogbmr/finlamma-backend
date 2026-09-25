@@ -234,9 +234,13 @@ skill for the full idempotency/reversal design)
 - `coach_note_templates` (category strength|gap|opportunity|habit, template jsonb {en,hi,hx} with
   placeholders, status draft|published) — admin-editable, no AI in v1
 
-**Trading**
+**Trading** (Phase 4 Checkpoint 1 — `instruments`/`market_holidays`/`market_controls` built)
 - `instruments` (symbol, exchange, name, sector, about jsonb, tip jsonb {en,hi,hx}, tags text[],
-  mcap, pe, lot_size, active, halted). Order pad access is gated by
+  mcap, pe, lot_size, active, halted) — `about`/`tip`/`mcap`/`pe` are all admin-curated static
+  text/figures (`docs/FEATURE_MAP.md` Gaps → Trade #5/#8), never live-fetched; live OHLC/volume/LTP
+  come from Twelve Data at request time (Checkpoint 2), never stored here. `tip` must stay purely
+  educational (what the company does / a finance concept it illustrates) — never phrased as a
+  buy/sell signal, per CLAUDE.md's "never investment advice" rule. Order pad access is gated by
   `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition` (default: the 3rd published
   world, by position - never a specific world id/name, D25 `docs/ARCHITECTURE.md`) -
   `src/server/worlds/service.ts`'s `isTradingUnlocked()` implements the check now, ready for
@@ -249,9 +253,11 @@ skill for the full idempotency/reversal design)
   candle history for chart timeframes beyond what the relay's Redis cache retains; today's/live
   candle still comes from Redis per ARCHITECTURE.md. NIFTY 50 / BANK NIFTY / SENSEX indices reuse
   the same Twelve Data source and caching, no separate table.
-- `market_holidays` (date, name), `market_controls` (feed_mode, global_halt) — **no volatility
-  control.** When the market is closed, every screen shows the last real close; nothing ever
-  simulates price movement near a real trade.
+- `market_holidays` (date, name) — the NSE trading holiday calendar, admin-editable.
+  `market_controls` (id, feed_mode live\|delayed_15m\|paused, global_halt) — a single singleton
+  row (`id = 'singleton'`), not per-symbol (that's `instruments.halted`); the Ops console's global
+  feed-mode/halt switch. **No volatility control.** When the market is closed, every screen shows
+  the last real close; nothing ever simulates price movement near a real trade.
 - `orders` (user_id, instrument_id, side, type, qty, limit_price_paise, status, fill_price_paise,
   reject_reason, idempotency_key, filled_at)
 - `holdings` (user_id, instrument_id, qty, avg_price_paise)

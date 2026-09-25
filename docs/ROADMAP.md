@@ -109,24 +109,56 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       need their own backend (legal pages, contact, rate-app) ship as static/deep-link content
 
 ## Phase 4 — Trading engine (needs the market relay for live prices)
-- [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
-- [ ] Twelve Data REST: quotes and candle history with Redis caching
-- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks per
-      `isTradingUnlocked()` (`src/server/worlds/service.ts`, already built in Phase 2b ahead of
-      this phase) — position-based (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`,
-      default 3rd published world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`),
-      not an XP/level threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`)
-- [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
-- [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
-- [ ] Limit-order matching job (Inngest)
-- [ ] Mutual funds: AMFI NAV import job, SIP (tiered minimums: ₹100 index / ₹500 other) + lump sum
+Split into 4a (market data + explore mode, no real money movement) and 4b (orders/holdings/funds/
+Ops console, money rules - see the VM/paise decision below). Relay repo is out of scope for this
+backend's session - this phase documents the contract precisely; the relay itself is built in its
+own repo later, hosted on Railway.
+
+**4a**
+- [x] Checkpoint 1: `instruments` table (12 NSE stocks seeded), `market_holidays` (2026 NSE
+      calendar seeded), `market_controls` singleton row; admin CRUD (`instrument.manage`
+      permission, no draft/publish split - edits apply immediately). Halting a symbol and the
+      feed-mode/global-halt controls are Checkpoint 9 (Ops console, `trading.ops`), not this
+      checkpoint - `instruments.halted`/`market_controls` are readable now, written later.
+- [ ] Checkpoint 2: Twelve Data REST integration (quotes + `/time_series` candles), Redis-cached
+      per symbol+interval. `GET /trade/instruments`, `/instruments/{symbol}`,
+      `/instruments/{symbol}/candles`, `/trade/indices`, `/trade/indices/{symbol}/candles`.
+- [ ] Checkpoint 3: Market status (`GET /trade/market-status`) - NSE hours 09:15-15:30 IST Mon-Fri
+      minus `market_holidays`, feed mode, halt state; explore mode + `isTradingUnlocked()` wiring
+      (already built in Phase 2b ahead of this phase) — position-based
+      (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`, default 3rd published
+      world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`), not an XP/level
+      threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`). Watchlist =
+      the full active-instrument list (no per-user watchlist table, decided).
+- [ ] Checkpoint 4 (stop point - new env vars): `GET /api/v1/relay/config` (`X-Relay-Secret`
+      header, checked against `RELAY_SHARED_SECRET`); `TWELVEDATA_API_KEY`/`RELAY_SHARED_SECRET`
+      wired into `src/lib/env.ts`; document the `px:<SYMBOL>:NSE` Redis price-key contract
+      precisely in `docs/ARCHITECTURE.md` for the relay repo to build against later.
+
+**4b** (money rules - stop before starting; VM/paise migration plan proposed to the founder,
+awaiting sign-off before implementing - will be recorded as an `docs/ARCHITECTURE.md` decision
+once approved)
+- [ ] Checkpoint 5: `vmoney_ledger` moves to exact paise (see above); `orders`/`holdings` tables; place-
+      order endpoint (MARKET/LIMIT, whole shares only, `Idempotency-Key` required, margin/holdings
+      checks, one DB transaction: order → ledger → holdings → activity log, row-locked). Missing
+      price → `PRICE_UNAVAILABLE`; stale (>60s during market hours) → `PRICE_STALE`. LIMIT orders
+      outside market hours stay OPEN until matched or cancelled at day end.
+- [ ] Checkpoint 6: limit-order matching job (Inngest)
+- [ ] Checkpoint 7: positions/orders book endpoints, P&L; Profile's Trades tab
+      (`GET /me/portfolio/summary`/`stats`/`trades`)
+- [ ] Checkpoint 8 (money rules): mutual funds - `funds`, `fund_navs`, `sip_plans`,
+      `fund_holdings`; AMFI NAV daily-ingestion Inngest job (executes against the most recent
+      available NAV if today's isn't published yet, and always shows the learner which NAV
+      date/value was used - no hidden pricing); SIP (tiered minimums: ₹100 index / ₹500 other) +
+      lump sum
+- [ ] Checkpoint 9: Ops console - feed mode, per-symbol + global halt (`trading.ops` permission),
+      trade-unlock-world setting, user ledger with risk flags (default rule: NEW = joined <7 days
+      ago; WATCH = >50% of portfolio in one position or >10 orders in a day; admin-tunable
+      thresholds), live KPI queries (not hardcoded), audit log. Rolling Redis tick history backs
+      the 15-min-delayed feed mode. **No volatility control** — closed market always shows the
+      last real close, never a synthetic price near a real trade.
 - [ ] `instrument_daily_bars` (candle history), indices (NIFTY 50/BANK NIFTY/SENSEX) via the same
-      Twelve Data source
-- [ ] Ops console: feed mode, halts, trade-unlock-world setting, user ledger with risk flags
-      (default rule: NEW = joined <7 days ago; WATCH = >50% of portfolio in one position or >10
-      orders in a day; admin-tunable thresholds), live KPI queries (not hardcoded). **No
-      volatility control** — closed market always shows the last real close, never a synthetic
-      price near a real trade
+      Twelve Data source (folds into Checkpoint 2/7, not a separate checkpoint)
 
 ## Phase 5 — News & Pulse Check
 - [ ] Ingestion jobs: Finnhub + India source → `news_raw` (2 sources at launch, not the

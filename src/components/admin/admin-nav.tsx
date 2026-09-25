@@ -12,6 +12,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import Link from "next/link";
@@ -38,6 +39,7 @@ export type AdminNavVisibility = {
   badges: boolean;
   rewards: boolean;
   coachNotes: boolean;
+  instruments: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -75,6 +77,12 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
       items: [
         { href: "/admin/badges", label: "Badges", icon: Award, visible: v.badges },
         { href: "/admin/rewards", label: "Rewards", icon: Gift, visible: v.rewards },
+      ],
+    },
+    {
+      label: "Trading",
+      items: [
+        { href: "/admin/instruments", label: "Instruments", icon: TrendingUp, visible: v.instruments },
       ],
     },
     {
