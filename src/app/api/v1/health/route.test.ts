@@ -25,6 +25,8 @@ const mockEnv = vi.hoisted(() => ({
   S3_SECRET_ACCESS_KEY: undefined as string | undefined,
   INNGEST_SIGNING_KEY: undefined as string | undefined,
   VERCEL_ENV: undefined as string | undefined,
+  TWELVEDATA_API_KEY: undefined as string | undefined,
+  MARKET_DATA_PROVIDER: undefined as "mock" | "twelvedata" | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -95,6 +97,10 @@ beforeEach(() => {
   // the inngest warning field at all.
   mockEnv.INNGEST_SIGNING_KEY = "test-signing-key";
   mockEnv.VERCEL_ENV = undefined;
+  // Unset by default (auto-selects "mock") - existing tests below don't
+  // need to know about the market warning field at all.
+  mockEnv.TWELVEDATA_API_KEY = undefined;
+  mockEnv.MARKET_DATA_PROVIDER = undefined;
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -124,6 +130,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
     expect(body.data.storage).toBe("ok");
+    expect(body.data.market).toBe("mock");
     expect(body.data.redis).toBe("ok");
     expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(body.data.inngest).toBe("ok");
@@ -327,6 +334,46 @@ describe("GET /api/v1/health", () => {
     const res = await GET();
 
     expect((await res.json()).data.storage).toBe("ok");
+  });
+
+  describe("market", () => {
+    it("reports 'mock' when no TWELVEDATA_API_KEY is configured and no override is set", async () => {
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.market).toBe("mock");
+    });
+
+    it("reports 'configured' when TWELVEDATA_API_KEY is set", async () => {
+      mockEnv.TWELVEDATA_API_KEY = "a-real-key";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.market).toBe("configured");
+    });
+
+    it("reports 'mock' when MARKET_DATA_PROVIDER=mock is explicitly set, even with a real key present", async () => {
+      mockEnv.TWELVEDATA_API_KEY = "a-real-key";
+      mockEnv.MARKET_DATA_PROVIDER = "mock";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.market).toBe("mock");
+    });
+
+    it("reports 'unconfigured' when MARKET_DATA_PROVIDER=twelvedata is explicitly set but no key is present", async () => {
+      mockEnv.MARKET_DATA_PROVIDER = "twelvedata";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200); // non-fatal, never a 503
+      expect((await res.json()).data.market).toBe("unconfigured");
+    });
   });
 
   describe("redis", () => {

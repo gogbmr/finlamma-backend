@@ -82,3 +82,25 @@ export const CandlesResponseSchema = z.object({
   data: z.array(CandleSchema),
   disclaimer: z.string().openapi({ example: TRADING_DISCLAIMER }),
 });
+
+// TR-01/34/57 (docs/FEATURE_MAP.md): the market-status pill, the
+// exchange-halted banner, and the order pad's lock/progress message all
+// read from this one endpoint.
+const MarketStatusSchema = z.object({
+  marketOpen: z.boolean().openapi({
+    description: "Whether NSE regular trading hours (09:15-15:30 IST, Mon-Fri, minus market_holidays) apply right now.",
+  }),
+  feedMode: z.enum(["live", "delayed_15m", "paused"]).openapi({ example: "live" }),
+  globalHalt: z.boolean().openapi({
+    description: "Ops console global halt - true means the order pad rejects every new order.",
+  }),
+  tradingUnlocked: z.boolean().openapi({
+    description: "Whether this learner has passed the Boss Quiz at the configured unlock position (D25).",
+  }),
+  worldsToGo: z.number().int().nonnegative().openapi({
+    description: "0 once unlocked. Otherwise how many more worlds' Boss Quizzes this learner needs to pass.",
+    example: 2,
+  }),
+});
+
+export const MarketStatusResponseSchema = z.object({ data: MarketStatusSchema });

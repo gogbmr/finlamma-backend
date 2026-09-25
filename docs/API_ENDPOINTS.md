@@ -63,6 +63,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/trade/instruments` — List tradeable instruments with live quotes (Explore mode, TR-02/08)
 - `GET /api/v1/trade/instruments/{symbol}` — Get one instrument's detail with a live quote (TR-15/17/19/20)
 - `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
+- `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
 
 **Webhooks**
 
@@ -97,6 +98,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "redis": "ok",
     "worldsMissingBossQuiz": [],
     "tradingUnlockWorldMissing": false,
+    "market": "mock",
     "inngest": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
@@ -2678,6 +2680,55 @@ OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).
   "error": {
     "code": "NOT_FOUND",
     "message": "No instrument with this symbol"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/market-status`
+
+**Get market status and this learner's trading-unlock progress (TR-01/34/57)**
+
+Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Current market status
+
+```json
+{
+  "data": {
+    "marketOpen": true,
+    "feedMode": "live",
+    "globalHalt": true,
+    "tradingUnlocked": true,
+    "worldsToGo": 2
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

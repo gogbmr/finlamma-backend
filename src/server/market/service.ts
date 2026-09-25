@@ -1,6 +1,13 @@
 import { AppError } from "@/lib/errors";
-import { listActiveInstruments, getInstrumentBySymbol } from "@/server/trading/repo";
+import {
+  listMarketHolidays,
+  getOrCreateMarketControls,
+  listActiveInstruments,
+  getInstrumentBySymbol,
+} from "@/server/trading/repo";
+import { getTradingUnlockProgress } from "@/server/worlds/service";
 import { getCachedCandles, getCachedQuote } from "./cache";
+import { isMarketOpen } from "./hours";
 import { TRADING_DISCLAIMER } from "./schemas";
 import type { MarketTimeframe, Quote } from "./types";
 
@@ -74,6 +81,28 @@ export async function getPublicInstrumentBySymbol(symbol: string) {
       quote: shapeQuote(quote),
     },
     disclaimer: TRADING_DISCLAIMER,
+  };
+}
+
+// TR-01/34/57 - market-status pill, exchange-halted banner, order-pad
+// lock/progress message, all from one call. `marketOpen` is computed from
+// the server's own clock (never client-supplied, same reasoning as every
+// other IST-sensitive check in this codebase - D30) and the admin-editable
+// market_holidays calendar.
+export async function getMarketStatus(userId: string) {
+  const [holidays, controls, progress] = await Promise.all([
+    listMarketHolidays(),
+    getOrCreateMarketControls(),
+    getTradingUnlockProgress(userId),
+  ]);
+  const holidayDates: Set<string> = new Set(holidays.map((h) => h.date));
+
+  return {
+    marketOpen: isMarketOpen(new Date(), holidayDates),
+    feedMode: controls.feedMode,
+    globalHalt: controls.globalHalt,
+    tradingUnlocked: progress.unlocked,
+    worldsToGo: progress.worldsToGo,
   };
 }
 

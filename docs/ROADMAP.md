@@ -128,13 +128,16 @@ own repo later, hosted on Railway.
       Data's NSE tier is too expensive) touches one adapter file, not the trading domain.
       `/trade/indices`, `/trade/indices/{symbol}/candles` deferred to Checkpoint 7 alongside
       `instrument_daily_bars` (no DB row exists for indices yet - not tradeable instruments).
-- [ ] Checkpoint 3: Market status (`GET /trade/market-status`) - NSE hours 09:15-15:30 IST Mon-Fri
-      minus `market_holidays`, feed mode, halt state; explore mode + `isTradingUnlocked()` wiring
-      (already built in Phase 2b ahead of this phase) — position-based
-      (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`, default 3rd published
-      world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`), not an XP/level
-      threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`). Watchlist =
-      the full active-instrument list (no per-user watchlist table, decided).
+- [x] Checkpoint 3: Market status (`GET /trade/market-status`) - NSE hours 09:15-15:30 IST Mon-Fri
+      minus `market_holidays` (`src/server/market/hours.ts`, pure/tested), feed mode, halt state;
+      explore mode + `isTradingUnlocked()` wiring (already built in Phase 2b ahead of this phase)
+      — position-based (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`, default
+      3rd published world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`), not an
+      XP/level threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`). New
+      `getTradingUnlockProgress()` (`src/server/worlds/service.ts`) adds the "N worlds to go"
+      progress count TR-57 needs on top of `isTradingUnlocked`'s plain boolean. Watchlist = the
+      full active-instrument list from Checkpoint 2's `GET /trade/instruments` (no per-user
+      watchlist table, decided).
 - [ ] Checkpoint 4 (stop point - new env vars): `GET /api/v1/relay/config` (`X-Relay-Secret`
       header, checked against `RELAY_SHARED_SECRET`); `TWELVEDATA_API_KEY`/`RELAY_SHARED_SECRET`
       wired into `src/lib/env.ts`; document the `px:<SYMBOL>:NSE` Redis price-key contract
@@ -283,6 +286,17 @@ once approved)
 - [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
       admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
       wasn't attempted in the sandbox this was built in over a slow connection
+- [ ] **BLOCKING: choose and pay for a market-data provider; verify NSE real-time vs delayed
+      coverage.** Trade currently runs on `MockMarketDataProvider` deterministic fixture prices
+      (`docs/ARCHITECTURE.md` D39) - real learners must never see fixture prices presented as
+      live NSE data. Twelve Data's NSE access is confirmed to need their Grow plan ($29/mo) or
+      higher (D39); confirm whether Grow's data is genuinely real-time or itself delayed before
+      relying on it for the LIVE feed mode (vs. `DELAYED_15M`, which could tolerate more lag).
+      If cost or coverage doesn't work out, D39 names Indian broker APIs (Kite/Upstox/Angel One/
+      Dhan) as the fallback, and confirms the relay can poll REST instead of holding a WebSocket
+      with zero backend changes either way. Set `TWELVEDATA_API_KEY` (or build a new provider
+      under `src/server/market/providers/` and set `MARKET_DATA_PROVIDER` if switching vendors)
+      once decided - `GET /api/v1/health`'s `market` field confirms which is actually in effect.
 
 ## Later (non-blocking — no phase assigned)
 - [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's

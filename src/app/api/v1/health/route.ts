@@ -8,6 +8,7 @@ import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { checkRedisReachable } from "@/lib/redis";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { getMarketDataProviderKind } from "@/server/market/provider";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { listPublishedWorlds } from "@/server/worlds/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
@@ -95,6 +96,19 @@ const HealthDataSchema = z.object({
       "stays locked for every learner until enough worlds are published. See " +
       "docs/ARCHITECTURE.md D25.",
   }),
+  market: z.enum(["configured", "mock", "unconfigured"]).openapi({
+    example: "mock",
+    description:
+      "A non-fatal warning (never causes a 503): 'configured' means a real market-data vendor " +
+      "(currently Twelve Data) is in effect - TWELVEDATA_API_KEY is set (or MARKET_DATA_PROVIDER " +
+      "explicitly picked it). 'mock' means deterministic fixture prices are in effect - either " +
+      "no key is configured yet (docs/ARCHITECTURE.md D38/D39 - the founder is still confirming " +
+      "Twelve Data's NSE tier cost) or MARKET_DATA_PROVIDER=mock was set explicitly. 'unconfigured' " +
+      "means MARKET_DATA_PROVIDER=twelvedata was explicitly set but TWELVEDATA_API_KEY is missing - " +
+      "a real misconfiguration (explicitly wants live data but has no key), distinct from the " +
+      "intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's " +
+      "comment for why (avoids burning API credits on every health check).",
+  }),
   inngest: z.enum(["ok", "unconfigured"]).openapi({
     example: "ok",
     description:
@@ -138,6 +152,18 @@ function clerkInstanceHost(publishableKey: string): string | null {
 // discovered the first time someone tries an upload in production - see
 // src/lib/s3.ts's getS3Config(), which fails closed the same way
 // getResendConfig() does for email.
+// Non-fatal: a missing/mocked market-data provider doesn't fail the health
+// check (the API is still genuinely healthy - explore mode with mock data
+// is a valid state while the founder confirms vendor cost, D38/D39), but it
+// must never be silent - surfaced here the same way storage/redis are.
+// Config-only, no live network call: getMarketDataProviderKind() reads env
+// vars, never calls the vendor, so this check can't burn an API credit or
+// add latency just from being asked.
+function checkMarketDataProvider(): "configured" | "mock" | "unconfigured" {
+  if (env.MARKET_DATA_PROVIDER === "twelvedata" && !env.TWELVEDATA_API_KEY) return "unconfigured";
+  return getMarketDataProviderKind() === "twelvedata" ? "configured" : "mock";
+}
+
 function checkStorageConfigured(): "ok" | "missing" {
   const configured =
     env.S3_ENDPOINT &&
@@ -343,6 +369,7 @@ export const GET = withErrors(async () => {
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     storage: checkStorageConfigured(),
+    market: checkMarketDataProvider(),
     redis,
     worldsMissingBossQuiz,
     tradingUnlockWorldMissing,

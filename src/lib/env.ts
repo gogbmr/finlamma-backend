@@ -126,6 +126,16 @@ const envSchema = z.object({
   // directly outside that one adapter file - see MarketDataProvider
   // (src/server/market/types.ts).
   TWELVEDATA_API_KEY: z.string().optional(),
+  // Explicit override for which market-data provider src/server/market/
+  // provider.ts's getMarketDataProvider() returns. Left unset in normal
+  // operation - the factory already auto-picks "mock" when
+  // TWELVEDATA_API_KEY is absent and "twelvedata" when it's present, so
+  // local dev/tests work with zero configuration. Set this only to force a
+  // specific choice regardless of the key's presence (e.g. "mock" to keep
+  // testing deterministically even with a real key configured, or
+  // "twelvedata" to fail loudly on a missing key instead of silently
+  // falling back to mock data).
+  MARKET_DATA_PROVIDER: z.enum(["mock", "twelvedata"]).optional(),
   // RELAY_SHARED_SECRET is added in Checkpoint 4 (docs/ROADMAP.md), which
   // also builds the GET /api/v1/relay/config endpoint it authenticates -
   // deliberately not wired in yet, per the agreed stop point for that

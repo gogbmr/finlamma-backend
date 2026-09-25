@@ -45,6 +45,7 @@ import "../src/app/api/v1/me/report-card/route";
 import "../src/app/api/v1/trade/instruments/route";
 import "../src/app/api/v1/trade/instruments/[symbol]/route";
 import "../src/app/api/v1/trade/instruments/[symbol]/candles/route";
+import "../src/app/api/v1/trade/market-status/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

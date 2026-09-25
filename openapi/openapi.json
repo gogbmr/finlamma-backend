@@ -151,6 +151,16 @@
                 "example": false,
                 "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
               },
+              "market": {
+                "type": "string",
+                "enum": [
+                  "configured",
+                  "mock",
+                  "unconfigured"
+                ],
+                "example": "mock",
+                "description": "A non-fatal warning (never causes a 503): 'configured' means a real market-data vendor (currently Twelve Data) is in effect - TWELVEDATA_API_KEY is set (or MARKET_DATA_PROVIDER explicitly picked it). 'mock' means deterministic fixture prices are in effect - either no key is configured yet (docs/ARCHITECTURE.md D38/D39 - the founder is still confirming Twelve Data's NSE tier cost) or MARKET_DATA_PROVIDER=mock was set explicitly. 'unconfigured' means MARKET_DATA_PROVIDER=twelvedata was explicitly set but TWELVEDATA_API_KEY is missing - a real misconfiguration (explicitly wants live data but has no key), distinct from the intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's comment for why (avoids burning API credits on every health check)."
+              },
               "inngest": {
                 "type": "string",
                 "enum": [
@@ -178,6 +188,7 @@
               "redis",
               "worldsMissingBossQuiz",
               "tradingUnlockWorldMissing",
+              "market",
               "inngest",
               "timestamp"
             ]
@@ -5970,6 +5981,108 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No instrument with this symbol"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/market-status": {
+      "get": {
+        "summary": "Get market status and this learner's trading-unlock progress (TR-01/34/57)",
+        "description": "Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current market status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "marketOpen": {
+                          "type": "boolean",
+                          "description": "Whether NSE regular trading hours (09:15-15:30 IST, Mon-Fri, minus market_holidays) apply right now."
+                        },
+                        "feedMode": {
+                          "type": "string",
+                          "enum": [
+                            "live",
+                            "delayed_15m",
+                            "paused"
+                          ],
+                          "example": "live"
+                        },
+                        "globalHalt": {
+                          "type": "boolean",
+                          "description": "Ops console global halt - true means the order pad rejects every new order."
+                        },
+                        "tradingUnlocked": {
+                          "type": "boolean",
+                          "description": "Whether this learner has passed the Boss Quiz at the configured unlock position (D25)."
+                        },
+                        "worldsToGo": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "0 once unlocked. Otherwise how many more worlds' Boss Quizzes this learner needs to pass.",
+                          "example": 2
+                        }
+                      },
+                      "required": [
+                        "marketOpen",
+                        "feedMode",
+                        "globalHalt",
+                        "tradingUnlocked",
+                        "worldsToGo"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
                   }
                 },
                 "schema": {

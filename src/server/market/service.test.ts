@@ -2,9 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetInstrumentBySymbol = vi.fn();
 const mockListActiveInstruments = vi.fn();
+const mockListMarketHolidays = vi.fn();
+const mockGetOrCreateMarketControls = vi.fn();
 vi.mock("@/server/trading/repo", () => ({
   getInstrumentBySymbol: (symbol: unknown) => mockGetInstrumentBySymbol(symbol),
   listActiveInstruments: () => mockListActiveInstruments(),
+  listMarketHolidays: () => mockListMarketHolidays(),
+  getOrCreateMarketControls: () => mockGetOrCreateMarketControls(),
+}));
+
+const mockGetTradingUnlockProgress = vi.fn();
+vi.mock("@/server/worlds/service", () => ({
+  getTradingUnlockProgress: (userId: unknown) => mockGetTradingUnlockProgress(userId),
 }));
 
 const mockGetCachedQuote = vi.fn();
@@ -15,8 +24,14 @@ vi.mock("./cache", () => ({
     mockGetCachedCandles(symbol, exchange, tf),
 }));
 
+const mockIsMarketOpen = vi.fn();
+vi.mock("./hours", () => ({
+  isMarketOpen: (now: unknown, holidays: unknown) => mockIsMarketOpen(now, holidays),
+}));
+
 const {
   getInstrumentCandles,
+  getMarketStatus,
   getPublicInstrumentBySymbol,
   listPublicInstruments,
 } = await import("./service");
@@ -147,5 +162,46 @@ describe("getInstrumentCandles", () => {
 
     expect(mockGetCachedCandles).toHaveBeenCalledWith("RELIANCE", "NSE", "1M");
     expect(result.data[0]).toMatchObject({ openPaise: 1, closePaise: 2 });
+  });
+});
+
+describe("getMarketStatus", () => {
+  it("combines market hours, feed controls and this learner's trading-unlock progress", async () => {
+    mockListMarketHolidays.mockResolvedValueOnce([{ date: "2026-10-02", name: "Gandhi Jayanti" }]);
+    mockGetOrCreateMarketControls.mockResolvedValueOnce({
+      id: "singleton",
+      feedMode: "live",
+      globalHalt: false,
+    });
+    mockGetTradingUnlockProgress.mockResolvedValueOnce({ unlocked: false, worldsToGo: 2 });
+    mockIsMarketOpen.mockReturnValueOnce(true);
+
+    const result = await getMarketStatus("user_1");
+
+    expect(result).toEqual({
+      marketOpen: true,
+      feedMode: "live",
+      globalHalt: false,
+      tradingUnlocked: false,
+      worldsToGo: 2,
+    });
+    expect(mockIsMarketOpen).toHaveBeenCalledWith(expect.any(Date), new Set(["2026-10-02"]));
+    expect(mockGetTradingUnlockProgress).toHaveBeenCalledWith("user_1");
+  });
+
+  it("reflects an Ops console global halt", async () => {
+    mockListMarketHolidays.mockResolvedValueOnce([]);
+    mockGetOrCreateMarketControls.mockResolvedValueOnce({
+      id: "singleton",
+      feedMode: "paused",
+      globalHalt: true,
+    });
+    mockGetTradingUnlockProgress.mockResolvedValueOnce({ unlocked: true, worldsToGo: 0 });
+    mockIsMarketOpen.mockReturnValueOnce(true);
+
+    const result = await getMarketStatus("user_1");
+
+    expect(result.feedMode).toBe("paused");
+    expect(result.globalHalt).toBe(true);
   });
 });
