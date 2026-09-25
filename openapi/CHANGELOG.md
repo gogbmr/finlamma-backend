@@ -2,6 +2,51 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-09-25 — v0.3.0
+
+Minor bump: purely additive, 11 new operations plus new fields on 3 existing endpoints, nothing
+removed and nothing changed incompatibly since v0.2.0. Covers Phase 3b (badges & rewards,
+certificates, the weekly report card, daily goals, session time, `users.bio`/`preferences`).
+
+**Badges & rewards**
+- `GET /api/v1/me/badges` — every published badge with the caller's own unlock state and real
+  progress toward a locked badge's threshold (not just 0).
+- `GET /api/v1/me/rewards` — the reward catalog with the caller's own claim state; a reward's price
+  is fixed and admin-set, never computed from the caller's own balance.
+- `POST /api/v1/me/rewards/{id}/claim` — claim a reward. Idempotent against a double-tap, debits
+  inside a row-locked transaction so a balance can never go negative under concurrency, and freezes
+  the price paid on the claim row so a later price change never affects it. A reward can be claimed
+  at most once per learner.
+- `GET /api/v1/me/wallet` — V Money balance, earned this month, and an earn-source breakdown.
+- `GET /api/v1/me/wallet/history` — the caller's full V Money ledger, cursor-paginated.
+
+**Certificates**
+- `GET /api/v1/me/certificates` — every certificate the caller has earned.
+- `GET /api/v1/me/certificates/{worldId}` — one certificate's detail (issued idempotently on
+  passing that world's Boss Quiz).
+- `GET /api/v1/me/certificates/{worldId}/pdf` — a signed URL to the certificate's PDF.
+
+**Weekly report card & daily goals**
+- `GET /api/v1/me/report-card` — the current IST week's efficiency snapshot (retention, watch
+  speed, quiz accuracy, consistency), an 8-week trend, and whether the report is currently shared
+  with a verified parent (masked email + whether the weekly email is on) - progress-only, never a
+  ranking or a comparison to other learners.
+- `GET /api/v1/me/daily-goals` — today's progress toward each active daily goal (study minutes,
+  a lesson completed); which goals are active and their targets are admin-editable data, not
+  hardcoded. Never awards XP or V Money by itself.
+- `POST /api/v1/me/session-time` — records a client-reported session-end ping toward today's
+  study-minutes goal, capped at 60 minutes/day.
+
+**Existing endpoints, additive changes only**
+- `GET`/`PATCH /api/v1/me` — the `Me` schema gained `bio` (free-text, self-editable, up to 280
+  characters, **private to the owner - never shown to any other learner, `docs/ARCHITECTURE.md`
+  D36**) and `preferences` (sound/haptics/data-saver toggles).
+- `GET /api/v1/health` — gained an `inngest` field (whether the background-jobs signing key is
+  configured on a real deployment; always `"ok"` in local dev).
+
+Not yet in the contract: everything from `docs/ROADMAP.md` Phase 4 onward (trading, Arena, news).
+The weekly report card's PDF/story-card export is deferred, not built this phase.
+
 ## 2026-09-23 — v0.2.0
 
 Minor bump: purely additive, 6 new operations, nothing removed or changed on any endpoint that
