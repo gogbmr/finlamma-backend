@@ -1,5 +1,34 @@
 # Status
 
+## 2026-09-25 — PGlite-backed tests unrunnable on this machine right now (escalation of the Checkpoint 3 note below)
+
+Worse than the Checkpoint 3 slowdown: `src/server/orders/repo.test.ts` (Checkpoint 5's core
+money-safety integration test - idempotency, halts, market hours, price staleness, margin/
+holdings checks, the paise-exact buy/sell round trip) crashes with a V8 "Fatal process out of
+memory: Zone" error before a single test runs - during `createTestDb()`'s migration step, every
+single attempt (6+ retries: with/without fake timers, `NODE_OPTIONS=--max-old-space-size=4096`,
+`--no-file-parallelism`, waiting several minutes between attempts). **Confirmed environmental, not
+a code bug**: re-ran `src/server/trading/repo.test.ts` and `src/server/economy/repo.test.ts` -
+both previously green this session, both completely unrelated to the orders domain - and they now
+crash identically. `tasklist` shows zero lingering node/esbuild processes; system free memory is
+~2.4GB of 12GB with nothing of mine running. Something outside this session (another application on
+the machine) is holding the bulk of the RAM.
+
+**What this means for Checkpoint 5**: `src/server/orders/repo.ts` (the actual transaction logic -
+row locking, idempotency, halts, market hours, price staleness/availability, margin/holdings
+checks, weighted-average holdings math, the ledger write) has NOT been confirmed against a real
+Postgres this session. What HAS been confirmed: `pnpm typecheck` (whole codebase, clean), and every
+test that doesn't need PGlite - `src/server/orders/pricing.test.ts` (pure marketability/fill-price
+math), `src/server/orders/service.test.ts` (status-to-AppError mapping, activity logging), and
+`src/app/api/v1/trade/orders/route.test.ts` (25 tests total, all green). The repo-level integration
+test itself is written and type-checks correctly (`src/server/orders/repo.test.ts`) - it simply
+could not be executed this session.
+
+**Action item, blocking a real merge of this phase: run `src/server/orders/repo.test.ts` (and the
+full suite) to a clean, real completion once this machine has memory available**, and treat any
+failure there as load-bearing - this is money-movement code, and typecheck alone does not prove
+the transaction logic is correct under real Postgres constraint enforcement.
+
 ## 2026-09-25 — Phase 4 Checkpoint 3 shipped on targeted tests only, not the full suite
 
 `pnpm test`'s full run stalled badly on this machine under real memory pressure (~1.9GB free of

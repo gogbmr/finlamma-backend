@@ -64,6 +64,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/trade/instruments/{symbol}` — Get one instrument's detail with a live quote (TR-15/17/19/20)
 - `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
 - `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
+- `POST /api/v1/trade/orders` — Place an order (TR-30)
 
 **Relay**
 
@@ -2734,6 +2735,124 @@ Whether NSE is open right now, the Ops console's feed mode and global halt state
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/trade/orders`
+
+**Place an order (TR-30)**
+
+MARKET or LIMIT, BUY or SELL, whole shares only. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`), never a second order; reusing the key with a different request is rejected. The execution price always comes from the market relay's live tick in Redis, never a client-sent price (CLAUDE.md, trading-rules skill) - see docs/ARCHITECTURE.md D40/D41 for the full pricing and rejection-reason design. A LIMIT order that isn't immediately marketable is queued (`status: "open"`) rather than filled - Checkpoint 6's matching job fills it later, or cancels it at day end if the market closes first.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `Idempotency-Key` | header | string | yes | Client-generated, unique per order attempt. |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `symbol` | string | yes |  |
+| `side` | string (buy, sell) | yes |  |
+| `type` | string (market, limit) | yes |  |
+| `qty` | integer | yes |  |
+| `limitPricePaise` | integer | no |  |
+
+```json
+{
+  "symbol": "RELIANCE",
+  "side": "buy",
+  "type": "market",
+  "qty": 1
+}
+```
+
+**Responses**
+
+- **200** — The order (filled, queued as open, or replayed from an identical earlier request)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "symbol": "RELIANCE",
+    "side": "buy",
+    "type": "market",
+    "qty": 0,
+    "limitPricePaise": 0,
+    "status": "open",
+    "fillPricePaise": 0,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "filledAt": "2026-01-01T00:00:00.000Z",
+    "cancelledAt": "2026-01-01T00:00:00.000Z",
+    "replayed": true
+  }
+}
+```
+
+- **400** — Invalid input, or a missing Idempotency-Key header
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Idempotency-Key header is required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet for this learner
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active instrument with this symbol
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No instrument with this symbol"
+  }
+}
+```
+
+- **409** — The order can't be placed right now - MARKET_CLOSED, MARKET_HALTED, SYMBOL_HALTED, MARKET_PAUSED, PRICE_STALE, PRICE_UNAVAILABLE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_MARGIN",
+    "message": "Not enough V Money for this order",
+    "details": {
+      "balancePaise": 10000,
+      "requiredPaise": 28451000
+    }
   }
 }
 ```

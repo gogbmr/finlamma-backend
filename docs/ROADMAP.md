@@ -148,14 +148,17 @@ own repo later, hosted on Railway.
       `docs/API_ENDPOINTS.md` stays complete without it looking like an app-facing route.
       `GET /api/v1/health` gained a `relaySecret` field.
 
-**4b** (money rules - stop before starting; VM/paise migration plan proposed to the founder,
-awaiting sign-off before implementing - will be recorded as an `docs/ARCHITECTURE.md` decision
-once approved)
-- [ ] Checkpoint 5: `vmoney_ledger` moves to exact paise (see above); `orders`/`holdings` tables; place-
-      order endpoint (MARKET/LIMIT, whole shares only, `Idempotency-Key` required, margin/holdings
-      checks, one DB transaction: order → ledger → holdings → activity log, row-locked). Missing
-      price → `PRICE_UNAVAILABLE`; stale (>60s during market hours) → `PRICE_STALE`. LIMIT orders
-      outside market hours stay OPEN until matched or cancelled at day end.
+**4b** (money rules - VM/paise migration approved and shipped, D37; founder confirmed and asked to proceed)
+- [x] Checkpoint 5: `vmoney_ledger` moved to exact paise (D37, shipped earlier); `orders`/
+      `holdings` tables (`drizzle/0032_daily_triton.sql`, additive); `POST /api/v1/trade/orders`
+      (MARKET/LIMIT, whole shares only, `Idempotency-Key` required, margin/holdings checks, one DB
+      transaction: order → ledger → holdings → activity log, row-locked - D41). Missing price →
+      `PRICE_UNAVAILABLE`; stale (>60s during market hours) → `PRICE_STALE`. LIMIT orders outside
+      market hours stay OPEN until matched or cancelled at day end (Checkpoint 6). **Caveat**:
+      `src/server/orders/repo.test.ts` (the PGlite integration test for all of the above) could
+      not be run to completion this session - a confirmed environmental issue (machine memory),
+      not a code defect - see `docs/STATUS.md`. Must be run to a real pass before this phase is
+      considered verified, not just type-checked.
 - [ ] Checkpoint 6: limit-order matching job (Inngest)
 - [ ] Checkpoint 7: positions/orders book endpoints, P&L; Profile's Trades tab
       (`GET /me/portfolio/summary`/`stats`/`trades`)

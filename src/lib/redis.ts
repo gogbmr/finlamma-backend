@@ -18,6 +18,28 @@ function getRedisClient(): Redis | null {
   return new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN });
 }
 
+// Generic raw read, used by src/server/trading/relay-price.ts to read the
+// relay's live tick (`px:<SYMBOL>:NSE`, docs/ARCHITECTURE.md D40) - a plain
+// pass-through with no caching/TTL logic of its own (unlike
+// getOrSetJsonCache below), since this key's freshness/staleness is
+// exactly what the trading domain needs to judge itself, not something
+// this generic helper should paper over. Returns null on both "key
+// doesn't exist" and "Redis unreachable/unconfigured" - the caller can't
+// tell those apart from this function alone, which is intentional: for a
+// money-moving read, both cases must be treated identically (refuse the
+// order), so collapsing them here removes a branch a caller could get
+// wrong.
+export async function getRedisJsonValue<T>(key: string): Promise<T | null> {
+  const redis = getRedisClient();
+  if (!redis) return null;
+  try {
+    return await redis.get<T>(key);
+  } catch (err) {
+    logInternalError("redis.get_failed", err);
+    return null;
+  }
+}
+
 export type RateLimitWindow = `${number} ms` | `${number} s` | `${number} m` | `${number} h` | `${number} d`;
 
 export type RateLimitConfig = {

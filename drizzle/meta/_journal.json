@@ -225,6 +225,13 @@
       "when": 1790316721254,
       "tag": "0031_fair_union_jack",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1790350524892,
+      "tag": "0032_daily_triton",
+      "breakpoints": true
     }
   ]
 }

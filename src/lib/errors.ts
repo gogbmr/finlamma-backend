@@ -38,6 +38,21 @@ export const ErrorCode = {
   // Rewards (src/server/rewards) - the learner's V Money balance is below a
   // reward's price_vm at claim time.
   INSUFFICIENT_VMONEY: "INSUFFICIENT_VMONEY",
+
+  // Trading (src/server/orders, Phase 4 Checkpoint 5, trading-rules skill) -
+  // each names a distinct reason an order can't be placed/filled right now,
+  // so the app can show the right message instead of a generic failure.
+  // None of these persist a "rejected" order row (see docs/ARCHITECTURE.md
+  // D41) - same as every other pre-condition failure in this codebase
+  // (e.g. INSUFFICIENT_VMONEY), a clean thrown error with no DB write.
+  MARKET_CLOSED: "MARKET_CLOSED",
+  MARKET_HALTED: "MARKET_HALTED",
+  SYMBOL_HALTED: "SYMBOL_HALTED",
+  MARKET_PAUSED: "MARKET_PAUSED",
+  PRICE_STALE: "PRICE_STALE",
+  PRICE_UNAVAILABLE: "PRICE_UNAVAILABLE",
+  INSUFFICIENT_MARGIN: "INSUFFICIENT_MARGIN",
+  INSUFFICIENT_HOLDINGS: "INSUFFICIENT_HOLDINGS",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -62,6 +77,15 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   PARENT_REAPPROVAL_REQUIRED: 403,
   LESSON_TOO_SOON: 429,
   INSUFFICIENT_VMONEY: 409,
+
+  MARKET_CLOSED: 409,
+  MARKET_HALTED: 409,
+  SYMBOL_HALTED: 409,
+  MARKET_PAUSED: 409,
+  PRICE_STALE: 409,
+  PRICE_UNAVAILABLE: 409,
+  INSUFFICIENT_MARGIN: 409,
+  INSUFFICIENT_HOLDINGS: 409,
 };
 
 export class AppError extends Error {

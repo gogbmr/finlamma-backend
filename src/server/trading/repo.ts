@@ -7,6 +7,15 @@ import type {
   UpdateInstrumentInput,
 } from "./schemas";
 
+// Same shape as economy/repo.ts's DbOrTx - lets a handful of read functions
+// below run either against the module-level `db` (the default, every
+// existing caller) or a caller-supplied transaction handle. Needed by
+// src/server/orders/repo.ts's placeOrderTx, which reads instrument/market-
+// controls/holiday state INSIDE the same row-locked transaction that
+// decides whether an order fills, so those reads can never be stale
+// relative to the lock.
+export type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 // --- Instruments ---
 
 export async function listAllInstruments() {
@@ -22,8 +31,8 @@ export async function getInstrumentById(id: string) {
   return row ?? null;
 }
 
-export async function getInstrumentBySymbol(symbol: string) {
-  const [row] = await db.select().from(instruments).where(eq(instruments.symbol, symbol)).limit(1);
+export async function getInstrumentBySymbol(symbol: string, txDb: DbOrTx = db) {
+  const [row] = await txDb.select().from(instruments).where(eq(instruments.symbol, symbol)).limit(1);
   return row ?? null;
 }
 
@@ -50,8 +59,8 @@ export async function setInstrumentHalted(id: string, halted: boolean) {
 
 // --- Market holidays ---
 
-export async function listMarketHolidays() {
-  return db.select().from(marketHolidays).orderBy(asc(marketHolidays.date));
+export async function listMarketHolidays(txDb: DbOrTx = db) {
+  return txDb.select().from(marketHolidays).orderBy(asc(marketHolidays.date));
 }
 
 export async function insertMarketHoliday(input: CreateMarketHolidayInput) {
@@ -70,10 +79,10 @@ export async function deleteMarketHolidayRow(id: string) {
 // feed, no halt) the first time anything reads it, rather than requiring a
 // seed script to have run first - a fresh environment (a new preview
 // database, a test DB) just works without an extra setup step.
-export async function getOrCreateMarketControls() {
-  const [existing] = await db.select().from(marketControls).limit(1);
+export async function getOrCreateMarketControls(txDb: DbOrTx = db) {
+  const [existing] = await txDb.select().from(marketControls).limit(1);
   if (existing) return existing;
-  const [created] = await db
+  const [created] = await txDb
     .insert(marketControls)
     .values({ id: MARKET_CONTROLS_SINGLETON_ID })
     .onConflictDoNothing({ target: marketControls.id })
@@ -81,6 +90,6 @@ export async function getOrCreateMarketControls() {
   if (created) return created;
   // Lost a race against a concurrent first-read - the other insert won, so
   // read what it wrote.
-  const [row] = await db.select().from(marketControls).limit(1);
+  const [row] = await txDb.select().from(marketControls).limit(1);
   return row!;
 }
