@@ -65,6 +65,10 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
 - `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
 
+**Relay**
+
+- `GET /api/v1/relay/config` — Get the market relay's config (market relay only, X-Relay-Secret)
+
 **Webhooks**
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
@@ -94,6 +98,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "legalDocuments": "ok",
     "version": "2d303f6",
     "consentPiiHmacKey": "ok",
+    "relaySecret": "ok",
     "storage": "ok",
     "redis": "ok",
     "worldsMissingBossQuiz": [],
@@ -2729,6 +2734,81 @@ Whether NSE is open right now, the Ops console's feed mode and global halt state
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+## Relay
+
+### `GET /api/v1/relay/config`
+
+**Get the market relay's config (market relay only, X-Relay-Secret)**
+
+Called only by finlamma-market-relay (a separate repo, docs/ARCHITECTURE.md) - never the mobile app or the admin dashboard. Authenticated by an X-Relay-Secret header, compared against RELAY_SHARED_SECRET in constant time (src/lib/relay-auth.ts), never a Clerk session. Returns which instruments to track, the Ops console's feed mode and halt state, and the NSE holiday calendar, so the relay knows what to poll/stream and when to skip it. See docs/ARCHITECTURE.md D40 for the full Redis price-key contract this endpoint feeds into.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `X-Relay-Secret` | header | string | yes | Shared secret, compared in constant time. |
+
+**Responses**
+
+- **200** — The relay's current config
+
+```json
+{
+  "data": {
+    "instruments": [
+      {
+        "symbol": "RELIANCE",
+        "exchange": "NSE",
+        "halted": true
+      }
+    ],
+    "feedMode": "live",
+    "globalHalt": true,
+    "holidays": [
+      "2026-10-02"
+    ]
+  }
+}
+```
+
+- **401** — Missing or incorrect X-Relay-Secret - no further detail is ever given
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Unauthorized"
+  }
+}
+```
+
+- **429** — Too many requests
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests"
+  }
+}
+```
+
+- **503** — RELAY_SHARED_SECRET is not configured on this deployment
+
+```json
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Relay authentication is not configured"
   }
 }
 ```

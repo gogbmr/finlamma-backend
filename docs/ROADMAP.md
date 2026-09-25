@@ -138,10 +138,15 @@ own repo later, hosted on Railway.
       progress count TR-57 needs on top of `isTradingUnlocked`'s plain boolean. Watchlist = the
       full active-instrument list from Checkpoint 2's `GET /trade/instruments` (no per-user
       watchlist table, decided).
-- [ ] Checkpoint 4 (stop point - new env vars): `GET /api/v1/relay/config` (`X-Relay-Secret`
-      header, checked against `RELAY_SHARED_SECRET`); `TWELVEDATA_API_KEY`/`RELAY_SHARED_SECRET`
-      wired into `src/lib/env.ts`; document the `px:<SYMBOL>:NSE` Redis price-key contract
-      precisely in `docs/ARCHITECTURE.md` for the relay repo to build against later.
+- [x] Checkpoint 4 (stop point - new env vars): `GET /api/v1/relay/config` (`X-Relay-Secret`
+      header, constant-time hash comparison against `RELAY_SHARED_SECRET`, rate-limited 30/60s
+      fail-closed, generic 401 with no detail) - `TWELVEDATA_API_KEY`/`RELAY_SHARED_SECRET` wired
+      into `src/lib/env.ts`; `px:<SYMBOL>:NSE` Redis price-key contract documented precisely in
+      `docs/ARCHITECTURE.md` D40 (key format, payload shape, writer/reader, staleness, missing-key
+      semantics, relay-side TTL requirement) for the relay repo to build against later. Endpoint
+      registered in the OpenAPI registry (tagged `Relay`, no bearer/session security scheme) so
+      `docs/API_ENDPOINTS.md` stays complete without it looking like an app-facing route.
+      `GET /api/v1/health` gained a `relaySecret` field.
 
 **4b** (money rules - stop before starting; VM/paise migration plan proposed to the founder,
 awaiting sign-off before implementing - will be recorded as an `docs/ARCHITECTURE.md` decision

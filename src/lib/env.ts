@@ -136,10 +136,14 @@ const envSchema = z.object({
   // "twelvedata" to fail loudly on a missing key instead of silently
   // falling back to mock data).
   MARKET_DATA_PROVIDER: z.enum(["mock", "twelvedata"]).optional(),
-  // RELAY_SHARED_SECRET is added in Checkpoint 4 (docs/ROADMAP.md), which
-  // also builds the GET /api/v1/relay/config endpoint it authenticates -
-  // deliberately not wired in yet, per the agreed stop point for that
-  // checkpoint's new-env-var/new-service review.
+  // Phase 4 Checkpoint 4 (docs/ARCHITECTURE.md D40) - authenticates the
+  // market relay's calls to GET /api/v1/relay/config via an X-Relay-Secret
+  // header, compared in constant time (src/lib/relay-auth.ts). A value the
+  // founder generates themselves (openssl rand -hex 32), not from any
+  // vendor dashboard - same pattern as CONSENT_PII_HMAC_KEY. Optional here
+  // so the app still boots without it; the endpoint itself fails closed
+  // (503) until it's set, same lazy pattern as every other secret above.
+  RELAY_SHARED_SECRET: z.string().optional(),
 });
 
 function loadEnv() {

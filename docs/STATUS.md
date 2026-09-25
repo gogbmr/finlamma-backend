@@ -1,5 +1,24 @@
 # Status
 
+## 2026-09-25 — Phase 4 Checkpoint 3 shipped on targeted tests only, not the full suite
+
+`pnpm test`'s full run stalled badly on this machine under real memory pressure (~1.9GB free of
+12GB) - a suite that normally finishes in ~230s was still running after 20+ minutes with zero
+failures in the ~18 files it had completed, and a second attempt (after killing the first) hit the
+same wall. Rather than block indefinitely, Checkpoint 3 (market status, `getTradingUnlockProgress`,
+`MockMarketDataProvider`, `GET /api/v1/health`'s `market` field) shipped on the strength of:
+- `pnpm typecheck` (whole codebase) - clean, confirmed twice after the Checkpoint 3 changes.
+- A targeted run covering every file touched this session (trading, market, economy/paise, worlds,
+  badges, rewards, health, wallet/vmoney-stats routes) - 28 files, 344 tests, all green.
+- The full suite's own progress up to the point it was killed - zero failures in every file it did
+  complete, none of which were files this session touched.
+
+**Action item, not yet done: run `pnpm test` to a real, clean completion (ideally with other
+memory-heavy applications closed first) before the next `/phase-audit`, and report the actual
+file/test count** - targeted runs are strong evidence but aren't a substitute for the real
+`posttest` gate (`scripts/check-test-count.mjs`'s floor check), which only runs as part of a full
+`pnpm test` invocation.
+
 ## 2026-09-25 — Decided: `users.bio` is never shown to other learners, ever (D36)
 
 Follow-up to the `/phase-audit 3b` finding below (bio's own schema comment said "never shown on

@@ -60,6 +60,14 @@ const HealthDataSchema = z.object({
       "store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's " +
       "scrubConsentDataForDeletedUser.",
   }),
+  relaySecret: z.enum(["ok", "missing"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'missing' means RELAY_SHARED_SECRET isn't " +
+      "configured, so GET /api/v1/relay/config fails closed (SERVICE_UNAVAILABLE) for every " +
+      "call - the market relay can't fetch its instrument list/feed mode/holidays until it's " +
+      "set. See docs/ARCHITECTURE.md D40.",
+  }),
   storage: z.enum(["ok", "missing"]).openapi({
     example: "ok",
     description:
@@ -369,6 +377,7 @@ export const GET = withErrors(async () => {
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     storage: checkStorageConfigured(),
+    relaySecret: env.RELAY_SHARED_SECRET ? ("ok" as const) : ("missing" as const),
     market: checkMarketDataProvider(),
     redis,
     worldsMissingBossQuiz,

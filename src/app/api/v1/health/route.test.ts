@@ -18,6 +18,7 @@ const mockEnv = vi.hoisted(() => ({
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
   VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
   CONSENT_PII_HMAC_KEY: undefined as string | undefined,
+  RELAY_SHARED_SECRET: undefined as string | undefined,
   S3_ENDPOINT: undefined as string | undefined,
   S3_REGION: undefined as string | undefined,
   S3_BUCKET: undefined as string | undefined,
@@ -71,6 +72,7 @@ beforeEach(() => {
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
   mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
   mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+  mockEnv.RELAY_SHARED_SECRET = "test-relay-secret";
   mockEnv.S3_ENDPOINT = "https://xxx.supabase.co/storage/v1/s3";
   mockEnv.S3_REGION = "ap-south-1";
   mockEnv.S3_BUCKET = "finlamma";
@@ -129,6 +131,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.legalDocuments).toBe("ok");
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
+    expect(body.data.relaySecret).toBe("ok");
     expect(body.data.storage).toBe("ok");
     expect(body.data.market).toBe("mock");
     expect(body.data.redis).toBe("ok");
@@ -310,6 +313,16 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.consentPiiHmacKey).toBe("missing");
+  });
+
+  it("reports relaySecret: 'missing' (not a 503) when RELAY_SHARED_SECRET isn't configured", async () => {
+    mockEnv.RELAY_SHARED_SECRET = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.relaySecret).toBe("missing");
   });
 
   it.each([

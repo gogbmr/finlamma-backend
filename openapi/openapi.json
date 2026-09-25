@@ -106,6 +106,15 @@
                 "example": "ok",
                 "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
               },
+              "relaySecret": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "missing"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'missing' means RELAY_SHARED_SECRET isn't configured, so GET /api/v1/relay/config fails closed (SERVICE_UNAVAILABLE) for every call - the market relay can't fetch its instrument list/feed mode/holidays until it's set. See docs/ARCHITECTURE.md D40."
+              },
               "storage": {
                 "type": "string",
                 "enum": [
@@ -184,6 +193,7 @@
               "legalDocuments",
               "version",
               "consentPiiHmacKey",
+              "relaySecret",
               "storage",
               "redis",
               "worldsMissingBossQuiz",
@@ -2243,6 +2253,73 @@
               "current",
               "trend",
               "sharedWithParent"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RelayConfigResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "instruments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "symbol": {
+                      "type": "string",
+                      "example": "RELIANCE"
+                    },
+                    "exchange": {
+                      "type": "string",
+                      "example": "NSE"
+                    },
+                    "halted": {
+                      "type": "boolean",
+                      "description": "Per-symbol halt (Ops console) - the relay may choose to skip a halted symbol."
+                    }
+                  },
+                  "required": [
+                    "symbol",
+                    "exchange",
+                    "halted"
+                  ]
+                }
+              },
+              "feedMode": {
+                "type": "string",
+                "enum": [
+                  "live",
+                  "delayed_15m",
+                  "paused"
+                ],
+                "description": "Ops console setting. 'paused' is a signal the relay can use to stop polling/streaming entirely, saving vendor credits.",
+                "example": "live"
+              },
+              "globalHalt": {
+                "type": "boolean"
+              },
+              "holidays": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "NSE holiday dates (YYYY-MM-DD) - the relay can skip polling on these too.",
+                "example": [
+                  "2026-10-02"
+                ]
+              }
+            },
+            "required": [
+              "instruments",
+              "feedMode",
+              "globalHalt",
+              "holidays"
             ]
           }
         },
@@ -6083,6 +6160,87 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/relay/config": {
+      "get": {
+        "summary": "Get the market relay's config (market relay only, X-Relay-Secret)",
+        "description": "Called only by finlamma-market-relay (a separate repo, docs/ARCHITECTURE.md) - never the mobile app or the admin dashboard. Authenticated by an X-Relay-Secret header, compared against RELAY_SHARED_SECRET in constant time (src/lib/relay-auth.ts), never a Clerk session. Returns which instruments to track, the Ops console's feed mode and halt state, and the NSE holiday calendar, so the relay knows what to poll/stream and when to skip it. See docs/ARCHITECTURE.md D40 for the full Redis price-key contract this endpoint feeds into.",
+        "tags": [
+          "Relay"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Shared secret, compared in constant time."
+            },
+            "required": true,
+            "description": "Shared secret, compared in constant time.",
+            "name": "X-Relay-Secret",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The relay's current config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelayConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or incorrect X-Relay-Secret - no further detail is ever given",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Unauthorized"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RELAY_SHARED_SECRET is not configured on this deployment",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Relay authentication is not configured"
                   }
                 },
                 "schema": {
