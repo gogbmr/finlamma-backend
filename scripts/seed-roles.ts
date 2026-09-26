@@ -138,6 +138,15 @@ const PERMISSIONS = [
       "edits apply immediately, same trust tier as a content hotfix. Does not include halting a " +
       "symbol or the Ops console's feed-mode/global-halt controls (trading.ops, Phase 4 Checkpoint 9).",
   },
+  {
+    key: "trading.ops",
+    description:
+      "Ops console dangerous controls: global trading halt, per-symbol halt, feed-mode changes " +
+      "(LIVE/DELAYED_15M/PAUSED), the User Trading Ledger (a learner's financial activity - " +
+      "every view is logged), and the risk-flag thresholds. Every halt/unhalt requires a " +
+      "free-text reason. Same narrow trust bar as settings.manage/economy.manage - granted to " +
+      "super_admin only, since a global halt affects every learner immediately.",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -163,6 +172,7 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "coach_note.manage",
     "coach_note.publish",
     "instrument.manage",
+    "trading.ops",
   ],
   user_manager: ["consent.view"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],

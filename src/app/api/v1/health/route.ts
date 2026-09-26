@@ -10,6 +10,7 @@ import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/rep
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
 import { getMarketDataProviderKind } from "@/server/market/provider";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { getOrCreateMarketControls } from "@/server/trading/repo";
 import { listPublishedWorlds } from "@/server/worlds/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
@@ -103,6 +104,14 @@ const HealthDataSchema = z.object({
       "settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading " +
       "stays locked for every learner until enough worlds are published. See " +
       "docs/ARCHITECTURE.md D25.",
+  }),
+  tradingHalt: z.enum(["ok", "active"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'active' means market_controls.global_halt is " +
+      "currently on - the order pad rejects every order for every learner. Meant to catch a " +
+      "halt left on by mistake outside the admin Ops console's own persistent banner " +
+      "(docs/ARCHITECTURE.md D47).",
   }),
   market: z.enum(["configured", "mock", "unconfigured"]).openapi({
     example: "mock",
@@ -295,6 +304,23 @@ async function checkTradingUnlockWorldMissing(): Promise<boolean> {
   }
 }
 
+// Checkpoint 9 (docs/ARCHITECTURE.md D47): "confirm nothing can leave the
+// system halted silently." Global halt should always be a deliberate,
+// short-lived Ops action, never a forgotten switch - surfacing it here
+// means it shows up in uptime/monitoring dashboards, not just the admin
+// Ops console banner. Non-fatal (never a 503): degrades to "ok" on a check
+// failure, same convention as every other DB-backed field here, since the
+// failure itself is separately logged and visible.
+async function checkTradingHalt(): Promise<"ok" | "active"> {
+  try {
+    const controls = await getOrCreateMarketControls();
+    return controls.globalHalt ? "active" : "ok";
+  } catch (err) {
+    logInternalError("health.trading_halt_check_failed", err);
+    return "ok";
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -362,6 +388,7 @@ export const GET = withErrors(async () => {
   const legalDocuments = await checkLegalDocuments();
   const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
   const tradingUnlockWorldMissing = await checkTradingUnlockWorldMissing();
+  const tradingHalt = await checkTradingHalt();
   const redis = await checkRedisReachable();
   // Matches src/lib/inngest.ts's own isDev logic: only a real Vercel
   // deployment (VERCEL_ENV set) is ever in Cloud mode and actually needs a
@@ -382,6 +409,7 @@ export const GET = withErrors(async () => {
     redis,
     worldsMissingBossQuiz,
     tradingUnlockWorldMissing,
+    tradingHalt,
     inngest,
     timestamp: new Date().toISOString(),
   });

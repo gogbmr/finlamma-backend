@@ -224,7 +224,10 @@ skill for the full idempotency/reversal design)
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
   `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values;
   `level_curve` — `{baseXp: 300, stepXp: 100}` (Phase 3 Checkpoint 5) — XP to advance from level L
-  to L+1 = baseXp + stepXp×(L−1); admin-editable, `src/server/leveling`)
+  to L+1 = baseXp + stepXp×(L−1); admin-editable, `src/server/leveling`;
+  `trading_risk_thresholds` — `{newAccountDays: 7, concentrationPct: 50, dailyOrderCount: 10}`
+  (Phase 4 Checkpoint 9, D48) — the Ops console's NEW/WATCH risk-flag rule, `trading.ops`-gated,
+  `src/server/ops`)
 
 **Reporting**
 - `report_snapshots` (user_id, week_start_date IST, efficiency_score 0-100, sub_metrics jsonb

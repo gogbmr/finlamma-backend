@@ -57,6 +57,11 @@ vi.mock("@/lib/redis", () => ({
   checkRedisReachable: () => mockCheckRedisReachable(),
 }));
 
+const mockGetOrCreateMarketControls = vi.fn();
+vi.mock("@/server/trading/repo", () => ({
+  getOrCreateMarketControls: () => mockGetOrCreateMarketControls(),
+}));
+
 import { db } from "@/db/client";
 import { DEFAULT_LESSON_FLOW_SCORING } from "@/server/settings/schemas";
 import { GET } from "./route";
@@ -103,6 +108,9 @@ beforeEach(() => {
   // need to know about the market warning field at all.
   mockEnv.TWELVEDATA_API_KEY = undefined;
   mockEnv.MARKET_DATA_PROVIDER = undefined;
+  // No global halt by default - existing tests below don't need to know
+  // about the tradingHalt warning field at all.
+  mockGetOrCreateMarketControls.mockReset().mockResolvedValue({ globalHalt: false });
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -134,6 +142,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.relaySecret).toBe("ok");
     expect(body.data.storage).toBe("ok");
     expect(body.data.market).toBe("mock");
+    expect(body.data.tradingHalt).toBe("ok");
     expect(body.data.redis).toBe("ok");
     expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(body.data.inngest).toBe("ok");
@@ -323,6 +332,26 @@ describe("GET /api/v1/health", () => {
 
     expect(res.status).toBe(200);
     expect((await res.json()).data.relaySecret).toBe("missing");
+  });
+
+  it("reports tradingHalt: 'active' (not a 503) when market_controls.global_halt is on", async () => {
+    mockGetOrCreateMarketControls.mockResolvedValueOnce({ globalHalt: true });
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.tradingHalt).toBe("active");
+  });
+
+  it("degrades tradingHalt to 'ok' (not a 503) if the check itself throws", async () => {
+    mockGetOrCreateMarketControls.mockRejectedValueOnce(new Error("boom"));
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.tradingHalt).toBe("ok");
   });
 
   it.each([

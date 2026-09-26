@@ -1,11 +1,19 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
-import { instruments, marketHolidays, marketControls, MARKET_CONTROLS_SINGLETON_ID } from "@/db/schema";
+import {
+  feedModeEnum,
+  instruments,
+  marketHolidays,
+  marketControls,
+  MARKET_CONTROLS_SINGLETON_ID,
+} from "@/db/schema";
 import type {
   CreateInstrumentInput,
   CreateMarketHolidayInput,
   UpdateInstrumentInput,
 } from "./schemas";
+
+export type FeedMode = (typeof feedModeEnum.enumValues)[number];
 
 // Same shape as economy/repo.ts's DbOrTx - lets a handful of read functions
 // below run either against the module-level `db` (the default, every
@@ -29,6 +37,17 @@ export async function listActiveInstruments() {
 export async function getInstrumentById(id: string) {
   const [row] = await db.select().from(instruments).where(eq(instruments.id, id)).limit(1);
   return row ?? null;
+}
+
+// Ops console's User Trading Ledger (Checkpoint 9) - bounded by the number
+// of DISTINCT instruments actually held across one page of users (at most
+// the size of the whole catalog, ~12 today), never by user count.
+export async function getInstrumentsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: instruments.id, symbol: instruments.symbol, exchange: instruments.exchange })
+    .from(instruments)
+    .where(inArray(instruments.id, ids));
 }
 
 export async function getInstrumentBySymbol(symbol: string, txDb: DbOrTx = db) {
@@ -91,5 +110,29 @@ export async function getOrCreateMarketControls(txDb: DbOrTx = db) {
   // Lost a race against a concurrent first-read - the other insert won, so
   // read what it wrote.
   const [row] = await txDb.select().from(marketControls).limit(1);
+  return row!;
+}
+
+// Both write paths below are Checkpoint 9's dangerous Ops controls -
+// trading.ops only (never instrument.manage), always called from
+// src/server/trading/service.ts's functions that require a free-text
+// reason and log the change, never called directly from a route/action.
+export async function setGlobalHalt(halt: boolean) {
+  const current = await getOrCreateMarketControls();
+  const [row] = await db
+    .update(marketControls)
+    .set({ globalHalt: halt })
+    .where(eq(marketControls.id, current.id))
+    .returning();
+  return row!;
+}
+
+export async function setFeedMode(mode: FeedMode) {
+  const current = await getOrCreateMarketControls();
+  const [row] = await db
+    .update(marketControls)
+    .set({ feedMode: mode })
+    .where(eq(marketControls.id, current.id))
+    .returning();
   return row!;
 }

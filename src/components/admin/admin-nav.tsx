@@ -12,6 +12,7 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Siren,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -40,6 +41,7 @@ export type AdminNavVisibility = {
   rewards: boolean;
   coachNotes: boolean;
   instruments: boolean;
+  opsConsole: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -83,6 +85,7 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
       label: "Trading",
       items: [
         { href: "/admin/instruments", label: "Instruments", icon: TrendingUp, visible: v.instruments },
+        { href: "/admin/ops", label: "Ops Console", icon: Siren, visible: v.opsConsole },
       ],
     },
     {

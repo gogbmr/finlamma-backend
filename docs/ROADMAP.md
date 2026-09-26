@@ -189,12 +189,33 @@ own repo later, hosted on Railway.
       (reversible)/resume/cancel (terminal). No star rating, no AUM (dropped per founder review -
       see D45). 80 new tests, full suite still clean, `pnpm typecheck`/`pnpm lint`/`pnpm contract`
       clean.
-- [ ] Checkpoint 9: Ops console - feed mode, per-symbol + global halt (`trading.ops` permission),
-      trade-unlock-world setting, user ledger with risk flags (default rule: NEW = joined <7 days
-      ago; WATCH = >50% of portfolio in one position or >10 orders in a day; admin-tunable
-      thresholds), live KPI queries (not hardcoded), audit log. Rolling Redis tick history backs
-      the 15-min-delayed feed mode. **No volatility control** — closed market always shows the
-      last real close, never a synthetic price near a real trade.
+- [x] Checkpoint 9 (D47/D48): Ops console - feed mode + per-symbol/global halt controls, all
+      `trading.ops`-gated (a new permission, super_admin only), mandatory free-text reason on
+      halt/unhalt, every confirm dialog names the exact effect in plain language, every change
+      logged. Persistent red banner on every admin page (not just the console) whenever a global
+      halt is active, plus `GET /api/v1/health`'s new `tradingHalt` field - a halt can't be left
+      on silently. User Trading Ledger (deliberately narrower fields than the prototype's own
+      column list - no email/DOB/parent contact/class-world context, see D48) with the exact risk
+      rule (NEW = joined <7 days; WATCH = >50% concentration in one position OR >10 orders/day;
+      thresholds admin-editable, `trading.ops`-gated) - every load logged like a consent PII
+      reveal. KPI tiles and the ledger are both scoped to the trading-active population and/or
+      today (IST), batched into a handful of grouped queries per page, and cached, so nothing here
+      gets more expensive as total signups/order history grow (D48). Trade-unlock-world setting
+      was already admin-editable ahead of this phase (Checkpoint 3/D25's
+      `tradingUnlockAfterWorldPosition`) - nothing new needed there. **Not built, deliberately
+      flagged rather than silently skipped**: rolling Redis tick history backing an actual
+      15-minute-delayed quote feed - `feedMode` still only changes the *stored*/*displayed* value
+      today (`GET /trade/market-status`), not what price data is actually served, because there is
+      no live tick stream to build rolling history FROM yet (the market relay itself is a separate,
+      not-yet-built repo - D38/D39). Tracked below as a follow-up once the relay exists. **No
+      volatility control** — closed market always shows the last real close, never a synthetic
+      price near a real trade.
+- [ ] Rolling Redis tick history + an actual 15-minute-delayed quote-serving path for
+      `market_controls.feed_mode = "delayed_15m"` - depends on the market relay (a separate repo,
+      out of scope this phase per the Phase 4 kickoff) actually existing and writing a live tick
+      stream this backend can build a rolling buffer from. Today, `delayed_15m` only changes the
+      stored/displayed feed-mode value (Checkpoint 9), not what price data `GET /trade/quotes`
+      actually serves.
 - [ ] `instrument_daily_bars` (candle history), indices (NIFTY 50/BANK NIFTY/SENSEX) via the same
       Twelve Data source (folds into Checkpoint 2/7, not a separate checkpoint)
 

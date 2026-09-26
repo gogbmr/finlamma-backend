@@ -1,10 +1,12 @@
 import { UserButton } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import { getStaffMember } from "@/lib/auth";
 import { getRoleById, roleHasPermission } from "@/server/staff/repo";
+import { getMarketControls } from "@/server/trading/service";
 import { AdminNavStrip, AdminSidebar, type AdminNavVisibility } from "@/components/admin/admin-nav";
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
@@ -51,6 +53,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     coachNoteManage,
     coachNotePublish,
     instrumentManage,
+    tradingOps,
     role,
   ] = await Promise.all([
     roleHasPermission(staff.roleId, "world.manage"),
@@ -70,6 +73,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     roleHasPermission(staff.roleId, "coach_note.manage"),
     roleHasPermission(staff.roleId, "coach_note.publish"),
     roleHasPermission(staff.roleId, "instrument.manage"),
+    roleHasPermission(staff.roleId, "trading.ops"),
     getRoleById(staff.roleId),
   ]);
 
@@ -87,7 +91,23 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     rewards: economyManage,
     coachNotes: coachNoteManage || coachNotePublish,
     instruments: instrumentManage,
+    opsConsole: tradingOps,
   };
+
+  // Persistent halt banner (docs/ARCHITECTURE.md D47, founder's requirement
+  // 2: "make it obvious in the UI when a halt is active"). Shown on EVERY
+  // admin page, not just the Ops console itself, and to every staff member
+  // who can see the admin shell at all - a halt affects every learner, so
+  // hiding it from staff without trading.ops would be exactly the kind of
+  // "silent" halt the founder asked to rule out. Fails safe (banner just
+  // doesn't render) rather than breaking the ENTIRE admin shell if this one
+  // read has a transient problem - every other admin page has nothing to do
+  // with trading and shouldn't become unreachable because of it. A stuck
+  // halt is still independently surfaced by GET /api/v1/health's
+  // tradingHalt field regardless of whether this particular read succeeds.
+  const globalHalt = await getMarketControls()
+    .then((controls) => controls.globalHalt)
+    .catch(() => false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -112,6 +132,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </div>
           </header>
           <AdminNavStrip visibility={visibility} />
+          {globalHalt && (
+            <div className="flex items-center justify-center gap-2 bg-destructive px-4 py-2 text-center text-sm font-semibold text-destructive-foreground">
+              GLOBAL TRADING HALT ACTIVE — no learner can place an order right now.
+              {visibility.opsConsole && (
+                <Link href="/admin/ops" className="underline underline-offset-2">
+                  Resolve in Ops Console
+                </Link>
+              )}
+            </div>
+          )}
           <main className="flex-1 p-4 lg:p-6">{children}</main>
         </div>
       </div>

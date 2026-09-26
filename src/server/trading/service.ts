@@ -10,7 +10,11 @@ import {
   insertMarketHoliday,
   listAllInstruments,
   listMarketHolidays,
+  setFeedMode,
+  setGlobalHalt,
+  setInstrumentHalted,
   updateInstrumentRow,
+  type FeedMode,
 } from "./repo";
 import type { CreateInstrumentInput, CreateMarketHolidayInput, UpdateInstrumentInput } from "./schemas";
 
@@ -127,9 +131,84 @@ export async function deleteMarketHoliday(actor: { id: string }, id: string, met
   return deleted;
 }
 
-// --- Market controls (read-only here; Ops console write path is
-// Checkpoint 9's trading.ops permission) ---
+// --- Market controls (Checkpoint 9, trading.ops - docs/ARCHITECTURE.md D47) ---
+// Every function below is a "dangerous control": it takes effect for every
+// learner immediately, requires the caller to already hold trading.ops
+// (checked one level up, in the admin Server Action - these functions
+// trust `actor` was already authorized), and is unconditionally logged
+// with who/when/reason. Halt/unhalt requires a non-empty reason (enforced
+// by HaltReasonSchema at the action boundary, not re-validated here) -
+// these functions accept it as a plain string and always log it, so a
+// caller that somehow bypassed the schema still produces a traceable log
+// entry rather than a silent, unexplained halt.
 
 export async function getMarketControls() {
   return getOrCreateMarketControls();
+}
+
+export async function updateGlobalHalt(
+  actor: { id: string },
+  halt: boolean,
+  reason: string,
+  meta: RequestMeta,
+) {
+  const updated = await setGlobalHalt(halt);
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: halt ? "ops.global_halt_enabled" : "ops.global_halt_disabled",
+    targetType: "market_controls",
+    targetId: updated.id,
+    metadata: { reason },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
+}
+
+export async function updateFeedMode(
+  actor: { id: string },
+  mode: FeedMode,
+  meta: RequestMeta,
+  reason?: string,
+) {
+  const previous = await getOrCreateMarketControls();
+  const updated = await setFeedMode(mode);
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "ops.feed_mode_changed",
+    targetType: "market_controls",
+    targetId: updated.id,
+    metadata: { previous: previous.feedMode, next: mode, reason: reason ?? null },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
+}
+
+export async function updateInstrumentHalted(
+  actor: { id: string },
+  instrumentId: string,
+  halted: boolean,
+  reason: string,
+  meta: RequestMeta,
+) {
+  const existing = await getInstrumentById(instrumentId);
+  if (!existing) throw new AppError("NOT_FOUND", "No instrument with this id");
+
+  const updated = await setInstrumentHalted(instrumentId, halted);
+  if (!updated) throw new AppError("NOT_FOUND", "No instrument with this id");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: halted ? "ops.symbol_halted" : "ops.symbol_unhalted",
+    targetType: "instrument",
+    targetId: instrumentId,
+    metadata: { symbol: existing.symbol, reason },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
 }

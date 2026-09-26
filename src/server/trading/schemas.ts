@@ -57,3 +57,18 @@ export type CreateMarketHolidayInput = z.infer<typeof CreateMarketHolidaySchema>
 
 export const MarketHolidayIdSchema = z.object({ id: z.string().uuid() });
 export type MarketHolidayIdInput = z.infer<typeof MarketHolidayIdSchema>;
+
+// --- Ops console (Checkpoint 9, trading.ops - docs/ARCHITECTURE.md D47) ---
+
+export const FeedModeSchema = z.enum(["live", "delayed_15m", "paused"]);
+export type FeedModeInput = z.infer<typeof FeedModeSchema>;
+
+// Mandatory free-text reason on every halt/unhalt (founder's requirement) -
+// a fat-finger-length upper bound, not a product limit, same reasoning as
+// every other MAX_* bound in this codebase.
+export const MAX_HALT_REASON_LENGTH = 500;
+export const HaltReasonSchema = z
+  .string()
+  .trim()
+  .min(1, "A reason is required")
+  .max(MAX_HALT_REASON_LENGTH, `Reason must be at most ${MAX_HALT_REASON_LENGTH} characters`);

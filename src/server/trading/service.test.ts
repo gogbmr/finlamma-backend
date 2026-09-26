@@ -8,6 +8,9 @@ const mockInsertMarketHoliday = vi.fn();
 const mockListAllInstruments = vi.fn();
 const mockListMarketHolidays = vi.fn();
 const mockUpdateInstrumentRow = vi.fn();
+const mockSetGlobalHalt = vi.fn();
+const mockSetFeedMode = vi.fn();
+const mockSetInstrumentHalted = vi.fn();
 vi.mock("./repo", () => ({
   deleteMarketHolidayRow: (id: unknown) => mockDeleteMarketHolidayRow(id),
   getInstrumentById: (id: unknown) => mockGetInstrumentById(id),
@@ -17,6 +20,9 @@ vi.mock("./repo", () => ({
   listAllInstruments: () => mockListAllInstruments(),
   listMarketHolidays: () => mockListMarketHolidays(),
   updateInstrumentRow: (input: unknown) => mockUpdateInstrumentRow(input),
+  setGlobalHalt: (halt: unknown) => mockSetGlobalHalt(halt),
+  setFeedMode: (mode: unknown) => mockSetFeedMode(mode),
+  setInstrumentHalted: (id: unknown, halted: unknown) => mockSetInstrumentHalted(id, halted),
 }));
 
 const mockLogActivity = vi.fn();
@@ -31,7 +37,10 @@ import {
   getInstrumentEditorData,
   getMarketControls,
   getMarketHolidayEditorData,
+  updateFeedMode,
+  updateGlobalHalt,
   updateInstrument,
+  updateInstrumentHalted,
 } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -173,5 +182,104 @@ describe("getMarketControls", () => {
     mockGetOrCreateMarketControls.mockResolvedValue(controls);
     const result = await getMarketControls();
     expect(result).toBe(controls);
+  });
+});
+
+describe("updateGlobalHalt", () => {
+  it("halts and logs ops.global_halt_enabled with the reason", async () => {
+    const updated = { id: "singleton", feedMode: "live", globalHalt: true };
+    mockSetGlobalHalt.mockResolvedValue(updated);
+
+    const result = await updateGlobalHalt(ACTOR, true, "Suspicious price feed - pausing to investigate", META);
+
+    expect(result).toBe(updated);
+    expect(mockSetGlobalHalt).toHaveBeenCalledWith(true);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: "staff",
+        actorId: "staff_1",
+        action: "ops.global_halt_enabled",
+        targetType: "market_controls",
+        metadata: { reason: "Suspicious price feed - pausing to investigate" },
+      }),
+    );
+  });
+
+  it("unhalts and logs ops.global_halt_disabled", async () => {
+    mockSetGlobalHalt.mockResolvedValue({ id: "singleton", feedMode: "live", globalHalt: false });
+
+    await updateGlobalHalt(ACTOR, false, "Feed confirmed healthy again", META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ops.global_halt_disabled" }),
+    );
+  });
+});
+
+describe("updateFeedMode", () => {
+  it("changes the feed mode and logs previous/next", async () => {
+    mockGetOrCreateMarketControls.mockResolvedValue({ id: "singleton", feedMode: "live", globalHalt: false });
+    mockSetFeedMode.mockResolvedValue({ id: "singleton", feedMode: "paused", globalHalt: false });
+
+    const result = await updateFeedMode(ACTOR, "paused", META, "Vendor outage");
+
+    expect(result.feedMode).toBe("paused");
+    expect(mockSetFeedMode).toHaveBeenCalledWith("paused");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ops.feed_mode_changed",
+        metadata: { previous: "live", next: "paused", reason: "Vendor outage" },
+      }),
+    );
+  });
+
+  it("logs a null reason when none is given", async () => {
+    mockGetOrCreateMarketControls.mockResolvedValue({ id: "singleton", feedMode: "live", globalHalt: false });
+    mockSetFeedMode.mockResolvedValue({ id: "singleton", feedMode: "delayed_15m", globalHalt: false });
+
+    await updateFeedMode(ACTOR, "delayed_15m", META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ reason: null }) }),
+    );
+  });
+});
+
+describe("updateInstrumentHalted", () => {
+  it("throws NOT_FOUND for an unknown instrument", async () => {
+    mockGetInstrumentById.mockResolvedValue(null);
+
+    await expect(updateInstrumentHalted(ACTOR, "inst_1", true, "Halting on rumor", META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+    expect(mockSetInstrumentHalted).not.toHaveBeenCalled();
+  });
+
+  it("halts a symbol and logs ops.symbol_halted with the symbol and reason", async () => {
+    mockGetInstrumentById.mockResolvedValue({ id: "inst_1", symbol: "RELIANCE" });
+    mockSetInstrumentHalted.mockResolvedValue({ id: "inst_1", symbol: "RELIANCE", halted: true });
+
+    const result = await updateInstrumentHalted(ACTOR, "inst_1", true, "Unusual order flow", META);
+
+    expect(result.halted).toBe(true);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ops.symbol_halted",
+        targetType: "instrument",
+        targetId: "inst_1",
+        metadata: { symbol: "RELIANCE", reason: "Unusual order flow" },
+      }),
+    );
+  });
+
+  it("unhalts a symbol and logs ops.symbol_unhalted", async () => {
+    mockGetInstrumentById.mockResolvedValue({ id: "inst_1", symbol: "RELIANCE" });
+    mockSetInstrumentHalted.mockResolvedValue({ id: "inst_1", symbol: "RELIANCE", halted: false });
+
+    await updateInstrumentHalted(ACTOR, "inst_1", false, "Confirmed non-issue", META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "ops.symbol_unhalted" }),
+    );
   });
 });
