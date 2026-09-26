@@ -264,9 +264,22 @@ skill for the full idempotency/reversal design)
   DB write, never a persisted row.
 - `holdings` (user_id, instrument_id, qty, avg_price_paise, position_opened_at — reset on a 0→positive
   re-entry, D43, powers the Trades tab's hold-days stat)
-- `funds` (name, category, risk, nav, aum, expense_ratio, min_sip_paise — tiered: ₹100 for index
-  funds, ₹500 for equity/hybrid/debt/ELSS, return_1y/3y/5y, star_rating, description jsonb),
-  `fund_navs`, `sip_plans`, `fund_holdings`
+- `funds` (name — always a fictional Finlamma-branded name, never a real AMC's fund name, D45;
+  category, risk, description jsonb, amfi_scheme_code — internal-only, never in any API response,
+  expense_ratio_bps — illustrative/category-typical, not the real scheme's own rate,
+  min_lump_sum_paise, min_sip_paise — tiered: ₹100 index / ₹500 other, admin-editable, active). No
+  star_rating, no aum (dropped per D45 — a third-party opinion and an identifying claim about a
+  real company, neither honestly attachable to a fictional wrapper).
+- `fund_navs` (fund_id, date, nav_paise — real AMFI NAV rounded to the nearest paise, append-only,
+  unique on (fund_id, date), D45/D46)
+- `fund_holdings` (user_id, fund_id, units_milli — units × 1000 for fractional-unit precision, D45,
+  avg_nav_paise)
+- `fund_orders` (user_id, fund_id, side, status — filled/failed, no "open"/"cancelled" (no LIMIT
+  concept for a once-a-day NAV), amount_paise, units_milli, nav_paise, nav_date — always shown back,
+  no hidden pricing, realized_pnl_paise, idempotency_key, sip_plan_id + due_date — unique together,
+  the SIP idempotency mechanism, D46, failure_reason — SIP-triggered failures only)
+- `sip_plans` (user_id, fund_id, amount_paise, day_of_month — 1-28 only, status — active/paused/
+  cancelled, paused_at, cancelled_at)
 - `competitions` (name, instrument_id, virtual_capital_vm, window_start, window_end, prizes jsonb
   — V Money / badge / coupon only, **never real currency**, admin-set per competition — and rules
   jsonb), `competition_entries`/`competition_trades` (isolated from the user's main paper-trading

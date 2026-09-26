@@ -176,11 +176,19 @@ own repo later, hosted on Railway.
       screen's own build, not this checkpoint. 34 new tests (31 in the new portfolio domain + 3
       more in orders/repo.test.ts for realizedPnlPaise/positionOpenedAt), full suite still clean,
       `pnpm typecheck`/`pnpm lint`/`pnpm contract` clean.
-- [ ] Checkpoint 8 (money rules): mutual funds - `funds`, `fund_navs`, `sip_plans`,
-      `fund_holdings`; AMFI NAV daily-ingestion Inngest job (executes against the most recent
-      available NAV if today's isn't published yet, and always shows the learner which NAV
-      date/value was used - no hidden pricing); SIP (tiered minimums: ₹100 index / ₹500 other) +
-      lump sum
+- [x] Checkpoint 8 (money rules): mutual funds - `funds`, `fund_navs`, `sip_plans`,
+      `fund_holdings` (D45/D46). 9 fictional Finlamma-branded funds (never a real AMC's name),
+      each internally tracking a real AMFI scheme code fetched live for this checkpoint - never
+      surfaced in any API response. AMFI NAV daily-ingestion Inngest job (parses defensively - one
+      fund's bad row never blocks the others; executes against the most recent available NAV,
+      never requires today's; `NAV_STALE` at >4 days). `POST /trade/funds/orders` (buy/sell,
+      Idempotency-Key, same ledger/transaction/idempotency pattern as stock orders); SIP plans
+      (tiered minimums ₹100 index / ₹500 other, admin-editable per fund, day-of-month 1-28 only)
+      with a daily execution job idempotent per (plan, due date) - a failed execution (insufficient
+      balance) is persisted and visible via `GET /trade/funds/sip`, never silently skipped; pause
+      (reversible)/resume/cancel (terminal). No star rating, no AUM (dropped per founder review -
+      see D45). 80 new tests, full suite still clean, `pnpm typecheck`/`pnpm lint`/`pnpm contract`
+      clean.
 - [ ] Checkpoint 9: Ops console - feed mode, per-symbol + global halt (`trading.ops` permission),
       trade-unlock-world setting, user ledger with risk flags (default rule: NEW = joined <7 days
       ago; WATCH = >50% of portfolio in one position or >10 orders in a day; admin-tunable
@@ -319,6 +327,20 @@ own repo later, hosted on Railway.
       with zero backend changes either way. Set `TWELVEDATA_API_KEY` (or build a new provider
       under `src/server/market/providers/` and set `MARKET_DATA_PROVIDER` if switching vendors)
       once decided - `GET /api/v1/health`'s `market` field confirms which is actually in effect.
+- [ ] **BLOCKING: legal review of the mutual fund simulation** - naming (every fund is a fictional
+      Finlamma-branded wrapper, D45), use of real AMFI NAV data for a real scheme tracked
+      internally but never disclosed to the learner, SEBI advertising/distribution rules as they
+      apply to a kid-facing educational simulation, and whether tracking a real scheme's NAV at
+      all is permissible in this form - not yet reviewed by counsel. Same category of review as
+      the existing instrument about/tip item above, but a separate item since the underlying
+      question (can this exist in this shape at all) is more fundamental than a copy-tone check.
+- [ ] Wire real alerting (Sentry or similar) for failed scheduled jobs - today a failed Inngest
+      run (the AMFI NAV ingestion job, the SIP execution job, the LIMIT-matching/EOD-cancel jobs,
+      the weekly report card) only shows up as a scrubbed log line (`logInternalError`) and in the
+      Inngest dashboard's own run history - nobody gets proactively paged. Acceptable for now
+      (founder decision, Phase 4 Checkpoint 8) but a real gap once real learners depend on these
+      jobs running - deferred from Phase 0's Sentry item above, called out again here since it's
+      specifically the AMFI ingestion job's own failure mode that motivated re-flagging it.
 
 ## Later (non-blocking — no phase assigned)
 - [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's

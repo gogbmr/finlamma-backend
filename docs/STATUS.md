@@ -1,5 +1,47 @@
 # Status
 
+## 2026-09-26 — Phase 4 Checkpoints 6-8 shipped (LIMIT matching/EOD cancel, Profile Trades tab, mutual funds)
+
+Three checkpoints landed today on `phase-4-trading-engine`, each committed/pushed separately:
+
+- **Checkpoint 6** (D42): `limitOrderMatchingJob` (every minute during market hours) and
+  `limitOrderEodCancelJob` (15:30 IST close, skips market holidays) - 8 new tests.
+- **Checkpoint 7** (D43/D44): `GET /me/portfolio/summary`/`stats`/`trades` (Profile Trades tab) -
+  two additive columns (`orders.realized_pnl_paise`, `holdings.position_opened_at`) - 34 new tests.
+- **Checkpoint 8** (D45/D46): mutual funds. 9 fictional Finlamma-branded funds, each internally
+  tracking a real AMFI scheme code (fetched live while building this, not guessed) that is never
+  surfaced in any API response - verified directly against the generated `openapi.json` (zero
+  occurrences of the scheme code). No star rating, no AUM (dropped after a compliance review - a
+  kid-facing app showing a real AMC's fund name/rating/NAV risks SEBI advertising/distribution
+  rules and uses a real company's trademark and performance with no relationship to them). AMFI
+  NAV daily-ingestion job, fund buy/sell (`POST /trade/funds/orders`), SIP plans with a daily
+  execution job (idempotent per plan+due-date; a failed execution due to insufficient balance is
+  persisted and visible via `GET /trade/funds/sip`, a deliberate narrow exception to the "never
+  persist a rejected order" rule stock orders use, since a SIP runs unattended). NAV staleness
+  threshold is 4 days (tightened from an initial 7-day proposal per founder review). 80 new tests.
+  **Blocking pre-launch checklist item added**: legal review of the whole mutual-fund simulation
+  (naming, real AMFI NAV data, SEBI rules, whether tracking a real scheme is permissible at all) -
+  not yet reviewed by counsel.
+
+**A real bug caught while building Checkpoint 8**: `getLatestNav` initially always queried the
+module-level `db` even when called from inside a row-locked transaction - on PGlite's single
+connection this deadlocked the test suite outright (every test after the first fill attempt timed
+out at exactly 5s). Fixed by giving it the same `DbOrTx`-accepting signature every other
+read-inside-a-transaction function in this codebase already uses - see D46 for the full account,
+kept as a standing reminder for any future read added inside a money-moving transaction.
+
+**Full suite, run to genuine completion after each checkpoint**: 134/1447 (Checkpoint 6) →
+139/1489 (Checkpoint 7) → 150/1569 (Checkpoint 8), all passing, `pnpm typecheck`/`pnpm lint`/
+`pnpm contract` clean throughout.
+
+**Also fixed today, unrelated to the phase's features**: the recurring stray `/loop` wakeup the
+founder had reported twice was traced to this session's own `ScheduleWakeup` calls made while
+polling a long-running background test command - the harness already sends an automatic
+notification the moment a background command finishes, so that polling was always redundant, and
+at least one scheduled job didn't get cleaned up and kept firing afterward. Found and deleted via
+`CronList`/`CronDelete`; confirmed no hook, skill or settings file schedules anything. Going
+forward this session stops scheduling wakeups to poll self-started background work.
+
 ## 2026-09-26 — Resolved: full suite ran clean, `orders/repo.test.ts` confirmed against real Postgres
 
 Closes both action items below (the Checkpoint 3 "targeted tests only" note and the Checkpoint 5

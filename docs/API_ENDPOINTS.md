@@ -68,6 +68,12 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/portfolio/summary` — Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)
 - `GET /api/v1/me/portfolio/stats` — Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)
 - `GET /api/v1/me/portfolio/trades` — Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)
+- `GET /api/v1/trade/funds` — List active mutual funds with their latest NAV (Explore mode, TR-35/38)
+- `GET /api/v1/trade/funds/{id}` — Get one fund's detail with its latest NAV (TR-39)
+- `POST /api/v1/trade/funds/orders` — Buy (lump sum) or sell (redeem) fund units
+- `GET /api/v1/trade/funds/sip` — List my SIP plans, including recent execution history (TR-37)
+- `POST /api/v1/trade/funds/sip` — Create a new SIP plan
+- `PATCH /api/v1/trade/funds/sip/{id}` — Pause, resume or cancel a SIP plan
 
 **Relay**
 
@@ -3055,6 +3061,513 @@ Realized P&L, win rate, average hold time and best/worst trade, all derived from
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds`
+
+**List active mutual funds with their latest NAV (Explore mode, TR-35/38)**
+
+Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active funds with their latest NAV
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": "Finlamma Nifty 50 Index Fund",
+      "category": "index",
+      "risk": "very_low",
+      "description": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "expenseRatioBps": 20,
+      "minLumpSumPaise": 10000,
+      "minSipPaise": 10000,
+      "latestNav": {
+        "navPaise": 1629607,
+        "date": "2026-09-25"
+      }
+    }
+  ],
+  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds/{id}`
+
+**Get one fund's detail with its latest NAV (TR-39)**
+
+Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The fund's detail
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Finlamma Nifty 50 Index Fund",
+    "category": "index",
+    "risk": "very_low",
+    "description": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "expenseRatioBps": 20,
+    "minLumpSumPaise": 10000,
+    "minSipPaise": 10000,
+    "latestNav": {
+      "navPaise": 1629607,
+      "date": "2026-09-25"
+    }
+  },
+  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No active fund with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No fund with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/trade/funds/orders`
+
+**Buy (lump sum) or sell (redeem) fund units**
+
+BUY takes an amountPaise (₹ to invest) and units are derived from the latest ingested NAV; SELL takes a unitsMilli count to redeem. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`). Always executes against the most recently ingested NAV, never a client-sent price - the response always shows which NAV date/value was used, no hidden pricing (docs/ARCHITECTURE.md D45/D46).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `Idempotency-Key` | header | string | yes | Client-generated, unique per order attempt. |
+
+**Request body**
+
+```json
+{
+  "fundId": "00000000-0000-0000-0000-000000000000",
+  "side": "buy",
+  "amountPaise": 10000
+}
+```
+
+**Responses**
+
+- **200** — The fund order (filled, or replayed from an identical earlier request)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "fundId": "00000000-0000-0000-0000-000000000000",
+    "side": "buy",
+    "status": "filled",
+    "amountPaise": 0,
+    "unitsMilli": 0,
+    "navPaise": 0,
+    "navDate": "string",
+    "realizedPnlPaise": 0,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "replayed": true
+  }
+}
+```
+
+- **400** — Invalid input, a missing Idempotency-Key header, or below the fund's minimum lump sum
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Idempotency-Key header is required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet for this learner
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active fund with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No fund with this id"
+  }
+}
+```
+
+- **409** — The order can't be placed right now - NAV_UNAVAILABLE, NAV_STALE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_MARGIN",
+    "message": "Not enough V Money for this investment",
+    "details": {
+      "balancePaise": 5000,
+      "requiredPaise": 10000
+    }
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds/sip`
+
+**List my SIP plans, including recent execution history (TR-37)**
+
+Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's SIP plans
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "fundId": "00000000-0000-0000-0000-000000000000",
+      "amountPaise": 0,
+      "dayOfMonth": 0,
+      "status": "active",
+      "nextDueDate": "2026-10-05",
+      "recentExecutions": [
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "status": "filled",
+          "dueDate": "2026-09-05",
+          "amountPaise": 0,
+          "unitsMilli": 0,
+          "navPaise": 0,
+          "navDate": "string",
+          "failureReason": "INSUFFICIENT_MARGIN",
+          "createdAt": "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/trade/funds/sip`
+
+**Create a new SIP plan**
+
+amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `fundId` | string | yes |  |
+| `amountPaise` | integer | yes |  |
+| `dayOfMonth` | integer | yes |  |
+
+```json
+{
+  "fundId": "00000000-0000-0000-0000-000000000000",
+  "amountPaise": 10000,
+  "dayOfMonth": 5
+}
+```
+
+**Responses**
+
+- **200** — The newly created SIP plan
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "fundId": "00000000-0000-0000-0000-000000000000",
+    "amountPaise": 0,
+    "dayOfMonth": 0,
+    "status": "active",
+    "nextDueDate": "2026-10-05",
+    "recentExecutions": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "status": "filled",
+        "dueDate": "2026-09-05",
+        "amountPaise": 0,
+        "unitsMilli": 0,
+        "navPaise": 0,
+        "navDate": "string",
+        "failureReason": "INSUFFICIENT_MARGIN",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+- **400** — Invalid input, or below the fund's minimum SIP amount
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Minimum SIP amount for this fund is 10000 paise"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet for this learner
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active fund with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No fund with this id"
+  }
+}
+```
+
+
+---
+
+### `PATCH /api/v1/trade/funds/sip/{id}`
+
+**Pause, resume or cancel a SIP plan**
+
+Pause is reversible (a paused month is silently skipped, not recorded as a failure - the learner chose it). Cancel is terminal - a cancelled plan can never be resumed, only replaced with a new one.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | string (pause, resume, cancel) | yes |  |
+
+```json
+{
+  "action": "pause"
+}
+```
+
+**Responses**
+
+- **200** — The updated SIP plan
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "fundId": "00000000-0000-0000-0000-000000000000",
+    "amountPaise": 0,
+    "dayOfMonth": 0,
+    "status": "active",
+    "nextDueDate": "2026-10-05",
+    "recentExecutions": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "status": "filled",
+        "dueDate": "2026-09-05",
+        "amountPaise": 0,
+        "unitsMilli": 0,
+        "navPaise": 0,
+        "navDate": "string",
+        "failureReason": "INSUFFICIENT_MARGIN",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **404** — No SIP plan with this id owned by the caller
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No SIP plan with this id"
+  }
+}
+```
+
+- **409** — The requested action doesn't apply to the plan's current status (e.g. pausing an already-cancelled plan)
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Cannot pause a SIP plan that is currently \"cancelled\""
   }
 }
 ```

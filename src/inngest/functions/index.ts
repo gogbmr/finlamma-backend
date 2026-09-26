@@ -1,6 +1,8 @@
+import { amfiNavIngestJob } from "./amfi-nav-ingest";
 import { legalReapprovalEmailsJob } from "./legal-reapproval-emails";
 import { limitOrderEodCancelJob } from "./limit-order-eod-cancel";
 import { limitOrderMatchingJob } from "./limit-order-matching";
+import { sipExecutionJob } from "./sip-execution";
 import { weeklyReportCardJob } from "./weekly-report-card";
 
 // Every Inngest function the app registers, imported here so
@@ -10,4 +12,6 @@ export const functions = [
   legalReapprovalEmailsJob,
   limitOrderMatchingJob,
   limitOrderEodCancelJob,
+  amfiNavIngestJob,
+  sipExecutionJob,
 ];

@@ -28,6 +28,7 @@
     "seed:reward-rules": "tsx scripts/seed-reward-rules.ts",
     "seed:instruments": "tsx scripts/seed-instruments.ts",
     "seed:market-holidays": "tsx scripts/seed-market-holidays.ts",
+    "seed:funds": "tsx scripts/seed-funds.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {

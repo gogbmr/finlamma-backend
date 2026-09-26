@@ -2519,6 +2519,345 @@
           "nextCursor"
         ]
       },
+      "PlaceFundOrderResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fundId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "filled",
+                  "failed"
+                ]
+              },
+              "amountPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The ₹ that actually moved. null only for a failed SIP execution."
+              },
+              "unitsMilli": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Units x 1000 (3 decimal places, D45)."
+              },
+              "navPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The exact NAV this fill used - never hidden pricing."
+              },
+              "navDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Which NAV date was used, e.g. \"2026-09-25\"."
+              },
+              "realizedPnlPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "replayed": {
+                "type": "boolean",
+                "description": "True only when this exact response is a replay of an already-processed request with the same Idempotency-Key."
+              }
+            },
+            "required": [
+              "id",
+              "fundId",
+              "side",
+              "status",
+              "amountPaise",
+              "unitsMilli",
+              "navPaise",
+              "navDate",
+              "realizedPnlPaise",
+              "createdAt",
+              "replayed"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SipPlanResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fundId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amountPaise": {
+                "type": "integer"
+              },
+              "dayOfMonth": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "paused",
+                  "cancelled"
+                ]
+              },
+              "nextDueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null once the plan is cancelled - a cancelled plan never runs again.",
+                "example": "2026-10-05"
+              },
+              "recentExecutions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "filled",
+                        "failed"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": "string",
+                      "example": "2026-09-05"
+                    },
+                    "amountPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "unitsMilli": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "failureReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Set only when status is \"failed\" - e.g. INSUFFICIENT_MARGIN.",
+                      "example": "INSUFFICIENT_MARGIN"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "dueDate",
+                    "amountPaise",
+                    "unitsMilli",
+                    "navPaise",
+                    "navDate",
+                    "failureReason",
+                    "createdAt"
+                  ]
+                },
+                "description": "Most recent executions for this plan, newest first, including any that failed - a SIP failure is always visible here, never silently skipped."
+              }
+            },
+            "required": [
+              "id",
+              "fundId",
+              "amountPaise",
+              "dayOfMonth",
+              "status",
+              "nextDueDate",
+              "recentExecutions"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SipPlanListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "fundId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "amountPaise": {
+                  "type": "integer"
+                },
+                "dayOfMonth": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "paused",
+                    "cancelled"
+                  ]
+                },
+                "nextDueDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "null once the plan is cancelled - a cancelled plan never runs again.",
+                  "example": "2026-10-05"
+                },
+                "recentExecutions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "filled",
+                          "failed"
+                        ]
+                      },
+                      "dueDate": {
+                        "type": "string",
+                        "example": "2026-09-05"
+                      },
+                      "amountPaise": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "unitsMilli": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "navPaise": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "navDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "failureReason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Set only when status is \"failed\" - e.g. INSUFFICIENT_MARGIN.",
+                        "example": "INSUFFICIENT_MARGIN"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "status",
+                      "dueDate",
+                      "amountPaise",
+                      "unitsMilli",
+                      "navPaise",
+                      "navDate",
+                      "failureReason",
+                      "createdAt"
+                    ]
+                  },
+                  "description": "Most recent executions for this plan, newest first, including any that failed - a SIP failure is always visible here, never silently skipped."
+                }
+              },
+              "required": [
+                "id",
+                "fundId",
+                "amountPaise",
+                "dayOfMonth",
+                "status",
+                "nextDueDate",
+                "recentExecutions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -7154,6 +7493,853 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds": {
+      "get": {
+        "summary": "List active mutual funds with their latest NAV (Explore mode, TR-35/38)",
+        "description": "Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active funds with their latest NAV",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "Finlamma Nifty 50 Index Fund"
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "index",
+                              "equity",
+                              "hybrid",
+                              "debt",
+                              "elss"
+                            ]
+                          },
+                          "risk": {
+                            "type": "string",
+                            "enum": [
+                              "very_low",
+                              "low",
+                              "moderate",
+                              "high",
+                              "very_high"
+                            ]
+                          },
+                          "description": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "expenseRatioBps": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Illustrative, typical-for-this-fund-type expense ratio in basis points (100 = 1%) - not a real scheme's own filed rate.",
+                            "example": 20
+                          },
+                          "minLumpSumPaise": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "example": 10000
+                          },
+                          "minSipPaise": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "example": 10000
+                          },
+                          "latestNav": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "navPaise": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 1629607
+                              },
+                              "date": {
+                                "type": "string",
+                                "example": "2026-09-25"
+                              }
+                            },
+                            "required": [
+                              "navPaise",
+                              "date"
+                            ],
+                            "description": "null if this fund has never been ingested yet."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "category",
+                          "risk",
+                          "description",
+                          "expenseRatioBps",
+                          "minLumpSumPaise",
+                          "minSipPaise",
+                          "latestNav"
+                        ]
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/{id}": {
+      "get": {
+        "summary": "Get one fund's detail with its latest NAV (TR-39)",
+        "description": "Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The fund's detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Finlamma Nifty 50 Index Fund"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "index",
+                            "equity",
+                            "hybrid",
+                            "debt",
+                            "elss"
+                          ]
+                        },
+                        "risk": {
+                          "type": "string",
+                          "enum": [
+                            "very_low",
+                            "low",
+                            "moderate",
+                            "high",
+                            "very_high"
+                          ]
+                        },
+                        "description": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "expenseRatioBps": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Illustrative, typical-for-this-fund-type expense ratio in basis points (100 = 1%) - not a real scheme's own filed rate.",
+                          "example": 20
+                        },
+                        "minLumpSumPaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 10000
+                        },
+                        "minSipPaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 10000
+                        },
+                        "latestNav": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "navPaise": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "example": 1629607
+                            },
+                            "date": {
+                              "type": "string",
+                              "example": "2026-09-25"
+                            }
+                          },
+                          "required": [
+                            "navPaise",
+                            "date"
+                          ],
+                          "description": "null if this fund has never been ingested yet."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "category",
+                        "risk",
+                        "description",
+                        "expenseRatioBps",
+                        "minLumpSumPaise",
+                        "minSipPaise",
+                        "latestNav"
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active fund with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/orders": {
+      "post": {
+        "summary": "Buy (lump sum) or sell (redeem) fund units",
+        "description": "BUY takes an amountPaise (₹ to invest) and units are derived from the latest ingested NAV; SELL takes a unitsMilli count to redeem. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`). Always executes against the most recently ingested NAV, never a client-sent price - the response always shows which NAV date/value was used, no hidden pricing (docs/ARCHITECTURE.md D45/D46).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per order attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per order attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "fundId": "00000000-0000-0000-0000-000000000000",
+                "side": "buy",
+                "amountPaise": 10000
+              },
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "fundId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "buy"
+                        ]
+                      },
+                      "amountPaise": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000000
+                      }
+                    },
+                    "required": [
+                      "fundId",
+                      "side",
+                      "amountPaise"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "fundId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "sell"
+                        ]
+                      },
+                      "unitsMilli": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000000
+                      }
+                    },
+                    "required": [
+                      "fundId",
+                      "side",
+                      "unitsMilli"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The fund order (filled, or replayed from an identical earlier request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceFundOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, a missing Idempotency-Key header, or below the fund's minimum lump sum",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Idempotency-Key header is required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet for this learner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active fund with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order can't be placed right now - NAV_UNAVAILABLE, NAV_STALE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "INSUFFICIENT_MARGIN",
+                    "message": "Not enough V Money for this investment",
+                    "details": {
+                      "balancePaise": 5000,
+                      "requiredPaise": 10000
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/sip": {
+      "get": {
+        "summary": "List my SIP plans, including recent execution history (TR-37)",
+        "description": "Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's SIP plans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SipPlanListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new SIP plan",
+        "description": "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "fundId": "00000000-0000-0000-0000-000000000000",
+                "amountPaise": 10000,
+                "dayOfMonth": 5
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fundId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "amountPaise": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000
+                  },
+                  "dayOfMonth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 28
+                  }
+                },
+                "required": [
+                  "fundId",
+                  "amountPaise",
+                  "dayOfMonth"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The newly created SIP plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SipPlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or below the fund's minimum SIP amount",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Minimum SIP amount for this fund is 10000 paise"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet for this learner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active fund with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/sip/{id}": {
+      "patch": {
+        "summary": "Pause, resume or cancel a SIP plan",
+        "description": "Pause is reversible (a paused month is silently skipped, not recorded as a failure - the learner chose it). Cancel is terminal - a cancelled plan can never be resumed, only replaced with a new one.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "action": "pause"
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "pause",
+                      "resume",
+                      "cancel"
+                    ]
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated SIP plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SipPlanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No SIP plan with this id owned by the caller",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No SIP plan with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested action doesn't apply to the plan's current status (e.g. pausing an already-cancelled plan)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Cannot pause a SIP plan that is currently \"cancelled\""
                   }
                 },
                 "schema": {

@@ -53,6 +53,15 @@ export const ErrorCode = {
   PRICE_UNAVAILABLE: "PRICE_UNAVAILABLE",
   INSUFFICIENT_MARGIN: "INSUFFICIENT_MARGIN",
   INSUFFICIENT_HOLDINGS: "INSUFFICIENT_HOLDINGS",
+
+  // Mutual funds (src/server/fund-orders, Phase 4 Checkpoint 8,
+  // docs/ARCHITECTURE.md D46) - a fund has no LIMIT/MARKET distinction or
+  // market-hours gate the way a stock does, only a NAV that may or may not
+  // be freshly available. Same "no persisted rejection" convention as the
+  // stock codes above, for a manual order; a SIP-triggered attempt is the
+  // one deliberate exception (D46) and does persist a "failed" row.
+  NAV_UNAVAILABLE: "NAV_UNAVAILABLE",
+  NAV_STALE: "NAV_STALE",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -86,6 +95,9 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   PRICE_UNAVAILABLE: 409,
   INSUFFICIENT_MARGIN: 409,
   INSUFFICIENT_HOLDINGS: 409,
+
+  NAV_UNAVAILABLE: 409,
+  NAV_STALE: 409,
 };
 
 export class AppError extends Error {
