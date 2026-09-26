@@ -154,12 +154,18 @@ own repo later, hosted on Railway.
       (MARKET/LIMIT, whole shares only, `Idempotency-Key` required, margin/holdings checks, one DB
       transaction: order → ledger → holdings → activity log, row-locked - D41). Missing price →
       `PRICE_UNAVAILABLE`; stale (>60s during market hours) → `PRICE_STALE`. LIMIT orders outside
-      market hours stay OPEN until matched or cancelled at day end (Checkpoint 6). **Caveat**:
-      `src/server/orders/repo.test.ts` (the PGlite integration test for all of the above) could
-      not be run to completion this session - a confirmed environmental issue (machine memory),
-      not a code defect - see `docs/STATUS.md`. Must be run to a real pass before this phase is
-      considered verified, not just type-checked.
-- [ ] Checkpoint 6: limit-order matching job (Inngest)
+      market hours stay OPEN until matched or cancelled at day end (Checkpoint 6).
+      `src/server/orders/repo.test.ts` (the PGlite integration test for all of the above) confirmed
+      passing 19/19 against real Postgres on 2026-09-26, after an earlier environmental
+      machine-memory issue was resolved by a restart - see `docs/STATUS.md`. Full `pnpm test` also
+      confirmed clean: 134 files, 1447 tests, 0 failures.
+- [x] Checkpoint 6: limit-order matching job (`limitOrderMatchingJob`, every minute during market
+      hours) + end-of-day cancel job (`limitOrderEodCancelJob`, 15:35 IST, skips market holidays) -
+      both Inngest cron functions, D42. `matchOpenLimitOrderTx` re-evaluates one already-queued
+      order per tick (same halt/pause/hours/staleness/margin/holdings checks as `placeOrderTx`,
+      but never rejects the order itself - a non-fill just leaves it open for the next tick).
+      8 new tests in `src/server/orders/repo.test.ts` (27 total in that file now), full suite still
+      clean (134 files / 1447 tests, `pnpm typecheck`/`pnpm lint` clean).
 - [ ] Checkpoint 7: positions/orders book endpoints, P&L; Profile's Trades tab
       (`GET /me/portfolio/summary`/`stats`/`trades`)
 - [ ] Checkpoint 8 (money rules): mutual funds - `funds`, `fund_navs`, `sip_plans`,

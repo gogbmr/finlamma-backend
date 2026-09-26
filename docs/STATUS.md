@@ -1,6 +1,24 @@
 # Status
 
-## 2026-09-25 — PGlite-backed tests unrunnable on this machine right now (escalation of the Checkpoint 3 note below)
+## 2026-09-26 — Resolved: full suite ran clean, `orders/repo.test.ts` confirmed against real Postgres
+
+Closes both action items below (the Checkpoint 3 "targeted tests only" note and the Checkpoint 5
+PGlite-OOM escalation). After a machine restart freed RAM (~4.6GB free of 12.4GB, up from ~1.9-2.5GB),
+both were re-run to a genuine, clean completion:
+
+- `npx vitest run src/server/orders/repo.test.ts` alone: **19/19 passed** - idempotency (replay +
+  conflict), halts/pause, market-hours (closed/weekend/holiday), price staleness (including the
+  exact 60s boundary) and unavailability, margin/holdings checks, weighted-average holdings math
+  across multiple buys, the D37 buy-then-sell round-trip invariant, and LIMIT price-improvement +
+  non-marketable queuing - all proven against a real Postgres instance (PGlite), not mocked.
+- Full `pnpm test`: **134 test files passed, 1447 tests passed, 0 failures**, `check-test-count.mjs`
+  floor check OK (1447 vs. floor 890). No crash, no flake, no failing test anywhere in the suite.
+
+**Root cause confirmed as purely environmental**, not a code defect: identical PGlite crashes
+happened on completely unrelated, previously-green files under low system memory, and disappeared
+entirely once free memory rose after the restart. No code change was needed.
+
+## 2026-09-25 — PGlite-backed tests unrunnable on this machine right now (escalation of the Checkpoint 3 note below) — RESOLVED 2026-09-26, see above
 
 Worse than the Checkpoint 3 slowdown: `src/server/orders/repo.test.ts` (Checkpoint 5's core
 money-safety integration test - idempotency, halts, market hours, price staleness, margin/
@@ -29,7 +47,7 @@ full suite) to a clean, real completion once this machine has memory available**
 failure there as load-bearing - this is money-movement code, and typecheck alone does not prove
 the transaction logic is correct under real Postgres constraint enforcement.
 
-## 2026-09-25 — Phase 4 Checkpoint 3 shipped on targeted tests only, not the full suite
+## 2026-09-25 — Phase 4 Checkpoint 3 shipped on targeted tests only, not the full suite — RESOLVED 2026-09-26, see top entry
 
 `pnpm test`'s full run stalled badly on this machine under real memory pressure (~1.9GB free of
 12GB) - a suite that normally finishes in ~230s was still running after 20+ minutes with zero

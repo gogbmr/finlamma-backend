@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { holdings, orders, users } from "@/db/schema";
+import { holdings, instruments, orders, users } from "@/db/schema";
 import { insertVmoneyLedgerEntryIfNew, sumVmoneyBalanceTx, type DbOrTx } from "@/server/economy/repo";
 import { isMarketOpen } from "@/server/market/hours";
 import { getRelayPrice } from "@/server/trading/relay-price";
@@ -240,4 +240,121 @@ export async function placeOrderTx(
 
     return { status: "filled", order };
   });
+}
+
+// Checkpoint 6: every "open" row in the `orders` table is a queued LIMIT
+// order (placeOrderTx never persists a queued MARKET order - see the
+// comment above), so this lists exactly the matching job's candidate set.
+// Joined with `instruments` since the matching job needs symbol/exchange
+// (for the Redis price lookup) and halted (to skip a halted symbol without
+// a wasted transaction) without a second query per order.
+export async function listOpenLimitOrdersWithInstrument() {
+  return db
+    .select({ order: orders, instrument: instruments })
+    .from(orders)
+    .innerJoin(instruments, eq(orders.instrumentId, instruments.id))
+    .where(eq(orders.status, "open"));
+}
+
+export type MatchOrderResult =
+  | { status: "already_settled" }
+  | { status: "market_halted" }
+  | { status: "symbol_halted" }
+  | { status: "market_paused" }
+  | { status: "market_closed" }
+  | { status: "price_unavailable" }
+  | { status: "price_stale" }
+  | { status: "not_marketable" }
+  | { status: "insufficient_margin"; balancePaise: number; requiredPaise: number }
+  | { status: "insufficient_holdings"; heldQty: number; requestedQty: number }
+  | { status: "filled"; order: OrderRow };
+
+// One attempt to fill a single already-queued LIMIT order, called by the
+// matching job's per-order step. Same transaction shape as placeOrderTx
+// (lock the user's row first, same halt/pause/market-hours/price-staleness/
+// margin-holdings checks, same ledger+holdings write) - this is
+// deliberately a sibling function rather than a refactor to share code with
+// placeOrderTx, since the two differ in one meaningful way: placeOrderTx
+// is deciding whether a NEW request is accepted at all (so it makes sense
+// for "market closed" to reject a MARKET order outright), while this is
+// re-evaluating an order that already exists and was already accepted as
+// "open" - it never rejects the order itself, only reports why THIS attempt
+// didn't fill it, leaving it open for the next run (or the EOD cancel job).
+export async function matchOpenLimitOrderTx(
+  orderId: string,
+  instrument: { id: string; symbol: string; exchange: string; halted: boolean },
+  now: Date = new Date(),
+): Promise<MatchOrderResult> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    if (!current || current.status !== "open") return { status: "already_settled" };
+
+    await tx.execute(sql`select id from ${users} where id = ${current.userId} for update`);
+
+    const controls = await getOrCreateMarketControls(tx);
+    if (controls.globalHalt) return { status: "market_halted" };
+    if (instrument.halted) return { status: "symbol_halted" };
+    if (controls.feedMode === "paused") return { status: "market_paused" };
+
+    const marketHolidays = await listMarketHolidays(tx);
+    const holidayDates = new Set(marketHolidays.map((h) => h.date));
+    if (!isMarketOpen(now, holidayDates)) return { status: "market_closed" };
+
+    const price = await getRelayPrice(instrument.symbol, instrument.exchange);
+    if (!price) return { status: "price_unavailable" };
+    if (now.getTime() - price.ts > PRICE_STALE_MS) return { status: "price_stale" };
+
+    if (!isLimitMarketable(current.side, current.limitPricePaise!, price.pricePaise)) {
+      return { status: "not_marketable" };
+    }
+
+    const fillPricePaise = clampFillPrice(current.side, current.limitPricePaise!, price.pricePaise);
+    const valuePaise = current.qty * fillPricePaise;
+
+    if (current.side === "buy") {
+      const balancePaise = await sumVmoneyBalanceTx(tx, current.userId);
+      if (balancePaise < valuePaise) {
+        return { status: "insufficient_margin", balancePaise, requiredPaise: valuePaise };
+      }
+    } else {
+      const holding = await getHoldingTx(tx, current.userId, instrument.id);
+      if (!holding || holding.qty < current.qty) {
+        return { status: "insufficient_holdings", heldQty: holding?.qty ?? 0, requestedQty: current.qty };
+      }
+    }
+
+    const filledAt = new Date();
+    const [order] = await tx
+      .update(orders)
+      .set({ status: "filled", fillPricePaise, filledAt })
+      .where(eq(orders.id, current.id))
+      .returning();
+
+    await insertVmoneyLedgerEntryIfNew(tx, {
+      userId: current.userId,
+      sourceType: "trade",
+      sourceId: order!.id,
+      ruleId: null,
+      reason: `${current.side.toUpperCase()} ${current.qty} ${instrument.symbol} @ ${fillPricePaise}`,
+      amountPaise: current.side === "buy" ? -valuePaise : valuePaise,
+      multiplierApplied: 1,
+    });
+
+    await applyFillToHoldingTx(tx, current.userId, instrument.id, current.side, current.qty, fillPricePaise);
+
+    return { status: "filled", order: order! };
+  });
+}
+
+// End-of-day cancel (trading-rules skill / D41: "LIMIT orders outside
+// market hours stay OPEN until matched or cancelled at day end"). Cancels
+// every still-open order unconditionally - the caller (the Inngest cron) is
+// responsible for only running this once, right after market close.
+export async function cancelAllOpenOrdersTx(now: Date = new Date()): Promise<number> {
+  const cancelled = await db
+    .update(orders)
+    .set({ status: "cancelled", cancelledAt: now })
+    .where(eq(orders.status, "open"))
+    .returning({ id: orders.id });
+  return cancelled.length;
 }
