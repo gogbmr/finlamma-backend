@@ -411,6 +411,55 @@ describe("placeOrderTx - fills, holdings and the buy/sell round trip", () => {
     expect(holding).toMatchObject({ qty: 3, avgPricePaise: 10000 }); // unchanged average
   });
 
+  // Checkpoint 7 (D43) - realizedPnlPaise is what powers the Profile Trades
+  // tab's per-trade P&L, win rate and best/worst-trade stats.
+  it("records the exact realized P&L on a SELL fill, and null on a BUY fill", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    const buyResult = await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 4 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    if (buyResult.status !== "filled") throw new Error("expected filled");
+    expect(buyResult.order.realizedPnlPaise).toBeNull();
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 25000, ts: MARKET_OPEN_NOW.getTime() });
+    const sellResult = await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "sell", type: "market", qty: 3 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    if (sellResult.status !== "filled") throw new Error("expected filled");
+    // 3 * (25000 - 10000) = 45000
+    expect(sellResult.order.realizedPnlPaise).toBe(45000);
+  });
+
+  // Checkpoint 7 (D43) - positionOpenedAt is what powers the "hold days"
+  // stat; a full exit followed by a fresh BUY is a genuine re-entry, not a
+  // continuation of the old (already-closed) position.
+  it("resets positionOpenedAt on a fresh BUY after a full exit, but not on a partial add", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const afterFirstBuy = await getHoldingRow(user.id, instrument.id);
+    const firstOpenedAt = afterFirstBuy!.positionOpenedAt.getTime();
+
+    // Partial add, same position - positionOpenedAt must NOT move.
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const afterSecondBuy = await getHoldingRow(user.id, instrument.id);
+    expect(afterSecondBuy!.positionOpenedAt.getTime()).toBe(firstOpenedAt);
+
+    // Full exit, then a fresh BUY - a genuine re-entry, positionOpenedAt DOES
+    // move. positionOpenedAt is set from the fill's real wall-clock time
+    // (same convention as order.filledAt, not the injectable market-hours
+    // `now`), so this only asserts it moved forward, not an exact instant.
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "sell", type: "market", qty: 3 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const beforeReentry = Date.now();
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const afterReentry = await getHoldingRow(user.id, instrument.id);
+    expect(afterReentry!.positionOpenedAt.getTime()).toBeGreaterThanOrEqual(beforeReentry);
+    expect(afterReentry!.positionOpenedAt.getTime()).not.toBe(firstOpenedAt);
+  });
+
   // D37 (docs/ARCHITECTURE.md) - the invariant the whole paise migration
   // exists for, now proven against the REAL order-placement transaction,
   // not a simulated ledger insert: a BUY immediately followed by a SELL of
@@ -571,6 +620,24 @@ describe("matchOpenLimitOrderTx", () => {
 
     mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() - 61_000 });
     expect(await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW)).toEqual({ status: "price_stale" });
+  });
+
+  it("records realizedPnlPaise on a matched SELL fill, same as placeOrderTx would", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const sellOrder = await queueLimitOrder(user.id, instrument, { side: "sell", qty: 2, limitPricePaise: 12000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 15000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await matchOpenLimitOrderTx(sellOrder.id, instrument, MARKET_OPEN_NOW);
+
+    expect(result.status).toBe("filled");
+    if (result.status !== "filled") throw new Error("expected filled");
+    // fills at price improvement (max(15000, 12000) = 15000), 2 * (15000 - 10000) = 10000
+    expect(result.order.fillPricePaise).toBe(15000);
+    expect(result.order.realizedPnlPaise).toBe(10000);
   });
 
   it("leaves the order open on insufficient_margin/insufficient_holdings rather than cancelling it", async () => {

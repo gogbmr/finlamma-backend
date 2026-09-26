@@ -48,6 +48,9 @@ import "../src/app/api/v1/trade/instruments/[symbol]/candles/route";
 import "../src/app/api/v1/trade/market-status/route";
 import "../src/app/api/v1/relay/config/route";
 import "../src/app/api/v1/trade/orders/route";
+import "../src/app/api/v1/me/portfolio/summary/route";
+import "../src/app/api/v1/me/portfolio/stats/route";
+import "../src/app/api/v1/me/portfolio/trades/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

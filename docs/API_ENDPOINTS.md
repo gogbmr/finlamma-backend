@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.3.0) on 2026-09-25.
+> Generated from `openapi/openapi.json` (version 0.3.0) on 2026-09-26.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -65,6 +65,9 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
 - `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
 - `POST /api/v1/trade/orders` — Place an order (TR-30)
+- `GET /api/v1/me/portfolio/summary` — Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)
+- `GET /api/v1/me/portfolio/stats` — Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)
+- `GET /api/v1/me/portfolio/trades` — Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)
 
 **Relay**
 
@@ -2853,6 +2856,205 @@ MARKET or LIMIT, BUY or SELL, whole shares only. Requires an Idempotency-Key hea
       "balancePaise": 10000,
       "requiredPaise": 28451000
     }
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/portfolio/summary`
+
+**Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)**
+
+Cash balance, current holdings market value, all-time trading P&L (realized + unrealized, never compared against a fixed starting deposit - V Money is earned from many non-trading sources) and up to 12 equity-curve points built by replaying every fill chronologically.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's portfolio summary
+
+```json
+{
+  "data": {
+    "cashBalancePaise": 84000,
+    "holdingsMarketValuePaise": 24420,
+    "totalValuePaise": 108420,
+    "allTimePnlPaise": 8420,
+    "allTimePnlPct": 8.4,
+    "equityBarsPaise": [
+      34000,
+      41000,
+      46000,
+      58000,
+      71000,
+      66000,
+      80000,
+      92000,
+      88000,
+      95000,
+      101000,
+      108420
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/portfolio/stats`
+
+**Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)**
+
+Realized P&L, win rate, average hold time and best/worst trade, all derived from closed (SELL) fills. Does not include a "coins earned from trading" figure - placing a trade never pays XP/V Money in this app's economy, only lessons/badges/streaks/rewards do.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's trading stats
+
+```json
+{
+  "data": {
+    "totalClosedTrades": 42,
+    "realizedPnlPaise": 624000,
+    "winCount": 26,
+    "lossCount": 16,
+    "winRatePct": 61.9,
+    "avgHoldDays": 3.4,
+    "bestTrade": {
+      "symbol": "ZOMATO",
+      "realizedPnlPaise": 72000,
+      "filledAt": "2026-08-14T10:12:00.000Z"
+    },
+    "worstTrade": {
+      "symbol": "ZOMATO",
+      "realizedPnlPaise": 72000,
+      "filledAt": "2026-08-14T10:12:00.000Z"
+    },
+    "openPositionsCount": 4
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/portfolio/trades`
+
+**Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)**
+
+`open` rows are current holdings (a snapshot, not a log); `closed` rows are past SELL fills with their realized P&L. `cursor` only ever pages through CLOSED trades - open positions are always returned in full on the first page (no cursor given) and omitted from every later page, so they're never duplicated across pages.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `status` | query | string (all, open, closed) | no |  |
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's trade history
+
+```json
+{
+  "data": [
+    {
+      "kind": "open",
+      "symbol": "HDFCBANK",
+      "exchange": "NSE",
+      "qty": 6,
+      "avgPricePaise": 161200,
+      "livePricePaise": 166100,
+      "unrealizedPnlPaise": 29400,
+      "unrealizedPnlPct": 3,
+      "positionOpenedAt": "2026-09-02T04:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid status, limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

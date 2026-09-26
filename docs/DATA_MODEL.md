@@ -259,8 +259,11 @@ skill for the full idempotency/reversal design)
   feed-mode/halt switch. **No volatility control.** When the market is closed, every screen shows
   the last real close; nothing ever simulates price movement near a real trade.
 - `orders` (user_id, instrument_id, side, type, qty, limit_price_paise, status, fill_price_paise,
-  reject_reason, idempotency_key, filled_at)
-- `holdings` (user_id, instrument_id, qty, avg_price_paise)
+  realized_pnl_paise — SELL fills only, D43, idempotency_key, filled_at, cancelled_at). No
+  `reject_reason`/"rejected" status by design (D41) — a rejected order is a thrown error with zero
+  DB write, never a persisted row.
+- `holdings` (user_id, instrument_id, qty, avg_price_paise, position_opened_at — reset on a 0→positive
+  re-entry, D43, powers the Trades tab's hold-days stat)
 - `funds` (name, category, risk, nav, aum, expense_ratio, min_sip_paise — tiered: ₹100 for index
   funds, ₹500 for equity/hybrid/debt/ELSS, return_1y/3y/5y, star_rating, description jsonb),
   `fund_navs`, `sip_plans`, `fund_holdings`

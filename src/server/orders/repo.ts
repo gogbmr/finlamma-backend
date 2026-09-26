@@ -40,6 +40,7 @@ async function insertOrderTx(
     status: "open" | "filled";
     fillPricePaise?: number;
     filledAt?: Date;
+    realizedPnlPaise?: number | null;
   },
 ): Promise<OrderRow> {
   const [row] = await txDb.insert(orders).values(values).returning();
@@ -63,6 +64,14 @@ async function getHoldingTx(txDb: DbOrTx, userId: string, instrumentId: string) 
 // already confirmed (for a SELL) that enough qty is held - never
 // re-checks that here, so a negative qty is a caller bug, not a
 // possibility this function guards against on its own.
+//
+// Checkpoint 7 (D43) additions: a BUY that finds the position at qty 0
+// (a genuine re-entry after a full exit, not just "no row yet") resets
+// `positionOpenedAt` to `now` - the Trades tab's hold-days stat is measured
+// from there. A SELL returns its realized P&L (qty * (fillPrice - the
+// average BEFORE this sale)) so the caller can store it on the order row -
+// this is the only point where that cost basis is cheaply known, so it's
+// computed once, here, rather than reconstructed later.
 async function applyFillToHoldingTx(
   txDb: DbOrTx,
   userId: string,
@@ -70,13 +79,16 @@ async function applyFillToHoldingTx(
   side: "buy" | "sell",
   qty: number,
   fillPricePaise: number,
-): Promise<void> {
+  now: Date,
+): Promise<{ realizedPnlPaise: number | null }> {
   const existing = await getHoldingTx(txDb, userId, instrumentId);
 
   if (side === "buy") {
     if (!existing) {
-      await txDb.insert(holdings).values({ userId, instrumentId, qty, avgPricePaise: fillPricePaise });
-      return;
+      await txDb
+        .insert(holdings)
+        .values({ userId, instrumentId, qty, avgPricePaise: fillPricePaise, positionOpenedAt: now });
+      return { realizedPnlPaise: null };
     }
     const newQty = existing.qty + qty;
     const newAvgPricePaise = Math.round(
@@ -84,14 +96,20 @@ async function applyFillToHoldingTx(
     );
     await txDb
       .update(holdings)
-      .set({ qty: newQty, avgPricePaise: newAvgPricePaise })
+      .set({
+        qty: newQty,
+        avgPricePaise: newAvgPricePaise,
+        ...(existing.qty === 0 ? { positionOpenedAt: now } : {}),
+      })
       .where(eq(holdings.id, existing.id));
-    return;
+    return { realizedPnlPaise: null };
   }
 
   // sell - existing and existing.qty >= qty are both guaranteed by the
   // caller's own INSUFFICIENT_HOLDINGS check before this is ever reached.
+  const realizedPnlPaise = qty * (fillPricePaise - existing!.avgPricePaise);
   await txDb.update(holdings).set({ qty: existing!.qty - qty }).where(eq(holdings.id, existing!.id));
+  return { realizedPnlPaise };
 }
 
 export type PlaceOrderTxResult =
@@ -213,19 +231,31 @@ export async function placeOrderTx(
       }
     }
 
+    const filledAt = new Date();
+    const { realizedPnlPaise } = await applyFillToHoldingTx(
+      tx,
+      userId,
+      instrument.id,
+      input.side,
+      input.qty,
+      fillPricePaise,
+      filledAt,
+    );
+
     const order = await insertOrderTx(tx, {
       ...baseOrderValues,
       status: "filled",
       fillPricePaise,
-      filledAt: new Date(),
+      filledAt,
+      realizedPnlPaise,
     });
 
-    // Ledger + holdings, same transaction, same idempotency mechanism as
-    // every other money-moving write in this codebase (D26/D37) - sourceId
-    // is this order's own freshly-generated id, so this insert can never
-    // conflict with anything (a brand new UUID), the onConflictDoNothing
-    // path is unreachable here in practice but kept for the same defense-
-    // in-depth reasoning every other caller of this function relies on.
+    // Ledger, same transaction, same idempotency mechanism as every other
+    // money-moving write in this codebase (D26/D37) - sourceId is this
+    // order's own freshly-generated id, so this insert can never conflict
+    // with anything (a brand new UUID), the onConflictDoNothing path is
+    // unreachable here in practice but kept for the same defense-in-depth
+    // reasoning every other caller of this function relies on.
     await insertVmoneyLedgerEntryIfNew(tx, {
       userId,
       sourceType: "trade",
@@ -235,8 +265,6 @@ export async function placeOrderTx(
       amountPaise: input.side === "buy" ? -valuePaise : valuePaise,
       multiplierApplied: 1,
     });
-
-    await applyFillToHoldingTx(tx, userId, instrument.id, input.side, input.qty, fillPricePaise);
 
     return { status: "filled", order };
   });
@@ -324,9 +352,19 @@ export async function matchOpenLimitOrderTx(
     }
 
     const filledAt = new Date();
+    const { realizedPnlPaise } = await applyFillToHoldingTx(
+      tx,
+      current.userId,
+      instrument.id,
+      current.side,
+      current.qty,
+      fillPricePaise,
+      filledAt,
+    );
+
     const [order] = await tx
       .update(orders)
-      .set({ status: "filled", fillPricePaise, filledAt })
+      .set({ status: "filled", fillPricePaise, filledAt, realizedPnlPaise })
       .where(eq(orders.id, current.id))
       .returning();
 
@@ -339,8 +377,6 @@ export async function matchOpenLimitOrderTx(
       amountPaise: current.side === "buy" ? -valuePaise : valuePaise,
       multiplierApplied: 1,
     });
-
-    await applyFillToHoldingTx(tx, current.userId, instrument.id, current.side, current.qty, fillPricePaise);
 
     return { status: "filled", order: order! };
   });

@@ -6617,6 +6617,554 @@
         }
       }
     },
+    "/api/v1/me/portfolio/summary": {
+      "get": {
+        "summary": "Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)",
+        "description": "Cash balance, current holdings market value, all-time trading P&L (realized + unrealized, never compared against a fixed starting deposit - V Money is earned from many non-trading sources) and up to 12 equity-curve points built by replaying every fill chronologically.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's portfolio summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "cashBalancePaise": {
+                          "type": "integer",
+                          "description": "V Money balance, in paise. Same source as GET /me/wallet - summed live from vmoney_ledger.",
+                          "example": 84000
+                        },
+                        "holdingsMarketValuePaise": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Current holdings valued at the latest available quote (0 for any symbol with no quote right now).",
+                          "example": 24420
+                        },
+                        "totalValuePaise": {
+                          "type": "integer",
+                          "description": "cashBalancePaise + holdingsMarketValuePaise.",
+                          "example": 108420
+                        },
+                        "allTimePnlPaise": {
+                          "type": "integer",
+                          "description": "Realized P&L from every closed (SELL) trade ever, plus unrealized P&L on current holdings.",
+                          "example": 8420
+                        },
+                        "allTimePnlPct": {
+                          "type": "number",
+                          "description": "allTimePnlPaise as a percentage of total paise ever spent on BUY fills. 0 if nothing has ever been bought.",
+                          "example": 8.4
+                        },
+                        "equityBarsPaise": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          },
+                          "maxItems": 12,
+                          "description": "Up to 12 points sampled from a chronological replay of every fill (a trading equity curve, not a literal daily mark-to-market - there's no historical daily-price table yet). Empty if nothing has ever filled.",
+                          "example": [
+                            34000,
+                            41000,
+                            46000,
+                            58000,
+                            71000,
+                            66000,
+                            80000,
+                            92000,
+                            88000,
+                            95000,
+                            101000,
+                            108420
+                          ]
+                        }
+                      },
+                      "required": [
+                        "cashBalancePaise",
+                        "holdingsMarketValuePaise",
+                        "totalValuePaise",
+                        "allTimePnlPaise",
+                        "allTimePnlPct",
+                        "equityBarsPaise"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/portfolio/stats": {
+      "get": {
+        "summary": "Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)",
+        "description": "Realized P&L, win rate, average hold time and best/worst trade, all derived from closed (SELL) fills. Does not include a \"coins earned from trading\" figure - placing a trade never pays XP/V Money in this app's economy, only lessons/badges/streaks/rewards do.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's trading stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalClosedTrades": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 42
+                        },
+                        "realizedPnlPaise": {
+                          "type": "integer",
+                          "description": "Sum of realizedPnlPaise across every closed (SELL) trade ever.",
+                          "example": 624000
+                        },
+                        "winCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 26
+                        },
+                        "lossCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 16
+                        },
+                        "winRatePct": {
+                          "type": "number",
+                          "description": "winCount / totalClosedTrades * 100. 0 if there are no closed trades yet.",
+                          "example": 61.9
+                        },
+                        "avgHoldDays": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "description": "Average days between a position's open and a SELL that closed it. null if there are no closed trades yet.",
+                          "example": 3.4
+                        },
+                        "bestTrade": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "symbol": {
+                              "type": "string",
+                              "example": "ZOMATO"
+                            },
+                            "realizedPnlPaise": {
+                              "type": "integer",
+                              "example": 72000
+                            },
+                            "filledAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "example": "2026-08-14T10:12:00.000Z"
+                            }
+                          },
+                          "required": [
+                            "symbol",
+                            "realizedPnlPaise",
+                            "filledAt"
+                          ]
+                        },
+                        "worstTrade": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "symbol": {
+                              "type": "string",
+                              "example": "ZOMATO"
+                            },
+                            "realizedPnlPaise": {
+                              "type": "integer",
+                              "example": 72000
+                            },
+                            "filledAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "example": "2026-08-14T10:12:00.000Z"
+                            }
+                          },
+                          "required": [
+                            "symbol",
+                            "realizedPnlPaise",
+                            "filledAt"
+                          ]
+                        },
+                        "openPositionsCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Current holdings with qty > 0.",
+                          "example": 4
+                        }
+                      },
+                      "required": [
+                        "totalClosedTrades",
+                        "realizedPnlPaise",
+                        "winCount",
+                        "lossCount",
+                        "winRatePct",
+                        "avgHoldDays",
+                        "bestTrade",
+                        "worstTrade",
+                        "openPositionsCount"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/portfolio/trades": {
+      "get": {
+        "summary": "Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)",
+        "description": "`open` rows are current holdings (a snapshot, not a log); `closed` rows are past SELL fills with their realized P&L. `cursor` only ever pages through CLOSED trades - open positions are always returned in full on the first page (no cursor given) and omitted from every later page, so they're never duplicated across pages.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "closed"
+              ],
+              "example": "all"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's trade history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "open"
+                                ]
+                              },
+                              "symbol": {
+                                "type": "string",
+                                "example": "HDFCBANK"
+                              },
+                              "exchange": {
+                                "type": "string",
+                                "example": "NSE"
+                              },
+                              "qty": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 6
+                              },
+                              "avgPricePaise": {
+                                "type": "integer",
+                                "example": 161200
+                              },
+                              "livePricePaise": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "description": "null if no quote is available right now.",
+                                "example": 166100
+                              },
+                              "unrealizedPnlPaise": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 29400
+                              },
+                              "unrealizedPnlPct": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "example": 3
+                              },
+                              "positionOpenedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "example": "2026-09-02T04:00:00.000Z"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "symbol",
+                              "exchange",
+                              "qty",
+                              "avgPricePaise",
+                              "livePricePaise",
+                              "unrealizedPnlPaise",
+                              "unrealizedPnlPct",
+                              "positionOpenedAt"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "closed"
+                                ]
+                              },
+                              "symbol": {
+                                "type": "string",
+                                "example": "TATAMOTORS"
+                              },
+                              "exchange": {
+                                "type": "string",
+                                "example": "NSE"
+                              },
+                              "qty": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 12
+                              },
+                              "entryPricePaise": {
+                                "type": "integer",
+                                "example": 74200
+                              },
+                              "exitPricePaise": {
+                                "type": "integer",
+                                "example": 80100
+                              },
+                              "realizedPnlPaise": {
+                                "type": "integer",
+                                "example": 70800
+                              },
+                              "realizedPnlPct": {
+                                "type": "number",
+                                "example": 7.95
+                              },
+                              "holdDays": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 4
+                              },
+                              "filledAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "example": "2026-09-10T09:20:00.000Z"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "symbol",
+                              "exchange",
+                              "qty",
+                              "entryPricePaise",
+                              "exitPricePaise",
+                              "realizedPnlPaise",
+                              "realizedPnlPct",
+                              "holdDays",
+                              "filledAt"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status, limit or cursor",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid cursor"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/webhooks/clerk": {
       "post": {
         "summary": "Clerk user webhook (consumer app)",

@@ -166,8 +166,16 @@ own repo later, hosted on Railway.
       but never rejects the order itself - a non-fill just leaves it open for the next tick).
       8 new tests in `src/server/orders/repo.test.ts` (27 total in that file now), full suite still
       clean (134 files / 1447 tests, `pnpm typecheck`/`pnpm lint` clean).
-- [ ] Checkpoint 7: positions/orders book endpoints, P&L; Profile's Trades tab
-      (`GET /me/portfolio/summary`/`stats`/`trades`)
+- [x] Checkpoint 7: Profile's Trades tab - `GET /me/portfolio/summary` (cash + holdings value +
+      all-time trading P&L + a 12-bar equity sparkline replayed from every fill), `/stats`
+      (realized P&L, win rate, avg hold days, best/worst trade), `/trades?status=all|open|closed`
+      (cursor-paginated closed trades, open positions always in full on page 1) - D43/D44. Two
+      additive columns: `orders.realized_pnl_paise` (SELL fills only) and
+      `holdings.position_opened_at` (resets on a 0→positive re-entry). Scope cut: the Trade tab's
+      own `/api/v1/trade/account`/`/positions` endpoints (TR-03/10/11) are deferred to that
+      screen's own build, not this checkpoint. 34 new tests (31 in the new portfolio domain + 3
+      more in orders/repo.test.ts for realizedPnlPaise/positionOpenedAt), full suite still clean,
+      `pnpm typecheck`/`pnpm lint`/`pnpm contract` clean.
 - [ ] Checkpoint 8 (money rules): mutual funds - `funds`, `fund_navs`, `sip_plans`,
       `fund_holdings`; AMFI NAV daily-ingestion Inngest job (executes against the most recent
       available NAV if today's isn't published yet, and always shows the learner which NAV

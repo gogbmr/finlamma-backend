@@ -40,6 +40,14 @@ export const orders = pgTable(
     limitPricePaise: bigint("limit_price_paise", { mode: "number" }),
     status: orderStatusEnum("status").notNull().default("open"),
     fillPricePaise: bigint("fill_price_paise", { mode: "number" }),
+    // Only ever set on a SELL fill (Checkpoint 7, docs/ARCHITECTURE.md D43):
+    // qty * (fillPricePaise - the holding's avgPricePaise immediately before
+    // this sale). Computed and stored once, at fill time, rather than
+    // reconstructed later - the exact cost basis a sale realized against is
+    // only cheaply knowable at that moment (see holdings' weighted-average
+    // cost), and this is what powers the Profile Trades tab's per-trade P&L,
+    // win rate and best/worst-trade stats without re-deriving anything.
+    realizedPnlPaise: bigint("realized_pnl_paise", { mode: "number" }),
     idempotencyKey: text("idempotency_key").notNull(),
     filledAt: timestamp("filled_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
@@ -71,6 +79,17 @@ export const holdings = pgTable(
       .references(() => instruments.id, { onDelete: "restrict" }),
     qty: integer("qty").notNull().default(0),
     avgPricePaise: bigint("avg_price_paise", { mode: "number" }).notNull().default(0),
+    // When this position was last (re)opened - set at insert, and reset to
+    // "now" whenever a BUY brings qty from 0 back up to positive (Checkpoint
+    // 7, D43). Powers "AVG HOLD"/hold-days on the Profile Trades tab.
+    // Deliberately NOT reset on every partial buy that merely adds to an
+    // already-open position - only a true 0-to-positive re-entry counts as
+    // a new "open". Known limitation: a sale's hold-days is computed
+    // against this row's CURRENT value, so a historical closed trade's
+    // reported hold time becomes wrong only if the position was later fully
+    // exited and reopened again since - accepted as a rare edge case rather
+    // than building full per-lot cost-basis tracking for it.
+    positionOpenedAt: timestamp("position_opened_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [uniqueIndex("holdings_user_instrument_idx").on(t.userId, t.instrumentId)],
 ).enableRLS();
