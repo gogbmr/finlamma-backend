@@ -147,7 +147,7 @@ describe("evaluateBadgesForUser", () => {
     expect(mockAwardBadgeAndCreditVmoney).toHaveBeenCalledWith(
       USER.id,
       "badge_1",
-      expect.objectContaining({ sourceType: "badge_unlock", sourceId: "badge_1", amount: 50, multiplierApplied: 1 }),
+      expect.objectContaining({ sourceType: "badge_unlock", sourceId: "badge_1", amountPaise: 5000, multiplierApplied: 1 }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "badge.unlocked" }));
   });
@@ -164,7 +164,7 @@ describe("evaluateBadgesForUser", () => {
     expect(mockAwardBadgeAndCreditVmoney).toHaveBeenCalledWith(
       USER.id,
       "badge_1",
-      expect.objectContaining({ amount: 100, multiplierApplied: 2 }),
+      expect.objectContaining({ amountPaise: 10000, multiplierApplied: 2 }),
     );
   });
 

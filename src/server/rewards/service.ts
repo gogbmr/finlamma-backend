@@ -3,6 +3,7 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { checkRateLimit, REWARD_CLAIM_RATE_LIMIT } from "@/lib/redis";
 import { creditVmoneyRow } from "@/server/economy/repo";
+import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   claimRewardTx,
@@ -147,10 +148,14 @@ export async function claimReward(user: { id: string }, rewardId: string, meta: 
 
   const result = await claimRewardTx({ userId: user.id, rewardId, priceVm: reward.priceVm });
   if (result.status === "insufficient_balance") {
+    // D37: the ledger is exact paise, but a reward's price and the message
+    // shown to the learner are whole VM - floor (never round up) so the
+    // displayed balance never overstates what they can actually afford.
+    const balanceVm = Math.floor(result.balancePaise / VM_TO_LEDGER_PAISE);
     throw new AppError(
       "INSUFFICIENT_VMONEY",
-      `Not enough V Money - this costs ${reward.priceVm}, you have ${result.balance}`,
-      { priceVm: reward.priceVm, balance: result.balance },
+      `Not enough V Money - this costs ${reward.priceVm}, you have ${balanceVm}`,
+      { priceVm: reward.priceVm, balanceVm, balancePaise: result.balancePaise },
     );
   }
 
@@ -199,7 +204,10 @@ export async function refundRewardClaim(
     sourceId: claim.id,
     ruleId: null,
     reason,
-    amount: claim.pricePaid,
+    // claim.pricePaid is a whole-VM snapshot (rewards.priceVm at claim time,
+    // unchanged by D37) - convert to the ledger's paise unit here, the only
+    // place this refund amount is used.
+    amountPaise: claim.pricePaid * VM_TO_LEDGER_PAISE,
     multiplierApplied: 1,
   });
   const refunded = row !== null;

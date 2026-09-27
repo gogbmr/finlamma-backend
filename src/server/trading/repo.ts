@@ -1,0 +1,138 @@
+import { asc, eq, inArray } from "drizzle-orm";
+import { db } from "@/db/client";
+import {
+  feedModeEnum,
+  instruments,
+  marketHolidays,
+  marketControls,
+  MARKET_CONTROLS_SINGLETON_ID,
+} from "@/db/schema";
+import type {
+  CreateInstrumentInput,
+  CreateMarketHolidayInput,
+  UpdateInstrumentInput,
+} from "./schemas";
+
+export type FeedMode = (typeof feedModeEnum.enumValues)[number];
+
+// Same shape as economy/repo.ts's DbOrTx - lets a handful of read functions
+// below run either against the module-level `db` (the default, every
+// existing caller) or a caller-supplied transaction handle. Needed by
+// src/server/orders/repo.ts's placeOrderTx, which reads instrument/market-
+// controls/holiday state INSIDE the same row-locked transaction that
+// decides whether an order fills, so those reads can never be stale
+// relative to the lock.
+export type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+// --- Instruments ---
+
+export async function listAllInstruments() {
+  return db.select().from(instruments).orderBy(asc(instruments.symbol));
+}
+
+export async function listActiveInstruments() {
+  return db.select().from(instruments).where(eq(instruments.active, true)).orderBy(asc(instruments.symbol));
+}
+
+export async function getInstrumentById(id: string) {
+  const [row] = await db.select().from(instruments).where(eq(instruments.id, id)).limit(1);
+  return row ?? null;
+}
+
+// Ops console's User Trading Ledger (Checkpoint 9) - bounded by the number
+// of DISTINCT instruments actually held across one page of users (at most
+// the size of the whole catalog, ~12 today), never by user count.
+export async function getInstrumentsByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select({ id: instruments.id, symbol: instruments.symbol, exchange: instruments.exchange })
+    .from(instruments)
+    .where(inArray(instruments.id, ids));
+}
+
+export async function getInstrumentBySymbol(symbol: string, txDb: DbOrTx = db) {
+  const [row] = await txDb.select().from(instruments).where(eq(instruments.symbol, symbol)).limit(1);
+  return row ?? null;
+}
+
+export async function insertInstrument(input: CreateInstrumentInput) {
+  const [row] = await db.insert(instruments).values(input).returning();
+  return row;
+}
+
+export async function updateInstrumentRow(input: UpdateInstrumentInput) {
+  const { id, ...rest } = input;
+  const [row] = await db.update(instruments).set(rest).where(eq(instruments.id, id)).returning();
+  return row ?? null;
+}
+
+// Ops console only (Checkpoint 9, trading.ops permission) - separate from
+// the catalog fields above (instrument.manage), since halting a symbol is a
+// live trading-safety control, not catalog editing. Kept here now so the
+// column has a real write path the moment Checkpoint 9 needs it, even
+// though nothing calls it yet.
+export async function setInstrumentHalted(id: string, halted: boolean) {
+  const [row] = await db.update(instruments).set({ halted }).where(eq(instruments.id, id)).returning();
+  return row ?? null;
+}
+
+// --- Market holidays ---
+
+export async function listMarketHolidays(txDb: DbOrTx = db) {
+  return txDb.select().from(marketHolidays).orderBy(asc(marketHolidays.date));
+}
+
+export async function insertMarketHoliday(input: CreateMarketHolidayInput) {
+  const [row] = await db.insert(marketHolidays).values(input).returning();
+  return row;
+}
+
+export async function deleteMarketHolidayRow(id: string) {
+  const [row] = await db.delete(marketHolidays).where(eq(marketHolidays.id, id)).returning();
+  return row ?? null;
+}
+
+// --- Market controls (singleton row, Ops console - Checkpoint 3/9) ---
+
+// Self-healing: creates the singleton row with its column defaults (live
+// feed, no halt) the first time anything reads it, rather than requiring a
+// seed script to have run first - a fresh environment (a new preview
+// database, a test DB) just works without an extra setup step.
+export async function getOrCreateMarketControls(txDb: DbOrTx = db) {
+  const [existing] = await txDb.select().from(marketControls).limit(1);
+  if (existing) return existing;
+  const [created] = await txDb
+    .insert(marketControls)
+    .values({ id: MARKET_CONTROLS_SINGLETON_ID })
+    .onConflictDoNothing({ target: marketControls.id })
+    .returning();
+  if (created) return created;
+  // Lost a race against a concurrent first-read - the other insert won, so
+  // read what it wrote.
+  const [row] = await txDb.select().from(marketControls).limit(1);
+  return row!;
+}
+
+// Both write paths below are Checkpoint 9's dangerous Ops controls -
+// trading.ops only (never instrument.manage), always called from
+// src/server/trading/service.ts's functions that require a free-text
+// reason and log the change, never called directly from a route/action.
+export async function setGlobalHalt(halt: boolean) {
+  const current = await getOrCreateMarketControls();
+  const [row] = await db
+    .update(marketControls)
+    .set({ globalHalt: halt })
+    .where(eq(marketControls.id, current.id))
+    .returning();
+  return row!;
+}
+
+export async function setFeedMode(mode: FeedMode) {
+  const current = await getOrCreateMarketControls();
+  const [row] = await db
+    .update(marketControls)
+    .set({ feedMode: mode })
+    .where(eq(marketControls.id, current.id))
+    .returning();
+  return row!;
+}

@@ -531,13 +531,37 @@ export async function deleteWorld(actor: { id: string }, id: string, meta: Reque
 // see GET /api/v1/health's tradingUnlockWorldMissing warning for the
 // content-completeness side of this.
 export async function isTradingUnlocked(userId: string): Promise<boolean> {
+  const progress = await getTradingUnlockProgress(userId);
+  return progress.unlocked;
+}
+
+// TR-57 (docs/FEATURE_MAP.md): explore mode's order-pad lock shows a
+// progress message ("N worlds to go"), not just a bare locked/unlocked
+// flag - this is what computes that N. Sequential unlock (D23/D24) means
+// "worlds cleared toward the trading-unlock position" is just how many
+// LEADING worlds (from position 1) have been passed consecutively - the
+// first uncleared one is always the next one the learner is working on, so
+// counting stops there rather than counting total cleared worlds anywhere
+// in the list (which could overcount if unlock rules ever changed).
+export async function getTradingUnlockProgress(
+  userId: string,
+): Promise<{ unlocked: boolean; worldsToGo: number }> {
   const settings = await getLessonFlowScoringSettings();
   const position = settings.tradingUnlockAfterWorldPosition;
 
   const publishedWorlds = await listPublishedWorlds();
-  if (publishedWorlds.length < position) return false;
+  if (publishedWorlds.length < position) {
+    // Content gap (see GET /api/v1/health's tradingUnlockWorldMissing) -
+    // can never unlock yet regardless of the learner's own progress.
+    return { unlocked: false, worldsToGo: position };
+  }
 
-  const targetWorld = publishedWorlds[position - 1]!;
   const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct);
-  return clearedWorldIds.has(targetWorld.id);
+  let cleared = 0;
+  for (let i = 0; i < position; i++) {
+    if (!clearedWorldIds.has(publishedWorlds[i]!.id)) break;
+    cleared++;
+  }
+  const worldsToGo = Math.max(0, position - cleared);
+  return { unlocked: worldsToGo === 0, worldsToGo };
 }

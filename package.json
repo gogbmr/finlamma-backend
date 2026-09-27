@@ -18,6 +18,7 @@
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx scripts/seed-roles.ts",
     "db:verify-pool": "tsx scripts/verify-db-pool.ts",
+    "check:twelvedata": "tsx scripts/check-twelvedata-nse-access.ts",
     "backfill:world-codes": "tsx scripts/backfill-world-codes.ts",
     "seed:super-admin": "tsx scripts/seed-super-admin.ts",
     "seed:legal": "tsx scripts/seed-legal-documents.ts",
@@ -25,6 +26,9 @@
     "seed:worlds": "tsx scripts/seed-worlds.ts",
     "seed:settings": "tsx scripts/seed-settings.ts",
     "seed:reward-rules": "tsx scripts/seed-reward-rules.ts",
+    "seed:instruments": "tsx scripts/seed-instruments.ts",
+    "seed:market-holidays": "tsx scripts/seed-market-holidays.ts",
+    "seed:funds": "tsx scripts/seed-funds.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {

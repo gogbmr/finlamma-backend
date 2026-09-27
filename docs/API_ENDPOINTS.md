@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.3.0) on 2026-09-25.
+> Generated from `openapi/openapi.json` (version 1.0.0) on 2026-09-27.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -58,6 +58,27 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/wallet/history` — Get my V Money ledger history (PR-24)
 - `GET /api/v1/me/report-card` — My weekly report card (PR-30/31/32/33)
 
+**Trade**
+
+- `GET /api/v1/trade/instruments` — List tradeable instruments with live quotes (Explore mode, TR-02/08)
+- `GET /api/v1/trade/instruments/{symbol}` — Get one instrument's detail with a live quote (TR-15/17/19/20)
+- `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
+- `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
+- `POST /api/v1/trade/orders` — Place an order (TR-30)
+- `GET /api/v1/me/portfolio/summary` — Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)
+- `GET /api/v1/me/portfolio/stats` — Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)
+- `GET /api/v1/me/portfolio/trades` — Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)
+- `GET /api/v1/trade/funds` — List active mutual funds with their latest NAV (Explore mode, TR-35/38)
+- `GET /api/v1/trade/funds/{id}` — Get one fund's detail with its latest NAV (TR-39)
+- `POST /api/v1/trade/funds/orders` — Buy (lump sum) or sell (redeem) fund units
+- `GET /api/v1/trade/funds/sip` — List my SIP plans, including recent execution history (TR-37)
+- `POST /api/v1/trade/funds/sip` — Create a new SIP plan
+- `PATCH /api/v1/trade/funds/sip/{id}` — Pause, resume or cancel a SIP plan
+
+**Relay**
+
+- `GET /api/v1/relay/config` — Get the market relay's config (market relay only, X-Relay-Secret)
+
 **Webhooks**
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
@@ -87,10 +108,13 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "legalDocuments": "ok",
     "version": "2d303f6",
     "consentPiiHmacKey": "ok",
+    "relaySecret": "ok",
     "storage": "ok",
     "redis": "ok",
     "worldsMissingBossQuiz": [],
     "tradingUnlockWorldMissing": false,
+    "tradingHalt": "ok",
+    "market": "mock",
     "inngest": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
@@ -1585,9 +1609,9 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
 ```json
 {
   "data": {
-    "balance": 210,
-    "weeklyEarned": 90,
-    "weeklySpent": 0
+    "balancePaise": 21000,
+    "weeklyEarnedPaise": 9000,
+    "weeklySpentPaise": 0
   }
 }
 ```
@@ -2235,12 +2259,12 @@ V Money balance (always summed live from the ledger, never a stored balance), V 
 ```json
 {
   "data": {
-    "balance": 1250,
-    "earnedThisMonth": 300,
+    "balancePaise": 125000,
+    "earnedThisMonthPaise": 30000,
     "earnedBySource": [
       {
         "sourceType": "lesson_completion",
-        "amount": 300
+        "amountPaise": 30000
       }
     ]
   }
@@ -2296,7 +2320,7 @@ The caller's full earn/spend ledger, newest first, cursor-paginated.
   "data": [
     {
       "id": "00000000-0000-0000-0000-000000000000",
-      "amount": -500,
+      "amountPaise": -50000,
       "sourceType": "reward_claim",
       "reason": "Reward claimed",
       "createdAt": "2026-01-01T00:00:00.000Z"
@@ -2425,6 +2449,1234 @@ The current IST week's efficiency snapshot (null until the first Monday after si
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+## Trade
+
+### `GET /api/v1/trade/instruments`
+
+**List tradeable instruments with live quotes (Explore mode, TR-02/08)**
+
+Every active instrument with its live quote merged in. Visible regardless of the learner's trading-unlock progress (explore mode, PRODUCT_SPEC.md §4) - only placing an order is gated. `quote` is null when the market-data vendor has no data for a symbol right now; the app should show the instrument's own last-known display fields, never a synthetic price (no volatility control, ever).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active instruments with live quotes
+
+```json
+{
+  "data": [
+    {
+      "symbol": "RELIANCE",
+      "exchange": "NSE",
+      "name": "Reliance Industries Ltd",
+      "sector": "Oil, Gas & Conglomerate",
+      "tags": [
+        "NIFTY 50",
+        "Large cap"
+      ],
+      "lotSize": 1,
+      "halted": true,
+      "quote": {
+        "pricePaise": 284510,
+        "changePaise": 1250,
+        "changePercent": 0.44,
+        "openPaise": 283000,
+        "highPaise": 285200,
+        "lowPaise": 282500,
+        "previousClosePaise": 283260,
+        "volume": 5231400,
+        "asOf": "2026-01-01T00:00:00.000Z"
+      }
+    }
+  ],
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/instruments/{symbol}`
+
+**Get one instrument's detail with a live quote (TR-15/17/19/20)**
+
+Instrument fundamentals (sector, about, tip, market cap, P/E), a live quote, and the trading disclaimer. `about`/`tip` are admin-curated, educational-only copy - never a buy/sell signal (CLAUDE.md, docs/ROADMAP.md's pre-launch legal-review checklist item).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `symbol` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The instrument's detail
+
+```json
+{
+  "data": {
+    "symbol": "RELIANCE",
+    "exchange": "NSE",
+    "name": "Reliance Industries Ltd",
+    "sector": "Oil, Gas & Conglomerate",
+    "tags": [
+      "NIFTY 50",
+      "Large cap"
+    ],
+    "lotSize": 1,
+    "halted": true,
+    "quote": {
+      "pricePaise": 284510,
+      "changePaise": 1250,
+      "changePercent": 0.44,
+      "openPaise": 283000,
+      "highPaise": 285200,
+      "lowPaise": 282500,
+      "previousClosePaise": 283260,
+      "volume": 5231400,
+      "asOf": "2026-01-01T00:00:00.000Z"
+    },
+    "about": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "tip": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "mcap": 1925000000000,
+    "pe": 24.3
+  },
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No active instrument with this symbol
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No instrument with this symbol"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/instruments/{symbol}/candles`
+
+**Get candlestick history for an instrument (TR-05/16)**
+
+OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `symbol` | path | string | yes |  |
+| `tf` | query | string (1D, 1W, 1M, 3M, 1Y) | no | Chart timeframe. |
+
+**Responses**
+
+- **200** — OHLCV candles, oldest first
+
+```json
+{
+  "data": [
+    {
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "openPaise": 0,
+      "highPaise": 0,
+      "lowPaise": 0,
+      "closePaise": 0,
+      "volume": 0
+    }
+  ],
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **400** — Invalid timeframe
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid tf - must be one of 1D, 1W, 1M, 3M, 1Y"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No active instrument with this symbol
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No instrument with this symbol"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/market-status`
+
+**Get market status and this learner's trading-unlock progress (TR-01/34/57)**
+
+Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Current market status
+
+```json
+{
+  "data": {
+    "marketOpen": true,
+    "feedMode": "live",
+    "globalHalt": true,
+    "tradingUnlocked": true,
+    "worldsToGo": 2
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/trade/orders`
+
+**Place an order (TR-30)**
+
+MARKET or LIMIT, BUY or SELL, whole shares only. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`), never a second order; reusing the key with a different request is rejected. The execution price always comes from the market relay's live tick in Redis, never a client-sent price (CLAUDE.md, trading-rules skill) - see docs/ARCHITECTURE.md D40/D41 for the full pricing and rejection-reason design. A LIMIT order that isn't immediately marketable is queued (`status: "open"`) rather than filled - Checkpoint 6's matching job fills it later, or cancels it at day end if the market closes first.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `Idempotency-Key` | header | string | yes | Client-generated, unique per order attempt. |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `symbol` | string | yes |  |
+| `side` | string (buy, sell) | yes |  |
+| `type` | string (market, limit) | yes |  |
+| `qty` | integer | yes |  |
+| `limitPricePaise` | integer | no |  |
+
+```json
+{
+  "symbol": "RELIANCE",
+  "side": "buy",
+  "type": "market",
+  "qty": 1
+}
+```
+
+**Responses**
+
+- **200** — The order (filled, queued as open, or replayed from an identical earlier request)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "symbol": "RELIANCE",
+    "side": "buy",
+    "type": "market",
+    "qty": 0,
+    "limitPricePaise": 0,
+    "status": "open",
+    "fillPricePaise": 0,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "filledAt": "2026-01-01T00:00:00.000Z",
+    "cancelledAt": "2026-01-01T00:00:00.000Z",
+    "replayed": true
+  }
+}
+```
+
+- **400** — Invalid input, or a missing Idempotency-Key header
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Idempotency-Key header is required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet for this learner
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active instrument with this symbol
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No instrument with this symbol"
+  }
+}
+```
+
+- **409** — The order can't be placed right now - MARKET_CLOSED, MARKET_HALTED, SYMBOL_HALTED, MARKET_PAUSED, PRICE_STALE, PRICE_UNAVAILABLE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_MARGIN",
+    "message": "Not enough V Money for this order",
+    "details": {
+      "balancePaise": 10000,
+      "requiredPaise": 28451000
+    }
+  }
+}
+```
+
+- **429** — Too many order attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many order attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/portfolio/summary`
+
+**Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)**
+
+Cash balance, current holdings market value, all-time trading P&L (realized + unrealized, never compared against a fixed starting deposit - V Money is earned from many non-trading sources) and up to 12 equity-curve points built by replaying every fill chronologically.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's portfolio summary
+
+```json
+{
+  "data": {
+    "cashBalancePaise": 84000,
+    "holdingsMarketValuePaise": 24420,
+    "totalValuePaise": 108420,
+    "allTimePnlPaise": 8420,
+    "allTimePnlPct": 8.4,
+    "equityBarsPaise": [
+      34000,
+      41000,
+      46000,
+      58000,
+      71000,
+      66000,
+      80000,
+      92000,
+      88000,
+      95000,
+      101000,
+      108420
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/portfolio/stats`
+
+**Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)**
+
+Realized P&L, win rate, average hold time and best/worst trade, all derived from closed (SELL) fills. Does not include a "coins earned from trading" figure - placing a trade never pays XP/V Money in this app's economy, only lessons/badges/streaks/rewards do.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's trading stats
+
+```json
+{
+  "data": {
+    "totalClosedTrades": 42,
+    "realizedPnlPaise": 624000,
+    "winCount": 26,
+    "lossCount": 16,
+    "winRatePct": 61.9,
+    "avgHoldDays": 3.4,
+    "bestTrade": {
+      "symbol": "ZOMATO",
+      "realizedPnlPaise": 72000,
+      "filledAt": "2026-08-14T10:12:00.000Z"
+    },
+    "worstTrade": {
+      "symbol": "ZOMATO",
+      "realizedPnlPaise": 72000,
+      "filledAt": "2026-08-14T10:12:00.000Z"
+    },
+    "openPositionsCount": 4
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/portfolio/trades`
+
+**Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)**
+
+`open` rows are current holdings (a snapshot, not a log); `closed` rows are past SELL fills with their realized P&L. `cursor` only ever pages through CLOSED trades - open positions are always returned in full on the first page (no cursor given) and omitted from every later page, so they're never duplicated across pages.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `status` | query | string (all, open, closed) | no |  |
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's trade history
+
+```json
+{
+  "data": [
+    {
+      "kind": "open",
+      "symbol": "HDFCBANK",
+      "exchange": "NSE",
+      "qty": 6,
+      "avgPricePaise": 161200,
+      "livePricePaise": 166100,
+      "unrealizedPnlPaise": 29400,
+      "unrealizedPnlPct": 3,
+      "positionOpenedAt": "2026-09-02T04:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid status, limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds`
+
+**List active mutual funds with their latest NAV (Explore mode, TR-35/38)**
+
+Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active funds with their latest NAV
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": "Finlamma Nifty 50 Index Fund",
+      "category": "index",
+      "risk": "very_low",
+      "description": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "expenseRatioBps": 20,
+      "minLumpSumPaise": 10000,
+      "minSipPaise": 10000,
+      "latestNav": {
+        "navPaise": 1629607,
+        "date": "2026-09-25"
+      }
+    }
+  ],
+  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds/{id}`
+
+**Get one fund's detail with its latest NAV (TR-39)**
+
+Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The fund's detail
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": "Finlamma Nifty 50 Index Fund",
+    "category": "index",
+    "risk": "very_low",
+    "description": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "expenseRatioBps": 20,
+    "minLumpSumPaise": 10000,
+    "minSipPaise": 10000,
+    "latestNav": {
+      "navPaise": 1629607,
+      "date": "2026-09-25"
+    }
+  },
+  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No active fund with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No fund with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/trade/funds/orders`
+
+**Buy (lump sum) or sell (redeem) fund units**
+
+BUY takes an amountPaise (₹ to invest) and units are derived from the latest ingested NAV; SELL takes a unitsMilli count to redeem. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`). Always executes against the most recently ingested NAV, never a client-sent price - the response always shows which NAV date/value was used, no hidden pricing (docs/ARCHITECTURE.md D45/D46).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `Idempotency-Key` | header | string | yes | Client-generated, unique per order attempt. |
+
+**Request body**
+
+```json
+{
+  "fundId": "00000000-0000-0000-0000-000000000000",
+  "side": "buy",
+  "amountPaise": 10000
+}
+```
+
+**Responses**
+
+- **200** — The fund order (filled, or replayed from an identical earlier request)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "fundId": "00000000-0000-0000-0000-000000000000",
+    "side": "buy",
+    "status": "filled",
+    "amountPaise": 0,
+    "unitsMilli": 0,
+    "navPaise": 0,
+    "navDate": "string",
+    "realizedPnlPaise": 0,
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "replayed": true
+  }
+}
+```
+
+- **400** — Invalid input, a missing Idempotency-Key header, or below the fund's minimum lump sum
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Idempotency-Key header is required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet for this learner
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active fund with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No fund with this id"
+  }
+}
+```
+
+- **409** — The order can't be placed right now - NAV_UNAVAILABLE, NAV_STALE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)
+
+```json
+{
+  "error": {
+    "code": "INSUFFICIENT_MARGIN",
+    "message": "Not enough V Money for this investment",
+    "details": {
+      "balancePaise": 5000,
+      "requiredPaise": 10000
+    }
+  }
+}
+```
+
+- **429** — Too many order attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many order attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds/sip`
+
+**List my SIP plans, including recent execution history (TR-37)**
+
+Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's SIP plans
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "fundId": "00000000-0000-0000-0000-000000000000",
+      "amountPaise": 0,
+      "dayOfMonth": 0,
+      "status": "active",
+      "nextDueDate": "2026-10-05",
+      "recentExecutions": [
+        {
+          "id": "00000000-0000-0000-0000-000000000000",
+          "status": "filled",
+          "dueDate": "2026-09-05",
+          "amountPaise": 0,
+          "unitsMilli": 0,
+          "navPaise": 0,
+          "navDate": "string",
+          "failureReason": "INSUFFICIENT_MARGIN",
+          "createdAt": "2026-01-01T00:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/trade/funds/sip`
+
+**Create a new SIP plan**
+
+amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `fundId` | string | yes |  |
+| `amountPaise` | integer | yes |  |
+| `dayOfMonth` | integer | yes |  |
+
+```json
+{
+  "fundId": "00000000-0000-0000-0000-000000000000",
+  "amountPaise": 10000,
+  "dayOfMonth": 5
+}
+```
+
+**Responses**
+
+- **200** — The newly created SIP plan
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "fundId": "00000000-0000-0000-0000-000000000000",
+    "amountPaise": 0,
+    "dayOfMonth": 0,
+    "status": "active",
+    "nextDueDate": "2026-10-05",
+    "recentExecutions": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "status": "filled",
+        "dueDate": "2026-09-05",
+        "amountPaise": 0,
+        "unitsMilli": 0,
+        "navPaise": 0,
+        "navDate": "string",
+        "failureReason": "INSUFFICIENT_MARGIN",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+- **400** — Invalid input, or below the fund's minimum SIP amount
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Minimum SIP amount for this fund is 10000 paise"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet for this learner
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active fund with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No fund with this id"
+  }
+}
+```
+
+- **429** — Too many SIP setup attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many SIP setup attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `PATCH /api/v1/trade/funds/sip/{id}`
+
+**Pause, resume or cancel a SIP plan**
+
+Pause is reversible (a paused month is silently skipped, not recorded as a failure - the learner chose it). Cancel is terminal - a cancelled plan can never be resumed, only replaced with a new one.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `action` | string (pause, resume, cancel) | yes |  |
+
+```json
+{
+  "action": "pause"
+}
+```
+
+**Responses**
+
+- **200** — The updated SIP plan
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "fundId": "00000000-0000-0000-0000-000000000000",
+    "amountPaise": 0,
+    "dayOfMonth": 0,
+    "status": "active",
+    "nextDueDate": "2026-10-05",
+    "recentExecutions": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "status": "filled",
+        "dueDate": "2026-09-05",
+        "amountPaise": 0,
+        "unitsMilli": 0,
+        "navPaise": 0,
+        "navDate": "string",
+        "failureReason": "INSUFFICIENT_MARGIN",
+        "createdAt": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **404** — No SIP plan with this id owned by the caller
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No SIP plan with this id"
+  }
+}
+```
+
+- **409** — The requested action doesn't apply to the plan's current status (e.g. pausing an already-cancelled plan)
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Cannot pause a SIP plan that is currently \"cancelled\""
+  }
+}
+```
+
+
+---
+
+## Relay
+
+### `GET /api/v1/relay/config`
+
+**Get the market relay's config (market relay only, X-Relay-Secret)**
+
+Called only by finlamma-market-relay (a separate repo, docs/ARCHITECTURE.md) - never the mobile app or the admin dashboard. Authenticated by an X-Relay-Secret header, compared against RELAY_SHARED_SECRET in constant time (src/lib/relay-auth.ts), never a Clerk session. Returns which instruments to track, the Ops console's feed mode and halt state, and the NSE holiday calendar, so the relay knows what to poll/stream and when to skip it. See docs/ARCHITECTURE.md D40 for the full Redis price-key contract this endpoint feeds into.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `X-Relay-Secret` | header | string | yes | Shared secret, compared in constant time. |
+
+**Responses**
+
+- **200** — The relay's current config
+
+```json
+{
+  "data": {
+    "instruments": [
+      {
+        "symbol": "RELIANCE",
+        "exchange": "NSE",
+        "halted": true
+      }
+    ],
+    "feedMode": "live",
+    "globalHalt": true,
+    "holidays": [
+      "2026-10-02"
+    ]
+  }
+}
+```
+
+- **401** — Missing or incorrect X-Relay-Secret - no further detail is ever given
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Unauthorized"
+  }
+}
+```
+
+- **429** — Too many requests
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests"
+  }
+}
+```
+
+- **503** — RELAY_SHARED_SECRET is not configured on this deployment
+
+```json
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Relay authentication is not configured"
   }
 }
 ```

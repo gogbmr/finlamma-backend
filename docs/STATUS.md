@@ -1,5 +1,113 @@
 # Status
 
+## 2026-09-26 — Phase 4 Checkpoints 6-8 shipped (LIMIT matching/EOD cancel, Profile Trades tab, mutual funds)
+
+Three checkpoints landed today on `phase-4-trading-engine`, each committed/pushed separately:
+
+- **Checkpoint 6** (D42): `limitOrderMatchingJob` (every minute during market hours) and
+  `limitOrderEodCancelJob` (15:30 IST close, skips market holidays) - 8 new tests.
+- **Checkpoint 7** (D43/D44): `GET /me/portfolio/summary`/`stats`/`trades` (Profile Trades tab) -
+  two additive columns (`orders.realized_pnl_paise`, `holdings.position_opened_at`) - 34 new tests.
+- **Checkpoint 8** (D45/D46): mutual funds. 9 fictional Finlamma-branded funds, each internally
+  tracking a real AMFI scheme code (fetched live while building this, not guessed) that is never
+  surfaced in any API response - verified directly against the generated `openapi.json` (zero
+  occurrences of the scheme code). No star rating, no AUM (dropped after a compliance review - a
+  kid-facing app showing a real AMC's fund name/rating/NAV risks SEBI advertising/distribution
+  rules and uses a real company's trademark and performance with no relationship to them). AMFI
+  NAV daily-ingestion job, fund buy/sell (`POST /trade/funds/orders`), SIP plans with a daily
+  execution job (idempotent per plan+due-date; a failed execution due to insufficient balance is
+  persisted and visible via `GET /trade/funds/sip`, a deliberate narrow exception to the "never
+  persist a rejected order" rule stock orders use, since a SIP runs unattended). NAV staleness
+  threshold is 4 days (tightened from an initial 7-day proposal per founder review). 80 new tests.
+  **Blocking pre-launch checklist item added**: legal review of the whole mutual-fund simulation
+  (naming, real AMFI NAV data, SEBI rules, whether tracking a real scheme is permissible at all) -
+  not yet reviewed by counsel.
+
+**A real bug caught while building Checkpoint 8**: `getLatestNav` initially always queried the
+module-level `db` even when called from inside a row-locked transaction - on PGlite's single
+connection this deadlocked the test suite outright (every test after the first fill attempt timed
+out at exactly 5s). Fixed by giving it the same `DbOrTx`-accepting signature every other
+read-inside-a-transaction function in this codebase already uses - see D46 for the full account,
+kept as a standing reminder for any future read added inside a money-moving transaction.
+
+**Full suite, run to genuine completion after each checkpoint**: 134/1447 (Checkpoint 6) →
+139/1489 (Checkpoint 7) → 150/1569 (Checkpoint 8), all passing, `pnpm typecheck`/`pnpm lint`/
+`pnpm contract` clean throughout.
+
+**Also fixed today, unrelated to the phase's features**: the recurring stray `/loop` wakeup the
+founder had reported twice was traced to this session's own `ScheduleWakeup` calls made while
+polling a long-running background test command - the harness already sends an automatic
+notification the moment a background command finishes, so that polling was always redundant, and
+at least one scheduled job didn't get cleaned up and kept firing afterward. Found and deleted via
+`CronList`/`CronDelete`; confirmed no hook, skill or settings file schedules anything. Going
+forward this session stops scheduling wakeups to poll self-started background work.
+
+## 2026-09-26 — Resolved: full suite ran clean, `orders/repo.test.ts` confirmed against real Postgres
+
+Closes both action items below (the Checkpoint 3 "targeted tests only" note and the Checkpoint 5
+PGlite-OOM escalation). After a machine restart freed RAM (~4.6GB free of 12.4GB, up from ~1.9-2.5GB),
+both were re-run to a genuine, clean completion:
+
+- `npx vitest run src/server/orders/repo.test.ts` alone: **19/19 passed** - idempotency (replay +
+  conflict), halts/pause, market-hours (closed/weekend/holiday), price staleness (including the
+  exact 60s boundary) and unavailability, margin/holdings checks, weighted-average holdings math
+  across multiple buys, the D37 buy-then-sell round-trip invariant, and LIMIT price-improvement +
+  non-marketable queuing - all proven against a real Postgres instance (PGlite), not mocked.
+- Full `pnpm test`: **134 test files passed, 1447 tests passed, 0 failures**, `check-test-count.mjs`
+  floor check OK (1447 vs. floor 890). No crash, no flake, no failing test anywhere in the suite.
+
+**Root cause confirmed as purely environmental**, not a code defect: identical PGlite crashes
+happened on completely unrelated, previously-green files under low system memory, and disappeared
+entirely once free memory rose after the restart. No code change was needed.
+
+## 2026-09-25 — PGlite-backed tests unrunnable on this machine right now (escalation of the Checkpoint 3 note below) — RESOLVED 2026-09-26, see above
+
+Worse than the Checkpoint 3 slowdown: `src/server/orders/repo.test.ts` (Checkpoint 5's core
+money-safety integration test - idempotency, halts, market hours, price staleness, margin/
+holdings checks, the paise-exact buy/sell round trip) crashes with a V8 "Fatal process out of
+memory: Zone" error before a single test runs - during `createTestDb()`'s migration step, every
+single attempt (6+ retries: with/without fake timers, `NODE_OPTIONS=--max-old-space-size=4096`,
+`--no-file-parallelism`, waiting several minutes between attempts). **Confirmed environmental, not
+a code bug**: re-ran `src/server/trading/repo.test.ts` and `src/server/economy/repo.test.ts` -
+both previously green this session, both completely unrelated to the orders domain - and they now
+crash identically. `tasklist` shows zero lingering node/esbuild processes; system free memory is
+~2.4GB of 12GB with nothing of mine running. Something outside this session (another application on
+the machine) is holding the bulk of the RAM.
+
+**What this means for Checkpoint 5**: `src/server/orders/repo.ts` (the actual transaction logic -
+row locking, idempotency, halts, market hours, price staleness/availability, margin/holdings
+checks, weighted-average holdings math, the ledger write) has NOT been confirmed against a real
+Postgres this session. What HAS been confirmed: `pnpm typecheck` (whole codebase, clean), and every
+test that doesn't need PGlite - `src/server/orders/pricing.test.ts` (pure marketability/fill-price
+math), `src/server/orders/service.test.ts` (status-to-AppError mapping, activity logging), and
+`src/app/api/v1/trade/orders/route.test.ts` (25 tests total, all green). The repo-level integration
+test itself is written and type-checks correctly (`src/server/orders/repo.test.ts`) - it simply
+could not be executed this session.
+
+**Action item, blocking a real merge of this phase: run `src/server/orders/repo.test.ts` (and the
+full suite) to a clean, real completion once this machine has memory available**, and treat any
+failure there as load-bearing - this is money-movement code, and typecheck alone does not prove
+the transaction logic is correct under real Postgres constraint enforcement.
+
+## 2026-09-25 — Phase 4 Checkpoint 3 shipped on targeted tests only, not the full suite — RESOLVED 2026-09-26, see top entry
+
+`pnpm test`'s full run stalled badly on this machine under real memory pressure (~1.9GB free of
+12GB) - a suite that normally finishes in ~230s was still running after 20+ minutes with zero
+failures in the ~18 files it had completed, and a second attempt (after killing the first) hit the
+same wall. Rather than block indefinitely, Checkpoint 3 (market status, `getTradingUnlockProgress`,
+`MockMarketDataProvider`, `GET /api/v1/health`'s `market` field) shipped on the strength of:
+- `pnpm typecheck` (whole codebase) - clean, confirmed twice after the Checkpoint 3 changes.
+- A targeted run covering every file touched this session (trading, market, economy/paise, worlds,
+  badges, rewards, health, wallet/vmoney-stats routes) - 28 files, 344 tests, all green.
+- The full suite's own progress up to the point it was killed - zero failures in every file it did
+  complete, none of which were files this session touched.
+
+**Action item, not yet done: run `pnpm test` to a real, clean completion (ideally with other
+memory-heavy applications closed first) before the next `/phase-audit`, and report the actual
+file/test count** - targeted runs are strong evidence but aren't a substitute for the real
+`posttest` gate (`scripts/check-test-count.mjs`'s floor check), which only runs as part of a full
+`pnpm test` invocation.
+
 ## 2026-09-25 — Decided: `users.bio` is never shown to other learners, ever (D36)
 
 Follow-up to the `/phase-audit 3b` finding below (bio's own schema comment said "never shown on

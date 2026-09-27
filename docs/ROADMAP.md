@@ -109,24 +109,115 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       need their own backend (legal pages, contact, rate-app) ship as static/deep-link content
 
 ## Phase 4 — Trading engine (needs the market relay for live prices)
-- [ ] Instruments table (12 NSE stocks, admin-editable), market holidays, market status
-- [ ] Twelve Data REST: quotes and candle history with Redis caching
-- [ ] "Explore mode": quotes/charts/watchlist visible to everyone; order pad unlocks per
-      `isTradingUnlocked()` (`src/server/worlds/service.ts`, already built in Phase 2b ahead of
-      this phase) — position-based (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`,
-      default 3rd published world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`),
-      not an XP/level threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`)
-- [ ] Orders (market/limit, whole shares only), holdings, P&L; idempotency; halts; margin checks
-- [ ] `GET /api/v1/relay/config` for the market relay (X-Relay-Secret): instruments, feed mode, halts, holidays
-- [ ] Limit-order matching job (Inngest)
-- [ ] Mutual funds: AMFI NAV import job, SIP (tiered minimums: ₹100 index / ₹500 other) + lump sum
-- [ ] `instrument_daily_bars` (candle history), indices (NIFTY 50/BANK NIFTY/SENSEX) via the same
-      Twelve Data source
-- [ ] Ops console: feed mode, halts, trade-unlock-world setting, user ledger with risk flags
-      (default rule: NEW = joined <7 days ago; WATCH = >50% of portfolio in one position or >10
-      orders in a day; admin-tunable thresholds), live KPI queries (not hardcoded). **No
+Split into 4a (market data + explore mode, no real money movement) and 4b (orders/holdings/funds/
+Ops console, money rules - see the VM/paise decision below). Relay repo is out of scope for this
+backend's session - this phase documents the contract precisely; the relay itself is built in its
+own repo later, hosted on Railway.
+
+**4a**
+- [x] Checkpoint 1: `instruments` table (12 NSE stocks seeded), `market_holidays` (2026 NSE
+      calendar seeded), `market_controls` singleton row; admin CRUD (`instrument.manage`
+      permission, no draft/publish split - edits apply immediately). Halting a symbol and the
+      feed-mode/global-halt controls are Checkpoint 9 (Ops console, `trading.ops`), not this
+      checkpoint - `instruments.halted`/`market_controls` are readable now, written later.
+- [x] Checkpoint 2: Twelve Data REST integration (quotes + `/time_series` candles), Redis-cached
+      per symbol+timeframe. `GET /trade/instruments`, `/instruments/{symbol}`,
+      `/instruments/{symbol}/candles` built, each carrying a server-driven TR-56 disclaimer.
+      Vendor isolated behind `MarketDataProvider` (`src/server/market/types.ts` +
+      `provider.ts`) per D38 - a future vendor swap (e.g. an Indian broker API, if Twelve
+      Data's NSE tier is too expensive) touches one adapter file, not the trading domain.
+      `/trade/indices`, `/trade/indices/{symbol}/candles` deferred to Checkpoint 7 alongside
+      `instrument_daily_bars` (no DB row exists for indices yet - not tradeable instruments).
+- [x] Checkpoint 3: Market status (`GET /trade/market-status`) - NSE hours 09:15-15:30 IST Mon-Fri
+      minus `market_holidays` (`src/server/market/hours.ts`, pure/tested), feed mode, halt state;
+      explore mode + `isTradingUnlocked()` wiring (already built in Phase 2b ahead of this phase)
+      — position-based (`settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition`, default
+      3rd published world), never a specific world's id/name (D25, `docs/ARCHITECTURE.md`), not an
+      XP/level threshold — no starting balance or unlock grant, ever (see `docs/ECONOMY.md`). New
+      `getTradingUnlockProgress()` (`src/server/worlds/service.ts`) adds the "N worlds to go"
+      progress count TR-57 needs on top of `isTradingUnlocked`'s plain boolean. Watchlist = the
+      full active-instrument list from Checkpoint 2's `GET /trade/instruments` (no per-user
+      watchlist table, decided).
+- [x] Checkpoint 4 (stop point - new env vars): `GET /api/v1/relay/config` (`X-Relay-Secret`
+      header, constant-time hash comparison against `RELAY_SHARED_SECRET`, rate-limited 30/60s
+      fail-closed, generic 401 with no detail) - `TWELVEDATA_API_KEY`/`RELAY_SHARED_SECRET` wired
+      into `src/lib/env.ts`; `px:<SYMBOL>:NSE` Redis price-key contract documented precisely in
+      `docs/ARCHITECTURE.md` D40 (key format, payload shape, writer/reader, staleness, missing-key
+      semantics, relay-side TTL requirement) for the relay repo to build against later. Endpoint
+      registered in the OpenAPI registry (tagged `Relay`, no bearer/session security scheme) so
+      `docs/API_ENDPOINTS.md` stays complete without it looking like an app-facing route.
+      `GET /api/v1/health` gained a `relaySecret` field.
+
+**4b** (money rules - VM/paise migration approved and shipped, D37; founder confirmed and asked to proceed)
+- [x] Checkpoint 5: `vmoney_ledger` moved to exact paise (D37, shipped earlier); `orders`/
+      `holdings` tables (`drizzle/0032_daily_triton.sql`, additive); `POST /api/v1/trade/orders`
+      (MARKET/LIMIT, whole shares only, `Idempotency-Key` required, margin/holdings checks, one DB
+      transaction: order → ledger → holdings → activity log, row-locked - D41). Missing price →
+      `PRICE_UNAVAILABLE`; stale (>60s during market hours) → `PRICE_STALE`. LIMIT orders outside
+      market hours stay OPEN until matched or cancelled at day end (Checkpoint 6).
+      `src/server/orders/repo.test.ts` (the PGlite integration test for all of the above) confirmed
+      passing 19/19 against real Postgres on 2026-09-26, after an earlier environmental
+      machine-memory issue was resolved by a restart - see `docs/STATUS.md`. Full `pnpm test` also
+      confirmed clean: 134 files, 1447 tests, 0 failures.
+- [x] Checkpoint 6: limit-order matching job (`limitOrderMatchingJob`, every minute during market
+      hours) + end-of-day cancel job (`limitOrderEodCancelJob`, 15:35 IST, skips market holidays) -
+      both Inngest cron functions, D42. `matchOpenLimitOrderTx` re-evaluates one already-queued
+      order per tick (same halt/pause/hours/staleness/margin/holdings checks as `placeOrderTx`,
+      but never rejects the order itself - a non-fill just leaves it open for the next tick).
+      8 new tests in `src/server/orders/repo.test.ts` (27 total in that file now), full suite still
+      clean (134 files / 1447 tests, `pnpm typecheck`/`pnpm lint` clean).
+- [x] Checkpoint 7: Profile's Trades tab - `GET /me/portfolio/summary` (cash + holdings value +
+      all-time trading P&L + a 12-bar equity sparkline replayed from every fill), `/stats`
+      (realized P&L, win rate, avg hold days, best/worst trade), `/trades?status=all|open|closed`
+      (cursor-paginated closed trades, open positions always in full on page 1) - D43/D44. Two
+      additive columns: `orders.realized_pnl_paise` (SELL fills only) and
+      `holdings.position_opened_at` (resets on a 0→positive re-entry). Scope cut: the Trade tab's
+      own `/api/v1/trade/account`/`/positions` endpoints (TR-03/10/11) are deferred to that
+      screen's own build, not this checkpoint. 34 new tests (31 in the new portfolio domain + 3
+      more in orders/repo.test.ts for realizedPnlPaise/positionOpenedAt), full suite still clean,
+      `pnpm typecheck`/`pnpm lint`/`pnpm contract` clean.
+- [x] Checkpoint 8 (money rules): mutual funds - `funds`, `fund_navs`, `sip_plans`,
+      `fund_holdings` (D45/D46). 9 fictional Finlamma-branded funds (never a real AMC's name),
+      each internally tracking a real AMFI scheme code fetched live for this checkpoint - never
+      surfaced in any API response. AMFI NAV daily-ingestion Inngest job (parses defensively - one
+      fund's bad row never blocks the others; executes against the most recent available NAV,
+      never requires today's; `NAV_STALE` at >4 days). `POST /trade/funds/orders` (buy/sell,
+      Idempotency-Key, same ledger/transaction/idempotency pattern as stock orders); SIP plans
+      (tiered minimums ₹100 index / ₹500 other, admin-editable per fund, day-of-month 1-28 only)
+      with a daily execution job idempotent per (plan, due date) - a failed execution (insufficient
+      balance) is persisted and visible via `GET /trade/funds/sip`, never silently skipped; pause
+      (reversible)/resume/cancel (terminal). No star rating, no AUM (dropped per founder review -
+      see D45). 80 new tests, full suite still clean, `pnpm typecheck`/`pnpm lint`/`pnpm contract`
+      clean.
+- [x] Checkpoint 9 (D47/D48): Ops console - feed mode + per-symbol/global halt controls, all
+      `trading.ops`-gated (a new permission, super_admin only), mandatory free-text reason on
+      halt/unhalt, every confirm dialog names the exact effect in plain language, every change
+      logged. Persistent red banner on every admin page (not just the console) whenever a global
+      halt is active, plus `GET /api/v1/health`'s new `tradingHalt` field - a halt can't be left
+      on silently. User Trading Ledger (deliberately narrower fields than the prototype's own
+      column list - no email/DOB/parent contact/class-world context, see D48) with the exact risk
+      rule (NEW = joined <7 days; WATCH = >50% concentration in one position OR >10 orders/day;
+      thresholds admin-editable, `trading.ops`-gated) - every load logged like a consent PII
+      reveal. KPI tiles and the ledger are both scoped to the trading-active population and/or
+      today (IST), batched into a handful of grouped queries per page, and cached, so nothing here
+      gets more expensive as total signups/order history grow (D48). Trade-unlock-world setting
+      was already admin-editable ahead of this phase (Checkpoint 3/D25's
+      `tradingUnlockAfterWorldPosition`) - nothing new needed there. **Not built, deliberately
+      flagged rather than silently skipped**: rolling Redis tick history backing an actual
+      15-minute-delayed quote feed - `feedMode` still only changes the *stored*/*displayed* value
+      today (`GET /trade/market-status`), not what price data is actually served, because there is
+      no live tick stream to build rolling history FROM yet (the market relay itself is a separate,
+      not-yet-built repo - D38/D39). Tracked below as a follow-up once the relay exists. **No
       volatility control** — closed market always shows the last real close, never a synthetic
-      price near a real trade
+      price near a real trade.
+- [ ] Rolling Redis tick history + an actual 15-minute-delayed quote-serving path for
+      `market_controls.feed_mode = "delayed_15m"` - depends on the market relay (a separate repo,
+      out of scope this phase per the Phase 4 kickoff) actually existing and writing a live tick
+      stream this backend can build a rolling buffer from. Today, `delayed_15m` only changes the
+      stored/displayed feed-mode value (Checkpoint 9), not what price data `GET /trade/quotes`
+      actually serves.
+- [ ] `instrument_daily_bars` (candle history), indices (NIFTY 50/BANK NIFTY/SENSEX) via the same
+      Twelve Data source (folds into Checkpoint 2/7, not a separate checkpoint)
 
 ## Phase 5 — News & Pulse Check
 - [ ] Ingestion jobs: Finnhub + India source → `news_raw` (2 sources at launch, not the
@@ -192,15 +283,23 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future
       feature that surfaces one learner's content to another.
-- [ ] **Review the 8 unindexed-foreign-key and 15 unused-index Supabase advisor findings**
-      (`INFO` level, flagged by the Phase 2b audit, `docs/STATUS.md`) - low-traffic pre-launch
-      noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
+- [ ] **Review the 25 unindexed-foreign-key and 25 unused-index Supabase advisor findings**
+      (`INFO` level, first flagged by the Phase 2b audit at 8/15, `docs/STATUS.md`; recount as of
+      the `/phase-audit 4` run, 2026-09-27, now at 25/25 as Phase 3/4 added more tables/FKs) - low-
+      traffic pre-launch noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
       `question_answers.question_id` have no covering index), but worth a real pass once query
       patterns and data volume are closer to production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
-      questions, emails, consent pages) — the seed/draft copy written during development (e.g.
-      `scripts/seed-mentors.ts`'s Hindi/Hinglish bios) is a best-effort approximation, not
-      reviewed by a native speaker.
+      questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`)
+      — the seed/draft copy written during development (e.g. `scripts/seed-mentors.ts`'s
+      Hindi/Hinglish bios) is a best-effort approximation, not reviewed by a native speaker.
+- [ ] **Legal/compliance review of every `instruments.about`/`instruments.tip` field for
+      advice-like language** (target prices, "buy now", growth predictions, etc.) before launch.
+      The admin editor shows a non-blocking keyword-heuristic warning while staff author this
+      copy (`src/server/trading/advice-language.ts`) and every schema field carries the "never
+      investment advice" reminder as help text, but neither is a substitute for a real review -
+      the heuristic only catches a fixed phrase list and can't verify tone/intent. Re-run this
+      check any time an instrument's about/tip copy changes after launch, not just once.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence
@@ -221,6 +320,14 @@ Do this early — it gates everything else. **Audit and merge to main before sta
       test that fires two genuinely concurrent overlapping `moveWorldToPosition` calls from two
       separate connections and confirms one gets a clean `isTransactionConflict` and neither
       leaves a negative sentinel order behind.
+- [ ] **Real-Postgres concurrency test for limit-order matching**, once a separate dev database
+      exists (same gap and same fix as the world-reorder item directly above). `docs/ARCHITECTURE.md`
+      D49's fix to `matchOpenLimitOrderTx` (`src/server/orders/repo.ts`) is covered today by a test
+      that fires two overlapping calls via `Promise.all` against PGlite, but PGlite's single
+      connection fully serializes `db.transaction()` calls, so that test can only prove "safe under
+      repeated/overlapping invocation," not "a real race loses cleanly." Once a real multi-connection
+      Postgres is available, add a test that fires two genuinely concurrent `matchOpenLimitOrderTx`
+      calls for the same order from two separate connections and confirms exactly one fills.
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
 - [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps
@@ -239,6 +346,31 @@ Do this early — it gates everything else. **Audit and merge to main before sta
 - [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
       admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
       wasn't attempted in the sandbox this was built in over a slow connection
+- [ ] **BLOCKING: choose and pay for a market-data provider; verify NSE real-time vs delayed
+      coverage.** Trade currently runs on `MockMarketDataProvider` deterministic fixture prices
+      (`docs/ARCHITECTURE.md` D39) - real learners must never see fixture prices presented as
+      live NSE data. Twelve Data's NSE access is confirmed to need their Grow plan ($29/mo) or
+      higher (D39); confirm whether Grow's data is genuinely real-time or itself delayed before
+      relying on it for the LIVE feed mode (vs. `DELAYED_15M`, which could tolerate more lag).
+      If cost or coverage doesn't work out, D39 names Indian broker APIs (Kite/Upstox/Angel One/
+      Dhan) as the fallback, and confirms the relay can poll REST instead of holding a WebSocket
+      with zero backend changes either way. Set `TWELVEDATA_API_KEY` (or build a new provider
+      under `src/server/market/providers/` and set `MARKET_DATA_PROVIDER` if switching vendors)
+      once decided - `GET /api/v1/health`'s `market` field confirms which is actually in effect.
+- [ ] **BLOCKING: legal review of the mutual fund simulation** - naming (every fund is a fictional
+      Finlamma-branded wrapper, D45), use of real AMFI NAV data for a real scheme tracked
+      internally but never disclosed to the learner, SEBI advertising/distribution rules as they
+      apply to a kid-facing educational simulation, and whether tracking a real scheme's NAV at
+      all is permissible in this form - not yet reviewed by counsel. Same category of review as
+      the existing instrument about/tip item above, but a separate item since the underlying
+      question (can this exist in this shape at all) is more fundamental than a copy-tone check.
+- [ ] Wire real alerting (Sentry or similar) for failed scheduled jobs - today a failed Inngest
+      run (the AMFI NAV ingestion job, the SIP execution job, the LIMIT-matching/EOD-cancel jobs,
+      the weekly report card) only shows up as a scrubbed log line (`logInternalError`) and in the
+      Inngest dashboard's own run history - nobody gets proactively paged. Acceptable for now
+      (founder decision, Phase 4 Checkpoint 8) but a real gap once real learners depend on these
+      jobs running - deferred from Phase 0's Sentry item above, called out again here since it's
+      specifically the AMFI ingestion job's own failure mode that motivated re-flagging it.
 
 ## Later (non-blocking — no phase assigned)
 - [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's

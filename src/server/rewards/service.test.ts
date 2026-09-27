@@ -95,14 +95,15 @@ describe("claimReward", () => {
     expect(mockClaimRewardTx).not.toHaveBeenCalled();
   });
 
-  it("throws INSUFFICIENT_VMONEY with the actual balance when the claim is refused for that reason", async () => {
+  it("throws INSUFFICIENT_VMONEY with the actual balance (floored to whole VM for display) when the claim is refused for that reason", async () => {
     mockCheckRateLimit.mockResolvedValueOnce({ allowed: true, configured: true });
     mockGetRewardById.mockResolvedValueOnce(rewardRow());
-    mockClaimRewardTx.mockResolvedValueOnce({ status: "insufficient_balance", balance: 200 });
+    mockClaimRewardTx.mockResolvedValueOnce({ status: "insufficient_balance", balancePaise: 20099 });
 
     await expect(claimReward(USER, "reward_1", META)).rejects.toMatchObject({
       code: "INSUFFICIENT_VMONEY",
-      details: { priceVm: 500, balance: 200 },
+      message: "Not enough V Money - this costs 500, you have 200",
+      details: { priceVm: 500, balanceVm: 200, balancePaise: 20099 },
     });
   });
 
@@ -158,7 +159,7 @@ describe("refundRewardClaim", () => {
         userId: USER.id,
         sourceType: "reward_refund",
         sourceId: "claim_1",
-        amount: 500,
+        amountPaise: 50000,
         multiplierApplied: 1,
         ruleId: null,
       }),

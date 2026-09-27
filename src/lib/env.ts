@@ -117,6 +117,33 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().url().optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
+
+  // Market data (Phase 4 Checkpoint 2, docs/ARCHITECTURE.md D38) - optional
+  // until the founder confirms Twelve Data's NSE tier/cost
+  // (scripts/check-twelvedata-nse-access.ts); src/server/market/providers/
+  // twelvedata.ts fails closed with a clear error if a call is attempted
+  // before this is set, same lazy pattern as S3/Resend above. Never called
+  // directly outside that one adapter file - see MarketDataProvider
+  // (src/server/market/types.ts).
+  TWELVEDATA_API_KEY: z.string().optional(),
+  // Explicit override for which market-data provider src/server/market/
+  // provider.ts's getMarketDataProvider() returns. Left unset in normal
+  // operation - the factory already auto-picks "mock" when
+  // TWELVEDATA_API_KEY is absent and "twelvedata" when it's present, so
+  // local dev/tests work with zero configuration. Set this only to force a
+  // specific choice regardless of the key's presence (e.g. "mock" to keep
+  // testing deterministically even with a real key configured, or
+  // "twelvedata" to fail loudly on a missing key instead of silently
+  // falling back to mock data).
+  MARKET_DATA_PROVIDER: z.enum(["mock", "twelvedata"]).optional(),
+  // Phase 4 Checkpoint 4 (docs/ARCHITECTURE.md D40) - authenticates the
+  // market relay's calls to GET /api/v1/relay/config via an X-Relay-Secret
+  // header, compared in constant time (src/lib/relay-auth.ts). A value the
+  // founder generates themselves (openssl rand -hex 32), not from any
+  // vendor dashboard - same pattern as CONSENT_PII_HMAC_KEY. Optional here
+  // so the app still boots without it; the endpoint itself fails closed
+  // (503) until it's set, same lazy pattern as every other secret above.
+  RELAY_SHARED_SECRET: z.string().optional(),
 });
 
 function loadEnv() {

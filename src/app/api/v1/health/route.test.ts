@@ -18,6 +18,7 @@ const mockEnv = vi.hoisted(() => ({
   CONSUMER_CLERK_PUBLISHABLE_KEY: undefined as string | undefined,
   VERCEL_GIT_COMMIT_SHA: undefined as string | undefined,
   CONSENT_PII_HMAC_KEY: undefined as string | undefined,
+  RELAY_SHARED_SECRET: undefined as string | undefined,
   S3_ENDPOINT: undefined as string | undefined,
   S3_REGION: undefined as string | undefined,
   S3_BUCKET: undefined as string | undefined,
@@ -25,6 +26,8 @@ const mockEnv = vi.hoisted(() => ({
   S3_SECRET_ACCESS_KEY: undefined as string | undefined,
   INNGEST_SIGNING_KEY: undefined as string | undefined,
   VERCEL_ENV: undefined as string | undefined,
+  TWELVEDATA_API_KEY: undefined as string | undefined,
+  MARKET_DATA_PROVIDER: undefined as "mock" | "twelvedata" | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -54,6 +57,11 @@ vi.mock("@/lib/redis", () => ({
   checkRedisReachable: () => mockCheckRedisReachable(),
 }));
 
+const mockGetOrCreateMarketControls = vi.fn();
+vi.mock("@/server/trading/repo", () => ({
+  getOrCreateMarketControls: () => mockGetOrCreateMarketControls(),
+}));
+
 import { db } from "@/db/client";
 import { DEFAULT_LESSON_FLOW_SCORING } from "@/server/settings/schemas";
 import { GET } from "./route";
@@ -69,6 +77,7 @@ beforeEach(() => {
   mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = clerkKey(CONSUMER_HOST);
   mockEnv.VERCEL_GIT_COMMIT_SHA = undefined;
   mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+  mockEnv.RELAY_SHARED_SECRET = "test-relay-secret";
   mockEnv.S3_ENDPOINT = "https://xxx.supabase.co/storage/v1/s3";
   mockEnv.S3_REGION = "ap-south-1";
   mockEnv.S3_BUCKET = "finlamma";
@@ -95,6 +104,13 @@ beforeEach(() => {
   // the inngest warning field at all.
   mockEnv.INNGEST_SIGNING_KEY = "test-signing-key";
   mockEnv.VERCEL_ENV = undefined;
+  // Unset by default (auto-selects "mock") - existing tests below don't
+  // need to know about the market warning field at all.
+  mockEnv.TWELVEDATA_API_KEY = undefined;
+  mockEnv.MARKET_DATA_PROVIDER = undefined;
+  // No global halt by default - existing tests below don't need to know
+  // about the tradingHalt warning field at all.
+  mockGetOrCreateMarketControls.mockReset().mockResolvedValue({ globalHalt: false });
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -123,7 +139,10 @@ describe("GET /api/v1/health", () => {
     expect(body.data.legalDocuments).toBe("ok");
     expect(body.data.version).toBe("local");
     expect(body.data.consentPiiHmacKey).toBe("ok");
+    expect(body.data.relaySecret).toBe("ok");
     expect(body.data.storage).toBe("ok");
+    expect(body.data.market).toBe("mock");
+    expect(body.data.tradingHalt).toBe("ok");
     expect(body.data.redis).toBe("ok");
     expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(body.data.inngest).toBe("ok");
@@ -305,6 +324,36 @@ describe("GET /api/v1/health", () => {
     expect((await res.json()).data.consentPiiHmacKey).toBe("missing");
   });
 
+  it("reports relaySecret: 'missing' (not a 503) when RELAY_SHARED_SECRET isn't configured", async () => {
+    mockEnv.RELAY_SHARED_SECRET = undefined;
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.relaySecret).toBe("missing");
+  });
+
+  it("reports tradingHalt: 'active' (not a 503) when market_controls.global_halt is on", async () => {
+    mockGetOrCreateMarketControls.mockResolvedValueOnce({ globalHalt: true });
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.tradingHalt).toBe("active");
+  });
+
+  it("degrades tradingHalt to 'ok' (not a 503) if the check itself throws", async () => {
+    mockGetOrCreateMarketControls.mockRejectedValueOnce(new Error("boom"));
+    mockHealthyDb();
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.tradingHalt).toBe("ok");
+  });
+
   it.each([
     ["S3_ENDPOINT"],
     ["S3_REGION"],
@@ -327,6 +376,46 @@ describe("GET /api/v1/health", () => {
     const res = await GET();
 
     expect((await res.json()).data.storage).toBe("ok");
+  });
+
+  describe("market", () => {
+    it("reports 'mock' when no TWELVEDATA_API_KEY is configured and no override is set", async () => {
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.market).toBe("mock");
+    });
+
+    it("reports 'configured' when TWELVEDATA_API_KEY is set", async () => {
+      mockEnv.TWELVEDATA_API_KEY = "a-real-key";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.market).toBe("configured");
+    });
+
+    it("reports 'mock' when MARKET_DATA_PROVIDER=mock is explicitly set, even with a real key present", async () => {
+      mockEnv.TWELVEDATA_API_KEY = "a-real-key";
+      mockEnv.MARKET_DATA_PROVIDER = "mock";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.market).toBe("mock");
+    });
+
+    it("reports 'unconfigured' when MARKET_DATA_PROVIDER=twelvedata is explicitly set but no key is present", async () => {
+      mockEnv.MARKET_DATA_PROVIDER = "twelvedata";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200); // non-fatal, never a 503
+      expect((await res.json()).data.market).toBe("unconfigured");
+    });
   });
 
   describe("redis", () => {

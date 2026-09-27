@@ -224,7 +224,10 @@ skill for the full idempotency/reversal design)
   `fever_combo_threshold` = 3, `fever_multiplier` = 2.0, `combo_bonus_per_step`, `speed_bonus_xp`,
   `all_correct_bonus_vm` — all admin-editable, seeded from the prototype's exact values;
   `level_curve` — `{baseXp: 300, stepXp: 100}` (Phase 3 Checkpoint 5) — XP to advance from level L
-  to L+1 = baseXp + stepXp×(L−1); admin-editable, `src/server/leveling`)
+  to L+1 = baseXp + stepXp×(L−1); admin-editable, `src/server/leveling`;
+  `trading_risk_thresholds` — `{newAccountDays: 7, concentrationPct: 50, dailyOrderCount: 10}`
+  (Phase 4 Checkpoint 9, D48) — the Ops console's NEW/WATCH risk-flag rule, `trading.ops`-gated,
+  `src/server/ops`)
 
 **Reporting**
 - `report_snapshots` (user_id, week_start_date IST, efficiency_score 0-100, sub_metrics jsonb
@@ -234,9 +237,13 @@ skill for the full idempotency/reversal design)
 - `coach_note_templates` (category strength|gap|opportunity|habit, template jsonb {en,hi,hx} with
   placeholders, status draft|published) — admin-editable, no AI in v1
 
-**Trading**
+**Trading** (Phase 4 Checkpoint 1 — `instruments`/`market_holidays`/`market_controls` built)
 - `instruments` (symbol, exchange, name, sector, about jsonb, tip jsonb {en,hi,hx}, tags text[],
-  mcap, pe, lot_size, active, halted). Order pad access is gated by
+  mcap, pe, lot_size, active, halted) — `about`/`tip`/`mcap`/`pe` are all admin-curated static
+  text/figures (`docs/FEATURE_MAP.md` Gaps → Trade #5/#8), never live-fetched; live OHLC/volume/LTP
+  come from Twelve Data at request time (Checkpoint 2), never stored here. `tip` must stay purely
+  educational (what the company does / a finance concept it illustrates) — never phrased as a
+  buy/sell signal, per CLAUDE.md's "never investment advice" rule. Order pad access is gated by
   `settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition` (default: the 3rd published
   world, by position - never a specific world id/name, D25 `docs/ARCHITECTURE.md`) -
   `src/server/worlds/service.ts`'s `isTradingUnlocked()` implements the check now, ready for
@@ -249,15 +256,33 @@ skill for the full idempotency/reversal design)
   candle history for chart timeframes beyond what the relay's Redis cache retains; today's/live
   candle still comes from Redis per ARCHITECTURE.md. NIFTY 50 / BANK NIFTY / SENSEX indices reuse
   the same Twelve Data source and caching, no separate table.
-- `market_holidays` (date, name), `market_controls` (feed_mode, global_halt) — **no volatility
-  control.** When the market is closed, every screen shows the last real close; nothing ever
-  simulates price movement near a real trade.
+- `market_holidays` (date, name) — the NSE trading holiday calendar, admin-editable.
+  `market_controls` (id, feed_mode live\|delayed_15m\|paused, global_halt) — a single singleton
+  row (`id = 'singleton'`), not per-symbol (that's `instruments.halted`); the Ops console's global
+  feed-mode/halt switch. **No volatility control.** When the market is closed, every screen shows
+  the last real close; nothing ever simulates price movement near a real trade.
 - `orders` (user_id, instrument_id, side, type, qty, limit_price_paise, status, fill_price_paise,
-  reject_reason, idempotency_key, filled_at)
-- `holdings` (user_id, instrument_id, qty, avg_price_paise)
-- `funds` (name, category, risk, nav, aum, expense_ratio, min_sip_paise — tiered: ₹100 for index
-  funds, ₹500 for equity/hybrid/debt/ELSS, return_1y/3y/5y, star_rating, description jsonb),
-  `fund_navs`, `sip_plans`, `fund_holdings`
+  realized_pnl_paise — SELL fills only, D43, idempotency_key, filled_at, cancelled_at). No
+  `reject_reason`/"rejected" status by design (D41) — a rejected order is a thrown error with zero
+  DB write, never a persisted row.
+- `holdings` (user_id, instrument_id, qty, avg_price_paise, position_opened_at — reset on a 0→positive
+  re-entry, D43, powers the Trades tab's hold-days stat)
+- `funds` (name — always a fictional Finlamma-branded name, never a real AMC's fund name, D45;
+  category, risk, description jsonb, amfi_scheme_code — internal-only, never in any API response,
+  expense_ratio_bps — illustrative/category-typical, not the real scheme's own rate,
+  min_lump_sum_paise, min_sip_paise — tiered: ₹100 index / ₹500 other, admin-editable, active). No
+  star_rating, no aum (dropped per D45 — a third-party opinion and an identifying claim about a
+  real company, neither honestly attachable to a fictional wrapper).
+- `fund_navs` (fund_id, date, nav_paise — real AMFI NAV rounded to the nearest paise, append-only,
+  unique on (fund_id, date), D45/D46)
+- `fund_holdings` (user_id, fund_id, units_milli — units × 1000 for fractional-unit precision, D45,
+  avg_nav_paise)
+- `fund_orders` (user_id, fund_id, side, status — filled/failed, no "open"/"cancelled" (no LIMIT
+  concept for a once-a-day NAV), amount_paise, units_milli, nav_paise, nav_date — always shown back,
+  no hidden pricing, realized_pnl_paise, idempotency_key, sip_plan_id + due_date — unique together,
+  the SIP idempotency mechanism, D46, failure_reason — SIP-triggered failures only)
+- `sip_plans` (user_id, fund_id, amount_paise, day_of_month — 1-28 only, status — active/paused/
+  cancelled, paused_at, cancelled_at)
 - `competitions` (name, instrument_id, virtual_capital_vm, window_start, window_end, prizes jsonb
   — V Money / badge / coupon only, **never real currency**, admin-set per competition — and rules
   jsonb), `competition_entries`/`competition_trades` (isolated from the user's main paper-trading

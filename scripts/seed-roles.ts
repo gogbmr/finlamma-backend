@@ -130,6 +130,23 @@ const PERMISSIONS = [
       "weekly report card's random per-category pick. Same narrow trust bar as settings.manage - " +
       "granted to super_admin only, since this reaches minors directly.",
   },
+  {
+    key: "instrument.manage",
+    description:
+      "Create and edit the NSE instrument catalog (symbol, name, sector, about/tip copy, tags, " +
+      "mcap, pe, lot size, active) and the market holiday calendar. No draft/publish split - " +
+      "edits apply immediately, same trust tier as a content hotfix. Does not include halting a " +
+      "symbol or the Ops console's feed-mode/global-halt controls (trading.ops, Phase 4 Checkpoint 9).",
+  },
+  {
+    key: "trading.ops",
+    description:
+      "Ops console dangerous controls: global trading halt, per-symbol halt, feed-mode changes " +
+      "(LIVE/DELAYED_15M/PAUSED), the User Trading Ledger (a learner's financial activity - " +
+      "every view is logged), and the risk-flag thresholds. Every halt/unhalt requires a " +
+      "free-text reason. Same narrow trust bar as settings.manage/economy.manage - granted to " +
+      "super_admin only, since a global halt affects every learner immediately.",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -154,10 +171,18 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "economy.manage",
     "coach_note.manage",
     "coach_note.publish",
+    "instrument.manage",
+    "trading.ops",
   ],
   user_manager: ["consent.view"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],
-  content_publisher: ["mentor.publish", "world.publish", "lesson.publish", "question.publish"],
+  content_publisher: [
+    "mentor.publish",
+    "world.publish",
+    "lesson.publish",
+    "question.publish",
+    "instrument.manage",
+  ],
   quiz_maker: ["question.manage"],
 };
 

@@ -11,6 +11,11 @@
 // interleaving - it proves the LOGICAL correctness the row lock + unique
 // constraint are meant to guarantee (exactly one claim, exactly one debit),
 // which is what's actually being relied on in production.
+//
+// D37 (docs/ARCHITECTURE.md): the ledger is paise-scaled - `rewards.priceVm`/
+// `claimRewardTx`'s `priceVm` param stay whole VM (unchanged, admin-authored
+// catalog prices), but every balance this file asserts against is in paise
+// (100 = 1 V Money), since that's the ledger's real unit from here on.
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
@@ -36,7 +41,7 @@ afterAll(async () => {
 // below has already ruled out via its own balance setup.
 function expectClaim(result: ClaimRewardResult) {
   if (result.status === "insufficient_balance") {
-    throw new Error(`Expected a claim result, got insufficient_balance (balance ${result.balance})`);
+    throw new Error(`Expected a claim result, got insufficient_balance (balancePaise ${result.balancePaise})`);
   }
   return result;
 }
@@ -69,16 +74,16 @@ async function makeReward(priceVm: number) {
 }
 
 // Inserted directly (not via a repo function) - a plain test fixture for
-// "this user starts with N V Money", same as other repo tests seed their
-// own rows directly rather than going through a sibling domain's repo.
-async function grantVmoney(userId: string, amount: number) {
+// "this user starts with N paise of V Money", same as other repo tests seed
+// their own rows directly rather than going through a sibling domain's repo.
+async function grantVmoneyPaise(userId: string, amountPaise: number) {
   await db.insert(vmoneyLedger).values({
     userId,
     sourceType: "test_grant",
     sourceId: randomUUID(),
     ruleId: null,
     reason: "test setup",
-    amount,
+    amountPaise,
     multiplierApplied: 1,
   });
 }
@@ -86,18 +91,18 @@ async function grantVmoney(userId: string, amount: number) {
 describe("claimRewardTx", () => {
   it("claims successfully when the balance is sufficient, debiting the exact price", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 1000);
+    await grantVmoneyPaise(user.id, 100_000); // 1000 VM
     const reward = await makeReward(500);
 
     const result = await claimRewardTx({ userId: user.id, rewardId: reward.id, priceVm: 500 });
 
     expect(result.status).toBe("claimed");
-    expect(await sumVmoneyBalance(user.id)).toBe(500);
+    expect(await sumVmoneyBalance(user.id)).toBe(50_000); // 500 VM left, in paise
   });
 
   it("succeeds on an exact-balance claim, leaving a zero balance", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 500);
+    await grantVmoneyPaise(user.id, 50_000); // 500 VM
     const reward = await makeReward(500);
 
     const result = await claimRewardTx({ userId: user.id, rewardId: reward.id, priceVm: 500 });
@@ -108,19 +113,19 @@ describe("claimRewardTx", () => {
 
   it("refuses when the balance is insufficient, without touching the ledger", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 100);
+    await grantVmoneyPaise(user.id, 10_000); // 100 VM
     const reward = await makeReward(500);
 
     const result = await claimRewardTx({ userId: user.id, rewardId: reward.id, priceVm: 500 });
 
-    expect(result).toEqual({ status: "insufficient_balance", balance: 100 });
-    expect(await sumVmoneyBalance(user.id)).toBe(100);
+    expect(result).toEqual({ status: "insufficient_balance", balancePaise: 10_000 });
+    expect(await sumVmoneyBalance(user.id)).toBe(10_000);
     expect(await getRewardClaim(user.id, reward.id)).toBeNull();
   });
 
   it("is idempotent against a double-tap: the second call returns the same claim, no second debit", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 1000);
+    await grantVmoneyPaise(user.id, 100_000); // 1000 VM
     const reward = await makeReward(500);
 
     const first = expectClaim(await claimRewardTx({ userId: user.id, rewardId: reward.id, priceVm: 500 }));
@@ -129,14 +134,14 @@ describe("claimRewardTx", () => {
     expect(first.status).toBe("claimed");
     expect(second.status).toBe("already_claimed");
     expect(second.claim.id).toBe(first.claim.id);
-    expect(await sumVmoneyBalance(user.id)).toBe(500); // debited exactly once
+    expect(await sumVmoneyBalance(user.id)).toBe(50_000); // debited exactly once
     const debits = await db.select().from(vmoneyLedger).where(eq(vmoneyLedger.userId, user.id));
     expect(debits.filter((d) => d.sourceType === "reward_claim")).toHaveLength(1);
   });
 
   it("a later price change never affects what an already-claimed row shows", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 1000);
+    await grantVmoneyPaise(user.id, 100_000); // 1000 VM
     const reward = await makeReward(500);
 
     await claimRewardTx({ userId: user.id, rewardId: reward.id, priceVm: 500 });
@@ -148,12 +153,12 @@ describe("claimRewardTx", () => {
 
     expect(replay.status).toBe("already_claimed");
     expect(replay.claim.pricePaid).toBe(500);
-    expect(await sumVmoneyBalance(user.id)).toBe(500);
+    expect(await sumVmoneyBalance(user.id)).toBe(50_000);
   });
 
   it("stays correct under two concurrent claim attempts for the same reward - exactly one debit ever happens", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 1000);
+    await grantVmoneyPaise(user.id, 100_000); // 1000 VM
     const reward = await makeReward(500);
 
     const [a, b] = (
@@ -166,14 +171,14 @@ describe("claimRewardTx", () => {
     const statuses = [a.status, b.status].sort();
     expect(statuses).toEqual(["already_claimed", "claimed"]);
     expect(a.claim.id).toBe(b.claim.id);
-    expect(await sumVmoneyBalance(user.id)).toBe(500);
+    expect(await sumVmoneyBalance(user.id)).toBe(50_000);
     const claims = await db.select().from(rewardClaims).where(eq(rewardClaims.userId, user.id));
     expect(claims).toHaveLength(1);
   });
 
   it("stays correct under two concurrent claims for DIFFERENT rewards that together exceed the balance - the balance never goes negative", async () => {
     const user = await makeUser();
-    await grantVmoney(user.id, 500); // enough for exactly one of the two
+    await grantVmoneyPaise(user.id, 50_000); // 500 VM - enough for exactly one of the two
     const rewardA = await makeReward(500);
     const rewardB = await makeReward(500);
 

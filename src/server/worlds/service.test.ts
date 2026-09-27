@@ -84,6 +84,7 @@ import {
   createWorldDraft,
   deleteWorld,
   getPublicWorlds,
+  getTradingUnlockProgress,
   getWorldEditorData,
   hotfixWorld,
   isTradingUnlocked,
@@ -970,6 +971,61 @@ describe("isTradingUnlocked", () => {
     const result = await isTradingUnlocked(USER_ID);
 
     expect(result).toBe(true);
+  });
+});
+
+// TR-57 (docs/FEATURE_MAP.md): the "N worlds to go" progress message
+// isTradingUnlocked's plain boolean can't express on its own.
+describe("getTradingUnlockProgress", () => {
+  it("reports worldsToGo = the full position when fewer worlds are published than that", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 3,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ id: "world_1", order: 1 })]);
+
+    const result = await getTradingUnlockProgress(USER_ID);
+
+    expect(result).toEqual({ unlocked: false, worldsToGo: 3 });
+  });
+
+  it("counts only consecutively-cleared LEADING worlds, stopping at the first uncleared one", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 3,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ id: "world_1", order: 1 }),
+      worldRow({ id: "world_2", order: 2 }),
+      worldRow({ id: "world_3", order: 3 }),
+    ]);
+    // world_1 cleared, world_2 NOT cleared, world_3 cleared (shouldn't count
+    // - sequential unlock means world_3 couldn't really be reached without
+    // world_2, but this proves the function doesn't just count set size).
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1", "world_3"]));
+
+    const result = await getTradingUnlockProgress(USER_ID);
+
+    expect(result).toEqual({ unlocked: false, worldsToGo: 2 });
+  });
+
+  it("reports worldsToGo: 0 and unlocked: true once the target position is cleared", async () => {
+    mockGetLessonFlowScoringSettings.mockResolvedValueOnce({
+      bossQuizPassMarkPct: 60,
+      tradingUnlockAfterWorldPosition: 3,
+    });
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ id: "world_1", order: 1 }),
+      worldRow({ id: "world_2", order: 2 }),
+      worldRow({ id: "world_3", order: 3 }),
+    ]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(
+      new Set(["world_1", "world_2", "world_3"]),
+    );
+
+    const result = await getTradingUnlockProgress(USER_ID);
+
+    expect(result).toEqual({ unlocked: true, worldsToGo: 0 });
   });
 });
 

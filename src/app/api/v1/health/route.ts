@@ -8,7 +8,9 @@ import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { checkRedisReachable } from "@/lib/redis";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
+import { getMarketDataProviderKind } from "@/server/market/provider";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { getOrCreateMarketControls } from "@/server/trading/repo";
 import { listPublishedWorlds } from "@/server/worlds/repo";
 // Bundled at build time (resolveJsonModule) so this file is self-contained
 // in the deployed serverless function - a runtime fs.readFileSync of
@@ -59,6 +61,14 @@ const HealthDataSchema = z.object({
       "store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's " +
       "scrubConsentDataForDeletedUser.",
   }),
+  relaySecret: z.enum(["ok", "missing"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'missing' means RELAY_SHARED_SECRET isn't " +
+      "configured, so GET /api/v1/relay/config fails closed (SERVICE_UNAVAILABLE) for every " +
+      "call - the market relay can't fetch its instrument list/feed mode/holidays until it's " +
+      "set. See docs/ARCHITECTURE.md D40.",
+  }),
   storage: z.enum(["ok", "missing"]).openapi({
     example: "ok",
     description:
@@ -94,6 +104,27 @@ const HealthDataSchema = z.object({
       "settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading " +
       "stays locked for every learner until enough worlds are published. See " +
       "docs/ARCHITECTURE.md D25.",
+  }),
+  tradingHalt: z.enum(["ok", "active"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): 'active' means market_controls.global_halt is " +
+      "currently on - the order pad rejects every order for every learner. Meant to catch a " +
+      "halt left on by mistake outside the admin Ops console's own persistent banner " +
+      "(docs/ARCHITECTURE.md D47).",
+  }),
+  market: z.enum(["configured", "mock", "unconfigured"]).openapi({
+    example: "mock",
+    description:
+      "A non-fatal warning (never causes a 503): 'configured' means a real market-data vendor " +
+      "(currently Twelve Data) is in effect - TWELVEDATA_API_KEY is set (or MARKET_DATA_PROVIDER " +
+      "explicitly picked it). 'mock' means deterministic fixture prices are in effect - either " +
+      "no key is configured yet (docs/ARCHITECTURE.md D38/D39 - the founder is still confirming " +
+      "Twelve Data's NSE tier cost) or MARKET_DATA_PROVIDER=mock was set explicitly. 'unconfigured' " +
+      "means MARKET_DATA_PROVIDER=twelvedata was explicitly set but TWELVEDATA_API_KEY is missing - " +
+      "a real misconfiguration (explicitly wants live data but has no key), distinct from the " +
+      "intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's " +
+      "comment for why (avoids burning API credits on every health check).",
   }),
   inngest: z.enum(["ok", "unconfigured"]).openapi({
     example: "ok",
@@ -138,6 +169,18 @@ function clerkInstanceHost(publishableKey: string): string | null {
 // discovered the first time someone tries an upload in production - see
 // src/lib/s3.ts's getS3Config(), which fails closed the same way
 // getResendConfig() does for email.
+// Non-fatal: a missing/mocked market-data provider doesn't fail the health
+// check (the API is still genuinely healthy - explore mode with mock data
+// is a valid state while the founder confirms vendor cost, D38/D39), but it
+// must never be silent - surfaced here the same way storage/redis are.
+// Config-only, no live network call: getMarketDataProviderKind() reads env
+// vars, never calls the vendor, so this check can't burn an API credit or
+// add latency just from being asked.
+function checkMarketDataProvider(): "configured" | "mock" | "unconfigured" {
+  if (env.MARKET_DATA_PROVIDER === "twelvedata" && !env.TWELVEDATA_API_KEY) return "unconfigured";
+  return getMarketDataProviderKind() === "twelvedata" ? "configured" : "mock";
+}
+
 function checkStorageConfigured(): "ok" | "missing" {
   const configured =
     env.S3_ENDPOINT &&
@@ -261,6 +304,23 @@ async function checkTradingUnlockWorldMissing(): Promise<boolean> {
   }
 }
 
+// Checkpoint 9 (docs/ARCHITECTURE.md D47): "confirm nothing can leave the
+// system halted silently." Global halt should always be a deliberate,
+// short-lived Ops action, never a forgotten switch - surfacing it here
+// means it shows up in uptime/monitoring dashboards, not just the admin
+// Ops console banner. Non-fatal (never a 503): degrades to "ok" on a check
+// failure, same convention as every other DB-backed field here, since the
+// failure itself is separately logged and visible.
+async function checkTradingHalt(): Promise<"ok" | "active"> {
+  try {
+    const controls = await getOrCreateMarketControls();
+    return controls.globalHalt ? "active" : "ok";
+  } catch (err) {
+    logInternalError("health.trading_halt_check_failed", err);
+    return "ok";
+  }
+}
+
 const HealthResponseSchema = registry.register("HealthResponse", z.object({ data: HealthDataSchema }));
 
 registry.registerPath({
@@ -328,6 +388,7 @@ export const GET = withErrors(async () => {
   const legalDocuments = await checkLegalDocuments();
   const worldsMissingBossQuiz = await checkWorldsMissingBossQuiz();
   const tradingUnlockWorldMissing = await checkTradingUnlockWorldMissing();
+  const tradingHalt = await checkTradingHalt();
   const redis = await checkRedisReachable();
   // Matches src/lib/inngest.ts's own isDev logic: only a real Vercel
   // deployment (VERCEL_ENV set) is ever in Cloud mode and actually needs a
@@ -343,9 +404,12 @@ export const GET = withErrors(async () => {
     version: currentVersion(),
     consentPiiHmacKey: env.CONSENT_PII_HMAC_KEY ? ("ok" as const) : ("missing" as const),
     storage: checkStorageConfigured(),
+    relaySecret: env.RELAY_SHARED_SECRET ? ("ok" as const) : ("missing" as const),
+    market: checkMarketDataProvider(),
     redis,
     worldsMissingBossQuiz,
     tradingUnlockWorldMissing,
+    tradingHalt,
     inngest,
     timestamp: new Date().toISOString(),
   });

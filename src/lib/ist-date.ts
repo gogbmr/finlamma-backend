@@ -75,6 +75,24 @@ export function istYearStartUtc(year: number): Date {
   return new Date(Date.UTC(year, 0, 1) - IST_OFFSET_MS);
 }
 
+// Minutes since IST midnight (0-1439) - trading-rules skill: NSE hours are
+// 09:15-15:30 IST, so this is what src/server/market/hours.ts compares
+// against those bounds. Same shift-then-read-UTC-fields technique as
+// istDateString.
+export function istMinutesSinceMidnight(date: Date = new Date()): number {
+  const shifted = new Date(date.getTime() + IST_OFFSET_MS);
+  return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
+}
+
+// IST day of week, 0=Sunday..6=Saturday - src/server/market/hours.ts's
+// Mon-Fri check. Parsed the same way istWeekStartDate already does (via the
+// IST calendar date string, not a raw UTC read of `date`), so this agrees
+// with istDateString at the day boundary.
+export function istDayOfWeek(date: Date = new Date()): number {
+  const d = new Date(`${istDateString(date)}T00:00:00Z`);
+  return d.getUTCDay();
+}
+
 // Whole calendar days between two IST date strings (b - a). Both are
 // parsed as UTC midnight purely as a stable anchor for subtraction - the
 // values themselves are already IST calendar dates (from istDateString),

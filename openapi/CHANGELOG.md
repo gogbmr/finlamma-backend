@@ -2,6 +2,72 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-09-27 — v1.0.0
+
+Major bump: 15 new operations, but also a **breaking change** on 3 existing endpoints - the first
+one this contract has ever published, so the leftmost version digit moves instead of the middle
+one. Covers Phase 4 (trading engine: instruments, orders, mutual funds, SIPs, the market relay,
+the Profile Trades tab) plus a post-Checkpoint-9 security-audit hardening pass.
+
+**Breaking: V Money fields renamed and rescaled to paise (D37, `docs/ARCHITECTURE.md`)**
+`vmoney_ledger` moved from whole V Money to exact paise (100 = 1 V Money) so a trade's cost/
+proceeds never need rounding. Every response field derived from it is renamed with a `Paise`
+suffix instead of keeping the old name with a silently-changed meaning:
+- `GET /api/v1/me/stats/vmoney` — `balance` → `balancePaise`, `weeklyEarned` → `weeklyEarnedPaise`,
+  `weeklySpent` → `weeklySpentPaise`. Values are now ×100 (e.g. a balance of 210 is now 21000).
+- `GET /api/v1/me/wallet` — `balance` → `balancePaise`, `earnedThisMonth` → `earnedThisMonthPaise`,
+  `earnedBySource[].amount` → `earnedBySource[].amountPaise`. Same ×100 rescale.
+- `GET /api/v1/me/wallet/history` — each row's `amount` → `amountPaise`. Same ×100 rescale.
+
+Any client consuming these three endpoints needs to switch to the new field names and divide by
+100 for a whole-V-Money display value - this was never rounded server-side, and never will be.
+Safe to do as a rename rather than a versioned/parallel field because no app has shipped against
+the old names yet (pre-launch).
+
+**Trading (Checkpoints 1-6, D40-D42)**
+- `GET /api/v1/trade/instruments`, `GET /api/v1/trade/instruments/{symbol}`,
+  `GET /api/v1/trade/instruments/{symbol}/candles` — the instrument catalog, live quote, and
+  candle history (Twelve Data, cached).
+- `GET /api/v1/trade/market-status` — LIVE / 15M DELAY / HALTED, driven by the Ops console's feed
+  mode and per-symbol halts.
+- `GET /api/v1/relay/config` — the market relay's only endpoint on this backend; authenticated by
+  a shared secret, never a user session.
+- `POST /api/v1/trade/orders` — place a MARKET or LIMIT stock order. Requires an Idempotency-Key
+  header; the execution price always comes from the relay's live tick in Redis, never the client.
+  A LIMIT order that isn't immediately marketable queues as `open` and is matched later by a
+  scheduled job, or cancelled at day end if the market closes first.
+
+**Mutual funds & SIPs (Checkpoints 7-8, D45-D46)**
+- `GET /api/v1/trade/funds`, `GET /api/v1/trade/funds/{id}` — the fund catalog and one fund's
+  detail, priced off the most recently ingested AMFI NAV.
+- `POST /api/v1/trade/funds/orders` — buy (lump sum) or sell (redeem) fund units, same
+  Idempotency-Key/no-client-price rules as stock orders.
+- `GET /api/v1/trade/funds/sip`, `POST /api/v1/trade/funds/sip`,
+  `PATCH /api/v1/trade/funds/sip/{id}` — list, create, and pause/resume/cancel a recurring SIP
+  plan. A failed scheduled execution (insufficient balance, stale NAV) is always visible here,
+  never silently skipped.
+
+**Profile - Trades tab (Checkpoint 7, D43-D44)**
+- `GET /api/v1/me/portfolio/summary` — cash balance, holdings market value, all-time trading P&L,
+  and a 12-point equity sparkline built from a real chronological replay of every fill.
+- `GET /api/v1/me/portfolio/stats` — closed-trade count, realized P&L, win/loss split, best/worst
+  trade, open-positions count.
+- `GET /api/v1/me/portfolio/trades` — the trade-history list, filterable All/Open/Closed,
+  cursor-paginated through closed trades only (open positions are a snapshot, always on page one).
+
+**Post-Checkpoint-9 security audit - additive only**
+- `GET /api/v1/health` gained `relaySecret` (whether `RELAY_SHARED_SECRET` is configured),
+  `tradingHalt` (`"ok" | "active"`, so an accidentally-left-on global halt shows up in uptime
+  monitoring, not just `/admin`), and `market` fields.
+- `POST /api/v1/trade/orders`, `POST /api/v1/trade/funds/orders`, `POST /api/v1/trade/funds/sip`
+  each gained a documented `429 RATE_LIMITED` response (rate limiting was added server-side but
+  the endpoints' request/response shapes are unchanged).
+
+Not yet in the contract: Arena and news (`docs/ROADMAP.md` Phase 5+). TR-13 (orders list),
+TR-35 (fund portfolio summary), TR-02/TR-36 (instrument/fund search-filter params), and TR-50/
+TR-54 (Ops console tick-age indicator, SANDBOX label) are deferred to a future Trade tab build -
+see `docs/FEATURE_MAP.md`.
+
 ## 2026-09-25 — v0.3.0
 
 Minor bump: purely additive, 11 new operations plus new fields on 3 existing endpoints, nothing

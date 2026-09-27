@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "0.3.0",
+    "version": "1.0.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -106,6 +106,15 @@
                 "example": "ok",
                 "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
               },
+              "relaySecret": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "missing"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'missing' means RELAY_SHARED_SECRET isn't configured, so GET /api/v1/relay/config fails closed (SERVICE_UNAVAILABLE) for every call - the market relay can't fetch its instrument list/feed mode/holidays until it's set. See docs/ARCHITECTURE.md D40."
+              },
               "storage": {
                 "type": "string",
                 "enum": [
@@ -151,6 +160,25 @@
                 "example": false,
                 "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
               },
+              "tradingHalt": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "active"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'active' means market_controls.global_halt is currently on - the order pad rejects every order for every learner. Meant to catch a halt left on by mistake outside the admin Ops console's own persistent banner (docs/ARCHITECTURE.md D47)."
+              },
+              "market": {
+                "type": "string",
+                "enum": [
+                  "configured",
+                  "mock",
+                  "unconfigured"
+                ],
+                "example": "mock",
+                "description": "A non-fatal warning (never causes a 503): 'configured' means a real market-data vendor (currently Twelve Data) is in effect - TWELVEDATA_API_KEY is set (or MARKET_DATA_PROVIDER explicitly picked it). 'mock' means deterministic fixture prices are in effect - either no key is configured yet (docs/ARCHITECTURE.md D38/D39 - the founder is still confirming Twelve Data's NSE tier cost) or MARKET_DATA_PROVIDER=mock was set explicitly. 'unconfigured' means MARKET_DATA_PROVIDER=twelvedata was explicitly set but TWELVEDATA_API_KEY is missing - a real misconfiguration (explicitly wants live data but has no key), distinct from the intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's comment for why (avoids burning API credits on every health check)."
+              },
               "inngest": {
                 "type": "string",
                 "enum": [
@@ -174,10 +202,13 @@
               "legalDocuments",
               "version",
               "consentPiiHmacKey",
+              "relaySecret",
               "storage",
               "redis",
               "worldsMissingBossQuiz",
               "tradingUnlockWorldMissing",
+              "tradingHalt",
+              "market",
               "inngest",
               "timestamp"
             ]
@@ -2239,6 +2270,604 @@
           "data"
         ]
       },
+      "RelayConfigResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "instruments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "symbol": {
+                      "type": "string",
+                      "example": "RELIANCE"
+                    },
+                    "exchange": {
+                      "type": "string",
+                      "example": "NSE"
+                    },
+                    "halted": {
+                      "type": "boolean",
+                      "description": "Per-symbol halt (Ops console) - the relay may choose to skip a halted symbol."
+                    }
+                  },
+                  "required": [
+                    "symbol",
+                    "exchange",
+                    "halted"
+                  ]
+                }
+              },
+              "feedMode": {
+                "type": "string",
+                "enum": [
+                  "live",
+                  "delayed_15m",
+                  "paused"
+                ],
+                "description": "Ops console setting. 'paused' is a signal the relay can use to stop polling/streaming entirely, saving vendor credits.",
+                "example": "live"
+              },
+              "globalHalt": {
+                "type": "boolean"
+              },
+              "holidays": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "NSE holiday dates (YYYY-MM-DD) - the relay can skip polling on these too.",
+                "example": [
+                  "2026-10-02"
+                ]
+              }
+            },
+            "required": [
+              "instruments",
+              "feedMode",
+              "globalHalt",
+              "holidays"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PlaceOrderResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "symbol": {
+                "type": "string",
+                "example": "RELIANCE"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "market",
+                  "limit"
+                ]
+              },
+              "qty": {
+                "type": "integer"
+              },
+              "limitPricePaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "filled",
+                  "cancelled"
+                ]
+              },
+              "fillPricePaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "filledAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "cancelledAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "replayed": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "symbol",
+              "side",
+              "type",
+              "qty",
+              "limitPricePaise",
+              "status",
+              "fillPricePaise",
+              "createdAt",
+              "filledAt",
+              "cancelledAt",
+              "replayed"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "OrderListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "symbol": {
+                  "type": "string",
+                  "example": "RELIANCE"
+                },
+                "side": {
+                  "type": "string",
+                  "enum": [
+                    "buy",
+                    "sell"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "market",
+                    "limit"
+                  ]
+                },
+                "qty": {
+                  "type": "integer"
+                },
+                "limitPricePaise": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "filled",
+                    "cancelled"
+                  ]
+                },
+                "fillPricePaise": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "filledAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                },
+                "cancelledAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "symbol",
+                "side",
+                "type",
+                "qty",
+                "limitPricePaise",
+                "status",
+                "fillPricePaise",
+                "createdAt",
+                "filledAt",
+                "cancelledAt"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "PlaceFundOrderResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fundId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "filled",
+                  "failed"
+                ]
+              },
+              "amountPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The ₹ that actually moved. null only for a failed SIP execution."
+              },
+              "unitsMilli": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "Units x 1000 (3 decimal places, D45)."
+              },
+              "navPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "description": "The exact NAV this fill used - never hidden pricing."
+              },
+              "navDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Which NAV date was used, e.g. \"2026-09-25\"."
+              },
+              "realizedPnlPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "replayed": {
+                "type": "boolean",
+                "description": "True only when this exact response is a replay of an already-processed request with the same Idempotency-Key."
+              }
+            },
+            "required": [
+              "id",
+              "fundId",
+              "side",
+              "status",
+              "amountPaise",
+              "unitsMilli",
+              "navPaise",
+              "navDate",
+              "realizedPnlPaise",
+              "createdAt",
+              "replayed"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SipPlanResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fundId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amountPaise": {
+                "type": "integer"
+              },
+              "dayOfMonth": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "paused",
+                  "cancelled"
+                ]
+              },
+              "nextDueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null once the plan is cancelled - a cancelled plan never runs again.",
+                "example": "2026-10-05"
+              },
+              "recentExecutions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "filled",
+                        "failed"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": "string",
+                      "example": "2026-09-05"
+                    },
+                    "amountPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "unitsMilli": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "failureReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Set only when status is \"failed\" - e.g. INSUFFICIENT_MARGIN.",
+                      "example": "INSUFFICIENT_MARGIN"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "dueDate",
+                    "amountPaise",
+                    "unitsMilli",
+                    "navPaise",
+                    "navDate",
+                    "failureReason",
+                    "createdAt"
+                  ]
+                },
+                "description": "Most recent executions for this plan, newest first, including any that failed - a SIP failure is always visible here, never silently skipped."
+              }
+            },
+            "required": [
+              "id",
+              "fundId",
+              "amountPaise",
+              "dayOfMonth",
+              "status",
+              "nextDueDate",
+              "recentExecutions"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SipPlanListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "fundId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "amountPaise": {
+                  "type": "integer"
+                },
+                "dayOfMonth": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "paused",
+                    "cancelled"
+                  ]
+                },
+                "nextDueDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "null once the plan is cancelled - a cancelled plan never runs again.",
+                  "example": "2026-10-05"
+                },
+                "recentExecutions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "filled",
+                          "failed"
+                        ]
+                      },
+                      "dueDate": {
+                        "type": "string",
+                        "example": "2026-09-05"
+                      },
+                      "amountPaise": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "unitsMilli": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "navPaise": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      },
+                      "navDate": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "failureReason": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "description": "Set only when status is \"failed\" - e.g. INSUFFICIENT_MARGIN.",
+                        "example": "INSUFFICIENT_MARGIN"
+                      },
+                      "createdAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "status",
+                      "dueDate",
+                      "amountPaise",
+                      "unitsMilli",
+                      "navPaise",
+                      "navDate",
+                      "failureReason",
+                      "createdAt"
+                    ]
+                  },
+                  "description": "Most recent executions for this plan, newest first, including any that failed - a SIP failure is always visible here, never silently skipped."
+                }
+              },
+              "required": [
+                "id",
+                "fundId",
+                "amountPaise",
+                "dayOfMonth",
+                "status",
+                "nextDueDate",
+                "recentExecutions"
+              ]
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ClerkWebhookResponse": {
         "type": "object",
         "properties": {
@@ -4167,27 +4796,28 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "balance": {
+                        "balancePaise": {
                           "type": "integer",
-                          "example": 210
+                          "description": "V Money balance, in paise (100 = 1 V Money). Never rounded by the backend.",
+                          "example": 21000
                         },
-                        "weeklyEarned": {
+                        "weeklyEarnedPaise": {
                           "type": "integer",
                           "minimum": 0,
-                          "description": "V Money earned in the trailing 7 days.",
-                          "example": 90
+                          "description": "V Money earned in the trailing 7 days, in paise.",
+                          "example": 9000
                         },
-                        "weeklySpent": {
+                        "weeklySpentPaise": {
                           "type": "integer",
                           "minimum": 0,
-                          "description": "V Money spent in the trailing 7 days. Always 0 until a spend path exists.",
+                          "description": "V Money spent in the trailing 7 days, in paise. Always 0 until a spend path exists.",
                           "example": 0
                         }
                       },
                       "required": [
-                        "balance",
-                        "weeklyEarned",
-                        "weeklySpent"
+                        "balancePaise",
+                        "weeklyEarnedPaise",
+                        "weeklySpentPaise"
                       ]
                     }
                   },
@@ -5100,14 +5730,14 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "balance": {
+                        "balancePaise": {
                           "type": "integer",
-                          "example": 1250
+                          "example": 125000
                         },
-                        "earnedThisMonth": {
+                        "earnedThisMonthPaise": {
                           "type": "integer",
                           "minimum": 0,
-                          "example": 300
+                          "example": 30000
                         },
                         "earnedBySource": {
                           "type": "array",
@@ -5118,23 +5748,23 @@
                                 "type": "string",
                                 "example": "lesson_completion"
                               },
-                              "amount": {
+                              "amountPaise": {
                                 "type": "integer",
                                 "minimum": 0,
-                                "example": 300
+                                "example": 30000
                               }
                             },
                             "required": [
                               "sourceType",
-                              "amount"
+                              "amountPaise"
                             ]
                           },
                           "description": "Only sourceTypes that actually have an earning this month appear here."
                         }
                       },
                       "required": [
-                        "balance",
-                        "earnedThisMonth",
+                        "balancePaise",
+                        "earnedThisMonthPaise",
                         "earnedBySource"
                       ]
                     }
@@ -5229,10 +5859,10 @@
                             "type": "string",
                             "format": "uuid"
                           },
-                          "amount": {
+                          "amountPaise": {
                             "type": "integer",
-                            "example": -500,
-                            "description": "Positive = earned, negative = spent."
+                            "example": -50000,
+                            "description": "Positive = earned, negative = spent. In paise (100 = 1 V Money)."
                           },
                           "sourceType": {
                             "type": "string",
@@ -5249,7 +5879,7 @@
                         },
                         "required": [
                           "id",
-                          "amount",
+                          "amountPaise",
                           "sourceType",
                           "reason",
                           "createdAt"
@@ -5369,6 +5999,2405 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/instruments": {
+      "get": {
+        "summary": "List tradeable instruments with live quotes (Explore mode, TR-02/08)",
+        "description": "Every active instrument with its live quote merged in. Visible regardless of the learner's trading-unlock progress (explore mode, PRODUCT_SPEC.md §4) - only placing an order is gated. `quote` is null when the market-data vendor has no data for a symbol right now; the app should show the instrument's own last-known display fields, never a synthetic price (no volatility control, ever).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active instruments with live quotes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "symbol": {
+                            "type": "string",
+                            "example": "RELIANCE"
+                          },
+                          "exchange": {
+                            "type": "string",
+                            "example": "NSE"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "Reliance Industries Ltd"
+                          },
+                          "sector": {
+                            "type": "string",
+                            "example": "Oil, Gas & Conglomerate"
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "example": [
+                              "NIFTY 50",
+                              "Large cap"
+                            ]
+                          },
+                          "lotSize": {
+                            "type": "integer",
+                            "example": 1
+                          },
+                          "halted": {
+                            "type": "boolean"
+                          },
+                          "quote": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "pricePaise": {
+                                "type": "integer",
+                                "description": "Last traded price, in paise.",
+                                "example": 284510
+                              },
+                              "changePaise": {
+                                "type": "integer",
+                                "example": 1250
+                              },
+                              "changePercent": {
+                                "type": "number",
+                                "example": 0.44
+                              },
+                              "openPaise": {
+                                "type": "integer",
+                                "example": 283000
+                              },
+                              "highPaise": {
+                                "type": "integer",
+                                "example": 285200
+                              },
+                              "lowPaise": {
+                                "type": "integer",
+                                "example": 282500
+                              },
+                              "previousClosePaise": {
+                                "type": "integer",
+                                "example": 283260
+                              },
+                              "volume": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 5231400
+                              },
+                              "asOf": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "When this quote was captured by the market-data vendor."
+                              }
+                            },
+                            "required": [
+                              "pricePaise",
+                              "changePaise",
+                              "changePercent",
+                              "openPaise",
+                              "highPaise",
+                              "lowPaise",
+                              "previousClosePaise",
+                              "volume",
+                              "asOf"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "symbol",
+                          "exchange",
+                          "name",
+                          "sector",
+                          "tags",
+                          "lotSize",
+                          "halted",
+                          "quote"
+                        ]
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/instruments/{symbol}": {
+      "get": {
+        "summary": "Get one instrument's detail with a live quote (TR-15/17/19/20)",
+        "description": "Instrument fundamentals (sector, about, tip, market cap, P/E), a live quote, and the trading disclaimer. `about`/`tip` are admin-curated, educational-only copy - never a buy/sell signal (CLAUDE.md, docs/ROADMAP.md's pre-launch legal-review checklist item).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "RELIANCE"
+            },
+            "required": true,
+            "name": "symbol",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The instrument's detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "symbol": {
+                          "type": "string",
+                          "example": "RELIANCE"
+                        },
+                        "exchange": {
+                          "type": "string",
+                          "example": "NSE"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Reliance Industries Ltd"
+                        },
+                        "sector": {
+                          "type": "string",
+                          "example": "Oil, Gas & Conglomerate"
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "example": [
+                            "NIFTY 50",
+                            "Large cap"
+                          ]
+                        },
+                        "lotSize": {
+                          "type": "integer",
+                          "example": 1
+                        },
+                        "halted": {
+                          "type": "boolean"
+                        },
+                        "quote": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "pricePaise": {
+                              "type": "integer",
+                              "description": "Last traded price, in paise.",
+                              "example": 284510
+                            },
+                            "changePaise": {
+                              "type": "integer",
+                              "example": 1250
+                            },
+                            "changePercent": {
+                              "type": "number",
+                              "example": 0.44
+                            },
+                            "openPaise": {
+                              "type": "integer",
+                              "example": 283000
+                            },
+                            "highPaise": {
+                              "type": "integer",
+                              "example": 285200
+                            },
+                            "lowPaise": {
+                              "type": "integer",
+                              "example": 282500
+                            },
+                            "previousClosePaise": {
+                              "type": "integer",
+                              "example": 283260
+                            },
+                            "volume": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 5231400
+                            },
+                            "asOf": {
+                              "type": "string",
+                              "format": "date-time",
+                              "description": "When this quote was captured by the market-data vendor."
+                            }
+                          },
+                          "required": [
+                            "pricePaise",
+                            "changePaise",
+                            "changePercent",
+                            "openPaise",
+                            "highPaise",
+                            "lowPaise",
+                            "previousClosePaise",
+                            "volume",
+                            "asOf"
+                          ]
+                        },
+                        "about": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "tip": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "mcap": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "description": "Whole rupees.",
+                          "example": 1925000000000
+                        },
+                        "pe": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "example": 24.3
+                        }
+                      },
+                      "required": [
+                        "symbol",
+                        "exchange",
+                        "name",
+                        "sector",
+                        "tags",
+                        "lotSize",
+                        "halted",
+                        "quote",
+                        "about",
+                        "tip",
+                        "mcap",
+                        "pe"
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active instrument with this symbol",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No instrument with this symbol"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/instruments/{symbol}/candles": {
+      "get": {
+        "summary": "Get candlestick history for an instrument (TR-05/16)",
+        "description": "OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "RELIANCE"
+            },
+            "required": true,
+            "name": "symbol",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1D",
+                "1W",
+                "1M",
+                "3M",
+                "1Y"
+              ],
+              "description": "Chart timeframe.",
+              "example": "1M"
+            },
+            "required": false,
+            "description": "Chart timeframe.",
+            "name": "tf",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OHLCV candles, oldest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "timestamp": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "openPaise": {
+                            "type": "integer"
+                          },
+                          "highPaise": {
+                            "type": "integer"
+                          },
+                          "lowPaise": {
+                            "type": "integer"
+                          },
+                          "closePaise": {
+                            "type": "integer"
+                          },
+                          "volume": {
+                            "type": "integer",
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "timestamp",
+                          "openPaise",
+                          "highPaise",
+                          "lowPaise",
+                          "closePaise",
+                          "volume"
+                        ]
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid timeframe",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid tf - must be one of 1D, 1W, 1M, 3M, 1Y"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active instrument with this symbol",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No instrument with this symbol"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/market-status": {
+      "get": {
+        "summary": "Get market status and this learner's trading-unlock progress (TR-01/34/57)",
+        "description": "Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current market status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "marketOpen": {
+                          "type": "boolean",
+                          "description": "Whether NSE regular trading hours (09:15-15:30 IST, Mon-Fri, minus market_holidays) apply right now."
+                        },
+                        "feedMode": {
+                          "type": "string",
+                          "enum": [
+                            "live",
+                            "delayed_15m",
+                            "paused"
+                          ],
+                          "example": "live"
+                        },
+                        "globalHalt": {
+                          "type": "boolean",
+                          "description": "Ops console global halt - true means the order pad rejects every new order."
+                        },
+                        "tradingUnlocked": {
+                          "type": "boolean",
+                          "description": "Whether this learner has passed the Boss Quiz at the configured unlock position (D25)."
+                        },
+                        "worldsToGo": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "0 once unlocked. Otherwise how many more worlds' Boss Quizzes this learner needs to pass.",
+                          "example": 2
+                        }
+                      },
+                      "required": [
+                        "marketOpen",
+                        "feedMode",
+                        "globalHalt",
+                        "tradingUnlocked",
+                        "worldsToGo"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/relay/config": {
+      "get": {
+        "summary": "Get the market relay's config (market relay only, X-Relay-Secret)",
+        "description": "Called only by finlamma-market-relay (a separate repo, docs/ARCHITECTURE.md) - never the mobile app or the admin dashboard. Authenticated by an X-Relay-Secret header, compared against RELAY_SHARED_SECRET in constant time (src/lib/relay-auth.ts), never a Clerk session. Returns which instruments to track, the Ops console's feed mode and halt state, and the NSE holiday calendar, so the relay knows what to poll/stream and when to skip it. See docs/ARCHITECTURE.md D40 for the full Redis price-key contract this endpoint feeds into.",
+        "tags": [
+          "Relay"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Shared secret, compared in constant time."
+            },
+            "required": true,
+            "description": "Shared secret, compared in constant time.",
+            "name": "X-Relay-Secret",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The relay's current config",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelayConfigResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or incorrect X-Relay-Secret - no further detail is ever given",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Unauthorized"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "RELAY_SHARED_SECRET is not configured on this deployment",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Relay authentication is not configured"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/orders": {
+      "post": {
+        "summary": "Place an order (TR-30)",
+        "description": "MARKET or LIMIT, BUY or SELL, whole shares only. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`), never a second order; reusing the key with a different request is rejected. The execution price always comes from the market relay's live tick in Redis, never a client-sent price (CLAUDE.md, trading-rules skill) - see docs/ARCHITECTURE.md D40/D41 for the full pricing and rejection-reason design. A LIMIT order that isn't immediately marketable is queued (`status: \"open\"`) rather than filled - Checkpoint 6's matching job fills it later, or cancels it at day end if the market closes first.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per order attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per order attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "symbol": "RELIANCE",
+                "side": "buy",
+                "type": "market",
+                "qty": 1
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "symbol": {
+                    "type": "string",
+                    "pattern": "^[A-Z][A-Z0-9]*$"
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "buy",
+                      "sell"
+                    ]
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "market",
+                      "limit"
+                    ]
+                  },
+                  "qty": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 100000
+                  },
+                  "limitPricePaise": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "symbol",
+                  "side",
+                  "type",
+                  "qty"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The order (filled, queued as open, or replayed from an identical earlier request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a missing Idempotency-Key header",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Idempotency-Key header is required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet for this learner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active instrument with this symbol",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No instrument with this symbol"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order can't be placed right now - MARKET_CLOSED, MARKET_HALTED, SYMBOL_HALTED, MARKET_PAUSED, PRICE_STALE, PRICE_UNAVAILABLE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "INSUFFICIENT_MARGIN",
+                    "message": "Not enough V Money for this order",
+                    "details": {
+                      "balancePaise": 10000,
+                      "requiredPaise": 28451000
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many order attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/portfolio/summary": {
+      "get": {
+        "summary": "Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)",
+        "description": "Cash balance, current holdings market value, all-time trading P&L (realized + unrealized, never compared against a fixed starting deposit - V Money is earned from many non-trading sources) and up to 12 equity-curve points built by replaying every fill chronologically.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's portfolio summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "cashBalancePaise": {
+                          "type": "integer",
+                          "description": "V Money balance, in paise. Same source as GET /me/wallet - summed live from vmoney_ledger.",
+                          "example": 84000
+                        },
+                        "holdingsMarketValuePaise": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Current holdings valued at the latest available quote (0 for any symbol with no quote right now).",
+                          "example": 24420
+                        },
+                        "totalValuePaise": {
+                          "type": "integer",
+                          "description": "cashBalancePaise + holdingsMarketValuePaise.",
+                          "example": 108420
+                        },
+                        "allTimePnlPaise": {
+                          "type": "integer",
+                          "description": "Realized P&L from every closed (SELL) trade ever, plus unrealized P&L on current holdings.",
+                          "example": 8420
+                        },
+                        "allTimePnlPct": {
+                          "type": "number",
+                          "description": "allTimePnlPaise as a percentage of total paise ever spent on BUY fills. 0 if nothing has ever been bought.",
+                          "example": 8.4
+                        },
+                        "equityBarsPaise": {
+                          "type": "array",
+                          "items": {
+                            "type": "integer"
+                          },
+                          "maxItems": 12,
+                          "description": "Up to 12 points sampled from a chronological replay of every fill (a trading equity curve, not a literal daily mark-to-market - there's no historical daily-price table yet). Empty if nothing has ever filled.",
+                          "example": [
+                            34000,
+                            41000,
+                            46000,
+                            58000,
+                            71000,
+                            66000,
+                            80000,
+                            92000,
+                            88000,
+                            95000,
+                            101000,
+                            108420
+                          ]
+                        }
+                      },
+                      "required": [
+                        "cashBalancePaise",
+                        "holdingsMarketValuePaise",
+                        "totalValuePaise",
+                        "allTimePnlPaise",
+                        "allTimePnlPct",
+                        "equityBarsPaise"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/portfolio/stats": {
+      "get": {
+        "summary": "Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)",
+        "description": "Realized P&L, win rate, average hold time and best/worst trade, all derived from closed (SELL) fills. Does not include a \"coins earned from trading\" figure - placing a trade never pays XP/V Money in this app's economy, only lessons/badges/streaks/rewards do.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's trading stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalClosedTrades": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 42
+                        },
+                        "realizedPnlPaise": {
+                          "type": "integer",
+                          "description": "Sum of realizedPnlPaise across every closed (SELL) trade ever.",
+                          "example": 624000
+                        },
+                        "winCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 26
+                        },
+                        "lossCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 16
+                        },
+                        "winRatePct": {
+                          "type": "number",
+                          "description": "winCount / totalClosedTrades * 100. 0 if there are no closed trades yet.",
+                          "example": 61.9
+                        },
+                        "avgHoldDays": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "description": "Average days between a position's open and a SELL that closed it. null if there are no closed trades yet.",
+                          "example": 3.4
+                        },
+                        "bestTrade": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "symbol": {
+                              "type": "string",
+                              "example": "ZOMATO"
+                            },
+                            "realizedPnlPaise": {
+                              "type": "integer",
+                              "example": 72000
+                            },
+                            "filledAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "example": "2026-08-14T10:12:00.000Z"
+                            }
+                          },
+                          "required": [
+                            "symbol",
+                            "realizedPnlPaise",
+                            "filledAt"
+                          ]
+                        },
+                        "worstTrade": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "symbol": {
+                              "type": "string",
+                              "example": "ZOMATO"
+                            },
+                            "realizedPnlPaise": {
+                              "type": "integer",
+                              "example": 72000
+                            },
+                            "filledAt": {
+                              "type": "string",
+                              "format": "date-time",
+                              "example": "2026-08-14T10:12:00.000Z"
+                            }
+                          },
+                          "required": [
+                            "symbol",
+                            "realizedPnlPaise",
+                            "filledAt"
+                          ]
+                        },
+                        "openPositionsCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Current holdings with qty > 0.",
+                          "example": 4
+                        }
+                      },
+                      "required": [
+                        "totalClosedTrades",
+                        "realizedPnlPaise",
+                        "winCount",
+                        "lossCount",
+                        "winRatePct",
+                        "avgHoldDays",
+                        "bestTrade",
+                        "worstTrade",
+                        "openPositionsCount"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/portfolio/trades": {
+      "get": {
+        "summary": "Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)",
+        "description": "`open` rows are current holdings (a snapshot, not a log); `closed` rows are past SELL fills with their realized P&L. `cursor` only ever pages through CLOSED trades - open positions are always returned in full on the first page (no cursor given) and omitted from every later page, so they're never duplicated across pages.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "open",
+                "closed"
+              ],
+              "example": "all"
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's trade history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "open"
+                                ]
+                              },
+                              "symbol": {
+                                "type": "string",
+                                "example": "HDFCBANK"
+                              },
+                              "exchange": {
+                                "type": "string",
+                                "example": "NSE"
+                              },
+                              "qty": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 6
+                              },
+                              "avgPricePaise": {
+                                "type": "integer",
+                                "example": 161200
+                              },
+                              "livePricePaise": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "description": "null if no quote is available right now.",
+                                "example": 166100
+                              },
+                              "unrealizedPnlPaise": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 29400
+                              },
+                              "unrealizedPnlPct": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ],
+                                "example": 3
+                              },
+                              "positionOpenedAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "example": "2026-09-02T04:00:00.000Z"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "symbol",
+                              "exchange",
+                              "qty",
+                              "avgPricePaise",
+                              "livePricePaise",
+                              "unrealizedPnlPaise",
+                              "unrealizedPnlPct",
+                              "positionOpenedAt"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "closed"
+                                ]
+                              },
+                              "symbol": {
+                                "type": "string",
+                                "example": "TATAMOTORS"
+                              },
+                              "exchange": {
+                                "type": "string",
+                                "example": "NSE"
+                              },
+                              "qty": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 12
+                              },
+                              "entryPricePaise": {
+                                "type": "integer",
+                                "example": 74200
+                              },
+                              "exitPricePaise": {
+                                "type": "integer",
+                                "example": 80100
+                              },
+                              "realizedPnlPaise": {
+                                "type": "integer",
+                                "example": 70800
+                              },
+                              "realizedPnlPct": {
+                                "type": "number",
+                                "example": 7.95
+                              },
+                              "holdDays": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 4
+                              },
+                              "filledAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "example": "2026-09-10T09:20:00.000Z"
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "symbol",
+                              "exchange",
+                              "qty",
+                              "entryPricePaise",
+                              "exitPricePaise",
+                              "realizedPnlPaise",
+                              "realizedPnlPct",
+                              "holdDays",
+                              "filledAt"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status, limit or cursor",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid cursor"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds": {
+      "get": {
+        "summary": "List active mutual funds with their latest NAV (Explore mode, TR-35/38)",
+        "description": "Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active funds with their latest NAV",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string",
+                            "example": "Finlamma Nifty 50 Index Fund"
+                          },
+                          "category": {
+                            "type": "string",
+                            "enum": [
+                              "index",
+                              "equity",
+                              "hybrid",
+                              "debt",
+                              "elss"
+                            ]
+                          },
+                          "risk": {
+                            "type": "string",
+                            "enum": [
+                              "very_low",
+                              "low",
+                              "moderate",
+                              "high",
+                              "very_high"
+                            ]
+                          },
+                          "description": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "expenseRatioBps": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Illustrative, typical-for-this-fund-type expense ratio in basis points (100 = 1%) - not a real scheme's own filed rate.",
+                            "example": 20
+                          },
+                          "minLumpSumPaise": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "example": 10000
+                          },
+                          "minSipPaise": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "example": 10000
+                          },
+                          "latestNav": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "navPaise": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 1629607
+                              },
+                              "date": {
+                                "type": "string",
+                                "example": "2026-09-25"
+                              }
+                            },
+                            "required": [
+                              "navPaise",
+                              "date"
+                            ],
+                            "description": "null if this fund has never been ingested yet."
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "category",
+                          "risk",
+                          "description",
+                          "expenseRatioBps",
+                          "minLumpSumPaise",
+                          "minSipPaise",
+                          "latestNav"
+                        ]
+                      }
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/{id}": {
+      "get": {
+        "summary": "Get one fund's detail with its latest NAV (TR-39)",
+        "description": "Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The fund's detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "Finlamma Nifty 50 Index Fund"
+                        },
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "index",
+                            "equity",
+                            "hybrid",
+                            "debt",
+                            "elss"
+                          ]
+                        },
+                        "risk": {
+                          "type": "string",
+                          "enum": [
+                            "very_low",
+                            "low",
+                            "moderate",
+                            "high",
+                            "very_high"
+                          ]
+                        },
+                        "description": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "expenseRatioBps": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Illustrative, typical-for-this-fund-type expense ratio in basis points (100 = 1%) - not a real scheme's own filed rate.",
+                          "example": 20
+                        },
+                        "minLumpSumPaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 10000
+                        },
+                        "minSipPaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 10000
+                        },
+                        "latestNav": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "navPaise": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "example": 1629607
+                            },
+                            "date": {
+                              "type": "string",
+                              "example": "2026-09-25"
+                            }
+                          },
+                          "required": [
+                            "navPaise",
+                            "date"
+                          ],
+                          "description": "null if this fund has never been ingested yet."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "category",
+                        "risk",
+                        "description",
+                        "expenseRatioBps",
+                        "minLumpSumPaise",
+                        "minSipPaise",
+                        "latestNav"
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active fund with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/orders": {
+      "post": {
+        "summary": "Buy (lump sum) or sell (redeem) fund units",
+        "description": "BUY takes an amountPaise (₹ to invest) and units are derived from the latest ingested NAV; SELL takes a unitsMilli count to redeem. Requires an Idempotency-Key header - retrying the exact same request with the same key returns the original result (`replayed: true`). Always executes against the most recently ingested NAV, never a client-sent price - the response always shows which NAV date/value was used, no hidden pricing (docs/ARCHITECTURE.md D45/D46).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per order attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per order attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "fundId": "00000000-0000-0000-0000-000000000000",
+                "side": "buy",
+                "amountPaise": 10000
+              },
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "fundId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "buy"
+                        ]
+                      },
+                      "amountPaise": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000000
+                      }
+                    },
+                    "required": [
+                      "fundId",
+                      "side",
+                      "amountPaise"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "fundId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "sell"
+                        ]
+                      },
+                      "unitsMilli": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000000
+                      }
+                    },
+                    "required": [
+                      "fundId",
+                      "side",
+                      "unitsMilli"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The fund order (filled, or replayed from an identical earlier request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaceFundOrderResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, a missing Idempotency-Key header, or below the fund's minimum lump sum",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Idempotency-Key header is required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet for this learner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active fund with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order can't be placed right now - NAV_UNAVAILABLE, NAV_STALE, INSUFFICIENT_MARGIN, INSUFFICIENT_HOLDINGS, or IDEMPOTENCY_REPLAY (the same key was reused for a different request)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "INSUFFICIENT_MARGIN",
+                    "message": "Not enough V Money for this investment",
+                    "details": {
+                      "balancePaise": 5000,
+                      "requiredPaise": 10000
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many order attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/sip": {
+      "get": {
+        "summary": "List my SIP plans, including recent execution history (TR-37)",
+        "description": "Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46).",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's SIP plans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SipPlanListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new SIP plan",
+        "description": "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "fundId": "00000000-0000-0000-0000-000000000000",
+                "amountPaise": 10000,
+                "dayOfMonth": 5
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fundId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "amountPaise": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 1000000000
+                  },
+                  "dayOfMonth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 28
+                  }
+                },
+                "required": [
+                  "fundId",
+                  "amountPaise",
+                  "dayOfMonth"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The newly created SIP plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SipPlanResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or below the fund's minimum SIP amount",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Minimum SIP amount for this fund is 10000 paise"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet for this learner",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active fund with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many SIP setup attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many SIP setup attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/sip/{id}": {
+      "patch": {
+        "summary": "Pause, resume or cancel a SIP plan",
+        "description": "Pause is reversible (a paused month is silently skipped, not recorded as a failure - the learner chose it). Cancel is terminal - a cancelled plan can never be resumed, only replaced with a new one.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "action": "pause"
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "pause",
+                      "resume",
+                      "cancel"
+                    ]
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated SIP plan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SipPlanResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No SIP plan with this id owned by the caller",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No SIP plan with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The requested action doesn't apply to the plan's current status (e.g. pausing an already-cancelled plan)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Cannot pause a SIP plan that is currently \"cancelled\""
                   }
                 },
                 "schema": {

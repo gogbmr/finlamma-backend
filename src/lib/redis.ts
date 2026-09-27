@@ -18,6 +18,28 @@ function getRedisClient(): Redis | null {
   return new Redis({ url: env.UPSTASH_REDIS_REST_URL, token: env.UPSTASH_REDIS_REST_TOKEN });
 }
 
+// Generic raw read, used by src/server/trading/relay-price.ts to read the
+// relay's live tick (`px:<SYMBOL>:NSE`, docs/ARCHITECTURE.md D40) - a plain
+// pass-through with no caching/TTL logic of its own (unlike
+// getOrSetJsonCache below), since this key's freshness/staleness is
+// exactly what the trading domain needs to judge itself, not something
+// this generic helper should paper over. Returns null on both "key
+// doesn't exist" and "Redis unreachable/unconfigured" - the caller can't
+// tell those apart from this function alone, which is intentional: for a
+// money-moving read, both cases must be treated identically (refuse the
+// order), so collapsing them here removes a branch a caller could get
+// wrong.
+export async function getRedisJsonValue<T>(key: string): Promise<T | null> {
+  const redis = getRedisClient();
+  if (!redis) return null;
+  try {
+    return await redis.get<T>(key);
+  } catch (err) {
+    logInternalError("redis.get_failed", err);
+    return null;
+  }
+}
+
 export type RateLimitWindow = `${number} ms` | `${number} s` | `${number} m` | `${number} h` | `${number} d`;
 
 export type RateLimitConfig = {
@@ -120,3 +142,58 @@ export const REWARD_CLAIM_RATE_LIMIT: RateLimitConfig = {
   window: "60 s",
   prefix: "ratelimit:reward-claim",
 };
+
+// Post-Checkpoint-9 security audit (docs/ARCHITECTURE.md D49 area): stock
+// and fund order placement are money-spending endpoints with no prior rate
+// limit at all - always failOpen: false, same reasoning as
+// REWARD_CLAIM_RATE_LIMIT. 20 requests/60s per user is generous for
+// legitimate active trading (reacting to a fast-moving price, placing a few
+// orders in quick succession) while still stopping a scripted loop from
+// spamming the order book or hammering the relay price lookup.
+export const TRADE_ORDER_RATE_LIMIT: RateLimitConfig = {
+  requests: 20,
+  window: "60 s",
+  prefix: "ratelimit:trade-order",
+};
+
+// SIP *creation* only (POST /trade/funds/sip) - a learner sets up a handful
+// of recurring plans, ever, not a tight per-second budget like order
+// placement. Pausing/resuming/cancelling an existing plan isn't
+// money-moving (no ledger write) so it isn't rate-limited here.
+export const SIP_CREATE_RATE_LIMIT: RateLimitConfig = {
+  requests: 10,
+  window: "60 s",
+  prefix: "ratelimit:sip-create",
+};
+
+// Generic read-through JSON cache, used by src/server/market/cache.ts to
+// avoid calling the market-data vendor (rate-limited, credit-metered) on
+// every request. Always fails OPEN like the rate limiter above - a cache is
+// a performance optimization, not a safety control, so an unconfigured or
+// unreachable Redis must never block a quote/candle request, only make it
+// slower (falls through to calling `compute` directly every time).
+export async function getOrSetJsonCache<T>(
+  key: string,
+  ttlSeconds: number,
+  compute: () => Promise<T>,
+): Promise<T> {
+  const redis = getRedisClient();
+  if (!redis) return compute();
+
+  try {
+    const cached = await redis.get<T>(key);
+    if (cached !== null && cached !== undefined) return cached;
+  } catch (err) {
+    logInternalError("redis.cache_read_failed", err);
+  }
+
+  const value = await compute();
+
+  try {
+    await redis.set(key, value, { ex: ttlSeconds });
+  } catch (err) {
+    logInternalError("redis.cache_write_failed", err);
+  }
+
+  return value;
+}

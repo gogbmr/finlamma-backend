@@ -80,7 +80,7 @@ describe("reward_rules", () => {
 });
 
 describe("creditLessonCompletionRow", () => {
-  it("credits both XP and VM for a new (user, lesson) source", async () => {
+  it("credits both XP and VM (in paise) for a new (user, lesson) source", async () => {
     const user = await makeUser();
     const lessonId = randomUUID();
     const shared = {
@@ -93,11 +93,11 @@ describe("creditLessonCompletionRow", () => {
 
     const { xpRow, vmRow } = await creditLessonCompletionRow(
       { ...shared, amount: 20 },
-      { ...shared, amount: 30, multiplierApplied: 1 },
+      { ...shared, amountPaise: 3000, multiplierApplied: 1 },
     );
 
     expect(xpRow?.amount).toBe(20);
-    expect(vmRow?.amount).toBe(30);
+    expect(vmRow?.amountPaise).toBe(3000);
   });
 
   it("no-ops (returns null rows) on a repeat credit for the same (user, lesson)", async () => {
@@ -113,14 +113,14 @@ describe("creditLessonCompletionRow", () => {
 
     const first = await creditLessonCompletionRow(
       { ...shared, amount: 20 },
-      { ...shared, amount: 30, multiplierApplied: 1 },
+      { ...shared, amountPaise: 3000, multiplierApplied: 1 },
     );
     expect(first.xpRow).not.toBeNull();
     expect(first.vmRow).not.toBeNull();
 
     const second = await creditLessonCompletionRow(
       { ...shared, amount: 20 },
-      { ...shared, amount: 30, multiplierApplied: 1 },
+      { ...shared, amountPaise: 3000, multiplierApplied: 1 },
     );
     expect(second.xpRow).toBeNull();
     expect(second.vmRow).toBeNull();
@@ -134,11 +134,11 @@ describe("creditLessonCompletionRow", () => {
 
     const a = await creditLessonCompletionRow(
       { ...base, sourceId: lessonA, amount: 20 },
-      { ...base, sourceId: lessonA, amount: 30, multiplierApplied: 1 },
+      { ...base, sourceId: lessonA, amountPaise: 3000, multiplierApplied: 1 },
     );
     const b = await creditLessonCompletionRow(
       { ...base, sourceId: lessonB, amount: 20 },
-      { ...base, sourceId: lessonB, amount: 30, multiplierApplied: 1 },
+      { ...base, sourceId: lessonB, amountPaise: 3000, multiplierApplied: 1 },
     );
 
     expect(a.xpRow).not.toBeNull();
@@ -153,11 +153,11 @@ describe("creditLessonCompletionRow", () => {
 
     const a = await creditLessonCompletionRow(
       { ...base, userId: userA.id, amount: 20 },
-      { ...base, userId: userA.id, amount: 30, multiplierApplied: 1 },
+      { ...base, userId: userA.id, amountPaise: 3000, multiplierApplied: 1 },
     );
     const b = await creditLessonCompletionRow(
       { ...base, userId: userB.id, amount: 20 },
-      { ...base, userId: userB.id, amount: 30, multiplierApplied: 1 },
+      { ...base, userId: userB.id, amountPaise: 3000, multiplierApplied: 1 },
     );
 
     expect(a.xpRow).not.toBeNull();
@@ -176,7 +176,7 @@ describe("creditLessonCompletionRow", () => {
     };
     const credited = await creditLessonCompletionRow(
       { ...shared, amount: 20 },
-      { ...shared, amount: 30, multiplierApplied: 1 },
+      { ...shared, amountPaise: 3000, multiplierApplied: 1 },
     );
     expect(credited.xpRow).not.toBeNull();
 
@@ -188,10 +188,10 @@ describe("creditLessonCompletionRow", () => {
     };
     const reversed = await creditLessonCompletionRow(
       { ...reversal, sourceId: credited.xpRow!.id, amount: -20 },
-      { ...reversal, sourceId: credited.vmRow!.id, amount: -30, multiplierApplied: 1 },
+      { ...reversal, sourceId: credited.vmRow!.id, amountPaise: -3000, multiplierApplied: 1 },
     );
     expect(reversed.xpRow?.amount).toBe(-20);
-    expect(reversed.vmRow?.amount).toBe(-30);
+    expect(reversed.vmRow?.amountPaise).toBe(-3000);
   });
 });
 
@@ -206,7 +206,7 @@ describe("ledger sums (WH-03/WH-04 stat endpoints)", () => {
     expect(await sumVmoneySpentSince(user.id, new Date("2000-01-01"))).toBe(0);
   });
 
-  it("sums total XP and VM balance across multiple rows for one user, ignoring other users", async () => {
+  it("sums total XP and VM balance (paise) across multiple rows for one user, ignoring other users", async () => {
     const user = await makeUser();
     const other = await makeUser();
     await db.insert(xpEvents).values([
@@ -215,20 +215,20 @@ describe("ledger sums (WH-03/WH-04 stat endpoints)", () => {
       { userId: other.id, amount: 999, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
     ]);
     await db.insert(vmoneyLedger).values([
-      { userId: user.id, amount: 30, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
-      { userId: user.id, amount: 45, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
-      { userId: other.id, amount: 999, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amountPaise: 3000, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amountPaise: 4500, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: other.id, amountPaise: 99900, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
     ]);
 
     expect(await sumXpTotal(user.id)).toBe(50);
-    expect(await sumVmoneyBalance(user.id)).toBe(75);
+    expect(await sumVmoneyBalance(user.id)).toBe(7500);
   });
 
   it("a reversal (negative amount) nets out of the balance, never deletes or mutates the original row", async () => {
     const user = await makeUser();
     await db.insert(vmoneyLedger).values([
-      { userId: user.id, amount: 30, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
-      { userId: user.id, amount: -30, sourceType: "reversal", sourceId: randomUUID(), reason: "reversed" },
+      { userId: user.id, amountPaise: 3000, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amountPaise: -3000, sourceType: "reversal", sourceId: randomUUID(), reason: "reversed" },
     ]);
 
     expect(await sumVmoneyBalance(user.id)).toBe(0);
@@ -264,13 +264,13 @@ describe("ledger sums (WH-03/WH-04 stat endpoints)", () => {
     const user = await makeUser();
     const cutoff = new Date("2026-01-01T00:00:00.000Z");
     await db.insert(vmoneyLedger).values([
-      { userId: user.id, amount: 100, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "earn" },
-      { userId: user.id, amount: 40, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "earn" },
-      { userId: user.id, amount: -25, sourceType: "reversal", sourceId: randomUUID(), reason: "spend" },
+      { userId: user.id, amountPaise: 10000, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "earn" },
+      { userId: user.id, amountPaise: 4000, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "earn" },
+      { userId: user.id, amountPaise: -2500, sourceType: "reversal", sourceId: randomUUID(), reason: "spend" },
     ]);
 
-    expect(await sumVmoneyEarnedSince(user.id, cutoff)).toBe(140);
-    expect(await sumVmoneySpentSince(user.id, cutoff)).toBe(25); // reported as a positive magnitude
+    expect(await sumVmoneyEarnedSince(user.id, cutoff)).toBe(14000);
+    expect(await sumVmoneySpentSince(user.id, cutoff)).toBe(2500); // reported as a positive magnitude
   });
 });
 
@@ -283,7 +283,7 @@ describe("creditVmoneyRow", () => {
       sourceId: randomUUID(),
       ruleId: null,
       reason: "Badge unlocked",
-      amount: 100,
+      amountPaise: 10000,
       multiplierApplied: 2,
     };
 
@@ -292,14 +292,71 @@ describe("creditVmoneyRow", () => {
 
     expect(first).not.toBeNull();
     expect(second).toBeNull();
-    expect(await sumVmoneyBalance(user.id)).toBe(100);
+    expect(await sumVmoneyBalance(user.id)).toBe(10000);
+  });
+});
+
+// D37 (docs/ARCHITECTURE.md): the whole reason the ledger moved to exact
+// paise - a BUY debit and a SELL credit for the same qty at an unchanged
+// price must net to EXACTLY zero, with no rounding drift either way.
+// Rounding "in the learner's favour on both sides" was considered and
+// rejected precisely because it fails this test: it would let a round trip
+// mint free V Money every time. The price/qty below are chosen so the trade
+// value (₹1,388.70) is NOT a whole-VM amount, proving the ledger handles
+// genuinely fractional-VM-scale values exactly, not just round hundreds.
+describe("paise exactness - buy/sell round trip", () => {
+  it("nets to exactly zero for a BUY then a SELL of the same qty at an unchanged price", async () => {
+    const user = await makeUser();
+    await creditVmoneyRow({
+      userId: user.id,
+      sourceType: "lesson_completion",
+      sourceId: randomUUID(),
+      ruleId: null,
+      reason: "starting capital",
+      amountPaise: 500_000, // ₹5,000 starting balance
+      multiplierApplied: 1,
+    });
+    const balanceBeforeTrading = await sumVmoneyBalance(user.id);
+
+    const qty = 3;
+    const pricePaise = 46_290; // ₹462.90/share - deliberately not a multiple of 100
+    const tradeValuePaise = qty * pricePaise; // 138,870 - not a whole VM amount either
+
+    const buyOrderId = randomUUID();
+    const sellOrderId = randomUUID();
+    await creditVmoneyRow({
+      userId: user.id,
+      sourceType: "trade",
+      sourceId: buyOrderId,
+      ruleId: null,
+      reason: "BUY 3 @ 462.90",
+      amountPaise: -tradeValuePaise,
+      multiplierApplied: 1,
+    });
+    await creditVmoneyRow({
+      userId: user.id,
+      sourceType: "trade",
+      sourceId: sellOrderId,
+      ruleId: null,
+      reason: "SELL 3 @ 462.90",
+      amountPaise: tradeValuePaise,
+      multiplierApplied: 1,
+    });
+
+    expect(await sumVmoneyBalance(user.id)).toBe(balanceBeforeTrading);
   });
 });
 
 describe("sumVmoneyBalanceTx", () => {
   it("reads the same live balance as sumVmoneyBalance, from inside a transaction", async () => {
     const user = await makeUser();
-    await db.insert(vmoneyLedger).values({ userId: user.id, amount: 250, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" });
+    await db.insert(vmoneyLedger).values({
+      userId: user.id,
+      amountPaise: 25000,
+      sourceType: "lesson_completion",
+      sourceId: randomUUID(),
+      reason: "x",
+    });
 
     await db.transaction(async (tx) => {
       // sumVmoneyBalanceTx's DbOrTx type is derived from the real
@@ -310,7 +367,7 @@ describe("sumVmoneyBalanceTx", () => {
       // concern - this file already replaces @/db/client with a PGlite
       // instance for the whole test run (createTestDb(), see the vi.mock
       // above).
-      expect(await sumVmoneyBalanceTx(tx as never, user.id)).toBe(250);
+      expect(await sumVmoneyBalanceTx(tx as never, user.id)).toBe(25000);
     });
   });
 });
@@ -320,27 +377,27 @@ describe("sumVmoneyEarnedSinceBySource", () => {
     const user = await makeUser();
     const cutoff = new Date("2026-01-01T00:00:00.000Z");
     await db.insert(vmoneyLedger).values([
-      { userId: user.id, amount: 100, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
-      { userId: user.id, amount: 50, sourceType: "badge_unlock", sourceId: randomUUID(), reason: "x" },
-      { userId: user.id, amount: -30, sourceType: "reward_claim", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amountPaise: 10000, sourceType: "lesson_completion", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amountPaise: 5000, sourceType: "badge_unlock", sourceId: randomUUID(), reason: "x" },
+      { userId: user.id, amountPaise: -3000, sourceType: "reward_claim", sourceId: randomUUID(), reason: "x" },
     ]);
 
     const breakdown = await sumVmoneyEarnedSinceBySource(user.id, cutoff);
 
     expect(breakdown.sort((a, b) => a.sourceType.localeCompare(b.sourceType))).toEqual([
-      { sourceType: "badge_unlock", amount: 50 },
-      { sourceType: "lesson_completion", amount: 100 },
+      { sourceType: "badge_unlock", amountPaise: 5000 },
+      { sourceType: "lesson_completion", amountPaise: 10000 },
     ]);
   });
 });
 
 describe("listVmoneyLedgerForUser", () => {
-  it("paginates newest-first with a stable cursor", async () => {
+  it("paginates newest-first with a stable cursor, exposing amountPaise (never the deprecated amount column)", async () => {
     const user = await makeUser();
     for (let i = 0; i < 3; i++) {
       await db.insert(vmoneyLedger).values({
         userId: user.id,
-        amount: 10,
+        amountPaise: 1000,
         sourceType: "lesson_completion",
         sourceId: randomUUID(),
         reason: `entry ${i}`,
@@ -351,6 +408,8 @@ describe("listVmoneyLedgerForUser", () => {
     const page1 = await listVmoneyLedgerForUser(user.id, { limit: 2, cursor: null });
     expect(page1.data).toHaveLength(2);
     expect(page1.data[0]!.reason).toBe("entry 2");
+    expect(page1.data[0]!.amountPaise).toBe(1000);
+    expect(page1.data[0]).not.toHaveProperty("amount");
     expect(page1.nextCursor).not.toBeNull();
 
     const cursor = JSON.parse(Buffer.from(page1.nextCursor!, "base64url").toString("utf8"));

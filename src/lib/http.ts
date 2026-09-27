@@ -14,6 +14,15 @@ export function okList<T>(data: T[], nextCursor: string | null) {
   return NextResponse.json({ data, nextCursor }, { status: 200 });
 }
 
+// Same shape as ok(), plus a top-level `disclaimer` string - used by
+// src/server/market's endpoints (TR-56, CLAUDE.md's "never investment
+// advice" rule) so every response carrying real prices/fundamentals also
+// carries the disclaimer text, server-driven rather than hardcoded client
+// copy that can't be updated without an app release.
+export function okWithDisclaimer<T>(data: T, disclaimer: string) {
+  return NextResponse.json({ data, disclaimer }, { status: 200 });
+}
+
 export function fail(error: AppError) {
   return NextResponse.json(
     {

@@ -35,6 +35,15 @@ export const VmIssuanceMultiplierSchema = z
 // 5,000).
 export const MAX_REWARD_AMOUNT = 5000;
 
+// D37 (docs/ARCHITECTURE.md): every admin-authored "how many VM" figure
+// (reward_rules.defaultVm, rewards.priceVm, badges.vmReward, ...) stays
+// whole VM, unchanged - this is the one conversion factor used at the exact
+// moment one of those becomes a vmoney_ledger row (which is paise-scaled,
+// pegged 1:1 with rupees: 100 = 1 V Money). Never used for trading, which
+// computes exact paise directly from real prices and needs no conversion at
+// all - that's the whole point of the migration.
+export const VM_TO_LEDGER_PAISE = 100;
+
 export const RewardRuleUpdateSchema = z.object({
   defaultXp: z.number().int().nonnegative().max(MAX_REWARD_AMOUNT),
   defaultVm: z.number().int().nonnegative().max(MAX_REWARD_AMOUNT),
@@ -42,37 +51,44 @@ export const RewardRuleUpdateSchema = z.object({
 });
 export type RewardRuleUpdateInput = z.infer<typeof RewardRuleUpdateSchema>;
 
-// WH-03's V Money tile. `balance` is always summed live from vmoney_ledger
-// (CLAUDE.md rule 2 - never a stored balance column). There's no spend path
-// yet in this phase (trading is Phase 4+), so weeklySpent reads 0 for every
-// learner today; "earned-from-trade" (also part of WH-03's FEATURE_MAP row)
-// is omitted entirely until trading exists to produce it, same reasoning as
-// deferring percentile/rank to Phase 6.
+// WH-03's V Money tile. `balancePaise` is always summed live from
+// vmoney_ledger (CLAUDE.md rule 2 - never a stored balance column). V Money
+// is pegged 1:1 with rupees and stored in the ledger as exact paise (D37,
+// docs/ARCHITECTURE.md) - every amount here is paise (100 = 1 V Money); the
+// app owns converting to a display value, the backend never rounds. There's
+// no spend path yet in this phase (trading is Phase 4+), so weeklySpentPaise
+// reads 0 for every learner today; "earned-from-trade" (also part of WH-03's
+// FEATURE_MAP row) is omitted entirely until trading exists to produce it,
+// same reasoning as deferring percentile/rank to Phase 6.
 export const VmoneyStatsResponseSchema = z.object({
   data: z.object({
-    balance: z.number().int().openapi({ example: 210 }),
-    weeklyEarned: z.number().int().nonnegative().openapi({
-      description: "V Money earned in the trailing 7 days.",
-      example: 90,
+    balancePaise: z.number().int().openapi({
+      description: "V Money balance, in paise (100 = 1 V Money). Never rounded by the backend.",
+      example: 21000,
     }),
-    weeklySpent: z.number().int().nonnegative().openapi({
-      description: "V Money spent in the trailing 7 days. Always 0 until a spend path exists.",
+    weeklyEarnedPaise: z.number().int().nonnegative().openapi({
+      description: "V Money earned in the trailing 7 days, in paise.",
+      example: 9000,
+    }),
+    weeklySpentPaise: z.number().int().nonnegative().openapi({
+      description: "V Money spent in the trailing 7 days, in paise. Always 0 until a spend path exists.",
       example: 0,
     }),
   }),
 });
 
 // PR-21 (Profile - Wallet): a monthly-scoped view distinct from WH-03's
-// weekly tile above, plus an earn-source breakdown.
+// weekly tile above, plus an earn-source breakdown. All amounts in paise -
+// see VmoneyStatsResponseSchema's comment.
 export const WalletResponseSchema = z.object({
   data: z.object({
-    balance: z.number().int().openapi({ example: 1250 }),
-    earnedThisMonth: z.number().int().nonnegative().openapi({ example: 300 }),
+    balancePaise: z.number().int().openapi({ example: 125000 }),
+    earnedThisMonthPaise: z.number().int().nonnegative().openapi({ example: 30000 }),
     earnedBySource: z
       .array(
         z.object({
           sourceType: z.string().openapi({ example: "lesson_completion" }),
-          amount: z.number().int().nonnegative().openapi({ example: 300 }),
+          amountPaise: z.number().int().nonnegative().openapi({ example: 30000 }),
         }),
       )
       .openapi({
@@ -83,7 +99,10 @@ export const WalletResponseSchema = z.object({
 
 const VmoneyLedgerEntrySchema = z.object({
   id: z.uuid(),
-  amount: z.number().int().openapi({ example: -500, description: "Positive = earned, negative = spent." }),
+  amountPaise: z.number().int().openapi({
+    example: -50000,
+    description: "Positive = earned, negative = spent. In paise (100 = 1 V Money).",
+  }),
   sourceType: z.string().openapi({ example: "reward_claim" }),
   reason: z.string().openapi({ example: "Reward claimed" }),
   createdAt: z.string().datetime(),

@@ -1,0 +1,787 @@
+// Integration test against an in-process PGlite database (src/test/db.ts),
+// not a mock - proves placeOrderTx's money-safety guarantees actually hold
+// at the database level: idempotent replay/conflict, halts, market hours,
+// price staleness/availability, margin/holdings checks, and the exact
+// paise-level holdings/ledger math a real fill produces. Never touches the
+// real Supabase database (see @/db/client's NODE_ENV=test guard).
+//
+// getRelayPrice is mocked - this test is about the transaction's own logic,
+// not Redis - and placeOrderTx's `now` param is always passed explicitly,
+// never via vi.useFakeTimers() (that was tried first and caused a real,
+// reproducible OOM crash against this PGlite instance - see placeOrderTx's
+// own comment on why). See orders/service.test.ts for the service-layer
+// status-to-AppError mapping.
+import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  holdings,
+  instruments,
+  marketControls,
+  marketHolidays,
+  orders,
+  users,
+  MARKET_CONTROLS_SINGLETON_ID,
+} from "@/db/schema";
+import { createTestDb, type TestDb } from "@/test/db";
+import { uniqueClerkUserId } from "@/test/fixtures";
+
+vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
+
+const mockGetRelayPrice = vi.fn();
+vi.mock("@/server/trading/relay-price", () => ({
+  getRelayPrice: (symbol: unknown, exchange: unknown) => mockGetRelayPrice(symbol, exchange),
+}));
+
+const { placeOrderTx, matchOpenLimitOrderTx, listOpenLimitOrdersWithInstrument, cancelAllOpenOrdersTx } =
+  await import("./repo");
+const { sumVmoneyBalance, creditVmoneyRow } = await import("@/server/economy/repo");
+const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
+
+afterAll(async () => {
+  await db.$client.close();
+});
+
+beforeEach(async () => {
+  mockGetRelayPrice.mockReset();
+  // This PGlite instance persists across every `it()` in this file, so a
+  // test that sets a global halt/pause must not leak into later tests -
+  // reset to the safe default before every test, not just the ones that
+  // deliberately set something else.
+  await db
+    .insert(marketControls)
+    .values({ id: MARKET_CONTROLS_SINGLETON_ID, feedMode: "live", globalHalt: false })
+    .onConflictDoUpdate({ target: marketControls.id, set: { feedMode: "live", globalHalt: false } });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+async function makeUser() {
+  const [user] = await db
+    .insert(users)
+    .values({
+      clerkUserId: uniqueClerkUserId("orders-repo-user"),
+      clerkUpdatedAt: new Date(),
+      firstName: "Aarav",
+      lastInitial: "S",
+    })
+    .returning();
+  return user;
+}
+
+async function makeInstrument(overrides: Partial<Record<string, unknown>> = {}) {
+  const symbol = `TST${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+  const [row] = await db
+    .insert(instruments)
+    .values({
+      symbol,
+      exchange: "NSE",
+      name: "Test Co Ltd",
+      sector: "Testing",
+      about: { en: "a", hi: "a", hx: "a" },
+      tip: { en: "t", hi: "t", hx: "t" },
+      tags: [],
+      lotSize: 1,
+      active: true,
+      halted: false,
+      ...overrides,
+    })
+    .returning();
+  return row!;
+}
+
+async function grantVmoneyPaise(userId: string, amountPaise: number) {
+  await creditVmoneyRow({
+    userId,
+    sourceType: "test_grant",
+    sourceId: randomUUID(),
+    ruleId: null,
+    reason: "test setup",
+    amountPaise,
+    multiplierApplied: 1,
+  });
+}
+
+// A Monday during NSE hours, no holidays seeded by default - see
+// src/server/market/hours.test.ts for the exact boundary proofs; this file
+// only needs ONE reliably-open instant to drive the transaction logic.
+const MARKET_OPEN_NOW = new Date("2026-09-21T05:00:00.000Z"); // 10:30 IST, Monday
+const WEEKEND_NOW = new Date("2026-09-19T06:00:00.000Z"); // Saturday
+
+function freshIdempotencyKey() {
+  return randomUUID();
+}
+
+async function getHoldingRow(userId: string, instrumentId: string) {
+  const [row] = await db
+    .select()
+    .from(holdings)
+    .where(and(eq(holdings.userId, userId), eq(holdings.instrumentId, instrumentId)));
+  return row ?? null;
+}
+
+// Upsert, not a plain insert - the singleton row may already exist from an
+// earlier test's getOrCreateMarketControls self-heal (this file's PGlite
+// instance persists across every `it()`, there's no per-test reset).
+async function setMarketControls(feedMode: "live" | "delayed_15m" | "paused", globalHalt: boolean) {
+  await db
+    .insert(marketControls)
+    .values({ id: MARKET_CONTROLS_SINGLETON_ID, feedMode, globalHalt })
+    .onConflictDoUpdate({ target: marketControls.id, set: { feedMode, globalHalt } });
+}
+
+describe("placeOrderTx - idempotency", () => {
+  it("is idempotent: a second call with the same key and same request replays the original order", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    const key = freshIdempotencyKey();
+    const input = { symbol: instrument.symbol, side: "buy" as const, type: "market" as const, qty: 2 };
+
+    const first = await placeOrderTx(user.id, instrument, input, key, MARKET_OPEN_NOW);
+    const second = await placeOrderTx(user.id, instrument, input, key, MARKET_OPEN_NOW);
+
+    expect(first.status).toBe("filled");
+    expect(second).toEqual({ status: "replayed", order: (first as { order: unknown }).order });
+    // No double debit - balance reflects exactly one fill.
+    expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 2 * 10000);
+  });
+
+  it("rejects reusing the same key for a genuinely different request", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    const key = freshIdempotencyKey();
+
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, key, MARKET_OPEN_NOW);
+    const conflict = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 3 },
+      key,
+      MARKET_OPEN_NOW,
+    );
+
+    expect(conflict).toEqual({ status: "idempotency_conflict" });
+  });
+});
+
+describe("placeOrderTx - halts and market controls", () => {
+  it("rejects with market_halted when the global halt is on", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await setMarketControls("live", true);
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "market_halted" });
+  });
+
+  it("rejects with symbol_halted when this specific instrument is halted", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument({ halted: true });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "symbol_halted" });
+  });
+
+  it("rejects with market_paused when the feed is paused", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await setMarketControls("paused", false);
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "market_paused" });
+  });
+});
+
+describe("placeOrderTx - market hours", () => {
+  it("rejects a MARKET order placed while the market is closed", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+
+    expect(result).toEqual({ status: "market_closed" });
+  });
+
+  it("queues a LIMIT order placed while the market is closed, with no price check at all", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+
+    expect(result.status).toBe("queued");
+    expect(mockGetRelayPrice).not.toHaveBeenCalled();
+  });
+
+  it("rejects a market holiday exactly like a weekend", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    // A different date than MARKET_OPEN_NOW - this test's own holiday seed
+    // must never leak into other tests reusing that shared constant (this
+    // file's PGlite instance persists across every `it()`).
+    const holidayInstant = new Date("2026-09-22T05:00:00.000Z"); // 10:30 IST, Tuesday
+    await db.insert(marketHolidays).values({ date: "2026-09-22", name: "Test Holiday" });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      holidayInstant, // would otherwise be open
+    );
+
+    expect(result).toEqual({ status: "market_closed" });
+  });
+});
+
+describe("placeOrderTx - price availability and staleness", () => {
+  it("rejects with price_unavailable when the relay has no price for this symbol", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    mockGetRelayPrice.mockResolvedValue(null);
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "price_unavailable" });
+  });
+
+  it("rejects with price_stale when the relay's price is older than 60 seconds", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() - 61_000 });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "price_stale" });
+  });
+
+  it("accepts a price exactly at the 60-second boundary (not yet stale)", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() - 60_000 });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result.status).toBe("filled");
+  });
+});
+
+describe("placeOrderTx - margin and holdings checks", () => {
+  it("rejects a BUY with insufficient_margin, reporting the exact shortfall", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 5000); // not enough for 1 share @ 10000
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "insufficient_margin", balancePaise: 5000, requiredPaise: 10000 });
+  });
+
+  it("rejects a SELL with insufficient_holdings when nothing is held", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "sell", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result).toEqual({ status: "insufficient_holdings", heldQty: 0, requestedQty: 1 });
+  });
+});
+
+describe("placeOrderTx - fills, holdings and the buy/sell round trip", () => {
+  it("a BUY fill debits the exact value and creates a holding at the fill price", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 46290, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 3 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result.status).toBe("filled");
+    if (result.status !== "filled") throw new Error("expected filled");
+    expect(result.order.fillPricePaise).toBe(46290);
+    expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 3 * 46290);
+
+    const holding = await getHoldingRow(user.id, instrument.id);
+    expect(holding).toMatchObject({ qty: 3, avgPricePaise: 46290 });
+  });
+
+  it("a second BUY at a different price blends into a correct weighted-average cost", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 20000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+
+    const holding = await getHoldingRow(user.id, instrument.id);
+    // (2*10000 + 2*20000) / 4 = 15000
+    expect(holding).toMatchObject({ qty: 4, avgPricePaise: 15000 });
+  });
+
+  it("a SELL reduces qty without changing the average cost of the remaining shares", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 4 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 25000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "sell", type: "market", qty: 1 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+
+    const holding = await getHoldingRow(user.id, instrument.id);
+    expect(holding).toMatchObject({ qty: 3, avgPricePaise: 10000 }); // unchanged average
+  });
+
+  // Checkpoint 7 (D43) - realizedPnlPaise is what powers the Profile Trades
+  // tab's per-trade P&L, win rate and best/worst-trade stats.
+  it("records the exact realized P&L on a SELL fill, and null on a BUY fill", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    const buyResult = await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 4 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    if (buyResult.status !== "filled") throw new Error("expected filled");
+    expect(buyResult.order.realizedPnlPaise).toBeNull();
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 25000, ts: MARKET_OPEN_NOW.getTime() });
+    const sellResult = await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "sell", type: "market", qty: 3 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    if (sellResult.status !== "filled") throw new Error("expected filled");
+    // 3 * (25000 - 10000) = 45000
+    expect(sellResult.order.realizedPnlPaise).toBe(45000);
+  });
+
+  // Checkpoint 7 (D43) - positionOpenedAt is what powers the "hold days"
+  // stat; a full exit followed by a fresh BUY is a genuine re-entry, not a
+  // continuation of the old (already-closed) position.
+  it("resets positionOpenedAt on a fresh BUY after a full exit, but not on a partial add", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const afterFirstBuy = await getHoldingRow(user.id, instrument.id);
+    const firstOpenedAt = afterFirstBuy!.positionOpenedAt.getTime();
+
+    // Partial add, same position - positionOpenedAt must NOT move.
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const afterSecondBuy = await getHoldingRow(user.id, instrument.id);
+    expect(afterSecondBuy!.positionOpenedAt.getTime()).toBe(firstOpenedAt);
+
+    // Full exit, then a fresh BUY - a genuine re-entry, positionOpenedAt DOES
+    // move. positionOpenedAt is set from the fill's real wall-clock time
+    // (same convention as order.filledAt, not the injectable market-hours
+    // `now`), so this only asserts it moved forward, not an exact instant.
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "sell", type: "market", qty: 3 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const beforeReentry = Date.now();
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const afterReentry = await getHoldingRow(user.id, instrument.id);
+    expect(afterReentry!.positionOpenedAt.getTime()).toBeGreaterThanOrEqual(beforeReentry);
+    expect(afterReentry!.positionOpenedAt.getTime()).not.toBe(firstOpenedAt);
+  });
+
+  // D37 (docs/ARCHITECTURE.md) - the invariant the whole paise migration
+  // exists for, now proven against the REAL order-placement transaction,
+  // not a simulated ledger insert: a BUY immediately followed by a SELL of
+  // the same qty at an unchanged price must net to EXACTLY zero.
+  it("a BUY then a SELL of the same qty at an unchanged price nets to exactly zero", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const balanceBeforeTrading = await sumVmoneyBalance(user.id);
+    // Deliberately not a round multiple of 100, same reasoning as
+    // src/server/economy/repo.test.ts's own round-trip test.
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 46290, ts: MARKET_OPEN_NOW.getTime() });
+
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 3 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "sell", type: "market", qty: 3 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+
+    expect(await sumVmoneyBalance(user.id)).toBe(balanceBeforeTrading);
+  });
+
+  it("a marketable BUY limit fills at the better (lower) of the limit and the current price", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 10000 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result.status).toBe("filled");
+    if (result.status !== "filled") throw new Error("expected filled");
+    expect(result.order.fillPricePaise).toBe(9000); // price improvement, not the limit
+  });
+
+  it("a non-marketable LIMIT order queues instead of filling, and never touches the ledger", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const balanceBefore = await sumVmoneyBalance(user.id);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 15000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 10000 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    expect(result.status).toBe("queued");
+    if (result.status !== "queued") throw new Error("expected queued");
+    expect(result.order.status).toBe("open");
+    expect(result.order.fillPricePaise).toBeNull();
+    expect(await sumVmoneyBalance(user.id)).toBe(balanceBefore);
+  });
+});
+
+// Checkpoint 6: the matching job's per-order attempt on an already-queued
+// LIMIT order. Reuses placeOrderTx to get a real queued order into the
+// database first (rather than hand-inserting a row), so these tests exercise
+// the same shape a real queued order actually has.
+describe("matchOpenLimitOrderTx", () => {
+  async function queueLimitOrder(
+    userId: string,
+    instrument: Parameters<typeof placeOrderTx>[1],
+    overrides: { side?: "buy" | "sell"; qty?: number; limitPricePaise?: number } = {},
+  ) {
+    const result = await placeOrderTx(
+      userId,
+      instrument,
+      {
+        symbol: instrument.symbol,
+        side: overrides.side ?? "buy",
+        type: "limit",
+        qty: overrides.qty ?? 1,
+        limitPricePaise: overrides.limitPricePaise ?? 10000,
+      },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+    if (result.status !== "queued") throw new Error(`expected queued, got ${result.status}`);
+    return result.order;
+  }
+
+  it("fills a queued BUY once the price becomes marketable, with price improvement", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const order = await queueLimitOrder(user.id, instrument, { limitPricePaise: 10000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW);
+
+    expect(result.status).toBe("filled");
+    if (result.status !== "filled") throw new Error("expected filled");
+    expect(result.order.fillPricePaise).toBe(9000);
+    expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 9000);
+    const holding = await getHoldingRow(user.id, instrument.id);
+    expect(holding).toMatchObject({ qty: 1, avgPricePaise: 9000 });
+  });
+
+  it("leaves the order open (not_marketable) when the price still doesn't cross the limit", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const order = await queueLimitOrder(user.id, instrument, { limitPricePaise: 10000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 15000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW);
+
+    expect(result).toEqual({ status: "not_marketable" });
+    const [row] = await db.select().from(orders).where(eq(orders.id, order.id));
+    expect(row!.status).toBe("open");
+  });
+
+  it("reports already_settled and does nothing if the order isn't open anymore", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const order = await queueLimitOrder(user.id, instrument);
+    await cancelAllOpenOrdersTx(MARKET_OPEN_NOW);
+
+    const result = await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW);
+
+    expect(result).toEqual({ status: "already_settled" });
+  });
+
+  // Security-audit fix (docs/ARCHITECTURE.md D49): two overlapping matching-
+  // job runs for the SAME order used to both pass a stale, unlocked status
+  // check and both fill it - the ledger stayed correct (its own unique
+  // index caught the duplicate insert) but `holdings` got double-applied.
+  // Fixed by locking the ORDER row itself (`.for("update")`) before
+  // checking `status === "open"`, mirroring placeOrderTx's own
+  // lock-before-you-read-the-thing-that-decides-the-outcome shape.
+  //
+  // Honesty about what this test can and can't prove: PGlite exposes a
+  // SINGLE Postgres connection/session (confirmed empirically while fixing
+  // this - a `pg_sleep()`-delayed transaction and a concurrent second
+  // transaction fired via `Promise.all` were observed to run fully
+  // serialized, the second's callback body not even starting until the
+  // first committed). Postgres cannot have two open transactions on one
+  // session, so two `db.transaction()` calls against ONE PGlite instance
+  // can never genuinely interleave - the exact race window this bug needed
+  // (both transactions' unlocked reads landing before either write) cannot
+  // be forced here, the same documented limitation this codebase already
+  // carries for `src/server/worlds/repo.test.ts`'s reorder-concurrency
+  // tests (see docs/ROADMAP.md's pre-launch checklist). Both the OLD buggy
+  // code and the NEW fixed code would pass a naive "fire two calls via
+  // Promise.all" test on PGlite, because PGlite itself forces them to run
+  // one after the other regardless of application-level locking - so this
+  // test cannot by itself distinguish "fixed" from "still broken" the way
+  // a real multi-connection Postgres could.
+  //
+  // What this test DOES prove, honestly: the fixed code path is idempotent
+  // and safe under repeated/re-invoked matching (a retried Inngest step,
+  // or two ticks landing close together) - calling `matchOpenLimitOrderTx`
+  // twice for the same order, whether "concurrently" requested or not,
+  // fills it exactly once, applies holdings exactly once, and the ledger
+  // nets to exactly one debit/credit. A genuine interleaved-race
+  // regression test needs a real multi-connection Postgres (a Supabase
+  // branch/dev database) - tracked in docs/ROADMAP.md's pre-launch
+  // checklist alongside the existing, identical world-reorder gap.
+  it("fills a queued order exactly once even when two match attempts are fired concurrently for it", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const order = await queueLimitOrder(user.id, instrument, { limitPricePaise: 10000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const [resultA, resultB] = await Promise.all([
+      matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW),
+      matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW),
+    ]);
+
+    const statuses = [resultA.status, resultB.status].sort();
+    expect(statuses).toEqual(["already_settled", "filled"]);
+
+    const filled = (resultA.status === "filled" ? resultA : resultB) as Extract<
+      Awaited<ReturnType<typeof matchOpenLimitOrderTx>>,
+      { status: "filled" }
+    >;
+    expect(filled.order.qty).toBe(1);
+
+    const holding = await getHoldingRow(user.id, instrument.id);
+    expect(holding).toMatchObject({ qty: 1, avgPricePaise: 9000 }); // applied exactly once, not twice
+    expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 9000); // debited exactly once
+  });
+
+  it("respects global halt, symbol halt and pause without touching the order", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const order = await queueLimitOrder(user.id, instrument);
+
+    await setMarketControls("live", true);
+    expect(await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW)).toEqual({ status: "market_halted" });
+
+    await setMarketControls("paused", false);
+    expect(await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW)).toEqual({ status: "market_paused" });
+
+    await setMarketControls("live", false);
+    expect(await matchOpenLimitOrderTx(order.id, { ...instrument, halted: true }, MARKET_OPEN_NOW)).toEqual({
+      status: "symbol_halted",
+    });
+  });
+
+  it("reports market_closed outside trading hours and price_unavailable/price_stale inside them", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const order = await queueLimitOrder(user.id, instrument);
+
+    expect(await matchOpenLimitOrderTx(order.id, instrument, WEEKEND_NOW)).toEqual({ status: "market_closed" });
+
+    mockGetRelayPrice.mockResolvedValue(null);
+    expect(await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW)).toEqual({ status: "price_unavailable" });
+
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() - 61_000 });
+    expect(await matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW)).toEqual({ status: "price_stale" });
+  });
+
+  it("records realizedPnlPaise on a matched SELL fill, same as placeOrderTx would", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(user.id, instrument, { symbol: instrument.symbol, side: "buy", type: "market", qty: 2 }, freshIdempotencyKey(), MARKET_OPEN_NOW);
+    const sellOrder = await queueLimitOrder(user.id, instrument, { side: "sell", qty: 2, limitPricePaise: 12000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 15000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const result = await matchOpenLimitOrderTx(sellOrder.id, instrument, MARKET_OPEN_NOW);
+
+    expect(result.status).toBe("filled");
+    if (result.status !== "filled") throw new Error("expected filled");
+    // fills at price improvement (max(15000, 12000) = 15000), 2 * (15000 - 10000) = 10000
+    expect(result.order.fillPricePaise).toBe(15000);
+    expect(result.order.realizedPnlPaise).toBe(10000);
+  });
+
+  it("leaves the order open on insufficient_margin/insufficient_holdings rather than cancelling it", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const buyOrder = await queueLimitOrder(user.id, instrument, { side: "buy", limitPricePaise: 10000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const marginResult = await matchOpenLimitOrderTx(buyOrder.id, instrument, MARKET_OPEN_NOW);
+    expect(marginResult).toEqual({ status: "insufficient_margin", balancePaise: 0, requiredPaise: 9000 });
+    const [buyRow] = await db.select().from(orders).where(eq(orders.id, buyOrder.id));
+    expect(buyRow!.status).toBe("open");
+
+    const sellOrder = await queueLimitOrder(user.id, instrument, { side: "sell", limitPricePaise: 8000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() });
+    const holdingsResult = await matchOpenLimitOrderTx(sellOrder.id, instrument, MARKET_OPEN_NOW);
+    expect(holdingsResult).toEqual({ status: "insufficient_holdings", heldQty: 0, requestedQty: 1 });
+  });
+});
+
+describe("listOpenLimitOrdersWithInstrument", () => {
+  it("lists only open orders, joined with their instrument", async () => {
+    const user = await makeUser();
+    const instrumentA = await makeInstrument();
+    const instrumentB = await makeInstrument();
+    const openOrder = await placeOrderTx(
+      user.id,
+      instrumentA,
+      { symbol: instrumentA.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+    if (openOrder.status !== "queued") throw new Error("expected queued");
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 5000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(
+      user.id,
+      instrumentB,
+      { symbol: instrumentB.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    const rows = await listOpenLimitOrdersWithInstrument();
+
+    const match = rows.find((r) => r.order.id === openOrder.order.id);
+    expect(match).toBeDefined();
+    expect(match!.instrument.symbol).toBe(instrumentA.symbol);
+    expect(rows.every((r) => r.order.status === "open")).toBe(true);
+  });
+});
+
+describe("cancelAllOpenOrdersTx", () => {
+  it("cancels every open order and leaves filled orders untouched", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const queued = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+    if (queued.status !== "queued") throw new Error("expected queued");
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 5000, ts: MARKET_OPEN_NOW.getTime() });
+    const filled = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+    if (filled.status !== "filled") throw new Error("expected filled");
+
+    const cancelledAt = new Date("2026-09-21T10:00:00.000Z");
+    const count = await cancelAllOpenOrdersTx(cancelledAt);
+
+    expect(count).toBeGreaterThanOrEqual(1);
+    const [queuedRow] = await db.select().from(orders).where(eq(orders.id, queued.order.id));
+    expect(queuedRow!.status).toBe("cancelled");
+    expect(queuedRow!.cancelledAt?.getTime()).toBe(cancelledAt.getTime());
+    const [filledRow] = await db.select().from(orders).where(eq(orders.id, filled.order.id));
+    expect(filledRow!.status).toBe("filled");
+  });
+});
