@@ -299,22 +299,36 @@ export type MatchOrderResult =
 
 // One attempt to fill a single already-queued LIMIT order, called by the
 // matching job's per-order step. Same transaction shape as placeOrderTx
-// (lock the user's row first, same halt/pause/market-hours/price-staleness/
-// margin-holdings checks, same ledger+holdings write) - this is
-// deliberately a sibling function rather than a refactor to share code with
-// placeOrderTx, since the two differ in one meaningful way: placeOrderTx
-// is deciding whether a NEW request is accepted at all (so it makes sense
-// for "market closed" to reject a MARKET order outright), while this is
-// re-evaluating an order that already exists and was already accepted as
-// "open" - it never rejects the order itself, only reports why THIS attempt
-// didn't fill it, leaving it open for the next run (or the EOD cancel job).
+// (lock first, THEN check mutable state inside the lock, same halt/pause/
+// market-hours/price-staleness/margin-holdings checks, same ledger+holdings
+// write) - this is deliberately a sibling function rather than a refactor
+// to share code with placeOrderTx, since the two differ in one meaningful
+// way: placeOrderTx is deciding whether a NEW request is accepted at all
+// (so it makes sense for "market closed" to reject a MARKET order
+// outright), while this is re-evaluating an order that already exists and
+// was already accepted as "open" - it never rejects the order itself, only
+// reports why THIS attempt didn't fill it, leaving it open for the next run
+// (or the EOD cancel job).
+//
+// Security-audit fix (docs/ARCHITECTURE.md D49): this used to read
+// `current.status` BEFORE locking anything, then never re-check it after
+// acquiring the user-row lock - the exact opposite of the "lock before you
+// read the thing that decides the outcome" rule placeOrderTx already
+// follows for its idempotency check. Two overlapping matching-job runs for
+// the SAME order could both pass the stale status check and both fill it -
+// the ledger stayed correct (its own unique index caught the duplicate),
+// but `holdings` got double-applied (free duplicate shares on a BUY, an
+// erroneous double-deduction on a SELL). Fixed by locking the ORDER row
+// itself first (`.for("update")`) and checking `status === "open"` only
+// AFTER that lock is held - a second concurrent call for the same order now
+// blocks on the SELECT itself, then correctly sees "filled" once unblocked.
 export async function matchOpenLimitOrderTx(
   orderId: string,
   instrument: { id: string; symbol: string; exchange: string; halted: boolean },
   now: Date = new Date(),
 ): Promise<MatchOrderResult> {
   return db.transaction(async (tx) => {
-    const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).limit(1);
+    const [current] = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update").limit(1);
     if (!current || current.status !== "open") return { status: "already_settled" };
 
     await tx.execute(sql`select id from ${users} where id = ${current.userId} for update`);

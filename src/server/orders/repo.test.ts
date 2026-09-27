@@ -591,6 +591,67 @@ describe("matchOpenLimitOrderTx", () => {
     expect(result).toEqual({ status: "already_settled" });
   });
 
+  // Security-audit fix (docs/ARCHITECTURE.md D49): two overlapping matching-
+  // job runs for the SAME order used to both pass a stale, unlocked status
+  // check and both fill it - the ledger stayed correct (its own unique
+  // index caught the duplicate insert) but `holdings` got double-applied.
+  // Fixed by locking the ORDER row itself (`.for("update")`) before
+  // checking `status === "open"`, mirroring placeOrderTx's own
+  // lock-before-you-read-the-thing-that-decides-the-outcome shape.
+  //
+  // Honesty about what this test can and can't prove: PGlite exposes a
+  // SINGLE Postgres connection/session (confirmed empirically while fixing
+  // this - a `pg_sleep()`-delayed transaction and a concurrent second
+  // transaction fired via `Promise.all` were observed to run fully
+  // serialized, the second's callback body not even starting until the
+  // first committed). Postgres cannot have two open transactions on one
+  // session, so two `db.transaction()` calls against ONE PGlite instance
+  // can never genuinely interleave - the exact race window this bug needed
+  // (both transactions' unlocked reads landing before either write) cannot
+  // be forced here, the same documented limitation this codebase already
+  // carries for `src/server/worlds/repo.test.ts`'s reorder-concurrency
+  // tests (see docs/ROADMAP.md's pre-launch checklist). Both the OLD buggy
+  // code and the NEW fixed code would pass a naive "fire two calls via
+  // Promise.all" test on PGlite, because PGlite itself forces them to run
+  // one after the other regardless of application-level locking - so this
+  // test cannot by itself distinguish "fixed" from "still broken" the way
+  // a real multi-connection Postgres could.
+  //
+  // What this test DOES prove, honestly: the fixed code path is idempotent
+  // and safe under repeated/re-invoked matching (a retried Inngest step,
+  // or two ticks landing close together) - calling `matchOpenLimitOrderTx`
+  // twice for the same order, whether "concurrently" requested or not,
+  // fills it exactly once, applies holdings exactly once, and the ledger
+  // nets to exactly one debit/credit. A genuine interleaved-race
+  // regression test needs a real multi-connection Postgres (a Supabase
+  // branch/dev database) - tracked in docs/ROADMAP.md's pre-launch
+  // checklist alongside the existing, identical world-reorder gap.
+  it("fills a queued order exactly once even when two match attempts are fired concurrently for it", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const order = await queueLimitOrder(user.id, instrument, { limitPricePaise: 10000 });
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 9000, ts: MARKET_OPEN_NOW.getTime() });
+
+    const [resultA, resultB] = await Promise.all([
+      matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW),
+      matchOpenLimitOrderTx(order.id, instrument, MARKET_OPEN_NOW),
+    ]);
+
+    const statuses = [resultA.status, resultB.status].sort();
+    expect(statuses).toEqual(["already_settled", "filled"]);
+
+    const filled = (resultA.status === "filled" ? resultA : resultB) as Extract<
+      Awaited<ReturnType<typeof matchOpenLimitOrderTx>>,
+      { status: "filled" }
+    >;
+    expect(filled.order.qty).toBe(1);
+
+    const holding = await getHoldingRow(user.id, instrument.id);
+    expect(holding).toMatchObject({ qty: 1, avgPricePaise: 9000 }); // applied exactly once, not twice
+    expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 9000); // debited exactly once
+  });
+
   it("respects global halt, symbol halt and pause without touching the order", async () => {
     const user = await makeUser();
     const instrument = await makeInstrument();

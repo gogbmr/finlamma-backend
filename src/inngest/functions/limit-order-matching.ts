@@ -13,8 +13,20 @@ import { listOpenLimitOrdersWithInstrument, matchOpenLimitOrderTx } from "@/serv
 // order's DB error (or a stale/missing price for its symbol) never stops
 // the rest of the batch from being attempted this tick; it just stays
 // "open" and gets retried on the next one.
+// concurrency: { limit: 1 } (D49, docs/ARCHITECTURE.md): a slow run (retries,
+// a long candidate list) can still be mid-flight when the next minute's cron
+// tick fires - without this, two runs could both list the same open order as
+// a candidate and race to fill it. matchOpenLimitOrderTx's own row lock
+// (SELECT ... FOR UPDATE, locked before reading status) is what actually
+// makes a double-fill impossible even if two runs did overlap; this is
+// belt-and-braces so overlapping runs don't happen in the first place -
+// cheaper than relying on lock contention every tick.
 export const limitOrderMatchingJob = inngest.createFunction(
-  { id: "limit-order-matching", triggers: [{ cron: "TZ=Asia/Kolkata * 9-15 * * 1-5" }] },
+  {
+    id: "limit-order-matching",
+    triggers: [{ cron: "TZ=Asia/Kolkata * 9-15 * * 1-5" }],
+    concurrency: { limit: 1 },
+  },
   async ({ step }) => {
     const candidates = await step.run("list-open-orders", () => listOpenLimitOrdersWithInstrument());
 

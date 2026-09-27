@@ -319,6 +319,14 @@ own repo later, hosted on Railway.
       test that fires two genuinely concurrent overlapping `moveWorldToPosition` calls from two
       separate connections and confirms one gets a clean `isTransactionConflict` and neither
       leaves a negative sentinel order behind.
+- [ ] **Real-Postgres concurrency test for limit-order matching**, once a separate dev database
+      exists (same gap and same fix as the world-reorder item directly above). `docs/ARCHITECTURE.md`
+      D49's fix to `matchOpenLimitOrderTx` (`src/server/orders/repo.ts`) is covered today by a test
+      that fires two overlapping calls via `Promise.all` against PGlite, but PGlite's single
+      connection fully serializes `db.transaction()` calls, so that test can only prove "safe under
+      repeated/overlapping invocation," not "a real race loses cleanly." Once a real multi-connection
+      Postgres is available, add a test that fires two genuinely concurrent `matchOpenLimitOrderTx`
+      calls for the same order from two separate connections and confirms exactly one fills.
 - [ ] **Legal review of the parental-consent flow and the Terms/Privacy/Risk-disclosure text**
       (outside counsel) before launch — see `docs/PRODUCT_SPEC.md` §7
 - [ ] **Legal review: retention period for anonymised consent evidence.** Account deletion keeps
