@@ -283,9 +283,10 @@ own repo later, hosted on Railway.
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future
       feature that surfaces one learner's content to another.
-- [ ] **Review the 8 unindexed-foreign-key and 15 unused-index Supabase advisor findings**
-      (`INFO` level, flagged by the Phase 2b audit, `docs/STATUS.md`) - low-traffic pre-launch
-      noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
+- [ ] **Review the 25 unindexed-foreign-key and 25 unused-index Supabase advisor findings**
+      (`INFO` level, first flagged by the Phase 2b audit at 8/15, `docs/STATUS.md`; recount as of
+      the `/phase-audit 4` run, 2026-09-27, now at 25/25 as Phase 3/4 added more tables/FKs) - low-
+      traffic pre-launch noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
       `question_answers.question_id` have no covering index), but worth a real pass once query
       patterns and data volume are closer to production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
