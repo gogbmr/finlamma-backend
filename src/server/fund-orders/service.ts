@@ -1,6 +1,7 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
 import { getFundByIdInternal } from "@/server/funds/repo";
 import { isTradingUnlocked } from "@/server/worlds/service";
 import { placeFundOrderTx, type FundOrderRow } from "./repo";
@@ -25,15 +26,20 @@ function shapeFundOrder(order: FundOrderRow, replayed: boolean) {
 }
 
 // The fund order pad's one entry point - mirrors src/server/orders/
-// service.ts's placeOrder exactly (same trading-unlock gate, same
-// pre-check-before-transaction shape, same "every rejection is a thrown
-// AppError with zero DB write" convention for a MANUAL order).
+// service.ts's placeOrder exactly (same rate limit, same trading-unlock
+// gate, same pre-check-before-transaction shape, same "every rejection is a
+// thrown AppError with zero DB write" convention for a MANUAL order).
 export async function placeFundOrder(
   user: { id: string },
   input: PlaceFundOrderInput,
   idempotencyKey: string,
   meta: RequestMeta,
 ) {
+  const { allowed } = await checkRateLimit(user.id, TRADE_ORDER_RATE_LIMIT, false);
+  if (!allowed) {
+    throw new AppError("RATE_LIMITED", "Too many order attempts - slow down and try again shortly");
+  }
+
   const fund = await getFundByIdInternal(input.fundId);
   if (!fund || !fund.active) {
     throw new AppError("NOT_FOUND", "No fund with this id");

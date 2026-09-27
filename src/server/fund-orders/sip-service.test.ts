@@ -32,6 +32,12 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
+const mockCheckRateLimit = vi.fn();
+vi.mock("@/lib/redis", () => ({
+  checkRateLimit: (id: unknown, config: unknown, failOpen: unknown) => mockCheckRateLimit(id, config, failOpen),
+  SIP_CREATE_RATE_LIMIT: { requests: 10, window: "60 s", prefix: "ratelimit:sip-create" },
+}));
+
 const { createSip, listMySips, updateSipPlanStatus } = await import("./sip-service");
 
 const USER = { id: "user_1" };
@@ -60,6 +66,28 @@ beforeEach(() => {
   mockGetFundByIdInternal.mockResolvedValue(FUND);
   mockIsTradingUnlocked.mockResolvedValue(true);
   mockListRecentFundOrdersForSipPlan.mockResolvedValue([]);
+  mockCheckRateLimit.mockResolvedValue({ allowed: true, configured: true });
+});
+
+describe("createSip - rate limit", () => {
+  it("fails CLOSED (RATE_LIMITED) when the rate limit can't be checked, never reaching the fund lookup", async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, configured: false });
+
+    await expect(
+      createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(USER.id, expect.any(Object), false);
+    expect(mockGetFundByIdInternal).not.toHaveBeenCalled();
+  });
+
+  it("rejects with RATE_LIMITED when the caller is over the limit", async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, configured: true });
+
+    await expect(
+      createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW),
+    ).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(mockCreateSipPlan).not.toHaveBeenCalled();
+  });
 });
 
 describe("createSip", () => {

@@ -2,6 +2,7 @@ import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { istDateString } from "@/lib/ist-date";
+import { checkRateLimit, SIP_CREATE_RATE_LIMIT } from "@/lib/redis";
 import { getFundByIdInternal } from "@/server/funds/repo";
 import { isTradingUnlocked } from "@/server/worlds/service";
 import {
@@ -62,7 +63,15 @@ async function shapeSipPlan(plan: SipPlanRow, now: Date) {
   };
 }
 
+// Rate-limited (D49 audit follow-up, failOpen: false) - this creates a plan
+// that will go on to spend real V Money on every future due date, so it
+// gets the same money-spending treatment as placeOrder/placeFundOrder.
 export async function createSip(user: { id: string }, input: CreateSipPlanInput, meta: RequestMeta, now: Date = new Date()) {
+  const { allowed } = await checkRateLimit(user.id, SIP_CREATE_RATE_LIMIT, false);
+  if (!allowed) {
+    throw new AppError("RATE_LIMITED", "Too many SIP setup attempts - slow down and try again shortly");
+  }
+
   const fund = await getFundByIdInternal(input.fundId);
   if (!fund || !fund.active) throw new AppError("NOT_FOUND", "No fund with this id");
 

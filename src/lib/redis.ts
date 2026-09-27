@@ -143,6 +143,29 @@ export const REWARD_CLAIM_RATE_LIMIT: RateLimitConfig = {
   prefix: "ratelimit:reward-claim",
 };
 
+// Post-Checkpoint-9 security audit (docs/ARCHITECTURE.md D49 area): stock
+// and fund order placement are money-spending endpoints with no prior rate
+// limit at all - always failOpen: false, same reasoning as
+// REWARD_CLAIM_RATE_LIMIT. 20 requests/60s per user is generous for
+// legitimate active trading (reacting to a fast-moving price, placing a few
+// orders in quick succession) while still stopping a scripted loop from
+// spamming the order book or hammering the relay price lookup.
+export const TRADE_ORDER_RATE_LIMIT: RateLimitConfig = {
+  requests: 20,
+  window: "60 s",
+  prefix: "ratelimit:trade-order",
+};
+
+// SIP *creation* only (POST /trade/funds/sip) - a learner sets up a handful
+// of recurring plans, ever, not a tight per-second budget like order
+// placement. Pausing/resuming/cancelling an existing plan isn't
+// money-moving (no ledger write) so it isn't rate-limited here.
+export const SIP_CREATE_RATE_LIMIT: RateLimitConfig = {
+  requests: 10,
+  window: "60 s",
+  prefix: "ratelimit:sip-create",
+};
+
 // Generic read-through JSON cache, used by src/server/market/cache.ts to
 // avoid calling the market-data vendor (rate-limited, credit-metered) on
 // every request. Always fails OPEN like the rate limiter above - a cache is

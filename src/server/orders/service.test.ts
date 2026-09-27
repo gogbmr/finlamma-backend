@@ -25,6 +25,12 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
+const mockCheckRateLimit = vi.fn();
+vi.mock("@/lib/redis", () => ({
+  checkRateLimit: (id: unknown, config: unknown, failOpen: unknown) => mockCheckRateLimit(id, config, failOpen),
+  TRADE_ORDER_RATE_LIMIT: { requests: 20, window: "60 s", prefix: "ratelimit:trade-order" },
+}));
+
 const { placeOrder } = await import("./service");
 
 const USER = { id: "user_1" };
@@ -52,6 +58,24 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetInstrumentBySymbol.mockResolvedValue(INSTRUMENT);
   mockIsTradingUnlocked.mockResolvedValue(true);
+  mockCheckRateLimit.mockResolvedValue({ allowed: true, configured: true });
+});
+
+describe("placeOrder - rate limit", () => {
+  it("fails CLOSED (RATE_LIMITED) when the rate limit can't be checked, never reaching the instrument lookup", async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, configured: false });
+
+    await expect(placeOrder(USER, INPUT, "key1", META)).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(USER.id, expect.any(Object), false);
+    expect(mockGetInstrumentBySymbol).not.toHaveBeenCalled();
+  });
+
+  it("rejects with RATE_LIMITED when the caller is over the limit", async () => {
+    mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, configured: true });
+
+    await expect(placeOrder(USER, INPUT, "key1", META)).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(mockPlaceOrderTx).not.toHaveBeenCalled();
+  });
 });
 
 describe("placeOrder - pre-checks", () => {

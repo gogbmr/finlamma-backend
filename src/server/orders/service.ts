@@ -1,6 +1,7 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
+import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
 import { getInstrumentBySymbol } from "@/server/trading/repo";
 import { isTradingUnlocked } from "@/server/worlds/service";
 import { placeOrderTx, type OrderRow } from "./repo";
@@ -25,12 +26,15 @@ function shapeOrder(order: OrderRow, symbol: string, replayed: boolean) {
   };
 }
 
-// The order-pad's one entry point (TR-30). Pre-checks (instrument lookup,
-// trading-unlock) run BEFORE placeOrderTx opens its transaction/row-lock,
-// so a bad symbol or a locked account never takes a lock at all. Every
-// business-rule rejection from placeOrderTx maps to a distinct thrown
-// AppError (never a persisted "rejected" order row - D41,
-// docs/ARCHITECTURE.md); "queued"/"filled"/"replayed" are the only
+// The order-pad's one entry point (TR-30). Rate-limited first (D49 audit
+// follow-up) - failOpen: false, same reasoning as claimReward
+// (src/server/rewards/service.ts): this spends real V Money, so refusing
+// when the limit can't be verified is safer than risking unbounded spend.
+// Pre-checks (instrument lookup, trading-unlock) run BEFORE placeOrderTx
+// opens its transaction/row-lock, so a bad symbol or a locked account never
+// takes a lock at all. Every business-rule rejection from placeOrderTx maps
+// to a distinct thrown AppError (never a persisted "rejected" order row -
+// D41, docs/ARCHITECTURE.md); "queued"/"filled"/"replayed" are the only
 // success paths, and only "queued"/"filled" log an activity entry - a
 // replay is, by definition, something that already happened once.
 export async function placeOrder(
@@ -39,6 +43,11 @@ export async function placeOrder(
   idempotencyKey: string,
   meta: RequestMeta,
 ) {
+  const { allowed } = await checkRateLimit(user.id, TRADE_ORDER_RATE_LIMIT, false);
+  if (!allowed) {
+    throw new AppError("RATE_LIMITED", "Too many order attempts - slow down and try again shortly");
+  }
+
   const instrument = await getInstrumentBySymbol(input.symbol);
   if (!instrument || !instrument.active) {
     throw new AppError("NOT_FOUND", "No instrument with this symbol");

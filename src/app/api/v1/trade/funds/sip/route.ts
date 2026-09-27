@@ -104,6 +104,17 @@ registry.registerPath({
         },
       },
     },
+    429: {
+      description: "Too many SIP setup attempts, or the rate limiter couldn't be reached (fails closed)",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: {
+            error: { code: "RATE_LIMITED", message: "Too many SIP setup attempts - slow down and try again shortly" },
+          },
+        },
+      },
+    },
   },
 });
 

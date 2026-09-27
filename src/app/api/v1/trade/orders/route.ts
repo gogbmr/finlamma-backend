@@ -95,6 +95,17 @@ registry.registerPath({
         },
       },
     },
+    429: {
+      description: "Too many order attempts, or the rate limiter couldn't be reached (fails closed)",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: {
+            error: { code: "RATE_LIMITED", message: "Too many order attempts - slow down and try again shortly" },
+          },
+        },
+      },
+    },
   },
 });
 
