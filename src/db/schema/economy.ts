@@ -77,27 +77,26 @@ export const xpEvents = pgTable(
 ).enableRLS();
 
 // Same append-only/idempotency shape as xp_events (see above) - the only
-// difference is `amount` is a `bigint({ mode: "number" })`, per CLAUDE.md
-// rule 2 ("V Money and prices are integers... never use floats for money"),
-// and `multiplierApplied` records the `settings_kv.vm_issuance_multiplier`
-// value in effect when THIS row was written, so a balance stays explainable
-// even after the multiplier is later changed in the Ops console
-// (docs/PRODUCT_SPEC.md §2). Null (like ruleId) for a non-rule-based entry.
-// Phase 4 (docs/ARCHITECTURE.md D37): the ledger's unit moved from whole V
-// Money to PAISE - `amountPaise` is the source of truth from Checkpoint 5
-// onward, kept alongside the original `amount` column (whole VM) rather than
-// renaming it in place, per the db-migration skill's "add-new -> backfill ->
-// switch reads -> drop-old later" rule: `main`'s pre-Phase-4 code keeps
-// writing only `amount` until this phase's code (which writes/reads only
-// `amountPaise`) is actually deployed there, since preview and production
-// share one database (CLAUDE.md rule 8). `amount` is dropped in a follow-up
-// destructive migration once that's confirmed - see D37 for the exact SQL
-// and reasoning, including why paise (not whole-VM-with-rounding) is
-// required for trading to be exact. Every admin-authored "how many VM" value
-// (reward_rules.defaultVm, rewards.priceVm, badges.vmReward, ...) is
-// UNCHANGED, still whole VM - only this ledger column's unit changed, and
-// only at the handful of call sites that turn a whole-VM figure into a
-// ledger row (see src/server/economy/schemas.ts's VM_TO_LEDGER_PAISE).
+// difference is `amountPaise` is a `bigint({ mode: "number" })`, per
+// CLAUDE.md rule 2 ("V Money and prices are integers... never use floats
+// for money"), and `multiplierApplied` records the
+// `settings_kv.vm_issuance_multiplier` value in effect when THIS row was
+// written, so a balance stays explainable even after the multiplier is
+// later changed in the Ops console (docs/PRODUCT_SPEC.md §2). Null (like
+// ruleId) for a non-rule-based entry. Phase 4 (docs/ARCHITECTURE.md D37):
+// the ledger's unit moved from whole V Money to PAISE - `amountPaise` is
+// the source of truth from Checkpoint 5 onward. The original `amount`
+// column (whole VM) was kept alongside it for one deploy cycle (Migration
+// A, additive) precisely so `main`'s pre-Phase-4 code could keep writing
+// only `amount` until this phase's code actually reached `main`, per
+// CLAUDE.md rule 8's shared-database ordering rule - it's now been dropped
+// (Migration B, applied post-merge once `main` was confirmed no longer
+// reading/writing it - see D37/D49-adjacent follow-up). Every admin-
+// authored "how many VM" value (reward_rules.defaultVm, rewards.priceVm,
+// badges.vmReward, ...) is UNCHANGED, still whole VM - only this ledger
+// column's unit changed, and only at the handful of call sites that turn a
+// whole-VM figure into a ledger row (see src/server/economy/schemas.ts's
+// VM_TO_LEDGER_PAISE).
 export const vmoneyLedger = pgTable(
   "vmoney_ledger",
   {
@@ -106,12 +105,6 @@ export const vmoneyLedger = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    // Deprecated (D37) - superseded by amountPaise. Relaxed from NOT NULL to
-    // nullable here (not dropped yet) precisely so this phase's code, which
-    // never writes it, can insert rows once deployed - old, still-running
-    // code on `main` keeps writing it as before, unaffected either way, and
-    // it's kept only until the follow-up destructive migration drops it.
-    amount: bigint("amount", { mode: "number" }),
     amountPaise: bigint("amount_paise", { mode: "number" }),
     sourceType: text("source_type").notNull(),
     sourceId: uuid("source_id").notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE "vmoney_ledger" DROP COLUMN "amount";

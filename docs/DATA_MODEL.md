@@ -165,12 +165,16 @@ skill for the full idempotency/reversal design)
   adjustment).
 - `vmoney_ledger` — same shape as `xp_events` plus `multiplier_applied` (the
   `vm_issuance_multiplier` in effect when this entry was written, so a balance stays explainable
-  even after the multiplier later changes). `amount` is `bigint({ mode: "number" })` per CLAUDE.md
-  rule 2 (`xp_events.amount` is a plain `integer` — XP isn't money). A reversal is a new row with
-  a negative amount and its own distinct `source_type`/`source_id` (e.g. `source_type:
-  "reversal"`, `source_id: <original row's id>`) — never an UPDATE/DELETE of the original, and
-  never reusing the original's `(source_type, source_id)`, which would collide with its own
-  unique index.
+  even after the multiplier later changes). The amount column is `amount_paise`, `bigint({ mode:
+  "number" })`, exact paise (100 = 1 V Money) per CLAUDE.md rule 2 and `docs/ARCHITECTURE.md` D37
+  (`xp_events.amount` is a plain `integer` — XP isn't money, so it stayed whole-number). The
+  original whole-VM `amount` column existed briefly (Migration A, additive) so `main`'s pre-Phase-4
+  code could keep writing it during the rollout, then was dropped once that code was confirmed no
+  longer deployed (Migration B, CLAUDE.md rule 8) — `amount_paise` has been the only column since.
+  A reversal is a new row with a negative amount and its own distinct `source_type`/`source_id`
+  (e.g. `source_type: "reversal"`, `source_id: <original row's id>`) — never an UPDATE/DELETE of
+  the original, and never reusing the original's `(source_type, source_id)`, which would collide
+  with its own unique index.
 - `reward_rules` (activity_kind — video|story|ai_chat|role_play|quiz|boss_quiz, unique —
   default_xp, default_vm, active) — admin-editable (`/admin/settings`, `economy.manage`); XP and
   VM are earned independently (no conversion rate between them), seeded from
