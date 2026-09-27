@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 0.3.0) on 2026-09-26.
+> Generated from `openapi/openapi.json` (version 0.3.0) on 2026-09-27.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -113,6 +113,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "redis": "ok",
     "worldsMissingBossQuiz": [],
     "tradingUnlockWorldMissing": false,
+    "tradingHalt": "ok",
     "market": "mock",
     "inngest": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
@@ -2866,6 +2867,17 @@ MARKET or LIMIT, BUY or SELL, whole shares only. Requires an Idempotency-Key hea
 }
 ```
 
+- **429** — Too many order attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many order attempts - slow down and try again shortly"
+  }
+}
+```
+
 
 ---
 
@@ -3314,6 +3326,17 @@ BUY takes an amountPaise (₹ to invest) and units are derived from the latest i
 }
 ```
 
+- **429** — Too many order attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many order attempts - slow down and try again shortly"
+  }
+}
+```
+
 
 ---
 
@@ -3476,6 +3499,17 @@ amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 
   "error": {
     "code": "NOT_FOUND",
     "message": "No fund with this id"
+  }
+}
+```
+
+- **429** — Too many SIP setup attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many SIP setup attempts - slow down and try again shortly"
   }
 }
 ```

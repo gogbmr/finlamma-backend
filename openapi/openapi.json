@@ -160,6 +160,15 @@
                 "example": false,
                 "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
               },
+              "tradingHalt": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "active"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): 'active' means market_controls.global_halt is currently on - the order pad rejects every order for every learner. Meant to catch a halt left on by mistake outside the admin Ops console's own persistent banner (docs/ARCHITECTURE.md D47)."
+              },
               "market": {
                 "type": "string",
                 "enum": [
@@ -198,6 +207,7 @@
               "redis",
               "worldsMissingBossQuiz",
               "tradingUnlockWorldMissing",
+              "tradingHalt",
               "market",
               "inngest",
               "timestamp"
@@ -6952,6 +6962,22 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many order attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -8056,6 +8082,22 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many order attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -8230,6 +8272,22 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many SIP setup attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many SIP setup attempts - slow down and try again shortly"
                   }
                 },
                 "schema": {
