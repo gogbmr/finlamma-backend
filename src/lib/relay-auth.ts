@@ -20,6 +20,34 @@ const RELAY_CONFIG_RATE_LIMIT: RateLimitConfig = {
   prefix: "ratelimit:relay-config",
 };
 
+// D49 audit follow-up: this used to be one single global bucket (every
+// caller shared the literal key "relay-config"), so unrelated noise or a
+// guessing attacker from one source could exhaust the whole budget and
+// lock out the real relay's own, entirely separate requests - a
+// self-inflicted denial of service. Keying per caller IP fixes that.
+// Safe to do here (unlike src/lib/redis.ts's other rate limits, which
+// always key by an authenticated user id, never an IP - see that file's
+// own comment) because: (1) this endpoint is unauthenticated by design
+// (bounding guesses at the secret IS the auth check), so there's no user
+// id to key by, and (2) on Vercel specifically, `x-forwarded-for` is
+// overwritten by the edge network with the real, non-spoofable connecting
+// client IP - Vercel does not forward an external/client-supplied value
+// for this header, exactly to prevent IP spoofing (Vercel docs,
+// "Request headers" > x-forwarded-for; the only exception is a purchased
+// Enterprise "Trusted Proxy" add-on, not used by this project). That's a
+// stronger guarantee than the general "some proxies pass this through
+// unfiltered" caution behind src/lib/http.ts's requestMeta() (used only
+// for informational activity-log IP capture, explicitly never for
+// auth/rate-limit decisions) - this function deliberately reads the raw
+// header directly rather than reusing requestMeta(), since requestMeta()
+// is documented as unsuitable for exactly this kind of decision. No
+// header at all (local dev without Vercel's edge in front) falls back to
+// one shared key - the same single-bucket behavior this had before the
+// fix, acceptable since local dev has no real adversary.
+function relayCallerKey(req: Request): string {
+  return req.headers.get("x-forwarded-for") ?? "relay-config:no-ip";
+}
+
 // Never a plain `a === b` or byte-by-byte early-exit compare (timing side
 // channel - see D40, docs/ARCHITECTURE.md). Hashing both sides first, THEN
 // comparing with node:crypto's timingSafeEqual, sidesteps the one gap
@@ -48,7 +76,7 @@ export async function requireRelaySecret(req: Request): Promise<void> {
     throw new AppError("SERVICE_UNAVAILABLE", "Relay authentication is not configured");
   }
 
-  const { allowed } = await checkRateLimit("relay-config", RELAY_CONFIG_RATE_LIMIT, false);
+  const { allowed } = await checkRateLimit(relayCallerKey(req), RELAY_CONFIG_RATE_LIMIT, false);
   if (!allowed) {
     throw new AppError("RATE_LIMITED", "Too many requests");
   }

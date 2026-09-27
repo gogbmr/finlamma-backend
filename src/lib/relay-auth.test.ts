@@ -11,9 +11,10 @@ vi.mock("@/lib/redis", () => ({
 
 const { requireRelaySecret } = await import("./relay-auth");
 
-function requestWithSecret(secret: string | null) {
+function requestWithSecret(secret: string | null, ip: string | null = "203.0.113.10") {
   const headers = new Headers();
   if (secret !== null) headers.set("X-Relay-Secret", secret);
+  if (ip !== null) headers.set("x-forwarded-for", ip);
   return new Request("http://localhost/api/v1/relay/config", { headers });
 }
 
@@ -77,7 +78,21 @@ describe("requireRelaySecret", () => {
   it("rate-limits with failOpen: false - an unreachable Redis refuses the request, never lets it through", async () => {
     await requireRelaySecret(requestWithSecret("correct-secret-value"));
 
-    expect(mockCheckRateLimit).toHaveBeenCalledWith("relay-config", expect.any(Object), false);
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(expect.any(String), expect.any(Object), false);
+  });
+
+  it("keys the rate limit by the caller's IP (x-forwarded-for), not one shared global bucket", async () => {
+    await requireRelaySecret(requestWithSecret("correct-secret-value", "203.0.113.10"));
+    expect(mockCheckRateLimit).toHaveBeenCalledWith("203.0.113.10", expect.any(Object), false);
+
+    mockCheckRateLimit.mockClear();
+    await requireRelaySecret(requestWithSecret("correct-secret-value", "198.51.100.20"));
+    expect(mockCheckRateLimit).toHaveBeenCalledWith("198.51.100.20", expect.any(Object), false);
+  });
+
+  it("falls back to one shared key when x-forwarded-for is missing (local dev), rather than crashing", async () => {
+    await requireRelaySecret(requestWithSecret("correct-secret-value", null));
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(expect.any(String), expect.any(Object), false);
   });
 
   it("never includes the provided or configured secret value anywhere in the thrown error", async () => {
