@@ -4,9 +4,21 @@
 // src/server/report-card/service.ts's computeAndStoreWeeklySnapshot relies
 // on it for idempotency. Never touches the real Supabase database (see
 // @/db/client's NODE_ENV=test guard).
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { roles, staffMembers, users } from "@/db/schema";
+import {
+  lessons,
+  mentors,
+  questionAnswers,
+  questions,
+  quizAttempts,
+  roles,
+  staffMembers,
+  topics,
+  users,
+  worlds,
+} from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -19,6 +31,7 @@ const {
   insertReportSnapshot,
   listActiveUsersForReportCard,
   listAllCoachNoteTemplates,
+  listAnsweredQuestionHistoryForUser,
   listReportSnapshotsForUser,
   publishCoachNoteTemplateRow,
   unpublishCoachNoteTemplateRow,
@@ -29,6 +42,14 @@ const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 afterAll(async () => {
   await db.$client.close();
 });
+
+let nextOrder = 100_000;
+function uniqueOrder() {
+  return nextOrder++;
+}
+function uniqueKey(label: string) {
+  return `${label}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+}
 
 async function makeUser(label = "report-card-repo-user") {
   const [user] = await db
@@ -181,5 +202,105 @@ describe("listActiveUsersForReportCard", () => {
 
     expect(rows.map((r) => r.id)).toContain(active.id);
     expect(rows.map((r) => r.id)).not.toContain(deleted.id);
+  });
+});
+
+// Proves the questions.topicId -> topics.name.en join actually resolves a
+// real topic label against Postgres - this replaced a direct read of the
+// old free-text questions.topic column (see repo.ts's comment), the one
+// remaining dependency that was blocking dropping that column.
+describe("listAnsweredQuestionHistoryForUser", () => {
+  it("resolves topic from questions.topicId, and returns null for an untagged question", async () => {
+    const user = await makeUser("topic-history");
+    const [topic] = await db
+      .insert(topics)
+      .values({ name: { en: "RBI & rates", hi: "x", hx: "x" }, order: uniqueOrder() })
+      .returning();
+    const [mentor] = await db
+      .insert(mentors)
+      .values({
+        key: uniqueKey("mentor"),
+        order: uniqueOrder(),
+        name: { en: "M", hi: "x", hx: "x" },
+        bio: { en: "x", hi: "x", hx: "x" },
+        persona: "test persona",
+      })
+      .returning();
+    const [world] = await db
+      .insert(worlds)
+      .values({
+        order: uniqueOrder(),
+        title: { en: "W", hi: "x", hx: "x" },
+        tagline: { en: "x", hi: "x", hx: "x" },
+        theme: "#000000",
+        displayXpTarget: 5,
+        mentorId: mentor.id,
+      })
+      .returning();
+    const [lesson] = await db
+      .insert(lessons)
+      .values({
+        worldId: world.id,
+        chapter: 1,
+        step: 1,
+        kind: "quiz",
+        title: { en: "L", hi: "x", hx: "x" },
+        blurb: { en: "x", hi: "x", hx: "x" },
+        content: { questionIds: [] },
+      })
+      .returning();
+    const [taggedQuestion] = await db
+      .insert(questions)
+      .values({
+        format: "single_select",
+        topicId: topic.id,
+        prompt: { en: "Tagged?", hi: "x", hx: "x" },
+        explanation: { en: "x", hi: "x", hx: "x" },
+        payload: { options: [{ en: "A", hi: "x", hx: "x" }, { en: "B", hi: "x", hx: "x" }] },
+        answer: { correctIndex: 0 },
+      })
+      .returning();
+    const [untaggedQuestion] = await db
+      .insert(questions)
+      .values({
+        format: "single_select",
+        prompt: { en: "Untagged?", hi: "x", hx: "x" },
+        explanation: { en: "x", hi: "x", hx: "x" },
+        payload: { options: [{ en: "A", hi: "x", hx: "x" }, { en: "B", hi: "x", hx: "x" }] },
+        answer: { correctIndex: 0 },
+      })
+      .returning();
+    const [attempt] = await db
+      .insert(quizAttempts)
+      .values({ userId: user.id, lessonId: lesson.id, attemptNumber: 1, isFirstPass: true, status: "completed" })
+      .returning();
+    await db.insert(questionAnswers).values([
+      {
+        attemptId: attempt.id,
+        questionId: taggedQuestion.id,
+        stepIndex: 1,
+        servedAt: new Date("2026-09-01T00:00:00.000Z"),
+        timerSeconds: 20,
+        servedRevision: 1,
+        answeredAt: new Date("2026-09-01T00:00:05.000Z"),
+        isCorrect: true,
+      },
+      {
+        attemptId: attempt.id,
+        questionId: untaggedQuestion.id,
+        stepIndex: 2,
+        servedAt: new Date("2026-09-02T00:00:00.000Z"),
+        timerSeconds: 20,
+        servedRevision: 1,
+        answeredAt: new Date("2026-09-02T00:00:05.000Z"),
+        isCorrect: false,
+      },
+    ]);
+
+    const history = await listAnsweredQuestionHistoryForUser(user.id);
+
+    expect(history).toHaveLength(2);
+    expect(history[0]?.topic).toBe("RBI & rates"); // the tagged question, oldest first
+    expect(history[1]?.topic).toBeNull(); // the untagged question
   });
 });

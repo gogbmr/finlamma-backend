@@ -8,6 +8,7 @@ import {
   questions,
   quizAttempts,
   reportSnapshots,
+  topics,
   users,
 } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
@@ -21,18 +22,31 @@ import type { EfficiencySubMetrics, ModuleBreakdownRow, TopicMasteryRow } from "
 // so the metrics layer can find each topic's first-occurrence timestamp in
 // one pass. `topic` is nullable (not every question is tagged yet) -
 // callers filter those out before computing topic-based metrics.
+//
+// Derives `topic` from the shared topics taxonomy (questions.topicId ->
+// topics.name.en) via a left join, not the old free-text questions.topic
+// column - see topics.ts's own comment for why questions.topic was replaced
+// by topicId in Phase 5. questions.topic is unread everywhere else in this
+// codebase (nothing has written to it since before Phase 5 either) and is
+// scheduled to be dropped once this is deployed - this was the one
+// remaining read that migration was blocked on. The return shape (`topic:
+// string | null`) is unchanged, so every caller (metrics.ts, coach-notes.ts,
+// service.ts) needs no changes.
 export async function listAnsweredQuestionHistoryForUser(userId: string) {
-  return db
+  const rows = await db
     .select({
       answeredAt: questionAnswers.answeredAt,
-      topic: questions.topic,
+      topicName: topics.name,
       isCorrect: questionAnswers.isCorrect,
     })
     .from(questionAnswers)
     .innerJoin(quizAttempts, eq(quizAttempts.id, questionAnswers.attemptId))
     .innerJoin(questions, eq(questions.id, questionAnswers.questionId))
+    .leftJoin(topics, eq(topics.id, questions.topicId))
     .where(and(eq(quizAttempts.userId, userId), isNotNull(questionAnswers.answeredAt)))
     .orderBy(asc(questionAnswers.answeredAt));
+
+  return rows.map((r) => ({ answeredAt: r.answeredAt, topic: r.topicName?.en ?? null, isCorrect: r.isCorrect }));
 }
 
 // Video-kind attempts completed within [since, until) - the watch-speed

@@ -1,5 +1,42 @@
 # Status
 
+## 2026-09-28 — Phase 5 merged to `main`, verified in production. Follow-up migration (drop `questions.topic`) blocked on a real dependency, fix branch ready
+
+`phase-5-news-pulse` merged into `main` via merge commit `ed89597`.
+
+**Production, verified post-merge against `https://finlamma-backend-rho.vercel.app`:**
+- `GET /api/v1/health`: `version` is `ed89597`, matching the merge commit exactly. `database`,
+  `migrations`, `storage`, `redis`, `consentPiiHmacKey`, `clerkKeys`, `relaySecret`, `tradingHalt`
+  all `ok`. `market: "mock"` and `inngest: "unconfigured"` are expected, pre-existing states, not
+  caused by this merge. `legalDocuments: "placeholder"` and `worldsMissingBossQuiz` (all 7 worlds)
+  are the same pre-existing, tracked pre-launch items as every prior phase's verification.
+- All 10 new News/Pulse Check endpoints (`GET /news/feed`, `/news/{id}`, `/news/desk-picks`,
+  `/pulse-check/current`, `/pulse-check/{id}/result`; `POST /news/{id}/read`, `/pulse-check/start`,
+  `/pulse-check/{id}/finish`, `/pulse-check/{id}/steps/{n}/serve`, `.../answer`) return `401`
+  signed out, never `404` - routing confirmed live.
+- `/admin/news` `307`-redirects to `/admin/sign-in` signed out. `/` returns `200`.
+
+**Follow-up migration prep (dropping `questions.topic`, replaced by `questions.topicId` +
+the `topics` table, per D18/Checkpoint 1) found a real, live read dependency before writing any
+SQL** - exactly the class of incident CLAUDE.md rule 8 exists to prevent. `src/server/report-card/
+repo.ts`'s `listAnsweredQuestionHistoryForUser` still selected the old free-text `questions.topic`
+column directly, feeding the weekly report-card job's retention/topic-mastery/opportunity-topic
+metrics (`metrics.ts`, `coach-notes.ts`) - live since Phase 3b. Dropping the column as-is would have
+broken that query outright with a "column does not exist" error, not a graceful degrade (Drizzle
+compiles a literal column reference into the SQL regardless of whether the value is ever
+non-null). Write side was already clean - nothing has written `questions.topic` since before
+Phase 5.
+
+**Fixed on its own branch, `fix-report-card-topic-id`** (not `main`): `listAnsweredQuestionHistoryForUser`
+now derives `topic` via a left join from `questions.topicId` to `topics.name.en` instead of reading
+the old column - same return shape (`topic: string | null`), so `metrics.ts`/`coach-notes.ts`/
+`service.ts` needed zero changes. New PGlite integration test proves the join resolves a real topic
+name and returns `null` for an untagged question. `pnpm typecheck`/`lint`/`test` all clean (1790
+tests). **Not yet merged** - waiting for review, then merge + deploy to `main` before the actual
+`questions.topic` drop migration can be prepared. Once that's confirmed live, the read-only check
+gets re-run and the drop migration follows on its own branch, per the standard destructive-migration
+ordering rule.
+
 ## 2026-09-28 — Phase 5 audit fixes: D51 cap-race closed, seed scripts no longer auto-publish
 
 Applied the `/phase-audit 5` fix list (daily-cap concurrency race fixed with a locked transaction,
