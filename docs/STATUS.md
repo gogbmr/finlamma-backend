@@ -1,5 +1,26 @@
 # Status
 
+## 2026-09-28 — `fix-report-card-topic-id` merged to `main` (`7733523`), verified in production. `questions.topic` drop migration prepared on its own branch
+
+Production `GET /api/v1/health` confirmed `version: "7733523"` matching the merge commit, everything
+else unchanged from the prior verification. Re-ran the read-only dependency check for
+`questions.topic` on `main` at this commit: clean - every remaining `.topic` hit in `src/` is either
+an unrelated field name (the Pulse Check/report-card API's own `topic` response field, already
+sourced from `topics.name`/`topicId`) or a comment documenting the replacement. Nothing reads or
+writes the column anymore.
+
+**Migration prepared on `drop-questions-topic`** (not `main`): `src/db/schema/questions.ts` no
+longer declares `topic`, `pnpm db:generate` produced `drizzle/0038_massive_pete_wisdom.sql`
+(`ALTER TABLE "questions" DROP COLUMN "topic";` - a single-statement, no-other-table-affected
+migration, confirmed via `information_schema` that no view depends on the column and the real
+`questions` table currently has 0 rows total, so there's no data loss either way). `pnpm
+typecheck`/`lint`/`test` all clean. **Not applied to the real database yet** - the SQL block
+(including the matching `drizzle.__drizzle_migrations` tracker row, hash computed identically to
+`drizzle-orm`'s own migrator - see `node_modules/drizzle-orm/pg-core/dialect.js`'s `migrate()`)
+was handed to the founder to run directly in the Supabase SQL Editor, since `pnpm db:migrate`
+itself has a known connectivity issue from this environment (2026-09-23 entry below). Branch stays
+open until that's confirmed applied.
+
 ## 2026-09-28 — Phase 5 merged to `main`, verified in production. Follow-up migration (drop `questions.topic`) blocked on a real dependency, fix branch ready
 
 `phase-5-news-pulse` merged into `main` via merge commit `ed89597`.
