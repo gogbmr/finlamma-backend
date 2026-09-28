@@ -38,6 +38,12 @@ const ACTIVITY_KIND_LABEL: Record<RewardActivityKind, string> = {
   role_play: "Role Play",
   quiz: "Quiz",
   boss_quiz: "Boss Quiz",
+  // No reward_rules row exists for this yet - Pulse Check's real payout is
+  // performance-computed per attempt, seeded in Phase 5's Checkpoint 4
+  // (money work). Listed here only so this Record stays exhaustive against
+  // RewardActivityKind; the editor below simply shows nothing for a kind
+  // with no row until one exists.
+  pulse_check: "Pulse Check",
 };
 
 function rewardAmountError(value: number): string | null {

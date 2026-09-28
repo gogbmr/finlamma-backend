@@ -123,6 +123,23 @@ Check alone (News tab, unlocked from day one) can plausibly add several hundred 
 under its own scoring rules (see `docs/FEATURE_MAP.md` NW-25/NW-26), so an engaged learner would
 likely arrive at the trading-unlock world with meaningfully more than either floor shown above.
 
+**Phase 5 Checkpoint 4 update (`docs/ARCHITECTURE.md` D51):** at this section's own numbers, a
+perfect daily Pulse Check session pays ~610 VM/day — repeatable forever, for a few minutes of
+engagement, versus the ~18,270 VM the entire 7-world lesson tree pays out **once, ever** (7 ×
+this section's 2,610-VM-per-world proposed total). Documenting that Pulse Check "can plausibly
+add several hundred VM per active day" turned out to understate how large that number gets
+relative to the lesson tree once actually computed — at 610 VM/day, Pulse Check alone out-earns
+the *entire* lesson tree's one-time VM budget in roughly 30 days, then keeps paying out
+indefinitely with no lesson content involved at all. This was flagged and addressed before
+Checkpoint 4 shipped: a founder-added daily VM cap on Pulse Check specifically
+(`settings_kv.pulse_check_scoring.dailyVmCap`, default 200, admin-editable, deliberately
+conservative to start) now bounds this, so the numbers in this document's affordability
+calculations above (which assume zero Pulse Check income) remain a genuine floor rather than an
+increasingly-irrelevant one as a cohort's average tenure grows. See D51 for the full mechanics
+(the cap applies after the global VM issuance multiplier, is read live so a same-day admin change
+takes effect immediately, and never blocks the quiz itself or the Pulse Check streak from
+completing — only the VM credit is capped).
+
 ## Time to reach the trading-unlock world
 
 Per-world time, from the same `LSTEP` minutes (Video 4, Story 6, AI Chat 5, Role Play 7, Quiz 3,

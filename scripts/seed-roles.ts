@@ -139,6 +139,19 @@ const PERMISSIONS = [
       "symbol or the Ops console's feed-mode/global-halt controls (trading.ops, Phase 4 Checkpoint 9).",
   },
   {
+    key: "news.manage",
+    description:
+      "Create news stories from an AI draft and edit a story's draft fields (content, jargon, " +
+      "category, impact, topic), plus create/edit News Desk picks (Desk Pick/Exam Alert/Scam " +
+      "Watch). Cannot toggle a story's publish status - that's news.publish.",
+  },
+  {
+    key: "news.publish",
+    description:
+      "Toggle a news story between draft/published/hidden - the only mechanism that makes a " +
+      "story visible to (or pulls it from) the learner-facing feed.",
+  },
+  {
     key: "trading.ops",
     description:
       "Ops console dangerous controls: global trading halt, per-symbol halt, feed-mode changes " +
@@ -173,15 +186,18 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "coach_note.publish",
     "instrument.manage",
     "trading.ops",
+    "news.manage",
+    "news.publish",
   ],
   user_manager: ["consent.view"],
-  content_uploader: ["mentor.manage", "world.manage", "lesson.manage"],
+  content_uploader: ["mentor.manage", "world.manage", "lesson.manage", "news.manage"],
   content_publisher: [
     "mentor.publish",
     "world.publish",
     "lesson.publish",
     "question.publish",
     "instrument.manage",
+    "news.publish",
   ],
   quiz_maker: ["question.manage"],
 };

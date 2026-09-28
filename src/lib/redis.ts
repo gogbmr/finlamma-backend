@@ -132,6 +132,15 @@ export const LESSON_STEP_RATE_LIMIT: RateLimitConfig = {
   prefix: "ratelimit:lesson-step",
 };
 
+// Same shape and reasoning as LESSON_STEP_RATE_LIMIT above, for Pulse
+// Check's serve/answer/finish endpoints (Phase 5 Checkpoint 4) - a
+// similarly reward-bearing, fast-paced quiz flow.
+export const PULSE_CHECK_STEP_RATE_LIMIT: RateLimitConfig = {
+  requests: 30,
+  window: "10 s",
+  prefix: "ratelimit:pulse-check-step",
+};
+
 // src/server/rewards/service.ts's claimReward - a money-spending endpoint,
 // so this is always called with failOpen: false (src/lib/redis.ts's own
 // checkRateLimit doc comment names reward claims as exactly the case that

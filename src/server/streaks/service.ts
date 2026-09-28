@@ -62,6 +62,18 @@ export async function recordLearningActivity(userId: string, at: Date = new Date
   return recordStreakActivity(userId, "learning", todayIst, settings.streakFreezesPerMonth);
 }
 
+// The "pulse_check" scope's first (and, until now, only) real caller -
+// this row has existed unused since Phase 3 Checkpoint 4 (D30) specifically
+// anticipating Phase 5. Called once per completed Pulse Check attempt
+// (src/server/pulse-check/service.ts's finishAttempt) - whether or not the
+// attempt's VM was capped by D51's daily cap, since the streak is about
+// genuine daily engagement, not how much was earned.
+export async function recordPulseCheckActivity(userId: string, at: Date = new Date()) {
+  const settings = await getStreaksSettings();
+  const todayIst = istDateString(at);
+  return recordStreakActivity(userId, "pulse_check", todayIst, settings.streakFreezesPerMonth);
+}
+
 // There's no midnight job: the stored row only ever advances when the user
 // does something (recordStreakActivity). So a row can go stale - e.g. a
 // learner with a 5-day streak who then vanishes for 10 days still has

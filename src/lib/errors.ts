@@ -62,6 +62,13 @@ export const ErrorCode = {
   // one deliberate exception (D46) and does persist a "failed" row.
   NAV_UNAVAILABLE: "NAV_UNAVAILABLE",
   NAV_STALE: "NAV_STALE",
+
+  // News (src/server/news, Phase 5) - a client-reported dwellSeconds below
+  // the story's own computed minimum read time (NW-09: "server should also
+  // validate min dwell, not trust client alone"). Same "temporary, not a
+  // client mistake" shape as LESSON_TOO_SOON/RESEND_TOO_SOON - the request
+  // succeeds if simply retried once enough real time has passed.
+  NEWS_READ_TOO_SOON: "NEWS_READ_TOO_SOON",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -98,6 +105,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 
   NAV_UNAVAILABLE: 409,
   NAV_STALE: 409,
+
+  NEWS_READ_TOO_SOON: 429,
 };
 
 export class AppError extends Error {

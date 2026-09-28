@@ -22,3 +22,6 @@ export * from "./report_card";
 export * from "./trading";
 export * from "./orders";
 export * from "./funds";
+export * from "./topics";
+export * from "./news";
+export * from "./pulse_check";

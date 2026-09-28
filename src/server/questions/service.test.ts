@@ -44,7 +44,7 @@ function questionRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "question_1",
     format: "single_select" as const,
-    topic: null,
+    topicId: null,
     prompt: { en: "What is a stock?", hi: "स्टॉक क्या है?", hx: "Stock kya hai?" },
     explanation: { en: "A share of a company.", hi: "x", hx: "x" },
     payload: { options: [{ en: "A share", hi: "x", hx: "x" }, { en: "A loan", hi: "x", hx: "x" }] },
@@ -72,7 +72,7 @@ describe("createQuestionDraft", () => {
 
     const input = {
       format: "single_select" as const,
-      topic: null,
+      topicId: null,
       prompt: questionRow().prompt,
       explanation: questionRow().explanation,
       payload: questionRow().payload,
@@ -96,7 +96,7 @@ describe("updateQuestionDraft", () => {
         ACTOR,
         {
           id: "question_1",
-          topic: null,
+          topicId: null,
           prompt: questionRow().prompt,
           explanation: questionRow().explanation,
           payload: { options: [{ en: "x", hi: "x", hx: "x" }, { en: "y", hi: "x", hx: "x" }] }, // single_select shape, not spot_mistake
@@ -116,7 +116,7 @@ describe("updateQuestionDraft", () => {
         ACTOR,
         {
           id: "question_1",
-          topic: null,
+          topicId: null,
           prompt: questionRow().prompt,
           explanation: questionRow().explanation,
           payload: { options: [{ en: "x", hi: "x", hx: "x" }, { en: "y", hi: "x", hx: "x" }] },
@@ -136,7 +136,7 @@ describe("updateQuestionDraft", () => {
         ACTOR,
         {
           id: "nope",
-          topic: null,
+          topicId: null,
           prompt: questionRow().prompt,
           explanation: questionRow().explanation,
           payload: questionRow().payload,
@@ -156,7 +156,7 @@ describe("updateQuestionDraft", () => {
         ACTOR,
         {
           id: "question_1",
-          topic: null,
+          topicId: null,
           prompt: questionRow().prompt,
           explanation: questionRow().explanation,
           payload: questionRow().payload,

@@ -2,6 +2,8 @@ import { amfiNavIngestJob } from "./amfi-nav-ingest";
 import { legalReapprovalEmailsJob } from "./legal-reapproval-emails";
 import { limitOrderEodCancelJob } from "./limit-order-eod-cancel";
 import { limitOrderMatchingJob } from "./limit-order-matching";
+import { newsDraftJob } from "./news-draft";
+import { newsIngestJob } from "./news-ingest";
 import { sipExecutionJob } from "./sip-execution";
 import { weeklyReportCardJob } from "./weekly-report-card";
 
@@ -14,4 +16,6 @@ export const functions = [
   limitOrderEodCancelJob,
   amfiNavIngestJob,
   sipExecutionJob,
+  newsIngestJob,
+  newsDraftJob,
 ];

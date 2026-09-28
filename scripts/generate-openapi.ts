@@ -56,6 +56,16 @@ import "../src/app/api/v1/trade/funds/[id]/route";
 import "../src/app/api/v1/trade/funds/orders/route";
 import "../src/app/api/v1/trade/funds/sip/route";
 import "../src/app/api/v1/trade/funds/sip/[id]/route";
+import "../src/app/api/v1/news/feed/route";
+import "../src/app/api/v1/news/[id]/route";
+import "../src/app/api/v1/news/[id]/read/route";
+import "../src/app/api/v1/news/desk-picks/route";
+import "../src/app/api/v1/pulse-check/current/route";
+import "../src/app/api/v1/pulse-check/start/route";
+import "../src/app/api/v1/pulse-check/[attemptId]/steps/[n]/serve/route";
+import "../src/app/api/v1/pulse-check/[attemptId]/steps/[n]/answer/route";
+import "../src/app/api/v1/pulse-check/[attemptId]/finish/route";
+import "../src/app/api/v1/pulse-check/[attemptId]/result/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 

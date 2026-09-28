@@ -221,16 +221,31 @@ own repo later, hosted on Railway.
 
 ## Phase 5 — News & Pulse Check
 - [ ] Ingestion jobs: Finnhub + India source → `news_raw` (2 sources at launch, not the
-      prototype's placeholder "7 partner feeds" figure)
-- [ ] AI simplification (3 languages) + jargon term + quiz drafts; auto quality grade (A/B/C,
-      staff-overridable) + topic tagging (fixed admin-extensible taxonomy, see DATA_MODEL.md)
-- [ ] `news_reads` (backs the read badge), `news_desk_picks` (staff-curated Desk Pick/Exam
-      Alert/Scam Watch cards, separate from the algorithmic feed)
-- [ ] Pulse Check ships the 9 formats the prototype implements; the unused "PREDICT" toggle is
-      dropped for v1
-- [ ] News Desk console: review, publish toggle, quiz generator settings, live engagement query
-      (not hardcoded), live KPI tiles
-- [ ] App endpoints: feed, story, bookmarks, Pulse Check (server-scored)
+      prototype's placeholder "7 partner feeds" figure) — **blocked by D50**: no vendor is
+      licensed for ingest+LLM-rewrite+commercial-display yet. The ingestion mechanism itself is
+      built and tested against `MockNewsProvider`; swapping in a real vendor is a one-file change
+      once a vendor confirms in writing (two outreach emails sent by the founder, awaiting reply)
+- [x] AI simplification (3 languages) + jargon term + quiz drafts; auto quality grade (A/B/C,
+      staff-overridable) + topic tagging (a real `topics` table, shared with lesson questions -
+      not free text, see DATA_MODEL.md)
+- [x] `news_reads` (backs the read badge). `news_desk_picks` table + app-facing `GET
+      /v1/news/desk-picks` exist, but **staff authoring (admin CRUD) for desk picks was never
+      built** - the table has no repo insert/update helper or admin UI yet, a real gap for
+      `/phase-audit 5` to catch, not a silent one
+- [x] Pulse Check ships every format the prototype's 9 UI variants map onto: `single_select`
+      covers 3 (MCQ, Sach-ya-Afwah/binary, Odd-One-Out/grid - by original Phase 2b design, see
+      `src/server/questions/schemas.ts`), the 5 pre-existing formats cover 5 more directly
+      (ordering, sort_buckets, fill_blank, match_pairs, spot_mistake), and the new `number_guess`
+      format covers the slider - 7 backend formats, 0 dropped in capability, per the founder-
+      approved scope trim (docs/ARCHITECTURE.md, Phase 5 kickoff). The unused "PREDICT" toggle is
+      dropped for v1. **AI only ever drafts `single_select`** - the other 6 formats are staff-
+      authorable via the existing Question editor and fully playable once tagged, just never
+      AI-generated
+- [x] News Desk console: review, publish toggle, quiz generator settings, Pulse Check scoring
+      incl. D51's daily VM cap, live 7-day engagement chart (not hardcoded), live KPI tiles
+- [x] App endpoints: feed, story, Pulse Check (start/serve/answer/finish/result, server-scored).
+      **Bookmarks were never built** - `PRODUCT_SPEC.md` §5 lists them, but no `bookmarks` table,
+      endpoint or UI exists; another real gap for `/phase-audit 5`, not silently dropped
 
 ## Phase 6 — Arena & social
 - [ ] Weekly leaderboards (Redis sorted sets), scopes (state scope uses `users.state`, optional,

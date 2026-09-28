@@ -6,7 +6,7 @@
 // repo mocked out.
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { roles, staffMembers } from "@/db/schema";
+import { roles, staffMembers, topics } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -38,13 +38,18 @@ const [testStaff] = await db
   .returning();
 const staffId = testStaff.id;
 
+const [testTopic] = await db
+  .insert(topics)
+  .values({ order: 1, name: { en: "RBI & Rates", hi: "x", hx: "x" } })
+  .returning();
+
 const PROMPT = { en: "What is a stock?", hi: "x", hx: "x" };
 const EXPLANATION = { en: "A share of a company.", hi: "x", hx: "x" };
 
 function draftInput(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     format: "single_select" as const,
-    topic: null,
+    topicId: null,
     prompt: PROMPT,
     explanation: EXPLANATION,
     payload: { options: [{ en: "A", hi: "x", hx: "x" }, { en: "B", hi: "x", hx: "x" }] },
@@ -65,14 +70,14 @@ describe("updateDraftQuestion", () => {
     const created = await insertDraftQuestion(draftInput());
     const updated = await updateDraftQuestion({
       id: created.id,
-      topic: "RBI & Rates",
+      topicId: testTopic.id,
       prompt: { en: "Updated", hi: "x", hx: "x" },
       explanation: created.explanation,
       payload: created.payload,
       answer: created.answer,
     });
     expect(updated?.prompt.en).toBe("Updated");
-    expect(updated?.topic).toBe("RBI & Rates");
+    expect(updated?.topicId).toBe(testTopic.id);
   });
 
   it("returns null (does not update) when the question is currently published", async () => {
@@ -81,7 +86,7 @@ describe("updateDraftQuestion", () => {
 
     const result = await updateDraftQuestion({
       id: created.id,
-      topic: null,
+      topicId: null,
       prompt: { en: "Should not apply", hi: "x", hx: "x" },
       explanation: created.explanation,
       payload: created.payload,
@@ -96,7 +101,7 @@ describe("updateDraftQuestion", () => {
   it("returns null for a nonexistent question", async () => {
     const result = await updateDraftQuestion({
       id: randomUUID(),
-      topic: null,
+      topicId: null,
       prompt: PROMPT,
       explanation: EXPLANATION,
       payload: draftInput().payload,

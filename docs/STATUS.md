@@ -1,5 +1,105 @@
 # Status
 
+## 2026-09-28 — Phase 5 audit fixes: D51 cap-race closed, seed scripts no longer auto-publish
+
+Applied the `/phase-audit 5` fix list (daily-cap concurrency race fixed with a locked transaction,
+attempts now expire once their edition's IST day has passed, `finish`'s rate limit now fails
+closed, `startAttempt`/`submitAnswer` now log activity, the News Desk permission-visibility gap
+fixed, the advice-language heuristic extended to AI-drafted questions) - see the commit on
+`phase-5-news-pulse` for the full account. One follow-up finding from that audit's guard sweep is
+closed out here:
+
+**`scripts/seed-mentors.ts` and `scripts/seed-worlds.ts` no longer insert learner-visible content.**
+Both previously inserted their rows with `status: "published"` directly, with no staff actor -
+safe today only because nobody has run either script against production, but a real risk since
+preview and production share one database (CLAUDE.md rule 6). Fixed by seeding as `"draft"`
+(the schema's own default - `status` is no longer set explicitly at all) rather than adding a
+"only auto-publish outside production" check: a `DATABASE_URL` mis-pointed at production would
+silently defeat a prod-detection check, but a draft row can't be fooled that way - it always needs
+a real staff publish action, in every environment, no matter which database the script runs
+against. `seed-worlds.ts`'s mentor-must-already-be-published check was also relaxed to
+mentor-must-exist, since that dependency is already correctly enforced at actual publish time by
+`publishWorld` (`src/server/worlds/service.ts`) - the seed script no longer needs to duplicate it.
+`logActivity` calls changed from `mentor.published`/`world.published` to `mentor.created`/
+`world.created`, matching what a real draft-creation actually is.
+
+**Checked every other seed script for the same pattern** (`seed-funds`, `seed-instruments`,
+`seed-market-holidays`, `seed-reward-rules`, `seed-settings`, `seed-super-admin`, `seed-roles`,
+`seed-topics`): none of them have a draft/published concept at all - instruments/holidays are
+explicitly "no draft/publish split" content (per `scripts/seed-roles.ts`'s own permission
+descriptions), and reward rules/topics use a plain `active` boolean with no review workflow, by
+design. **`seed-legal-documents.ts` was deliberately left seeding as published, not converted**:
+unlike mentors/worlds (where the app degrades gracefully with zero published rows - a learner just
+sees an empty list), onboarding cannot complete at all without a published `terms`/`privacy`/
+`risk_disclosure` document for every user, in every environment, including local dev - converting
+it to draft would make onboarding unusable out of the box after a fresh migration. Its seeded
+content is already unambiguously marked `[PLACEHOLDER — NOT FOR LAUNCH]` in the text itself, is
+its own separately-tracked pre-launch checklist item (real text after outside legal review), and
+`isPlaceholder: true` is already stored on the row - a materially different risk shape from
+AI-drafted or editorial content silently reaching a learner. Flagging this exclusion explicitly
+rather than applying the same change quietly.
+
+**Important: this only changes future script runs.** The mentors/worlds already seeded in the
+shared database (Baby/Father/Grandpa Lamma, the 7 worlds) were seeded under the old script and are
+**already published** - this fix does not retroactively unpublish or touch them. Re-running either
+script against the same database is still a no-op for those existing rows (both scripts skip a
+key/order that already exists), so nothing changes for the current environment; the fix only takes
+effect the next time either script creates a genuinely new mentor or world.
+
+`pnpm typecheck` clean. Neither script is imported by any test (they're standalone, run via
+`pnpm seed:mentors`/`pnpm seed:worlds`), so no test changes were needed.
+
+## 2026-09-28 — Phase 5 kickoff: news-source licensing research (D50 blocker), Checkpoint 1 (schema) merged to branch
+
+**News-vendor licensing check, before writing any ingestion code**: checked actual ToS text (not
+marketing pages) for Finnhub, NewsData.io, GNews, NewsAPI.org and Marketaux against the exact use
+case Phase 5 needs - ingest headlines/summaries, have an LLM rewrite them into our own simplified
+text, display that in a paid commercial app aimed at minors, with attribution. Every source with an
+explicit commercial-use clause restricts free-tier use to personal/non-commercial/dev-only (Finnhub's
+free tier separately bans redistributing "derived results" to any 3rd party, which showing a
+rewritten headline to our own users is); NewsData.io's actual terms page could not be fetched (JS-
+rendered, 3 attempts) despite a marketing claim that free-tier commercial use is fine; none of the
+five explicitly says whether an LLM paraphrase with attribution counts as "redistribution" at all -
+that's the one open question a vendor's own written reply needs to close, not more ToS-reading.
+Recorded as **D50** in `docs/ARCHITECTURE.md` (blocking): **real news ingestion stays off** until a
+vendor confirms this in writing; Phase 5 is built entirely against `MockNewsProvider`
+(`src/server/news/providers/mock.ts`), same precedent as D38/D39's `MockMarketDataProvider` for
+Twelve Data - every checkpoint is fully buildable/testable on fixture data, so the licensing gap
+blocks only the final real-vendor cutover, never development. Two outreach emails drafted (NewsData.io,
+GNews) asking directly whether their paid tier covers this exact flow - sent by the founder, not
+tracked here since email isn't something this session can do.
+
+**Follow-up research: official/public-domain Indian sources (RBI, SEBI, PIB, NSE/BSE,
+data.gov.in/GODL), checked as a possible free alternative or supplement.** Findings: licensing
+splits cleanly by content type, not by "official vs. commercial" - the *structured/numeric* sources
+(data.gov.in, MOSPI data routed through it) sit on **GODL** (Government Open Data License - India,
+gazette-notified 2017), which explicitly permits commercial use and derivative works with
+attribution - genuinely low-risk. The *narrative* official sources are exactly the weak ones: RBI's
+site states no reuse grant at all (all-rights-reserved, no license language found); SEBI permits
+reuse only after emailing them for prior permission each time; NSE explicitly forbids altering
+content at all (rules out an LLM rewrite by definition) and restricts to non-commercial/personal
+use; BSE flatly prohibits reproduction. Only **PIB** (Press Information Bureau) gives an
+unconditional "reproduce freely, attribute the source" grant for narrative text - but PIB's
+finance/economy coverage is a subset of a general government-announcement firehose, not a dedicated
+financial desk, and none of RBI/SEBI/PIB update on a guaranteed daily cadence the way a "what
+happened in markets today" feed needs. **Conclusion: supplement, not a standalone feed** - PIB
+(finance-tagged items) + data.gov.in/GODL datasets (CPI, inflation, RBI statistics) are good free
+raw material for stat cards / an inflation tracker / an occasional PIB-sourced simplified story, but
+the daily narrative backbone still needs a licensed commercial source once one clears D50's
+question. A follow-up email to RBI/SEBI could still turn their ambiguous cases into a clean yes/no
+cheaply, given RBI content specifically (repo rate changes) is high-value financial-literacy
+material - not done yet, flagged for the founder.
+
+**Checkpoint 1 (schema) built, migrated, and pushed to `phase-5-news-pulse`** (not yet merged to
+`main`): new admin-editable `topics` table (seeded from the prototype's actual `TOPIC_MAP`, 6
+topics), `questions.topicId` FK (old free-text `questions.topic` column left in place, unread,
+empty in production - confirmed via a direct query before deciding no backfill was needed; dropped
+in a follow-up migration only after this phase deploys to `main`, per CLAUDE.md rule 8), and the
+full news_raw/news_stories/news_editions/news_reads/news_desk_picks/pulse_check_attempts/
+pulse_check_answers schema. `pnpm typecheck`/`lint`/`test` all clean (1643 tests). Migration A
+(additive-only) applied to the real database; Migration B (drop `questions.topic`) is the deferred
+follow-up.
+
 ## 2026-09-27 — Phase 4 merged to `main` and verified in production. D37 (paise migration) fully complete. Next: Phase 5.
 
 `phase-4-trading-engine` merged into `main` via merge commit `d220e80` (instruments, market data,

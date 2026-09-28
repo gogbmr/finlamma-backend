@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -37,6 +36,7 @@ const FORMATS: QuestionFormat[] = [
   "fill_blank",
   "match_pairs",
   "spot_mistake",
+  "number_guess",
 ];
 
 const FORMAT_LABELS: Record<QuestionFormat, string> = {
@@ -46,12 +46,13 @@ const FORMAT_LABELS: Record<QuestionFormat, string> = {
   fill_blank: "Fill in the blank",
   match_pairs: "Match pairs",
   spot_mistake: "Spot the mistake",
+  number_guess: "Number guess (slider)",
 };
 
 type QuestionRow = {
   id: string;
   format: QuestionFormat;
-  topic: string | null;
+  topicId: string | null;
   prompt: LocalizedText;
   explanation: LocalizedText;
   payload: unknown;
@@ -59,15 +60,56 @@ type QuestionRow = {
   status: "draft" | "published";
 };
 
+type TopicOption = { id: string; name: LocalizedText };
+
+// Radix Select rejects an empty-string item value, so "no topic" needs its
+// own sentinel - mapped back to/from null at the edges (onValueChange /
+// the initial useState), never stored or sent to the server as a string.
+const NO_TOPIC = "__none__";
+
+function TopicSelect({
+  topics,
+  value,
+  onChange,
+  disabled,
+}: {
+  topics: TopicOption[];
+  value: string | null;
+  onChange: (topicId: string | null) => void;
+  disabled: boolean;
+}) {
+  return (
+    <Select
+      value={value ?? NO_TOPIC}
+      onValueChange={(v) => onChange(v === NO_TOPIC ? null : v)}
+      disabled={disabled}
+    >
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_TOPIC}>No topic</SelectItem>
+        {topics.map((t) => (
+          <SelectItem key={t.id} value={t.id}>
+            {t.name.en}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 const LANGUAGES = ["en", "hi", "hx"] as const;
 const EMPTY_LOCALIZED: LocalizedText = { en: "", hi: "", hx: "" };
 
 export function QuestionEditor({
   questions,
+  topics,
   canManage,
   canPublish,
 }: {
   questions: QuestionRow[];
+  topics: TopicOption[];
   canManage: boolean;
   canPublish: boolean;
 }) {
@@ -100,7 +142,7 @@ export function QuestionEditor({
       </Select>
 
       {selectedId === "new" && canManage ? (
-        <NewQuestionForm />
+        <NewQuestionForm topics={topics} />
       ) : (
         (() => {
           const question = questions.find((q) => q.id === selectedId);
@@ -109,6 +151,7 @@ export function QuestionEditor({
             <QuestionForm
               key={question.id}
               question={question}
+              topics={topics}
               canManage={canManage}
               canPublish={canPublish}
             />
@@ -155,10 +198,10 @@ function parseJsonOrError(raw: string): { ok: true; value: unknown } | { ok: fal
   }
 }
 
-function NewQuestionForm() {
+function NewQuestionForm({ topics }: { topics: TopicOption[] }) {
   const [isPending, startTransition] = useTransition();
   const [format, setFormat] = useState<QuestionFormat>("single_select");
-  const [topic, setTopic] = useState("");
+  const [topicId, setTopicId] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<LocalizedText>(EMPTY_LOCALIZED);
   const [explanation, setExplanation] = useState<LocalizedText>(EMPTY_LOCALIZED);
   const [payloadText, setPayloadText] = useState(
@@ -188,7 +231,7 @@ function NewQuestionForm() {
     startTransition(async () => {
       const result = await createQuestionDraftAction({
         format,
-        topic: topic || null,
+        topicId,
         prompt,
         explanation,
         payload: payload.value,
@@ -199,7 +242,7 @@ function NewQuestionForm() {
         return;
       }
       toast.success("Question created as a draft");
-      setTopic("");
+      setTopicId(null);
       setPrompt(EMPTY_LOCALIZED);
       setExplanation(EMPTY_LOCALIZED);
       setPayloadText(JSON.stringify(QUESTION_PAYLOAD_TEMPLATES[format], null, 2));
@@ -227,7 +270,7 @@ function NewQuestionForm() {
         </div>
         <div className="space-y-1">
           <Label>Topic (optional)</Label>
-          <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="RBI & Rates" />
+          <TopicSelect topics={topics} value={topicId} onChange={setTopicId} disabled={false} />
         </div>
       </div>
 
@@ -261,15 +304,17 @@ function NewQuestionForm() {
 
 function QuestionForm({
   question,
+  topics,
   canManage,
   canPublish,
 }: {
   question: QuestionRow;
+  topics: TopicOption[];
   canManage: boolean;
   canPublish: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [topic, setTopic] = useState(question.topic ?? "");
+  const [topicId, setTopicId] = useState<string | null>(question.topicId);
   const [prompt, setPrompt] = useState<LocalizedText>(question.prompt);
   const [explanation, setExplanation] = useState<LocalizedText>(question.explanation);
   const [payloadText, setPayloadText] = useState(JSON.stringify(question.payload, null, 2));
@@ -298,7 +343,7 @@ function QuestionForm({
     startTransition(async () => {
       const result = await updateQuestionDraftAction({
         id: question.id,
-        topic: topic || null,
+        topicId,
         prompt,
         explanation,
         payload: payload.value,
@@ -376,7 +421,7 @@ function QuestionForm({
 
       <div className="space-y-1">
         <Label>Topic (optional)</Label>
-        <Input value={topic} disabled={!editable} onChange={(e) => setTopic(e.target.value)} />
+        <TopicSelect topics={topics} value={topicId} onChange={setTopicId} disabled={!editable} />
       </div>
 
       <LocalizedFields label="Prompt" value={prompt} onChange={setPrompt} disabled={!contentEditable} />

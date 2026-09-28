@@ -3,12 +3,16 @@
 // three (Baby/Father/Grandpa Lamma) as an initial, fully-editable starting
 // point, not a fixed rule. Bios taken directly from the prototype's
 // MENTOR_INFO (Finlamma App.dc.html ~line 5519) - see docs/FEATURE_MAP.md
-// WH-09/WH-10. Unlike the legal-document seed, this content isn't gated on
-// outside legal review, so it seeds as real (non-placeholder) published
-// content - staff can freely rename, add to or delete this later through
-// the admin Mentor editor. Which world(s) a mentor covers is never stored
-// here - that assignment lives entirely on worlds.mentorId, set per world
-// in the admin World editor (scripts/seed-worlds.ts).
+// WH-09/WH-10. Which world(s) a mentor covers is never stored here - that
+// assignment lives entirely on worlds.mentorId, set per world in the admin
+// World editor (scripts/seed-worlds.ts).
+//
+// Seeds as DRAFT (status defaults to "draft" - never set explicitly here),
+// never published: a seed script isn't a real staff publish action, and
+// draft-by-default can't be fooled by a mis-set DATABASE_URL the way a
+// "only auto-publish outside production" check could be. A staff member
+// still has to publish each mentor through the admin Mentor editor before
+// it's ever learner-visible (Phase 5 security audit finding).
 //
 // Refuses to touch a key that already exists, so this is safe to run again
 // (e.g. against a fresh database) without overwriting staff edits.
@@ -88,22 +92,21 @@ async function seed() {
         name: mentor.name,
         bio: mentor.bio,
         persona: mentor.persona,
-        status: "published",
-        publishedAt: new Date(),
-        // No staff actor - script-seeded, not a real staff publish action.
+        // status defaults to "draft" - a staff member must publish this
+        // through the admin Mentor editor before it's learner-visible.
       })
       .returning();
 
     await logActivity({
       actorType: "system",
-      action: "mentor.published",
+      action: "mentor.created",
       targetType: "mentor",
       targetId: created.id,
       metadata: { key: created.key, source: "seed-mentors" },
     });
 
     createdCount++;
-    console.log(`Seeded mentor "${mentor.key}" (published).`);
+    console.log(`Seeded mentor "${mentor.key}" (draft - publish it in the admin Mentor editor).`);
   }
 
   console.log(`Done. ${createdCount} mentor(s) newly created.`);

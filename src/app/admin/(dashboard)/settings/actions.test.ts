@@ -61,6 +61,15 @@ vi.mock("@/server/rank-titles/service", () => ({
     mockDeleteRankTitleForAdmin(actor, id, meta),
 }));
 
+const mockCreateTopicForAdmin = vi.fn();
+const mockUpdateTopicForAdmin = vi.fn();
+vi.mock("@/server/topics/service", () => ({
+  createTopicForAdmin: (actor: unknown, input: unknown, meta: unknown) =>
+    mockCreateTopicForAdmin(actor, input, meta),
+  updateTopicForAdmin: (actor: unknown, id: unknown, input: unknown, meta: unknown) =>
+    mockUpdateTopicForAdmin(actor, id, input, meta),
+}));
+
 import {
   createRankTitleAction,
   deleteRankTitleAction,
@@ -71,6 +80,8 @@ import {
   updateRewardRuleAction,
   updateStreaksSettingsAction,
   updateVmIssuanceMultiplierAction,
+  createTopicAction,
+  updateTopicAction,
 } from "./actions";
 
 const ACTOR = { id: "staff_1" };
@@ -188,6 +199,32 @@ describe("wrong role is rejected", () => {
 
     expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
     expect(mockDeleteRankTitleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("createTopicAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+    );
+
+    const result = await createTopicAction({ order: 1, name: { en: "x", hi: "x", hx: "x" }, active: true });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockCreateTopicForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("updateTopicAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+    );
+
+    const result = await updateTopicAction("topic_1", {
+      order: 1,
+      name: { en: "x", hi: "x", hx: "x" },
+      active: true,
+    });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockUpdateTopicForAdmin).not.toHaveBeenCalled();
   });
 });
 
@@ -403,5 +440,50 @@ describe("happy path", () => {
     expect(result).toEqual({ ok: true });
     expect(mockDeleteRankTitleForAdmin).toHaveBeenCalledWith(ACTOR, "rt_1", expect.any(Object));
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("createTopicAction creates and revalidates", async () => {
+    const input = { order: 1, name: { en: "RBI & Rates", hi: "x", hx: "x" }, active: true };
+    mockCreateTopicForAdmin.mockResolvedValueOnce({ id: "topic_1", ...input });
+
+    const result = await createTopicAction(input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockCreateTopicForAdmin).toHaveBeenCalledWith(ACTOR, input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("createTopicAction rejects a blank language without calling the service", async () => {
+    const result = await createTopicAction({ order: 1, name: { en: "", hi: "x", hx: "x" }, active: true });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreateTopicForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("createTopicAction surfaces a CONFLICT from a duplicate order", async () => {
+    mockCreateTopicForAdmin.mockRejectedValueOnce(new AppError("CONFLICT", "Order 1 is already in use"));
+
+    const result = await createTopicAction({ order: 1, name: { en: "x", hi: "x", hx: "x" }, active: true });
+
+    expect(result).toEqual({ ok: false, error: "Order 1 is already in use" });
+  });
+
+  it("updateTopicAction updates and revalidates", async () => {
+    const input = { order: 2, name: { en: "Inflation", hi: "x", hx: "x" }, active: false };
+    mockUpdateTopicForAdmin.mockResolvedValueOnce({ id: "topic_1", ...input });
+
+    const result = await updateTopicAction("topic_1", input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdateTopicForAdmin).toHaveBeenCalledWith(ACTOR, "topic_1", input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("updateTopicAction surfaces NOT_FOUND for an unknown id", async () => {
+    mockUpdateTopicForAdmin.mockRejectedValueOnce(new AppError("NOT_FOUND", "Topic not found"));
+
+    const result = await updateTopicAction("nope", { order: 1, name: { en: "x", hi: "x", hx: "x" }, active: true });
+
+    expect(result).toEqual({ ok: false, error: "Topic not found" });
   });
 });

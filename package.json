@@ -29,9 +29,11 @@
     "seed:instruments": "tsx scripts/seed-instruments.ts",
     "seed:market-holidays": "tsx scripts/seed-market-holidays.ts",
     "seed:funds": "tsx scripts/seed-funds.ts",
+    "seed:topics": "tsx scripts/seed-topics.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
     "@asteasolutions/zod-to-openapi": "^9.1.0",
     "@aws-sdk/client-s3": "^3.1136.0",
     "@aws-sdk/s3-request-presigner": "^3.1136.0",

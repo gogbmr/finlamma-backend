@@ -10,7 +10,9 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { idAndTimestamps, type LocalizedText } from "./_helpers";
+import { newsStories } from "./news";
 import { staffMembers } from "./staff";
+import { topics } from "./topics";
 
 export const questionFormatEnum = pgEnum("question_format", [
   "single_select",
@@ -19,6 +21,11 @@ export const questionFormatEnum = pgEnum("question_format", [
   "fill_blank",
   "match_pairs",
   "spot_mistake",
+  // Phase 5: Pulse Check's "Number Pakdo" slider - the one prototype format
+  // with no existing equivalent (single_select already covers MCQ/binary/
+  // odd-one-out by original Phase 2b design - see this file's own comment
+  // on single_select in src/server/questions/schemas.ts).
+  "number_guess",
 ]);
 export const questionStatusEnum = pgEnum("question_status", ["draft", "published"]);
 
@@ -40,7 +47,24 @@ export const questions = pgTable(
   {
     ...idAndTimestamps(),
     format: questionFormatEnum("format").notNull(),
-    topic: text("topic"), // fixed admin-extensible taxonomy (see NW gap #4) - refined later
+    // Deprecated by Phase 5's `topics` table (topicId, below) - kept
+    // nullable and unread by any new code so main's pre-Phase-5 code (which
+    // doesn't exist - nothing has ever written a real value here, verified
+    // empty in production) has nothing to lose. Dropped in a follow-up
+    // migration once this phase's code is confirmed deployed to main, per
+    // CLAUDE.md rule 8.
+    topic: text("topic"),
+    topicId: uuid("topic_id").references(() => topics.id, { onDelete: "set null" }),
+    // Phase 5 Checkpoint 4: which news story this question was AI-drafted
+    // from, for Pulse Check's edition-building query (news_editions picks
+    // published questions with a sourceStoryId pointing at a published
+    // story) and NW-13's "shows its source headline" requirement. Null for
+    // every pre-Phase-5 question (lesson/quiz content) and for any
+    // Pulse-Check question a staff member authors from scratch rather than
+    // from an AI draft. A real column, not smuggled into `payload`, so it
+    // stays queryable/indexable and independent of format-specific shape -
+    // same reasoning topicId is a real column rather than payload data.
+    sourceStoryId: uuid("source_story_id").references(() => newsStories.id, { onDelete: "set null" }),
     prompt: jsonb("prompt").$type<LocalizedText>().notNull(),
     explanation: jsonb("explanation").$type<LocalizedText>().notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -59,7 +83,11 @@ export const questions = pgTable(
       onDelete: "set null",
     }),
   },
-  (t) => [index("questions_status_idx").on(t.status)],
+  (t) => [
+    index("questions_status_idx").on(t.status),
+    index("questions_topic_id_idx").on(t.topicId),
+    index("questions_source_story_id_idx").on(t.sourceStoryId),
+  ],
 ).enableRLS();
 
 // Full-content snapshot of a question at one revision (D22,
