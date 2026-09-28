@@ -35,7 +35,15 @@ const STATUS_LABEL: Record<PipelineStoryRow["status"], string> = {
 const NO_TOPIC = "__none__";
 const NO_OVERRIDE = "__auto__";
 
-function StatusSelect({ storyId, status }: { storyId: string; status: PipelineStoryRow["status"] }) {
+function StatusSelect({
+  storyId,
+  status,
+  canPublish,
+}: {
+  storyId: string;
+  status: PipelineStoryRow["status"];
+  canPublish: boolean;
+}) {
   const [isPending, startTransition] = useTransition();
 
   function change(next: string) {
@@ -50,7 +58,7 @@ function StatusSelect({ storyId, status }: { storyId: string; status: PipelineSt
   }
 
   return (
-    <Select value={status} onValueChange={change} disabled={isPending}>
+    <Select value={status} onValueChange={change} disabled={isPending || !canPublish}>
       <SelectTrigger className="w-32">
         <SelectValue />
       </SelectTrigger>
@@ -69,10 +77,12 @@ function QualityOverrideSelect({
   storyId,
   qualityGrade,
   qualityGradeOverride,
+  canManage,
 }: {
   storyId: string;
   qualityGrade: "A" | "B" | "C";
   qualityGradeOverride: "A" | "B" | "C" | null;
+  canManage: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -90,7 +100,7 @@ function QualityOverrideSelect({
   return (
     <div className="flex items-center gap-1.5">
       <Badge variant="secondary">{qualityGrade}</Badge>
-      <Select value={qualityGradeOverride ?? NO_OVERRIDE} onValueChange={change} disabled={isPending}>
+      <Select value={qualityGradeOverride ?? NO_OVERRIDE} onValueChange={change} disabled={isPending || !canManage}>
         <SelectTrigger className="w-24">
           <SelectValue />
         </SelectTrigger>
@@ -109,10 +119,12 @@ function TopicSelect({
   storyId,
   topicId,
   topics,
+  canManage,
 }: {
   storyId: string;
   topicId: string | null;
   topics: { id: string; name: LocalizedText }[];
+  canManage: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -128,7 +140,7 @@ function TopicSelect({
   }
 
   return (
-    <Select value={topicId ?? NO_TOPIC} onValueChange={change} disabled={isPending}>
+    <Select value={topicId ?? NO_TOPIC} onValueChange={change} disabled={isPending || !canManage}>
       <SelectTrigger className="w-40">
         <SelectValue />
       </SelectTrigger>
@@ -147,9 +159,13 @@ function TopicSelect({
 export function PipelineTable({
   stories,
   topics,
+  canManage,
+  canPublish,
 }: {
   stories: PipelineStoryRow[];
   topics: { id: string; name: LocalizedText }[];
+  canManage: boolean;
+  canPublish: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -201,13 +217,14 @@ export function PipelineTable({
                     storyId={story.id}
                     qualityGrade={story.qualityGrade}
                     qualityGradeOverride={story.qualityGradeOverride}
+                    canManage={canManage}
                   />
                 </TableCell>
                 <TableCell>
-                  <TopicSelect storyId={story.id} topicId={story.topicId} topics={topics} />
+                  <TopicSelect storyId={story.id} topicId={story.topicId} topics={topics} canManage={canManage} />
                 </TableCell>
                 <TableCell>
-                  <StatusSelect storyId={story.id} status={story.status} />
+                  <StatusSelect storyId={story.id} status={story.status} canPublish={canPublish} />
                 </TableCell>
               </TableRow>
               {expandedId === story.id && (

@@ -13,11 +13,6 @@ vi.mock("@/lib/settings", () => ({
     mockSetSettingJson(key, value, description),
 }));
 
-const mockCreditVmoneyRow = vi.fn();
-vi.mock("@/server/economy/repo", () => ({
-  creditVmoneyRow: (input: unknown) => mockCreditVmoneyRow(input),
-}));
-
 const mockGetVmIssuanceMultiplier = vi.fn();
 vi.mock("@/server/economy/service", () => ({
   getVmIssuanceMultiplier: () => mockGetVmIssuanceMultiplier(),
@@ -55,9 +50,9 @@ const mockInsertEditionIfNew = vi.fn();
 const mockInsertServedAnswerIfNew = vi.fn();
 const mockListAnswersForAttempt = vi.fn();
 const mockListEligibleQuestionsForEdition = vi.fn();
-const mockMarkAttemptCompleted = vi.fn();
-const mockSumPulseCheckVmCreditedToday = vi.fn();
+const mockFinishAttemptTx = vi.fn();
 vi.mock("./repo", () => ({
+  finishAttemptTx: (input: unknown) => mockFinishAttemptTx(input),
   getActiveUserCount: () => mockGetActiveUserCount(),
   getAnswerByStep: (a: unknown, s: unknown) => mockGetAnswerByStep(a, s),
   getAttemptById: (id: unknown) => mockGetAttemptById(id),
@@ -76,8 +71,6 @@ vi.mock("./repo", () => ({
   listAnswersForAttempt: (id: unknown) => mockListAnswersForAttempt(id),
   listEligibleQuestionsForEdition: (formats: unknown, limit: unknown) =>
     mockListEligibleQuestionsForEdition(formats, limit),
-  markAttemptCompleted: (id: unknown, result: unknown) => mockMarkAttemptCompleted(id, result),
-  sumPulseCheckVmCreditedToday: (userId: unknown, at: unknown) => mockSumPulseCheckVmCreditedToday(userId, at),
 }));
 
 import {
@@ -138,27 +131,29 @@ describe("startAttempt", () => {
     mockGetInProgressAttempt.mockResolvedValueOnce(null);
     mockInsertAttempt.mockResolvedValueOnce({ id: "attempt_1" });
 
-    const result = await startAttempt(USER, NOW);
+    const result = await startAttempt(USER, META, NOW);
 
     expect(result).toEqual({ attemptId: "attempt_1", editionId: "edition_1", totalSteps: 2, resumed: false });
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "pulse_check.attempt_started" }));
   });
 
   it("throws NOT_FOUND when no eligible questions exist yet", async () => {
     mockGetEditionByDate.mockResolvedValueOnce(null);
     mockListEligibleQuestionsForEdition.mockResolvedValueOnce([]);
 
-    await expect(startAttempt(USER, NOW)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(startAttempt(USER, META, NOW)).rejects.toMatchObject({ code: "NOT_FOUND" });
     expect(mockInsertEditionIfNew).not.toHaveBeenCalled();
   });
 
-  it("resumes an existing in-progress attempt rather than creating a new one", async () => {
+  it("resumes an existing in-progress attempt rather than creating a new one, and does not log a fresh start", async () => {
     mockGetEditionByDate.mockResolvedValueOnce({ id: "edition_1", questionIds: ["q1"] });
     mockGetInProgressAttempt.mockResolvedValueOnce({ id: "attempt_existing" });
 
-    const result = await startAttempt(USER, NOW);
+    const result = await startAttempt(USER, META, NOW);
 
     expect(result).toEqual({ attemptId: "attempt_existing", editionId: "edition_1", totalSteps: 1, resumed: true });
     expect(mockInsertAttempt).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 
@@ -186,21 +181,29 @@ describe("getCurrentPulseCheck", () => {
 describe("serveStep", () => {
   it("blocks skipping ahead - step 2 requires step 1 to already be answered", async () => {
     mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
-    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1", "q2"] });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1", "q2"], date: "2026-09-28" });
     mockGetAnswerByStep.mockResolvedValueOnce(null); // step 1 never served
 
-    await expect(serveStep(USER, "attempt_1", 2)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(serveStep(USER, "attempt_1", 2, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
   it("404s for an attempt belonging to a different user", async () => {
     mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: "someone_else", status: "in_progress" });
 
-    await expect(serveStep(USER, "attempt_1", 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(serveStep(USER, "attempt_1", 1, NOW)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("rejects serving a step on an attempt whose edition is no longer today's IST date", async () => {
+    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-20" }); // a past day
+
+    await expect(serveStep(USER, "attempt_1", 1, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mockInsertServedAnswerIfNew).not.toHaveBeenCalled();
   });
 
   it("serves step 1 and includes the source headline/topic", async () => {
     mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
-    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"] });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-28" });
     mockGetQuestionForServing.mockResolvedValueOnce({
       id: "q1",
       format: "single_select",
@@ -214,7 +217,7 @@ describe("serveStep", () => {
     mockGetTopicById.mockResolvedValueOnce({ name: { en: "RBI", hi: "x", hx: "x" } });
     mockGetStoryHeadline.mockResolvedValueOnce({ en: "H", hi: "H", hx: "H" });
 
-    const result = await serveStep(USER, "attempt_1", 1);
+    const result = await serveStep(USER, "attempt_1", 1, NOW);
 
     expect(result.question.topic).toEqual({ en: "RBI", hi: "x", hx: "x" });
     expect(result.question.sourceHeadline).toEqual({ en: "H", hi: "H", hx: "H" });
@@ -235,7 +238,8 @@ const REVISION = {
 
 describe("submitAnswer", () => {
   it("returns the original graded result on a replay, without re-scoring", async () => {
-    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress" });
+    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-28" });
     mockGetAnswerByStep.mockResolvedValueOnce({
       questionId: "q1",
       servedRevision: 1,
@@ -249,14 +253,26 @@ describe("submitAnswer", () => {
     mockGetQuestionForServing.mockResolvedValueOnce(QUESTION);
     mockGetQuestionRevisionForGrading.mockResolvedValueOnce(REVISION);
 
-    const result = await submitAnswer(USER, "attempt_1", 1, { correctIndex: 0 }, NOW);
+    const result = await submitAnswer(USER, "attempt_1", 1, { correctIndex: 0 }, META, NOW);
 
     expect(result.vmAwarded).toBe(50);
     expect(mockGradeAnswerRowIfUnanswered).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled(); // replay writes nothing, so nothing is logged
+  });
+
+  it("rejects serving a step on an attempt whose edition is no longer today's IST date", async () => {
+    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-20" }); // a past day
+
+    await expect(submitAnswer(USER, "attempt_1", 1, { correctIndex: 0 }, META, NOW)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(mockGetAnswerByStep).not.toHaveBeenCalled();
   });
 
   it("rejects a structurally invalid answer for the question's format", async () => {
-    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress" });
+    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-28" });
     mockGetAnswerByStep.mockResolvedValueOnce({
       questionId: "q1",
       servedRevision: 1,
@@ -267,13 +283,14 @@ describe("submitAnswer", () => {
     mockGetQuestionForServing.mockResolvedValueOnce(QUESTION);
     mockGetQuestionRevisionForGrading.mockResolvedValueOnce(REVISION);
 
-    await expect(submitAnswer(USER, "attempt_1", 1, { notAValidShape: true }, NOW)).rejects.toMatchObject({
+    await expect(submitAnswer(USER, "attempt_1", 1, { notAValidShape: true }, META, NOW)).rejects.toMatchObject({
       code: "VALIDATION_FAILED",
     });
   });
 
-  it("grades a fresh answer and stores it in paise", async () => {
-    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress" });
+  it("grades a fresh answer, stores it in paise, and logs the mutation", async () => {
+    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-28" });
     mockGetAnswerByStep.mockResolvedValueOnce({
       questionId: "q1",
       servedRevision: 1,
@@ -291,7 +308,7 @@ describe("submitAnswer", () => {
       vmAwardedPaise: 5000,
     });
 
-    const result = await submitAnswer(USER, "attempt_1", 1, { correctIndex: 0 }, NOW);
+    const result = await submitAnswer(USER, "attempt_1", 1, { correctIndex: 0 }, META, NOW);
 
     expect(result.isCorrect).toBe(true);
     expect(result.vmAwarded).toBe(50);
@@ -300,13 +317,21 @@ describe("submitAnswer", () => {
       1,
       expect.objectContaining({ vmAwardedPaise: 5000 }), // 30 base + 15 speed + 5 combo = 50 VM = 5000 paise
     );
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "pulse_check.step_answered" }));
   });
 });
 
-// --- D51's daily VM cap: under, at, over, and a mid-day cap change ---
+// --- finishAttempt: computes the raw VM total and delegates the actual
+// cap-clamping/crediting to finishAttemptTx (repo.ts). D51's cap arithmetic
+// itself - under/at/over/mid-day-change, and the concurrency fix - is now
+// proven against real Postgres in repo.test.ts, since a mocked unit test
+// fundamentally can't verify a row lock actually serializes two
+// transactions. These tests instead prove finishAttempt (a) computes the
+// right inputs and hands them to finishAttemptTx, and (b) correctly
+// surfaces/acts on whatever finishAttemptTx reports. ---
 
 const ATTEMPT = { id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "edition_1" };
-const EDITION = { id: "edition_1", questionIds: ["q1", "q2"] };
+const EDITION = { id: "edition_1", questionIds: ["q1", "q2"], date: "2026-09-28" }; // matches NOW's IST date
 function answeredRows(vmPaiseList: number[]) {
   return vmPaiseList.map((vmAwardedPaise, i) => ({
     stepIndex: i + 1,
@@ -317,101 +342,99 @@ function answeredRows(vmPaiseList: number[]) {
   }));
 }
 
-describe("finishAttempt - D51 daily VM cap", () => {
+describe("finishAttempt", () => {
   beforeEach(() => {
     mockGetAttemptById.mockResolvedValue(ATTEMPT);
     mockGetEditionById.mockResolvedValue(EDITION);
-    mockMarkAttemptCompleted.mockImplementation(async (id, result) => ({ ...ATTEMPT, ...result, status: "completed" }));
+    mockFinishAttemptTx.mockImplementation(async (input) => ({
+      completed: { ...ATTEMPT, status: "completed", totalVmAwardedPaise: input.rawVmEarnedPaise, dailyCapReached: false },
+      totalVmAwardedPaise: input.rawVmEarnedPaise,
+      dailyCapReached: false,
+    }));
   });
 
-  // allCorrectBonusVm: 0 throughout - isolates the cap-clamping arithmetic
-  // from the separate all-correct bonus (both rows below are correct, so
-  // the bonus would otherwise also fire and complicate the expected sums).
-  // EDITION has 2 questionIds, so every answeredRows() array here has 2
-  // entries to satisfy finishAttempt's "every question answered" check.
+  it("computes the raw VM total (answers + all-correct bonus, multiplier applied) and the cap in paise, and hands both to finishAttemptTx", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 100, dailyVmCap: 300 });
+    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([5000, 5000])); // both correct - all-correct bonus fires
+    mockGetVmIssuanceMultiplier.mockResolvedValueOnce(1.0);
 
-  it("under the cap: the full raw amount is credited, dailyCapReached is false", async () => {
-    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 300 });
-    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([5000, 5000])); // 100 VM raw
-    mockSumPulseCheckVmCreditedToday.mockResolvedValueOnce(0);
+    await finishAttempt(USER, "attempt_1", META, NOW);
 
-    const result = await finishAttempt(USER, "attempt_1", META, NOW);
-
-    expect(result.rawVmEarnedPaise).toBe(10_000); // 100 VM
-    expect(result.totalVmAwardedPaise).toBe(10_000);
-    expect(result.dailyCapReached).toBe(false);
-    expect(mockCreditVmoneyRow).toHaveBeenCalledWith(
-      expect.objectContaining({ amountPaise: 10_000, sourceType: "pulse_check_attempt", sourceId: "edition_1" }),
+    expect(mockFinishAttemptTx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: USER.id,
+        attemptId: "attempt_1",
+        at: NOW,
+        dailyCapPaise: 30_000, // 300 VM cap * 100 paise/VM
+        accuracyPct: 100,
+        bestCombo: 2,
+        allCorrectBonusAwarded: true,
+        rawVmEarnedPaise: 20_000, // 5000 + 5000 answers + 10,000 (100 VM bonus), all in paise
+        multiplierApplied: 1.0,
+      }),
     );
   });
 
-  it("exactly at the cap: fully credited, dailyCapReached is false (nothing was actually cut)", async () => {
-    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 100 });
-    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([5000, 5000])); // 100 VM raw = cap exactly
-    mockSumPulseCheckVmCreditedToday.mockResolvedValueOnce(0);
+  it("applies the global VM issuance multiplier once, to the raw total, before handing it to finishAttemptTx", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 1000 });
+    mockGetVmIssuanceMultiplier.mockResolvedValueOnce(2.0);
+    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([2500, 2500])); // 50 VM raw
 
-    const result = await finishAttempt(USER, "attempt_1", META, NOW);
+    await finishAttempt(USER, "attempt_1", META, NOW);
 
-    expect(result.rawVmEarnedPaise).toBe(10_000);
-    expect(result.totalVmAwardedPaise).toBe(10_000);
-    expect(result.dailyCapReached).toBe(false);
+    expect(mockFinishAttemptTx).toHaveBeenCalledWith(
+      expect.objectContaining({ rawVmEarnedPaise: 10_000, multiplierApplied: 2.0 }), // 50 VM * 2.0 = 100 VM = 10,000 paise
+    );
   });
 
-  it("over the cap: credited amount is clamped, dailyCapReached is true, result is not silently a smaller number with no explanation", async () => {
+  it("surfaces totalVmAwardedPaise and dailyCapReached exactly as finishAttemptTx reports them", async () => {
     mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 60 });
-    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([5000, 5000])); // 100 VM raw, cap 60
-    mockSumPulseCheckVmCreditedToday.mockResolvedValueOnce(0);
+    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([5000, 5000]));
+    mockFinishAttemptTx.mockResolvedValueOnce({
+      completed: { ...ATTEMPT, status: "completed", totalVmAwardedPaise: 6000, dailyCapReached: true },
+      totalVmAwardedPaise: 6000,
+      dailyCapReached: true,
+    });
 
     const result = await finishAttempt(USER, "attempt_1", META, NOW);
 
-    expect(result.rawVmEarnedPaise).toBe(10_000);
-    expect(result.totalVmAwardedPaise).toBe(6000); // clamped to the 60 VM cap
+    // Not silently a smaller number with no explanation - dailyCapReached
+    // surfaces exactly what finishAttemptTx decided, unmodified.
+    expect(result.totalVmAwardedPaise).toBe(6000);
     expect(result.dailyCapReached).toBe(true);
-    expect(mockCreditVmoneyRow).toHaveBeenCalledWith(expect.objectContaining({ amountPaise: 6000 }));
   });
 
-  it("the quiz still runs, still completes, and still counts for the streak even when the cap was already fully used today", async () => {
-    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 50 });
-    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([1500, 1500])); // 30 VM raw
-    mockSumPulseCheckVmCreditedToday.mockResolvedValueOnce(5000); // already earned 50 VM today (the cap)
+  it("still records the streak and logs the mutation when the attempt completes, even if the cap clamped the credit to 0", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(DEFAULT_PULSE_CHECK_SCORING);
+    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([1500, 1500]));
+    mockFinishAttemptTx.mockResolvedValueOnce({
+      completed: { ...ATTEMPT, status: "completed", totalVmAwardedPaise: 0, dailyCapReached: true },
+      totalVmAwardedPaise: 0,
+      dailyCapReached: true,
+    });
 
     const result = await finishAttempt(USER, "attempt_1", META, NOW);
 
     expect(result.totalVmAwardedPaise).toBe(0);
-    expect(result.dailyCapReached).toBe(true);
-    expect(mockCreditVmoneyRow).not.toHaveBeenCalled(); // nothing to credit, no zero-amount ledger row
     expect(mockRecordPulseCheckActivity).toHaveBeenCalledWith(USER.id, NOW); // streak still counts
-    expect(mockMarkAttemptCompleted).toHaveBeenCalled(); // attempt still completes normally
+    expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "pulse_check.attempt_finished" }));
   });
 
-  it("a cap change mid-day is read live: raising the cap after an earlier credit allows more to be earned", async () => {
-    // Earlier today: cap was 50, already credited 50. Now staff raises the
-    // cap to 150 before this attempt finishes - the raised value must be
-    // what governs this credit, not a stale cached one.
-    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 150 });
-    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([3000, 3000])); // 60 VM raw
-    mockSumPulseCheckVmCreditedToday.mockResolvedValueOnce(5000); // 50 VM already credited today
+  it("never records the streak or logs when finishAttemptTx loses the race (a concurrent duplicate finish for this exact attempt)", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(DEFAULT_PULSE_CHECK_SCORING);
+    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([5000, 5000]));
+    mockFinishAttemptTx.mockResolvedValueOnce({ completed: null, totalVmAwardedPaise: 0, dailyCapReached: false });
+    mockGetAttemptById
+      .mockResolvedValueOnce(ATTEMPT)
+      .mockResolvedValueOnce({ ...ATTEMPT, status: "completed", totalVmAwardedPaise: 10_000 });
 
-    const result = await finishAttempt(USER, "attempt_1", META, NOW);
+    await finishAttempt(USER, "attempt_1", META, NOW);
 
-    // remaining cap = 150 - 50 = 100, raw earned = 60, so fully credited
-    expect(result.totalVmAwardedPaise).toBe(6000);
-    expect(result.dailyCapReached).toBe(false);
+    expect(mockRecordPulseCheckActivity).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it("applies the global VM issuance multiplier once, to the attempt total, before the cap", async () => {
-    mockGetSettingJson.mockResolvedValueOnce({ ...DEFAULT_PULSE_CHECK_SCORING, allCorrectBonusVm: 0, dailyVmCap: 1000 });
-    mockGetVmIssuanceMultiplier.mockResolvedValueOnce(2.0);
-    mockListAnswersForAttempt.mockResolvedValueOnce(answeredRows([2500, 2500])); // 50 VM raw
-    mockSumPulseCheckVmCreditedToday.mockResolvedValueOnce(0);
-
-    const result = await finishAttempt(USER, "attempt_1", META, NOW);
-
-    expect(result.rawVmEarnedPaise).toBe(10_000); // 50 VM * 2.0 multiplier = 100 VM
-    expect(mockCreditVmoneyRow).toHaveBeenCalledWith(expect.objectContaining({ multiplierApplied: 2.0 }));
-  });
-
-  it("is idempotent - finishing an already-completed attempt returns the stored result and credits nothing again", async () => {
+  it("is idempotent - finishing an already-completed attempt returns the stored result and never calls finishAttemptTx", async () => {
     mockGetAttemptById.mockResolvedValueOnce({
       ...ATTEMPT,
       status: "completed",
@@ -426,7 +449,7 @@ describe("finishAttempt - D51 daily VM cap", () => {
     const result = await finishAttempt(USER, "attempt_1", META, NOW);
 
     expect(result.totalVmAwardedPaise).toBe(10_000);
-    expect(mockCreditVmoneyRow).not.toHaveBeenCalled();
+    expect(mockFinishAttemptTx).not.toHaveBeenCalled();
     expect(mockListAnswersForAttempt).not.toHaveBeenCalled();
   });
 
@@ -435,7 +458,20 @@ describe("finishAttempt - D51 daily VM cap", () => {
     mockListAnswersForAttempt.mockResolvedValueOnce([{ stepIndex: 1, answeredAt: new Date() }]); // 1 of 2 answered
 
     await expect(finishAttempt(USER, "attempt_1", META, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(mockMarkAttemptCompleted).not.toHaveBeenCalled();
+    expect(mockFinishAttemptTx).not.toHaveBeenCalled();
+  });
+
+  // D51 root-cause fix: closes the exploit the cap race depended on - a
+  // learner leaving an attempt in_progress past its edition's IST day can
+  // never finish it for credit, so concurrent finishes across several
+  // stale editions (the scenario the security audit found) can no longer
+  // even reach finishAttemptTx in the first place.
+  it("throws CONFLICT (expired) when the attempt's edition is no longer today's IST date", async () => {
+    mockGetAttemptById.mockResolvedValueOnce({ ...ATTEMPT, editionId: "stale_edition" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "stale_edition", questionIds: ["q1", "q2"], date: "2026-09-20" });
+
+    await expect(finishAttempt(USER, "attempt_1", META, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect(mockFinishAttemptTx).not.toHaveBeenCalled();
   });
 });
 

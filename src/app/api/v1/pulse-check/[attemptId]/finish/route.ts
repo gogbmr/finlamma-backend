@@ -82,7 +82,12 @@ registry.registerPath({
 export const POST = withErrors(async (req: Request, { params }: { params: Promise<{ attemptId: string }> }) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  const { allowed } = await checkRateLimit(user.id, PULSE_CHECK_STEP_RATE_LIMIT, true);
+  // failOpen: false (not true, unlike serve/answer) - finish is the one
+  // Pulse Check endpoint that credits vmoney_ledger, so per this codebase's
+  // own rate-limit convention (src/lib/redis.ts's checkRateLimit doc
+  // comment) it's treated as money-affecting: refuse rather than let an
+  // unbounded burst through if Redis can't be checked.
+  const { allowed } = await checkRateLimit(user.id, PULSE_CHECK_STEP_RATE_LIMIT, false);
   if (!allowed) {
     throw new AppError("RATE_LIMITED", "Too many requests - slow down and try again shortly");
   }

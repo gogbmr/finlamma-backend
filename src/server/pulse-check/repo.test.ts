@@ -14,6 +14,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  finishAttemptTx,
   getActiveUserCount,
   getAnswerByStep,
   getDailyCompletedAttemptCounts,
@@ -252,6 +253,84 @@ describe("sumPulseCheckVmCreditedToday", () => {
   it("returns 0 when nothing has been credited", async () => {
     const user = await seedUser();
     expect(await sumPulseCheckVmCreditedToday(user.id, new Date())).toBe(0);
+  });
+});
+
+// D51 cap-race fix (Phase 5 security audit): finishAttemptTx locks the
+// user's row before reading today's already-credited total, so two
+// concurrent finishes for the SAME user - even across DIFFERENT editions,
+// where vmoney_ledger's (userId, sourceType, sourceId) uniqueness can't
+// dedupe them - must still serialize and never together exceed the daily
+// cap. Same "Promise.all against real PGlite" technique as
+// src/server/rewards/repo.test.ts's claimRewardTx concurrency tests, which
+// this mirrors.
+describe("finishAttemptTx - D51 daily VM cap concurrency", () => {
+  it("stays within the daily cap under two concurrent finishes for DIFFERENT editions", async () => {
+    const user = await seedUser();
+    const { question: q1 } = await seedPublishedQuestionFromPublishedStory("cap-race-a");
+    const { question: q2 } = await seedPublishedQuestionFromPublishedStory("cap-race-b");
+    const editionA = await insertEditionIfNew("2026-04-01", [q1.id]);
+    const editionB = await insertEditionIfNew("2026-04-02", [q2.id]);
+    const attemptA = await insertAttempt(user.id, editionA!.id);
+    const attemptB = await insertAttempt(user.id, editionB!.id);
+
+    const at = new Date();
+    const dailyCapPaise = 10_000; // 100 VM cap
+    const commonInput = {
+      userId: user.id,
+      at,
+      dailyCapPaise,
+      accuracyPct: 100,
+      bestCombo: 1,
+      allCorrectBonusAwarded: false,
+      rawVmEarnedPaise: 8_000, // 80 VM each - together 160 VM would blow the 100 VM cap without the lock
+      multiplierApplied: 1,
+    };
+
+    const [resultA, resultB] = await Promise.all([
+      finishAttemptTx({ ...commonInput, attemptId: attemptA.id }),
+      finishAttemptTx({ ...commonInput, attemptId: attemptB.id }),
+    ]);
+
+    const totalAwarded = resultA.totalVmAwardedPaise + resultB.totalVmAwardedPaise;
+    // This is the assertion that would fail without the fix: before the fix,
+    // both calls could independently read "0 already credited" and each
+    // clamp-and-credit up to the full 10,000 paise cap, awarding 16,000
+    // total. With the fix, the second call to actually commit always sees
+    // the first one's credit, so together they can never exceed the cap.
+    expect(totalAwarded).toBeLessThanOrEqual(dailyCapPaise);
+    expect(totalAwarded).toBe(dailyCapPaise); // 8000 + 8000 clamps to exactly the 10,000 cap
+    expect([resultA.dailyCapReached, resultB.dailyCapReached]).toContain(true);
+
+    // The real ledger total must match what finishAttemptTx reported -
+    // proves the credit that actually landed in vmoney_ledger, not just the
+    // in-memory return value, respects the cap.
+    const actualCredited = await sumPulseCheckVmCreditedToday(user.id, at);
+    expect(actualCredited).toBe(totalAwarded);
+    expect(actualCredited).toBeLessThanOrEqual(dailyCapPaise);
+  });
+
+  it("a single finish still credits and completes normally, under the cap", async () => {
+    const user = await seedUser();
+    const { question } = await seedPublishedQuestionFromPublishedStory("finish-tx-solo");
+    const edition = await insertEditionIfNew("2026-04-03", [question.id]);
+    const attempt = await insertAttempt(user.id, edition!.id);
+
+    const result = await finishAttemptTx({
+      userId: user.id,
+      attemptId: attempt.id,
+      at: new Date(),
+      dailyCapPaise: 20_000,
+      accuracyPct: 100,
+      bestCombo: 1,
+      allCorrectBonusAwarded: true,
+      rawVmEarnedPaise: 5_000,
+      multiplierApplied: 1,
+    });
+
+    expect(result.completed?.status).toBe("completed");
+    expect(result.totalVmAwardedPaise).toBe(5_000);
+    expect(result.dailyCapReached).toBe(false);
   });
 });
 

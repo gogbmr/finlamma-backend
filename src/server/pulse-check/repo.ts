@@ -11,6 +11,7 @@ import {
   vmoneyLedger,
 } from "@/db/schema";
 import { istDateStartUtc } from "@/lib/ist-date";
+import { insertVmoneyLedgerEntryIfNew, type DbOrTx } from "@/server/economy/repo";
 
 // Published questions AI-drafted from a published story, for building an
 // edition's question pool - an inner join so a question whose source story
@@ -191,7 +192,18 @@ export async function markAttemptCompleted(
 // this codebase) - scoped to sourceType so it only ever counts Pulse Check
 // credits, never lesson/reward/other VM.
 export async function sumPulseCheckVmCreditedToday(userId: string, at: Date): Promise<number> {
-  const [row] = await db
+  return sumPulseCheckVmCreditedTodayTx(db, userId, at);
+}
+
+// Same query as above, but runs against a caller-supplied transaction
+// handle - finishAttemptTx below reads this AFTER locking the user's row,
+// same "lock, then read, then write, all in one transaction" shape as
+// src/server/rewards/repo.ts's claimRewardTx (see its comment for why the
+// lock has to come first). Duplicated rather than sharing one function with
+// a default `db` param, mirroring src/server/economy/repo.ts's
+// sumVmoneyBalance/sumVmoneyBalanceTx split.
+async function sumPulseCheckVmCreditedTodayTx(txDb: DbOrTx, userId: string, at: Date): Promise<number> {
+  const [row] = await txDb
     .select({ total: sql<string | number>`coalesce(sum(${vmoneyLedger.amountPaise}), 0)` })
     .from(vmoneyLedger)
     .where(
@@ -202,6 +214,73 @@ export async function sumPulseCheckVmCreditedToday(userId: string, at: Date): Pr
       ),
     );
   return Number(row?.total ?? 0);
+}
+
+// The D51 cap-race fix (found in the Phase 5 security audit): the old
+// finishAttempt read sumPulseCheckVmCreditedToday, clamped in JS, then wrote
+// - with no lock, two concurrent finish calls for the SAME user (even
+// across different attempts/editions, since vmoney_ledger's uniqueness is
+// only scoped per-edition) could both read the same stale "already credited
+// today" total and each independently credit up to the full remaining cap,
+// so the real total credited that day could exceed dailyVmCap.
+//
+// Fix: lock this user's row first (`select ... for update`, identical
+// technique to claimRewardTx), THEN read the daily total, THEN clamp, THEN
+// write both the attempt row and the ledger credit - all inside one
+// transaction. Two concurrent finishAttempt calls for one user now always
+// serialize through this lock, so the second one always sees the first
+// one's credit before computing its own remaining cap.
+export async function finishAttemptTx(input: {
+  userId: string;
+  attemptId: string;
+  at: Date;
+  dailyCapPaise: number;
+  accuracyPct: number;
+  bestCombo: number;
+  allCorrectBonusAwarded: boolean;
+  rawVmEarnedPaise: number;
+  multiplierApplied: number;
+}) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${users} where id = ${input.userId} for update`);
+
+    const alreadyCreditedTodayPaise = await sumPulseCheckVmCreditedTodayTx(tx, input.userId, input.at);
+    const remainingCapPaise = Math.max(0, input.dailyCapPaise - alreadyCreditedTodayPaise);
+    const totalVmAwardedPaise = Math.min(input.rawVmEarnedPaise, remainingCapPaise);
+    const dailyCapReached = totalVmAwardedPaise < input.rawVmEarnedPaise;
+
+    // Same atomic "WHERE status = in_progress" guard as the old
+    // markAttemptCompleted - a duplicate/racing finish for the exact same
+    // attempt still matches nothing and credits nothing on its second run.
+    const [completed] = await tx
+      .update(pulseCheckAttempts)
+      .set({
+        accuracyPct: input.accuracyPct,
+        bestCombo: input.bestCombo,
+        allCorrectBonusAwarded: input.allCorrectBonusAwarded,
+        rawVmEarnedPaise: input.rawVmEarnedPaise,
+        totalVmAwardedPaise,
+        dailyCapReached,
+        status: "completed",
+        completedAt: new Date(),
+      })
+      .where(and(eq(pulseCheckAttempts.id, input.attemptId), eq(pulseCheckAttempts.status, "in_progress")))
+      .returning();
+
+    if (completed && totalVmAwardedPaise > 0) {
+      await insertVmoneyLedgerEntryIfNew(tx, {
+        userId: input.userId,
+        sourceType: "pulse_check_attempt",
+        sourceId: completed.editionId,
+        ruleId: null,
+        reason: "Pulse Check completed",
+        amountPaise: totalVmAwardedPaise,
+        multiplierApplied: input.multiplierApplied,
+      });
+    }
+
+    return { completed, totalVmAwardedPaise, dailyCapReached };
+  });
 }
 
 // Question content + its answer key at the exact revision served -

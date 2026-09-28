@@ -17,8 +17,8 @@ vi.mock("@/lib/redis", () => ({
 
 const mockSubmitAnswer = vi.fn();
 vi.mock("@/server/pulse-check/service", () => ({
-  submitAnswer: (user: unknown, attemptId: unknown, n: unknown, answer: unknown) =>
-    mockSubmitAnswer(user, attemptId, n, answer),
+  submitAnswer: (user: unknown, attemptId: unknown, n: unknown, answer: unknown, meta: unknown) =>
+    mockSubmitAnswer(user, attemptId, n, answer, meta),
 }));
 
 import { POST } from "./route";
@@ -73,6 +73,6 @@ describe("POST /api/v1/pulse-check/{attemptId}/steps/{n}/answer", () => {
     });
 
     expect(res.status).toBe(200);
-    expect(mockSubmitAnswer).toHaveBeenCalledWith(USER, ATTEMPT_ID, 1, { correctIndex: 0 });
+    expect(mockSubmitAnswer).toHaveBeenCalledWith(USER, ATTEMPT_ID, 1, { correctIndex: 0 }, expect.any(Object));
   });
 });

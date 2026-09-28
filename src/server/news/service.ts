@@ -71,6 +71,17 @@ export async function draftPendingStories(limit = 10): Promise<{ drafted: number
         ...findAdviceLikePhrases(draft.content.summary.en),
         ...draft.content.body.flatMap((p) => findAdviceLikePhrases(p.en)),
         ...findAdviceLikePhrases(draft.jargon.explanation.en),
+        // Phase 5 security audit: the AI-drafted Quick Check question comes
+        // from the same tool call as the story text above, so it needs the
+        // same scan - without this, advice-like phrasing could land in the
+        // question's prompt/options/explanation and never trip the
+        // reviewer warning (computeQualityGrade below only ever saw the
+        // story-side warnings). Not exploitable today since getNewsProvider
+        // only returns fixed mock fixtures (D50), but this closes the gap
+        // before a real, untrusted vendor is ever wired in.
+        ...findAdviceLikePhrases(draft.question.prompt.en),
+        ...draft.question.options.flatMap((o) => findAdviceLikePhrases(o.en)),
+        ...findAdviceLikePhrases(draft.question.explanation.en),
       ];
 
       const qualityGrade = computeQualityGrade({

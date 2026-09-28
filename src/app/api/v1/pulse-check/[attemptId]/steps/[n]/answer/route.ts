@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, withErrors } from "@/lib/http";
+import { ok, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { checkRateLimit, PULSE_CHECK_STEP_RATE_LIMIT } from "@/lib/redis";
 import { requireFullAccess } from "@/server/onboarding/service";
@@ -102,6 +102,6 @@ export const POST = withErrors(
     const parsed = PulseCheckStepParamsSchema.safeParse(await params);
     if (!parsed.success) throw new AppError("VALIDATION_FAILED", "Invalid attempt id or step number");
     const { answer } = PulseCheckSubmitAnswerRequestSchema.parse(await req.json());
-    return ok(await submitAnswer(user, parsed.data.attemptId, parsed.data.n, answer));
+    return ok(await submitAnswer(user, parsed.data.attemptId, parsed.data.n, answer, requestMeta(req.headers)));
   },
 );

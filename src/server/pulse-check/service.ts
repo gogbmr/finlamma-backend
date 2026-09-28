@@ -1,4 +1,3 @@
-import { creditVmoneyRow } from "@/server/economy/repo";
 import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import { getNewsQuizGeneratorSettings } from "@/server/news/service";
@@ -12,6 +11,7 @@ import type { requestMeta } from "@/lib/http";
 import { istDateStartUtc, istDateString } from "@/lib/ist-date";
 import { computePulseCheckAnswerScore } from "./scoring";
 import {
+  finishAttemptTx,
   getActiveUserCount,
   getAnswerByStep,
   getAttemptById,
@@ -29,8 +29,6 @@ import {
   insertServedAnswerIfNew,
   listAnswersForAttempt,
   listEligibleQuestionsForEdition,
-  markAttemptCompleted,
-  sumPulseCheckVmCreditedToday,
 } from "./repo";
 import {
   DEFAULT_PULSE_CHECK_SCORING,
@@ -134,7 +132,7 @@ export async function getCurrentPulseCheck(userId: string, at: Date = new Date()
   };
 }
 
-export async function startAttempt(user: { id: string }, at: Date = new Date()) {
+export async function startAttempt(user: { id: string }, meta: RequestMeta, at: Date = new Date()) {
   const edition = await ensureTodaysEdition(at);
 
   const existing = await getInProgressAttempt(user.id, edition.id);
@@ -143,6 +141,16 @@ export async function startAttempt(user: { id: string }, at: Date = new Date()) 
   }
 
   const created = await insertAttempt(user.id, edition.id);
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "pulse_check.attempt_started",
+    targetType: "pulse_check_attempts",
+    targetId: created.id,
+    metadata: { editionId: edition.id },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
   return { attemptId: created.id, editionId: edition.id, totalSteps: edition.questionIds.length, resumed: false };
 }
 
@@ -152,12 +160,44 @@ async function requireOwnAttempt(user: { id: string }, attemptId: string) {
   return attempt;
 }
 
-export async function serveStep(user: { id: string }, attemptId: string, stepIndex: number) {
+// The D51 cap-race root cause (Phase 5 security audit): startAttempt only
+// ever targets TODAY's IST edition (ensureTodaysEdition above), so a
+// learner can never directly start an attempt on a past edition - but
+// nothing previously stopped them from leaving an attempt in_progress
+// forever (closing the app mid-quiz) and coming back on a LATER day to
+// serve/answer/finish it, by which point it belongs to a past edition. That
+// gap is what let concurrent finish calls target several different
+// editions' stale attempts at once and each race the same day's cap. Fix:
+// once an in_progress attempt's edition is no longer today's IST date, it's
+// simply expired - every further serve/answer/finish call on it rejects.
+// No expiry job needed: an expired attempt just sits there forever,
+// harmless, since it can never again be served, answered or credited.
+// (Edge case, accepted: an attempt started just before midnight IST that's
+// still being played when the date rolls over also expires mid-session,
+// same as this codebase's other daily-reset boundaries, e.g. streaks.)
+async function requireCurrentEditionAttempt(user: { id: string }, attemptId: string, at: Date) {
+  const attempt = await requireOwnAttempt(user, attemptId);
+  if (attempt.status === "in_progress") {
+    const edition = await getEditionById(attempt.editionId);
+    if (!edition || edition.date !== istDateString(at)) {
+      throw new AppError("CONFLICT", "This Pulse Check has expired - start a new one for today");
+    }
+  }
+  return attempt;
+}
+
+export async function serveStep(user: { id: string }, attemptId: string, stepIndex: number, at: Date = new Date()) {
   const attempt = await requireOwnAttempt(user, attemptId);
   if (attempt.status !== "in_progress") throw new AppError("CONFLICT", "This attempt is already finished");
 
   const edition = await getEditionById(attempt.editionId);
   if (!edition) throw new AppError("NOT_FOUND", "Edition not found");
+  // D51 root-cause fix: an in_progress attempt left open past its edition's
+  // IST day can never be served again - see requireCurrentEditionAttempt's
+  // comment above for why.
+  if (edition.date !== istDateString(at)) {
+    throw new AppError("CONFLICT", "This Pulse Check has expired - start a new one for today");
+  }
   const totalSteps = edition.questionIds.length;
   if (stepIndex < 1 || stepIndex > totalSteps) {
     throw new AppError("VALIDATION_FAILED", `stepIndex must be between 1 and ${totalSteps}`);
@@ -204,8 +244,15 @@ export async function serveStep(user: { id: string }, attemptId: string, stepInd
   };
 }
 
-export async function submitAnswer(user: { id: string }, attemptId: string, stepIndex: number, rawAnswer: unknown, at: Date = new Date()) {
-  const attempt = await requireOwnAttempt(user, attemptId);
+export async function submitAnswer(
+  user: { id: string },
+  attemptId: string,
+  stepIndex: number,
+  rawAnswer: unknown,
+  meta: RequestMeta,
+  at: Date = new Date(),
+) {
+  const attempt = await requireCurrentEditionAttempt(user, attemptId, at);
   if (attempt.status !== "in_progress") throw new AppError("CONFLICT", "This attempt is already finished");
 
   const servedRow = await getAnswerByStep(attemptId, stepIndex);
@@ -264,6 +311,20 @@ export async function submitAnswer(user: { id: string }, attemptId: string, step
   const finalRow = graded ?? (await getAnswerByStep(attemptId, stepIndex));
   if (!finalRow) throw new AppError("INTERNAL", "Failed to grade answer");
 
+  // Logged only on a genuinely fresh grade (never on the idempotent-replay
+  // branch above, which writes nothing) - same "log the mutation, not the
+  // read" rule quiz-attempts/service.ts's step_answered already follows.
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "pulse_check.step_answered",
+    targetType: "pulse_check_attempts",
+    targetId: attemptId,
+    metadata: { stepIndex, isCorrect: finalRow.isCorrect, vmAwardedPaise: finalRow.vmAwardedPaise },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
   return {
     isCorrect: finalRow.isCorrect ?? false,
     timedOut: finalRow.timedOut ?? false,
@@ -303,6 +364,16 @@ export async function finishAttempt(user: { id: string }, attemptId: string, met
 
   const edition = await getEditionById(attempt.editionId);
   if (!edition) throw new AppError("NOT_FOUND", "Edition not found");
+  // D51 root-cause fix: this is what actually closes the cap race at its
+  // source - a stale in_progress attempt (left open past its edition's IST
+  // day) can never reach the credit path below. Combined with the
+  // transactional lock in finishAttemptTx, which stops a race between
+  // TODAY's edition and any other in_progress attempt for this user, VM can
+  // only ever be credited once per edition per day, full stop. See
+  // requireCurrentEditionAttempt's comment above for the fuller reasoning.
+  if (edition.date !== istDateString(at)) {
+    throw new AppError("CONFLICT", "This Pulse Check has expired - start a new one for today");
+  }
   const answers = await listAnswersForAttempt(attemptId);
   if (answers.length < edition.questionIds.length || answers.some((a) => !a.answeredAt)) {
     throw new AppError("CONFLICT", "Answer every question before finishing");
@@ -319,34 +390,25 @@ export async function finishAttempt(user: { id: string }, attemptId: string, met
   const allCorrectBonusPaise = allCorrect ? scoring.allCorrectBonusVm * VM_TO_LEDGER_PAISE : 0;
   const multiplier = await getVmIssuanceMultiplier();
   const rawVmEarnedPaise = Math.round((sumAnswersPaise + allCorrectBonusPaise) * multiplier);
-
-  const alreadyCreditedTodayPaise = await sumPulseCheckVmCreditedToday(user.id, at);
   const dailyCapPaise = scoring.dailyVmCap * VM_TO_LEDGER_PAISE;
-  const remainingCapPaise = Math.max(0, dailyCapPaise - alreadyCreditedTodayPaise);
-  const totalVmAwardedPaise = Math.min(rawVmEarnedPaise, remainingCapPaise);
-  const dailyCapReached = totalVmAwardedPaise < rawVmEarnedPaise;
 
-  const completed = await markAttemptCompleted(attemptId, {
+  // Everything from here on (reading today's already-credited total,
+  // clamping to the cap, marking the attempt completed, crediting the
+  // ledger) happens inside one locked transaction - see finishAttemptTx's
+  // comment in repo.ts for why the lock has to come before the read.
+  const { completed, totalVmAwardedPaise, dailyCapReached } = await finishAttemptTx({
+    userId: user.id,
+    attemptId,
+    at,
+    dailyCapPaise,
     accuracyPct,
     bestCombo,
     allCorrectBonusAwarded: allCorrect,
     rawVmEarnedPaise,
-    totalVmAwardedPaise,
-    dailyCapReached,
+    multiplierApplied: multiplier,
   });
 
   if (completed) {
-    if (totalVmAwardedPaise > 0) {
-      await creditVmoneyRow({
-        userId: user.id,
-        sourceType: "pulse_check_attempt",
-        sourceId: attempt.editionId,
-        ruleId: null,
-        reason: "Pulse Check completed",
-        amountPaise: totalVmAwardedPaise,
-        multiplierApplied: multiplier,
-      });
-    }
     await recordPulseCheckActivity(user.id, at);
     await logActivity({
       actorType: "user",

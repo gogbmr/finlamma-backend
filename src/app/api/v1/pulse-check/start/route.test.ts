@@ -11,7 +11,7 @@ vi.mock("@/server/onboarding/service", () => ({
 
 const mockStartAttempt = vi.fn();
 vi.mock("@/server/pulse-check/service", () => ({
-  startAttempt: (user: unknown) => mockStartAttempt(user),
+  startAttempt: (user: unknown, meta: unknown) => mockStartAttempt(user, meta),
 }));
 
 import { POST } from "./route";
@@ -53,6 +53,6 @@ describe("POST /api/v1/pulse-check/start", () => {
     const res = await POST(makeRequest());
 
     expect(res.status).toBe(200);
-    expect(mockStartAttempt).toHaveBeenCalledWith(USER);
+    expect(mockStartAttempt).toHaveBeenCalledWith(USER, expect.any(Object));
   });
 });

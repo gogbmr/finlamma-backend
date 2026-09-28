@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { ok, withErrors } from "@/lib/http";
+import { ok, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
 import { PulseCheckStartResponseSchema } from "@/server/pulse-check/schemas";
@@ -59,5 +59,5 @@ registry.registerPath({
 export const POST = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  return ok(await startAttempt(user));
+  return ok(await startAttempt(user, requestMeta(req.headers)));
 });

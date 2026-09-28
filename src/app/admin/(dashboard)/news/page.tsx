@@ -95,6 +95,8 @@ export default async function NewsDeskPage() {
           createdAt: s.createdAt,
         }))}
         topics={topics.map((t) => ({ id: t.id, name: t.name }))}
+        canManage={canManage}
+        canPublish={canPublish}
       />
 
       {/* NW-38..42's quiz generator settings and D51's Pulse Check scoring/
