@@ -1,26 +1,35 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
-import { logInternalError } from "@/lib/http";
+import { decodeCursor, encodeCursor, logInternalError } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import { findAdviceLikePhrases } from "@/server/trading/advice-language";
 import { draftNewsStoryFromRaw } from "./ai";
 import { computeQualityGrade } from "./grading";
 import { getNewsProvider } from "./providers";
+import { computeMinReadSeconds } from "./reading-time";
 import {
+  getExistingRead,
+  getPublishedStoryById,
   getRawIngestedCount,
   getStoryById,
   getStoryStatusCounts,
   getUndraftedRawCount,
   insertDraftStory,
   insertRawItemsIfNew,
+  insertReadIfNew,
+  listActiveDeskPicks,
   listAllStories,
+  listPublishedStories,
+  listReadStoryIdsForUser,
   listRecentNewsEvents,
   listUndraftedRaw,
+  type NewsFeedCursor,
   updateStoryQualityOverrideRow,
   updateStoryStatusRow,
   updateStoryTopicRow,
 } from "./repo";
+import type { NewsCategory } from "./schemas";
 import {
   DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS,
   NEWS_QUIZ_GENERATOR_SETTINGS_KEY,
@@ -90,6 +99,97 @@ export async function draftPendingStories(limit = 10): Promise<{ drafted: number
   }
 
   return { drafted, failed };
+}
+
+// --- Learner-facing feed (NW-01..11) ---
+
+export async function getNewsFeed(
+  userId: string,
+  opts: { limit: number; cursor: string | null; category: NewsCategory | null },
+) {
+  const cursor = decodeCursor<NewsFeedCursor>(opts.cursor);
+  const { data, nextCursor } = await listPublishedStories({
+    limit: opts.limit,
+    cursor,
+    category: opts.category,
+  });
+  const readIds = await listReadStoryIdsForUser(
+    userId,
+    data.map((s) => s.id),
+  );
+  return {
+    data: data.map((s) => ({
+      id: s.id,
+      headline: s.content.headline,
+      summary: s.content.summary,
+      category: s.category,
+      impact: s.impact,
+      outlet: s.outlet,
+      featured: s.featured,
+      publishedAt: (s.publishedAt ?? s.createdAt).toISOString(),
+      read: readIds.has(s.id),
+    })),
+    nextCursor: nextCursor ? encodeCursor(nextCursor) : null,
+  };
+}
+
+export async function getNewsStoryDetail(userId: string, id: string) {
+  const story = await getPublishedStoryById(id);
+  if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
+
+  const [existingRead] = await Promise.all([getExistingRead(userId, id)]);
+  return {
+    id: story.id,
+    headline: story.content.headline,
+    summary: story.content.summary,
+    body: story.content.body,
+    jargon: story.jargon,
+    category: story.category,
+    impact: story.impact,
+    outlet: story.outlet,
+    sourceUrl: story.sourceUrl,
+    publishedAt: (story.publishedAt ?? story.createdAt).toISOString(),
+    read: existingRead !== null,
+    minReadSeconds: computeMinReadSeconds(story.content.body.map((p) => p.en)),
+  };
+}
+
+// NW-09: server-validated, not client-trusted - the client's own
+// dwellSeconds is checked against a real minimum computed from the
+// story's own content length (src/server/news/reading-time.ts), not just
+// accepted at face value. Idempotent: a repeat POST for an already-read
+// story returns { read: true, alreadyRead: true } rather than an error or
+// a second logged event.
+export async function markNewsStoryRead(user: { id: string }, storyId: string, dwellSeconds: number, meta: RequestMeta) {
+  const story = await getPublishedStoryById(storyId);
+  if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
+
+  const existing = await getExistingRead(user.id, storyId);
+  if (existing) return { read: true, alreadyRead: true };
+
+  const minRequired = computeMinReadSeconds(story.content.body.map((p) => p.en));
+  if (dwellSeconds < minRequired) {
+    throw new AppError("NEWS_READ_TOO_SOON", `Keep reading for at least ${minRequired} seconds`);
+  }
+
+  const inserted = await insertReadIfNew(user.id, storyId, dwellSeconds);
+  if (!inserted) return { read: true, alreadyRead: true }; // lost a race with a concurrent identical request
+
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "news.story_read",
+    targetType: "news_stories",
+    targetId: storyId,
+    metadata: { dwellSeconds },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return { read: true, alreadyRead: false };
+}
+
+export async function getNewsDeskPicksForApp() {
+  return listActiveDeskPicks();
 }
 
 // --- News Desk admin (staff actions) ---

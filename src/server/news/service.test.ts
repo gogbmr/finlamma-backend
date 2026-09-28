@@ -35,26 +35,39 @@ vi.mock("./providers", () => ({
   getNewsProvider: () => mockGetNewsProvider(),
 }));
 
+const mockGetExistingRead = vi.fn();
+const mockGetPublishedStoryById = vi.fn();
 const mockGetRawIngestedCount = vi.fn();
 const mockGetStoryById = vi.fn();
 const mockGetStoryStatusCounts = vi.fn();
 const mockGetUndraftedRawCount = vi.fn();
 const mockInsertDraftStory = vi.fn();
 const mockInsertRawItemsIfNew = vi.fn();
+const mockInsertReadIfNew = vi.fn();
+const mockListActiveDeskPicks = vi.fn();
 const mockListAllStories = vi.fn();
+const mockListPublishedStories = vi.fn();
+const mockListReadStoryIdsForUser = vi.fn();
 const mockListRecentNewsEvents = vi.fn();
 const mockListUndraftedRaw = vi.fn();
 const mockUpdateStoryQualityOverrideRow = vi.fn();
 const mockUpdateStoryStatusRow = vi.fn();
 const mockUpdateStoryTopicRow = vi.fn();
 vi.mock("./repo", () => ({
+  getExistingRead: (userId: unknown, storyId: unknown) => mockGetExistingRead(userId, storyId),
+  getPublishedStoryById: (id: unknown) => mockGetPublishedStoryById(id),
   getRawIngestedCount: () => mockGetRawIngestedCount(),
   getStoryById: (id: unknown) => mockGetStoryById(id),
   getStoryStatusCounts: () => mockGetStoryStatusCounts(),
   getUndraftedRawCount: () => mockGetUndraftedRawCount(),
   insertDraftStory: (input: unknown) => mockInsertDraftStory(input),
   insertRawItemsIfNew: (source: unknown, items: unknown) => mockInsertRawItemsIfNew(source, items),
+  insertReadIfNew: (userId: unknown, storyId: unknown, dwell: unknown) =>
+    mockInsertReadIfNew(userId, storyId, dwell),
+  listActiveDeskPicks: () => mockListActiveDeskPicks(),
   listAllStories: () => mockListAllStories(),
+  listPublishedStories: (opts: unknown) => mockListPublishedStories(opts),
+  listReadStoryIdsForUser: (userId: unknown, ids: unknown) => mockListReadStoryIdsForUser(userId, ids),
   listRecentNewsEvents: (limit: unknown) => mockListRecentNewsEvents(limit),
   listUndraftedRaw: (limit: unknown) => mockListUndraftedRaw(limit),
   updateStoryQualityOverrideRow: (id: unknown, v: unknown) => mockUpdateStoryQualityOverrideRow(id, v),
@@ -64,9 +77,13 @@ vi.mock("./repo", () => ({
 
 import {
   draftPendingStories,
+  getNewsDeskPicksForApp,
+  getNewsFeed,
   getNewsKpisForAdmin,
   getNewsQuizGeneratorSettings,
+  getNewsStoryDetail,
   ingestLatestNews,
+  markNewsStoryRead,
   updateNewsQuizGeneratorSettings,
   updateNewsStoryStatusForAdmin,
 } from "./service";
@@ -228,5 +245,114 @@ describe("news quiz generator settings", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "news.quiz_generator_settings_updated" }),
     );
+  });
+});
+
+const PUBLISHED_STORY = {
+  id: "story_1",
+  content: {
+    headline: { en: "H", hi: "H", hx: "H" },
+    summary: { en: "S", hi: "S", hx: "S" },
+    body: [{ en: "word ".repeat(40), hi: "x", hx: "x" }], // 40 words -> 20s min read
+  },
+  jargon: { term: { en: "repo rate", hi: "x", hx: "x" }, explanation: { en: "x", hi: "x", hx: "x" } },
+  category: "rbi_rates",
+  impact: "neutral",
+  outlet: "mock",
+  sourceUrl: "https://example.com/a",
+  featured: false,
+  publishedAt: new Date("2026-09-28T04:00:00.000Z"),
+  createdAt: new Date("2026-09-28T03:00:00.000Z"),
+};
+
+describe("getNewsFeed", () => {
+  it("marks read stories from listReadStoryIdsForUser and shapes each preview", async () => {
+    mockListPublishedStories.mockResolvedValueOnce({ data: [PUBLISHED_STORY], nextCursor: null });
+    mockListReadStoryIdsForUser.mockResolvedValueOnce(new Set(["story_1"]));
+
+    const result = await getNewsFeed("user_1", { limit: 20, cursor: null, category: null });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: "story_1", category: "rbi_rates", read: true });
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("a story not in the read set shows read: false", async () => {
+    mockListPublishedStories.mockResolvedValueOnce({ data: [PUBLISHED_STORY], nextCursor: null });
+    mockListReadStoryIdsForUser.mockResolvedValueOnce(new Set());
+
+    const result = await getNewsFeed("user_1", { limit: 20, cursor: null, category: null });
+
+    expect(result.data[0].read).toBe(false);
+  });
+});
+
+describe("getNewsStoryDetail", () => {
+  it("returns full detail including a computed minReadSeconds", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+    mockGetExistingRead.mockResolvedValueOnce(null);
+
+    const result = await getNewsStoryDetail("user_1", "story_1");
+
+    expect(result.minReadSeconds).toBe(20);
+    expect(result.read).toBe(false);
+  });
+
+  it("throws NOT_FOUND for a draft/hidden/nonexistent story", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(null);
+
+    await expect(getNewsStoryDetail("user_1", "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+describe("markNewsStoryRead", () => {
+  it("rejects with NEWS_READ_TOO_SOON when dwellSeconds is below the computed minimum", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+    mockGetExistingRead.mockResolvedValueOnce(null);
+
+    await expect(markNewsStoryRead({ id: "user_1" }, "story_1", 5, META)).rejects.toMatchObject({
+      code: "NEWS_READ_TOO_SOON",
+    });
+    expect(mockInsertReadIfNew).not.toHaveBeenCalled();
+  });
+
+  it("records the read and logs it when dwellSeconds meets the minimum", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+    mockGetExistingRead.mockResolvedValueOnce(null);
+    mockInsertReadIfNew.mockResolvedValueOnce({ id: "read_1" });
+
+    const result = await markNewsStoryRead({ id: "user_1" }, "story_1", 20, META);
+
+    expect(result).toEqual({ read: true, alreadyRead: false });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "news.story_read", metadata: { dwellSeconds: 20 } }),
+    );
+  });
+
+  it("is idempotent - a repeat call for an already-read story returns alreadyRead: true, no new log", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+    mockGetExistingRead.mockResolvedValueOnce({ id: "read_1" });
+
+    const result = await markNewsStoryRead({ id: "user_1" }, "story_1", 20, META);
+
+    expect(result).toEqual({ read: true, alreadyRead: true });
+    expect(mockInsertReadIfNew).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND for a story that isn't published", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(null);
+
+    await expect(markNewsStoryRead({ id: "user_1" }, "nope", 20, META)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+});
+
+describe("getNewsDeskPicksForApp", () => {
+  it("passes through to the repo", async () => {
+    mockListActiveDeskPicks.mockResolvedValueOnce([{ id: "pick_1" }]);
+
+    expect(await getNewsDeskPicksForApp()).toHaveLength(1);
   });
 });

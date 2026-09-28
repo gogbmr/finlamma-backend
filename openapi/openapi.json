@@ -1464,7 +1464,8 @@
                   "sort_buckets",
                   "fill_blank",
                   "match_pairs",
-                  "spot_mistake"
+                  "spot_mistake",
+                  "number_guess"
                 ]
               },
               "prompt": {
@@ -2910,6 +2911,340 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "NewsStoryPreview": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "headline": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "example": "rbi_rates"
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "neutral"
+            ]
+          },
+          "outlet": {
+            "type": "string",
+            "example": "mock"
+          },
+          "featured": {
+            "type": "boolean"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean",
+            "description": "Whether the caller has already read this story"
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "summary",
+          "category",
+          "impact",
+          "outlet",
+          "featured",
+          "publishedAt",
+          "read"
+        ]
+      },
+      "NewsStoryDetail": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "headline": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ]
+          },
+          "body": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "en": {
+                  "type": "string"
+                },
+                "hi": {
+                  "type": "string"
+                },
+                "hx": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "en",
+                "hi",
+                "hx"
+              ]
+            }
+          },
+          "jargon": {
+            "type": "object",
+            "properties": {
+              "term": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  },
+                  "hi": {
+                    "type": "string"
+                  },
+                  "hx": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en",
+                  "hi",
+                  "hx"
+                ]
+              },
+              "explanation": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  },
+                  "hi": {
+                    "type": "string"
+                  },
+                  "hx": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en",
+                  "hi",
+                  "hx"
+                ]
+              }
+            },
+            "required": [
+              "term",
+              "explanation"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "example": "rbi_rates"
+          },
+          "impact": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "neutral"
+            ]
+          },
+          "outlet": {
+            "type": "string",
+            "example": "mock"
+          },
+          "sourceUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "minReadSeconds": {
+            "type": "integer",
+            "description": "The dwellSeconds the app must report to POST .../read for this to count",
+            "example": 25
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "summary",
+          "body",
+          "jargon",
+          "category",
+          "impact",
+          "outlet",
+          "sourceUrl",
+          "publishedAt",
+          "read",
+          "minReadSeconds"
+        ]
+      },
+      "NewsDeskPick": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "desk_pick",
+              "exam_alert",
+              "scam_watch"
+            ]
+          },
+          "storyId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "content": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "title": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  },
+                  "hi": {
+                    "type": "string"
+                  },
+                  "hx": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en",
+                  "hi",
+                  "hx"
+                ]
+              },
+              "body": {
+                "type": "object",
+                "properties": {
+                  "en": {
+                    "type": "string"
+                  },
+                  "hi": {
+                    "type": "string"
+                  },
+                  "hx": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "en",
+                  "hi",
+                  "hx"
+                ]
+              }
+            },
+            "required": [
+              "title",
+              "body"
+            ]
+          },
+          "attribution": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "storyId",
+          "content",
+          "attribution"
         ]
       }
     },
@@ -8398,6 +8733,424 @@
                   "error": {
                     "code": "CONFLICT",
                     "message": "Cannot pause a SIP plan that is currently \"cancelled\""
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/news/feed": {
+      "get": {
+        "summary": "Get the published news feed (NW-01..07)",
+        "description": "Published stories only, newest first, cursor-paginated. Each row includes whether the caller has already read it (news_reads). Optionally filtered to one category.",
+        "tags": [
+          "News"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Page size, default 20",
+              "example": "20"
+            },
+            "required": false,
+            "description": "Page size, default 20",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Opaque pagination cursor from a previous page's nextCursor"
+            },
+            "required": false,
+            "description": "Opaque pagination cursor from a previous page's nextCursor",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Filter to one news_category value",
+              "example": "rbi_rates"
+            },
+            "required": false,
+            "description": "Filter to one news_category value",
+            "name": "category",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the published news feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NewsStoryPreview"
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit, cursor or category",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid category"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/news/{id}": {
+      "get": {
+        "summary": "Get a published news story's full detail (NW-08)",
+        "description": "Full body, jargon term and the minimum read time (minReadSeconds) the app must report to POST .../read for the read to actually count. 404s for a draft/hidden story - it isn't learner-visible regardless of whether the caller has the id.",
+        "tags": [
+          "News"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The news story's id"
+            },
+            "required": true,
+            "description": "The news story's id",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The story's full detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsStoryDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published news story with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published news story with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/news/{id}/read": {
+      "post": {
+        "summary": "Mark a news story as read (NW-09)",
+        "description": "Server-validated, not client-trusted: the reported dwellSeconds is checked against a real minimum computed from the story's own content length (see GET .../{id}'s minReadSeconds), and rejected with NEWS_READ_TOO_SOON if it's too low. Idempotent - a repeat call for an already-read story returns { read: true, alreadyRead: true }, never a second logged event.",
+        "tags": [
+          "News"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The news story's id"
+            },
+            "required": true,
+            "description": "The news story's id",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dwellSeconds": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "How many seconds the client measured the story being on screen",
+                    "example": 30
+                  }
+                },
+                "required": [
+                  "dwellSeconds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The read was recorded (or already had been)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "read": {
+                      "type": "boolean"
+                    },
+                    "alreadyRead": {
+                      "type": "boolean",
+                      "description": "true if this story was already marked read earlier"
+                    }
+                  },
+                  "required": [
+                    "read",
+                    "alreadyRead"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published news story with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published news story with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The reported dwell time is below this story's minimum read time",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NEWS_READ_TOO_SOON",
+                    "message": "Keep reading for at least 25 seconds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/news/desk-picks": {
+      "get": {
+        "summary": "Get the currently active News Desk picks (NW-05, NW-46)",
+        "description": "Staff-curated highlight cards (Desk Pick / Exam Alert / Scam Watch), shown separately from the algorithmic feed. Entirely staff-authored - never touched by the AI ingestion pipeline.",
+        "tags": [
+          "News"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active desk picks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NewsDeskPick"
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
                   }
                 },
                 "schema": {

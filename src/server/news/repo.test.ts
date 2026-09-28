@@ -4,17 +4,25 @@
 // undrafted-raw join, and the pipeline status writes actually hold at the
 // database level.
 import { afterAll, describe, expect, it, vi } from "vitest";
+import { users } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
+import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  getExistingRead,
+  getPublishedStoryById,
   getRawIngestedCount,
   getStoryStatusCounts,
   getUndraftedRawCount,
   insertDraftStory,
   insertRawItemsIfNew,
+  insertReadIfNew,
+  listActiveDeskPicks,
   listAllStories,
+  listPublishedStories,
+  listReadStoryIdsForUser,
   listUndraftedRaw,
   updateStoryQualityOverrideRow,
   updateStoryStatusRow,
@@ -182,5 +190,128 @@ describe("KPI counts", () => {
     expect(statusCounts.draft).toBeGreaterThanOrEqual(0);
     expect(statusCounts.published).toBeGreaterThanOrEqual(0);
     expect(statusCounts.hidden).toBeGreaterThanOrEqual(0);
+  });
+});
+
+async function publishStory(externalIdSuffix: string) {
+  const raw = await seedRaw(`feed-${externalIdSuffix}`);
+  const created = await insertDraftStory({
+    rawId: raw.id,
+    category: "inflation",
+    impact: "neutral",
+    content: CONTENT,
+    jargon: JARGON,
+    outlet: "mock",
+    sourceUrl: raw.url,
+    qualityGrade: "A",
+    adviceLikeWarnings: [],
+  });
+  return updateStoryStatusRow(created.id, "published");
+}
+
+describe("listPublishedStories / getPublishedStoryById", () => {
+  it("only returns published stories, never draft or hidden ones", async () => {
+    const raw = await seedRaw("feed-draft-only");
+    await insertDraftStory({
+      rawId: raw.id,
+      category: "inflation",
+      impact: "neutral",
+      content: CONTENT,
+      jargon: JARGON,
+      outlet: "mock",
+      sourceUrl: raw.url,
+      qualityGrade: "B",
+      adviceLikeWarnings: [],
+    });
+    const published = await publishStory("visible");
+
+    const { data } = await listPublishedStories({ limit: 50, cursor: null, category: null });
+    expect(data.some((s) => s.id === published!.id)).toBe(true);
+    expect(data.every((s) => s.status === "published")).toBe(true);
+  });
+
+  it("filters by category when given", async () => {
+    const raw = await seedRaw("feed-category");
+    const created = await insertDraftStory({
+      rawId: raw.id,
+      category: "banking",
+      impact: "good",
+      content: CONTENT,
+      jargon: JARGON,
+      outlet: "mock",
+      sourceUrl: raw.url,
+      qualityGrade: "A",
+      adviceLikeWarnings: [],
+    });
+    await updateStoryStatusRow(created.id, "published");
+
+    const { data } = await listPublishedStories({ limit: 50, cursor: null, category: "banking" });
+    expect(data.every((s) => s.category === "banking")).toBe(true);
+    expect(data.some((s) => s.id === created.id)).toBe(true);
+  });
+
+  it("getPublishedStoryById returns null for a draft story", async () => {
+    const raw = await seedRaw("feed-not-published");
+    const created = await insertDraftStory({
+      rawId: raw.id,
+      category: "currency",
+      impact: "neutral",
+      content: CONTENT,
+      jargon: JARGON,
+      outlet: "mock",
+      sourceUrl: raw.url,
+      qualityGrade: "B",
+      adviceLikeWarnings: [],
+    });
+    expect(await getPublishedStoryById(created.id)).toBeNull();
+  });
+});
+
+describe("news_reads", () => {
+  async function seedUser() {
+    const [user] = await db
+      .insert(users)
+      .values({ clerkUserId: uniqueClerkUserId("news-repo-test"), clerkUpdatedAt: new Date() })
+      .returning();
+    return user;
+  }
+
+  it("insertReadIfNew inserts, and is idempotent on (userId, storyId)", async () => {
+    const user = await seedUser();
+    const story = await publishStory(`read-${user.id}`);
+
+    const first = await insertReadIfNew(user.id, story!.id, 20);
+    expect(first?.dwellSeconds).toBe(20);
+
+    const second = await insertReadIfNew(user.id, story!.id, 99);
+    expect(second).toBeNull();
+  });
+
+  it("getExistingRead / listReadStoryIdsForUser reflect what's been read", async () => {
+    const user = await seedUser();
+    const readStory = await publishStory(`get-${user.id}-a`);
+    const unreadStory = await publishStory(`get-${user.id}-b`);
+    await insertReadIfNew(user.id, readStory!.id, 20);
+
+    expect(await getExistingRead(user.id, readStory!.id)).not.toBeNull();
+    expect(await getExistingRead(user.id, unreadStory!.id)).toBeNull();
+
+    const readIds = await listReadStoryIdsForUser(user.id, [readStory!.id, unreadStory!.id]);
+    expect(readIds.has(readStory!.id)).toBe(true);
+    expect(readIds.has(unreadStory!.id)).toBe(false);
+  });
+
+  it("listReadStoryIdsForUser returns an empty set for an empty input, without a query", async () => {
+    const user = await seedUser();
+    expect((await listReadStoryIdsForUser(user.id, [])).size).toBe(0);
+  });
+});
+
+describe("listActiveDeskPicks", () => {
+  it("returns only rows the repo layer can see (active filtering is exercised via the service layer's default insert)", async () => {
+    // news_desk_picks has no repo insert helper yet (Checkpoint 2 didn't
+    // build desk-pick authoring) - this proves the function runs cleanly
+    // against an empty/absent table state rather than asserting content.
+    expect(await listActiveDeskPicks()).toEqual([]);
   });
 });

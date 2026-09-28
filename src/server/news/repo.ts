@@ -1,6 +1,6 @@
-import { count, desc, eq, isNull, like, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, like, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { activityLogs, newsRaw, newsStories } from "@/db/schema";
+import { activityLogs, newsDeskPicks, newsRaw, newsReads, newsStories } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import type { NewsCategory } from "./schemas";
 import type { RawNewsItem } from "./providers/mock";
@@ -123,6 +123,92 @@ export async function getUndraftedRawCount() {
     .leftJoin(newsStories, eq(newsStories.rawId, newsRaw.id))
     .where(isNull(newsStories.id));
   return Number(row?.n ?? 0);
+}
+
+export type NewsFeedCursor = { publishedAt: string; id: string };
+
+// Learner-facing feed (NW-01..07): published only, newest first,
+// (publishedAt, id) stable-cursor pattern - same shape as
+// listVmoneyLedgerForUser (src/server/economy/repo.ts) so a shared
+// publishedAt between two stories never skips or repeats a page.
+export async function listPublishedStories(opts: {
+  limit: number;
+  cursor: NewsFeedCursor | null;
+  category: NewsCategory | null;
+}) {
+  const conditions = [eq(newsStories.status, "published")];
+  if (opts.category) conditions.push(eq(newsStories.category, opts.category));
+  if (opts.cursor) {
+    const cursorPublishedAt = new Date(opts.cursor.publishedAt);
+    conditions.push(
+      or(
+        lt(newsStories.publishedAt, cursorPublishedAt),
+        and(eq(newsStories.publishedAt, cursorPublishedAt), lt(newsStories.id, opts.cursor.id)),
+      )!,
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(newsStories)
+    .where(and(...conditions))
+    .orderBy(desc(newsStories.publishedAt), desc(newsStories.id))
+    .limit(opts.limit + 1);
+
+  const hasMore = rows.length > opts.limit;
+  const page = hasMore ? rows.slice(0, opts.limit) : rows;
+  const last = page.at(-1);
+  const nextCursor =
+    hasMore && last && last.publishedAt
+      ? { publishedAt: last.publishedAt.toISOString(), id: last.id }
+      : null;
+  return { data: page, nextCursor };
+}
+
+export async function getPublishedStoryById(id: string) {
+  const [row] = await db
+    .select()
+    .from(newsStories)
+    .where(and(eq(newsStories.id, id), eq(newsStories.status, "published")))
+    .limit(1);
+  return row ?? null;
+}
+
+// Which of the given story ids this user has already read - one query for
+// a whole feed page, never one per row.
+export async function listReadStoryIdsForUser(userId: string, storyIds: string[]) {
+  if (storyIds.length === 0) return new Set<string>();
+  const rows = await db
+    .select({ storyId: newsReads.storyId })
+    .from(newsReads)
+    .where(and(eq(newsReads.userId, userId), inArray(newsReads.storyId, storyIds)));
+  return new Set(rows.map((r) => r.storyId));
+}
+
+export async function getExistingRead(userId: string, storyId: string) {
+  const [row] = await db
+    .select()
+    .from(newsReads)
+    .where(and(eq(newsReads.userId, userId), eq(newsReads.storyId, storyId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// Idempotent on (userId, storyId) - a re-POST for an already-read story is
+// a no-op (returns null from the conflict), same insert-and-
+// onConflictDoNothing shape as every other idempotent write in this
+// codebase (D26/D37/D46).
+export async function insertReadIfNew(userId: string, storyId: string, dwellSeconds: number) {
+  const [row] = await db
+    .insert(newsReads)
+    .values({ userId, storyId, dwellSeconds })
+    .onConflictDoNothing({ target: [newsReads.userId, newsReads.storyId] })
+    .returning();
+  return row ?? null;
+}
+
+export async function listActiveDeskPicks() {
+  return db.select().from(newsDeskPicks).where(eq(newsDeskPicks.active, true)).orderBy(desc(newsDeskPicks.createdAt));
 }
 
 // News Desk's audit log (NW-44) - same LIKE-filter-over-activity_logs

@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.0.0) on 2026-09-27.
+> Generated from `openapi/openapi.json` (version 1.0.0) on 2026-09-28.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -78,6 +78,13 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 **Relay**
 
 - `GET /api/v1/relay/config` — Get the market relay's config (market relay only, X-Relay-Secret)
+
+**News**
+
+- `GET /api/v1/news/feed` — Get the published news feed (NW-01..07)
+- `GET /api/v1/news/{id}` — Get a published news story's full detail (NW-08)
+- `POST /api/v1/news/{id}/read` — Mark a news story as read (NW-09)
+- `GET /api/v1/news/desk-picks` — Get the currently active News Desk picks (NW-05, NW-46)
 
 **Webhooks**
 
@@ -3677,6 +3684,333 @@ Called only by finlamma-market-relay (a separate repo, docs/ARCHITECTURE.md) - n
   "error": {
     "code": "SERVICE_UNAVAILABLE",
     "message": "Relay authentication is not configured"
+  }
+}
+```
+
+
+---
+
+## News
+
+### `GET /api/v1/news/feed`
+
+**Get the published news feed (NW-01..07)**
+
+Published stories only, newest first, cursor-paginated. Each row includes whether the caller has already read it (news_reads). Optionally filtered to one category.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | string | no | Page size, default 20 |
+| `cursor` | query | string | no | Opaque pagination cursor from a previous page's nextCursor |
+| `category` | query | string | no | Filter to one news_category value |
+
+**Responses**
+
+- **200** — A page of the published news feed
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "headline": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "summary": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "category": "rbi_rates",
+      "impact": "good",
+      "outlet": "mock",
+      "featured": true,
+      "publishedAt": "2026-01-01T00:00:00.000Z",
+      "read": true
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid limit, cursor or category
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid category"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/news/{id}`
+
+**Get a published news story's full detail (NW-08)**
+
+Full body, jargon term and the minimum read time (minReadSeconds) the app must report to POST .../read for the read to actually count. 404s for a draft/hidden story - it isn't learner-visible regardless of whether the caller has the id.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The news story's id |
+
+**Responses**
+
+- **200** — The story's full detail
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "headline": {
+    "en": "string",
+    "hi": "string",
+    "hx": "string"
+  },
+  "summary": {
+    "en": "string",
+    "hi": "string",
+    "hx": "string"
+  },
+  "body": [
+    {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    }
+  ],
+  "jargon": {
+    "term": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "explanation": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    }
+  },
+  "category": "rbi_rates",
+  "impact": "good",
+  "outlet": "mock",
+  "sourceUrl": "https://example.com",
+  "publishedAt": "2026-01-01T00:00:00.000Z",
+  "read": true,
+  "minReadSeconds": 25
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published news story with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published news story with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/news/{id}/read`
+
+**Mark a news story as read (NW-09)**
+
+Server-validated, not client-trusted: the reported dwellSeconds is checked against a real minimum computed from the story's own content length (see GET .../{id}'s minReadSeconds), and rejected with NEWS_READ_TOO_SOON if it's too low. Idempotent - a repeat call for an already-read story returns { read: true, alreadyRead: true }, never a second logged event.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The news story's id |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dwellSeconds` | integer | yes | How many seconds the client measured the story being on screen |
+
+```json
+{
+  "dwellSeconds": 30
+}
+```
+
+**Responses**
+
+- **200** — The read was recorded (or already had been)
+
+```json
+{
+  "read": true,
+  "alreadyRead": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published news story with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published news story with this id"
+  }
+}
+```
+
+- **429** — The reported dwell time is below this story's minimum read time
+
+```json
+{
+  "error": {
+    "code": "NEWS_READ_TOO_SOON",
+    "message": "Keep reading for at least 25 seconds"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/news/desk-picks`
+
+**Get the currently active News Desk picks (NW-05, NW-46)**
+
+Staff-curated highlight cards (Desk Pick / Exam Alert / Scam Watch), shown separately from the algorithmic feed. Entirely staff-authored - never touched by the AI ingestion pipeline.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active desk picks
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "kind": "desk_pick",
+      "storyId": "00000000-0000-0000-0000-000000000000",
+      "content": {
+        "title": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "body": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        }
+      },
+      "attribution": "string"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

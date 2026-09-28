@@ -1,5 +1,71 @@
 import { z } from "zod";
+// Side-effect import: registers Zod's .openapi() extension method, used
+// below. Must be imported before any .openapi() call in this file runs -
+// see src/lib/openapi.ts.
+import "@/lib/openapi";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
+
+const StoryPreviewSchema = z.object({
+  id: z.uuid(),
+  headline: LocalizedTextSchema,
+  summary: LocalizedTextSchema,
+  category: z.string().openapi({ example: "rbi_rates" }),
+  impact: z.enum(["good", "bad", "neutral"]),
+  outlet: z.string().openapi({ example: "mock" }),
+  featured: z.boolean(),
+  publishedAt: z.string().datetime(),
+  read: z.boolean().openapi({ description: "Whether the caller has already read this story" }),
+}).openapi("NewsStoryPreview");
+
+export const NewsFeedResponseSchema = z.object({
+  data: z.array(StoryPreviewSchema),
+  nextCursor: z.string().nullable(),
+});
+
+export const NewsStoryDetailResponseSchema = z.object({
+  id: z.uuid(),
+  headline: LocalizedTextSchema,
+  summary: LocalizedTextSchema,
+  body: z.array(LocalizedTextSchema),
+  jargon: z.object({ term: LocalizedTextSchema, explanation: LocalizedTextSchema }),
+  category: z.string().openapi({ example: "rbi_rates" }),
+  impact: z.enum(["good", "bad", "neutral"]),
+  outlet: z.string().openapi({ example: "mock" }),
+  sourceUrl: z.url(),
+  publishedAt: z.string().datetime(),
+  read: z.boolean(),
+  minReadSeconds: z
+    .number()
+    .int()
+    .openapi({ description: "The dwellSeconds the app must report to POST .../read for this to count", example: 25 }),
+}).openapi("NewsStoryDetail");
+
+export const MarkNewsReadRequestSchema = z.object({
+  dwellSeconds: z
+    .number()
+    .int()
+    .nonnegative()
+    .describe("How many seconds the client measured the story being on screen")
+    .openapi({ example: 30 }),
+});
+export type MarkNewsReadInput = z.infer<typeof MarkNewsReadRequestSchema>;
+
+export const MarkNewsReadResponseSchema = z.object({
+  read: z.boolean(),
+  alreadyRead: z.boolean().openapi({ description: "true if this story was already marked read earlier" }),
+});
+
+export const NewsDeskPickSchema = z.object({
+  id: z.uuid(),
+  kind: z.enum(["desk_pick", "exam_alert", "scam_watch"]),
+  storyId: z.uuid().nullable(),
+  content: z.object({ title: LocalizedTextSchema, body: LocalizedTextSchema }).nullable(),
+  attribution: z.string().nullable(),
+}).openapi("NewsDeskPick");
+
+export const NewsDeskPicksResponseSchema = z.object({
+  data: z.array(NewsDeskPickSchema),
+});
 
 export const NewsCategorySchema = z.enum([
   "rbi_rates",
