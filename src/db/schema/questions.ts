@@ -4,7 +4,6 @@ import {
   jsonb,
   pgEnum,
   pgTable,
-  text,
   timestamp,
   uniqueIndex,
   uuid,
@@ -47,13 +46,6 @@ export const questions = pgTable(
   {
     ...idAndTimestamps(),
     format: questionFormatEnum("format").notNull(),
-    // Deprecated by Phase 5's `topics` table (topicId, below) - kept
-    // nullable and unread by any new code so main's pre-Phase-5 code (which
-    // doesn't exist - nothing has ever written a real value here, verified
-    // empty in production) has nothing to lose. Dropped in a follow-up
-    // migration once this phase's code is confirmed deployed to main, per
-    // CLAUDE.md rule 8.
-    topic: text("topic"),
     topicId: uuid("topic_id").references(() => topics.id, { onDelete: "set null" }),
     // Phase 5 Checkpoint 4: which news story this question was AI-drafted
     // from, for Pulse Check's edition-building query (news_editions picks
