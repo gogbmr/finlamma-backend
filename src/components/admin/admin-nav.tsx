@@ -9,6 +9,7 @@ import {
   Globe2,
   HelpCircle,
   MessageSquareText,
+  Newspaper,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -42,6 +43,7 @@ export type AdminNavVisibility = {
   coachNotes: boolean;
   instruments: boolean;
   opsConsole: boolean;
+  newsDesk: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -60,6 +62,7 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
         { href: "/admin/lessons", label: "Lessons", icon: BookOpen, visible: v.lessons },
         { href: "/admin/questions", label: "Questions", icon: HelpCircle, visible: v.questions },
         { href: "/admin/mentors", label: "Mentors", icon: Users, visible: v.mentors },
+        { href: "/admin/news", label: "News Desk", icon: Newspaper, visible: v.newsDesk },
       ],
     },
     {

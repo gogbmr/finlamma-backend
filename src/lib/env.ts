@@ -144,6 +144,19 @@ const envSchema = z.object({
   // so the app still boots without it; the endpoint itself fails closed
   // (503) until it's set, same lazy pattern as every other secret above.
   RELAY_SHARED_SECRET: z.string().optional(),
+
+  // Phase 5 (docs/ARCHITECTURE.md D50) - AI news simplification and Pulse
+  // Check question drafting (CLAUDE.md rule 11: every AI output is a draft
+  // until a staff member publishes it). Optional, same lazy-fail pattern as
+  // TWELVEDATA_API_KEY/RESEND_API_KEY above - the drafting job fails
+  // closed with a clear error if it runs before this is set, rather than
+  // the app failing to boot. Model IDs (not a hardcoded model string) so a
+  // model swap is a config change, never a code change - ANTHROPIC_MODEL_FAST
+  // (Haiku-tier) does the bulk per-story drafting work; ANTHROPIC_MODEL_SMART
+  // is reserved for any future higher-judgment AI call this domain adds.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL_FAST: z.string().optional(),
+  ANTHROPIC_MODEL_SMART: z.string().optional(),
 });
 
 function loadEnv() {
