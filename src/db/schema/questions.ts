@@ -10,6 +10,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { idAndTimestamps, type LocalizedText } from "./_helpers";
+import { newsStories } from "./news";
 import { staffMembers } from "./staff";
 import { topics } from "./topics";
 
@@ -54,6 +55,16 @@ export const questions = pgTable(
     // CLAUDE.md rule 8.
     topic: text("topic"),
     topicId: uuid("topic_id").references(() => topics.id, { onDelete: "set null" }),
+    // Phase 5 Checkpoint 4: which news story this question was AI-drafted
+    // from, for Pulse Check's edition-building query (news_editions picks
+    // published questions with a sourceStoryId pointing at a published
+    // story) and NW-13's "shows its source headline" requirement. Null for
+    // every pre-Phase-5 question (lesson/quiz content) and for any
+    // Pulse-Check question a staff member authors from scratch rather than
+    // from an AI draft. A real column, not smuggled into `payload`, so it
+    // stays queryable/indexable and independent of format-specific shape -
+    // same reasoning topicId is a real column rather than payload data.
+    sourceStoryId: uuid("source_story_id").references(() => newsStories.id, { onDelete: "set null" }),
     prompt: jsonb("prompt").$type<LocalizedText>().notNull(),
     explanation: jsonb("explanation").$type<LocalizedText>().notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -72,7 +83,11 @@ export const questions = pgTable(
       onDelete: "set null",
     }),
   },
-  (t) => [index("questions_status_idx").on(t.status), index("questions_topic_id_idx").on(t.topicId)],
+  (t) => [
+    index("questions_status_idx").on(t.status),
+    index("questions_topic_id_idx").on(t.topicId),
+    index("questions_source_story_id_idx").on(t.sourceStoryId),
+  ],
 ).enableRLS();
 
 // Full-content snapshot of a question at one revision (D22,

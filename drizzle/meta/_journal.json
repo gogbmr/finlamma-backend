@@ -260,6 +260,13 @@
       "when": 1790568764864,
       "tag": "0036_cuddly_ghost_rider",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790585771291,
+      "tag": "0037_dapper_hercules",
+      "breakpoints": true
     }
   ]
 }

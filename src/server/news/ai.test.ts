@@ -34,6 +34,16 @@ const VALID_DRAFT_INPUT = {
   jargon: { term: { en: "repo rate", hi: "x", hx: "x" }, explanation: { en: "x", hi: "x", hx: "x" } },
   category: "rbi_rates",
   impact: "neutral",
+  question: {
+    prompt: { en: "What did the RBI do?", hi: "x", hx: "x" },
+    options: [
+      { en: "Held the rate", hi: "x", hx: "x" },
+      { en: "Raised the rate", hi: "x", hx: "x" },
+      { en: "Cut the rate", hi: "x", hx: "x" },
+    ],
+    correctIndex: 0,
+    explanation: { en: "x", hi: "x", hx: "x" },
+  },
 };
 
 function toolUseResponse(input: unknown) {

@@ -62,8 +62,20 @@ const SUBMIT_DRAFT_TOOL: Anthropic.Tool = {
         ],
       },
       impact: { type: "string", enum: ["good", "bad", "neutral"] },
+      question: {
+        type: "object",
+        description: "One multiple-choice Pulse Check question testing understanding of this story.",
+        properties: {
+          prompt: LOCALIZED_TEXT_SCHEMA,
+          options: { type: "array", items: LOCALIZED_TEXT_SCHEMA, minItems: 3, maxItems: 3 },
+          correctIndex: { type: "integer", minimum: 0, maximum: 2 },
+          explanation: LOCALIZED_TEXT_SCHEMA,
+        },
+        required: ["prompt", "options", "correctIndex", "explanation"],
+        additionalProperties: false,
+      },
     },
-    required: ["content", "jargon", "category", "impact"],
+    required: ["content", "jargon", "category", "impact", "question"],
     additionalProperties: false,
   },
 };
@@ -84,6 +96,10 @@ and summary:
 - Never phrase anything as investment advice, a price prediction, or a recommendation to buy/sell -
   state facts only ("the RBI held rates" not "this is a good time to invest").
 - Never use real people's names in a way that could be defamatory; stick to what the source states.
+- Write one multiple-choice "Quick Check" question (3 options, exactly one correct) testing whether
+  a learner understood the story - e.g. "What did the RBI do to the repo rate?" with plausible wrong
+  options, not trick questions or questions answerable without reading the story. Include a one-
+  sentence explanation of the correct answer, in all three languages.
 
 Call the submit_news_draft tool with your result. Do not include any other text in your response.`;
 

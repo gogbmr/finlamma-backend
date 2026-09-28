@@ -30,13 +30,21 @@ vi.mock("@/server/news/service", () => ({
     mockUpdateNewsQuizGeneratorSettings(actor, input, meta),
 }));
 
+const mockUpdatePulseCheckScoring = vi.fn();
+vi.mock("@/server/pulse-check/service", () => ({
+  updatePulseCheckScoring: (actor: unknown, input: unknown, meta: unknown) =>
+    mockUpdatePulseCheckScoring(actor, input, meta),
+}));
+
 import {
   updateNewsQuizGeneratorSettingsAction,
   updateNewsStoryQualityOverrideAction,
   updateNewsStoryStatusAction,
   updateNewsStoryTopicAction,
+  updatePulseCheckScoringAction,
 } from "./actions";
 import { DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS } from "@/server/news/schemas";
+import { DEFAULT_PULSE_CHECK_SCORING } from "@/server/pulse-check/schemas";
 
 const ACTOR = { id: "staff_1" };
 
@@ -81,6 +89,16 @@ describe("wrong role is rejected", () => {
     expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
     expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
     expect(mockUpdateNewsQuizGeneratorSettings).not.toHaveBeenCalled();
+  });
+
+  it("updatePulseCheckScoringAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: settings.manage"));
+
+    const result = await updatePulseCheckScoringAction(DEFAULT_PULSE_CHECK_SCORING);
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(mockUpdatePulseCheckScoring).not.toHaveBeenCalled();
   });
 });
 
@@ -159,5 +177,22 @@ describe("happy path", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateNewsQuizGeneratorSettings).not.toHaveBeenCalled();
+  });
+
+  it("updatePulseCheckScoringAction updates and revalidates", async () => {
+    mockUpdatePulseCheckScoring.mockResolvedValueOnce(DEFAULT_PULSE_CHECK_SCORING);
+
+    const result = await updatePulseCheckScoringAction(DEFAULT_PULSE_CHECK_SCORING);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdatePulseCheckScoring).toHaveBeenCalledWith(ACTOR, DEFAULT_PULSE_CHECK_SCORING, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/news");
+  });
+
+  it("updatePulseCheckScoringAction rejects an out-of-bounds daily cap without calling the service", async () => {
+    const result = await updatePulseCheckScoringAction({ ...DEFAULT_PULSE_CHECK_SCORING, dailyVmCap: 999999 });
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdatePulseCheckScoring).not.toHaveBeenCalled();
   });
 });

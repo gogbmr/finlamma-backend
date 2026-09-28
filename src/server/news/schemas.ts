@@ -105,11 +105,24 @@ export type NewsJargon = z.infer<typeof NewsJargonSchema>;
 // before publish) or qualityGrade (a deterministic heuristic per
 // docs/DATA_MODEL.md, computed separately in src/server/news/grading.ts -
 // never an LLM judgment call about its own output's quality).
+// One AI-drafted "Quick Check" MCQ (single_select, 3 options) per story -
+// the simplest, most reliable Pulse Check format, per the same
+// single_select-covers-MCQ design questions/schemas.ts already documents.
+// Richer formats (slider, match pairs, ...) stay staff-authored via the
+// existing Question editor, not AI-drafted in v1.
+const NewsDraftQuestionSchema = z.object({
+  prompt: LocalizedTextSchema,
+  options: z.array(LocalizedTextSchema).length(3),
+  correctIndex: z.number().int().min(0).max(2),
+  explanation: LocalizedTextSchema,
+});
+
 export const NewsDraftAiOutputSchema = z.object({
   content: NewsStoryContentSchema,
   jargon: NewsJargonSchema,
   category: NewsCategorySchema,
   impact: NewsImpactSchema,
+  question: NewsDraftQuestionSchema,
 });
 export type NewsDraftAiOutput = z.infer<typeof NewsDraftAiOutputSchema>;
 

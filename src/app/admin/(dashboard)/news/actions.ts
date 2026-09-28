@@ -17,6 +17,8 @@ import {
   updateNewsStoryStatusForAdmin,
   updateNewsStoryTopicForAdmin,
 } from "@/server/news/service";
+import { PulseCheckScoringSchema } from "@/server/pulse-check/schemas";
+import { updatePulseCheckScoring } from "@/server/pulse-check/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -74,6 +76,18 @@ export async function updateNewsQuizGeneratorSettingsAction(input: unknown): Pro
     const actor = await requireStaff("settings.manage");
     const parsed = NewsQuizGeneratorSettingsSchema.parse(input);
     await updateNewsQuizGeneratorSettings(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/news");
+  });
+}
+
+// settings.manage - D51 (docs/ARCHITECTURE.md): the daily VM cap in
+// particular bounds every learner's Pulse Check earnings, same narrow
+// trust bar as every other economy-wide constant.
+export async function updatePulseCheckScoringAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = PulseCheckScoringSchema.parse(input);
+    await updatePulseCheckScoring(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/news");
   });
 }

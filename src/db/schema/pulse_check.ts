@@ -10,9 +10,18 @@ export const pulseCheckAttemptStatusEnum = pgEnum("pulse_check_attempt_status", 
 // (docs/ARCHITECTURE.md D21) but scoped to a news edition, not a lesson -
 // there is no real `quizzes` table to reuse (docs/DATA_MODEL.md's
 // description of one predates the actual Phase 2b/3 build, which uses
-// quiz_attempts + questions + id-references instead). `totalVmAwardedPaise`
-// is set once, at finish, from the sum of every answer's own
-// vmAwardedPaise plus the all-correct bonus - never recomputed on replay.
+// quiz_attempts + questions + id-references instead).
+//
+// D51 (docs/ARCHITECTURE.md): a daily VM cap (settings_kv
+// pulse_check_scoring.dailyVmCap) bounds how much of what's earned actually
+// gets credited. `rawVmEarnedPaise` is the uncapped sum of every answer's
+// vmAwardedPaise plus the all-correct bonus - what the learner actually
+// scored. `totalVmAwardedPaise` is what was actually written to
+// vmoney_ledger, `min(rawVmEarnedPaise, remaining daily cap)`. The two
+// differ exactly when `dailyCapReached` is true, which the result screen
+// uses to show "cap reached" explicitly rather than a silently-smaller
+// number the learner has no way to explain. Both are set once, at finish,
+// never recomputed on replay.
 export const pulseCheckAttempts = pgTable(
   "pulse_check_attempts",
   {
@@ -29,7 +38,9 @@ export const pulseCheckAttempts = pgTable(
     accuracyPct: integer("accuracy_pct"),
     bestCombo: integer("best_combo"),
     allCorrectBonusAwarded: boolean("all_correct_bonus_awarded"),
+    rawVmEarnedPaise: bigint("raw_vm_earned_paise", { mode: "number" }),
     totalVmAwardedPaise: bigint("total_vm_awarded_paise", { mode: "number" }),
+    dailyCapReached: boolean("daily_cap_reached"),
   },
   (t) => [
     index("pulse_check_attempts_user_edition_idx").on(t.userId, t.editionId),

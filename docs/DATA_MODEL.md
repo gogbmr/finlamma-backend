@@ -114,8 +114,10 @@ Onboarding & parental consent section, decided at Phase 2a kickoff**
   computed range). `lessons` (world_id, order, kind, content jsonb, status). Boss Quiz and
   Role Play are `lessons.kind` values, not separate tables or engines — both render through the
   same lesson-flow content shape as a Quiz step, with different settings.
-- `quizzes` (lesson_id or news_edition_id, settings), `questions` (quiz_id, format, payload jsonb,
-  answer jsonb). **Single source of truth: every question — including an in-video pop-quiz's —
+- ~~`quizzes` (lesson_id or news_edition_id, settings)~~ — **never actually built** (see the Pulse
+  Check note further below); `questions` (format, payload jsonb, answer jsonb) is referenced
+  directly by id from `lessons.content` and, since Phase 5, from `news_editions.question_ids`,
+  with no separate `quizzes` table for either. **Single source of truth: every question — including an in-video pop-quiz's —
   is a row in `questions`, never inlined into `lessons.content`.** A video lesson's `content` cues
   reference the question by id/order at a timestamp (presentation/timing only); the question's
   actual prompt, options and correct answer live only in `questions`. Text fields inside
@@ -292,17 +294,56 @@ skill for the full idempotency/reversal design)
   jsonb), `competition_entries`/`competition_trades` (isolated from the user's main paper-trading
   portfolio)
 
-**News**
-- `news_raw` (source, external_id, url, headline, summary, published_at, payload)
-- `news_stories` (raw_id, category, topic — fixed admin-extensible enum: RBI & Rates, Inflation,
-  Stock Market Basics, IPOs & New Listings, Mutual Funds, Banking, Scams & Fraud, Government &
-  Budget, Global Markets, Currency — tag good|bad|neutral, content jsonb {en,hi,hx}, jargon jsonb,
-  quality_grade A|B|C (auto-heuristic, staff-overridable), status)
-- `news_editions` (date, published), `bookmarks`
-- `news_reads` (user_id, story_id, read_at, dwell_seconds) — backs the "read" badge and any
-  read-gating on Pulse Check
+**News** (Phase 5 — built; see `docs/ARCHITECTURE.md` D50/D51)
+- `topics` (name jsonb {en,hi,hx}, order, active) — the ONE shared taxonomy for both a question's
+  mastery-bar topic (`questions.topic_id`) and a news story's Pulse-Check-relevant topic
+  (`news_stories.topic_id`), admin-editable via `/admin/settings`, seeded from the prototype's own
+  `TOPIC_MAP` (6 topics). Deliberately NOT the same list as `news_stories.category` below — category
+  is a coarser feed-navigation concept (10 fixed values), topic is the finer pedagogical
+  skill-grouping concept the report card and Pulse Check mastery bars roll up by.
+- `news_raw` (source, external_id, url, headline, summary, published_at, payload) — never
+  learner-visible; ingested by a mock provider today (D50 blocks a real vendor)
+- `news_stories` (raw_id, topic_id, category — fixed enum: RBI & Rates, Inflation, Stock Market
+  Basics, IPOs & New Listings, Mutual Funds, Banking, Scams & Fraud, Government & Budget, Global
+  Markets, Currency — impact good|bad|neutral, content jsonb {headline,summary,body[]} each
+  {en,hi,hx}, jargon jsonb {term,explanation}, outlet, source_url, quality_grade A|B|C
+  (auto-heuristic, `src/server/news/grading.ts`, staff-overridable via quality_grade_override),
+  advice_like_warnings jsonb — the existing instrument-tip guardrail reused against AI drafts,
+  status draft|published|hidden) — AI-drafted (Anthropic, via a forced tool-use call), always a
+  draft until a staff member with `news.publish` toggles it live (CLAUDE.md rule 11)
+- `news_editions` (date UNIQUE, question_ids jsonb array, published) — one per IST calendar day,
+  built lazily on first Pulse Check request from a random selection of published,
+  AI-drafted-then-staff-published questions
+- `news_reads` (user_id, story_id, read_at, dwell_seconds) — backs the "read" badge; the server
+  validates dwell_seconds against a real minimum computed from the story's own word count
+  (`src/server/news/reading-time.ts`), never trusting the client's reported value alone
 - `news_desk_picks` (kind desk_pick|exam_alert|scam_watch, story_id or standalone content jsonb,
-  attribution `by`, status) — staff-curated highlights shown separately from the algorithmic feed
+  attribution, active) — staff-curated highlights, entirely separate from the AI/ingestion
+  pipeline, no automated-content risk on this surface
+
+**Pulse Check** (Phase 5 Checkpoint 4 — built; see `docs/ARCHITECTURE.md` D51)
+- `questions.source_story_id` (nullable FK → `news_stories`) — which story an AI-drafted question
+  came from (NW-13's "shows its source headline"); null for lesson questions and any
+  staff-authored-from-scratch Pulse Check question
+- `pulse_check_attempts` (user_id, edition_id, status in_progress|completed, started_at,
+  completed_at, accuracy_pct, best_combo, all_correct_bonus_awarded, raw_vm_earned_paise —
+  uncapped, total_vm_awarded_paise — what was actually credited, daily_cap_reached) — mirrors
+  `quiz_attempts`' server-timed, idempotent shape (D21) but scoped to an edition, not a lesson,
+  since no real `quizzes` table exists (see the note below)
+- `pulse_check_answers` (attempt_id, question_id, step_index, served_at, timer_seconds,
+  question_revision, answered_at, submitted_answer, is_correct, timed_out, speed_bonus_awarded,
+  combo_after, vm_awarded_paise) — same server-timed, no-skip-ahead, no-answer-leak, idempotent
+  grading design as `question_answers` (D21/D22), graded against `question_revisions` at the exact
+  revision served, never the live `questions` row
+- **Note**: `DATA_MODEL.md`'s original `quizzes` (lesson_id or news_edition_id, settings) table
+  described under Learning above was never actually built — Phase 2b/3 used `quiz_attempts` +
+  `questions` + id-references instead (no separate `quizzes` table for lessons either), and Pulse
+  Check follows the same real pattern here.
+- Crediting: VM only, never XP (confirmed against the actual prototype, D51) — a daily VM cap
+  (`settings_kv.pulse_check_scoring.dailyVmCap`, default 200) bounds the session-total credit after
+  the global `vm_issuance_multiplier` is applied once; idempotent via `vmoney_ledger`'s existing
+  `(user_id, source_type, source_id)` unique index keyed on `edition_id`, same insert-and-conflict
+  pattern as every other ledger credit (D26)
 
 **Social & notifications**
 - `leaderboard_snapshots` (week, scope, rankings jsonb), `leagues`, `league_members`

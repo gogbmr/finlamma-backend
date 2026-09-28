@@ -3246,6 +3246,57 @@
           "content",
           "attribution"
         ]
+      },
+      "PulseCheckCurrent": {
+        "type": "object",
+        "properties": {
+          "editionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid",
+            "description": "null if today's edition hasn't been built yet"
+          },
+          "date": {
+            "type": "string",
+            "example": "2026-09-28",
+            "description": "IST calendar date, YYYY-MM-DD"
+          },
+          "questionCount": {
+            "type": "integer"
+          },
+          "perQuestionTimerSeconds": {
+            "type": "integer"
+          },
+          "baseVmPerQuestion": {
+            "type": "integer"
+          },
+          "maxVmPayout": {
+            "type": "integer",
+            "description": "Best-case total: every question correct and fast, plus the all-correct bonus, before today's daily cap"
+          },
+          "alreadyCompletedToday": {
+            "type": "boolean"
+          },
+          "inProgressAttemptId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "editionId",
+          "date",
+          "questionCount",
+          "perQuestionTimerSeconds",
+          "baseVmPerQuestion",
+          "maxVmPayout",
+          "alreadyCompletedToday",
+          "inProgressAttemptId"
+        ]
       }
     },
     "parameters": {}
@@ -9151,6 +9202,916 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pulse-check/current": {
+      "get": {
+        "summary": "Get today's Pulse Check meta (NW-03)",
+        "description": "The CTA card's data: question count, per-question timer, max VM payout (best-case, before D51's daily cap), and whether the caller already has an in-progress or completed attempt today. editionId is null if today's edition hasn't been built yet (no eligible questions published) - POST .../start builds it lazily on first use.",
+        "tags": [
+          "Pulse Check"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Today's Pulse Check meta",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseCheckCurrent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pulse-check/start": {
+      "post": {
+        "summary": "Start (or resume) today's Pulse Check attempt (NW-12)",
+        "description": "Builds today's edition on first use if it doesn't exist yet (a random selection of published, AI-drafted-then-staff-published questions, size and formats per the News Desk's quiz generator settings). Idempotent in spirit, not by header: a caller with an already-in-progress attempt for today gets that same attempt back (resumed: true) rather than a new one. A learner who already completed today's edition CAN start a fresh attempt (replay) - per docs/ARCHITECTURE.md D51, a replay is graded and playable but never earns further VM once the edition's one credit-eligible slot is already used.",
+        "tags": [
+          "Pulse Check"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt to play",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "attemptId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "editionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "totalSteps": {
+                      "type": "integer"
+                    },
+                    "resumed": {
+                      "type": "boolean",
+                      "description": "true if this returned an already-in-progress attempt rather than creating a new one"
+                    }
+                  },
+                  "required": [
+                    "attemptId",
+                    "editionId",
+                    "totalSteps",
+                    "resumed"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Pulse Check questions are available yet today",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Pulse Check questions are available yet today"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pulse-check/{attemptId}/steps/{n}/serve": {
+      "post": {
+        "summary": "Serve the next question in a Pulse Check attempt",
+        "description": "Server-timed, same design as lesson-flow's steps/{n}/serve (docs/ARCHITECTURE.md D21): the returned timer starts from this call, never trusted from the client on submit. Only the current, next-in-sequence step can be served - no skipping ahead. Idempotent re-serve of an unanswered step returns the original servedAt. Includes the question's source headline (NW-13) - never its correct answer or explanation.",
+        "tags": [
+          "Pulse Check"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "attemptId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": true,
+            "name": "n",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The question to render",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stepIndex": {
+                      "type": "integer"
+                    },
+                    "totalSteps": {
+                      "type": "integer"
+                    },
+                    "question": {
+                      "type": "object",
+                      "properties": {
+                        "questionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "format": {
+                          "type": "string"
+                        },
+                        "topic": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "sourceHeadline": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ],
+                          "description": "NW-13: this question's source story headline"
+                        },
+                        "prompt": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "payload": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        },
+                        "timerSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "questionId",
+                        "format",
+                        "topic",
+                        "sourceHeadline",
+                        "prompt",
+                        "payload",
+                        "timerSeconds"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "stepIndex",
+                    "totalSteps",
+                    "question"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No attempt with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Pulse Check attempt with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not the current step, or the attempt is already finished",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Answer the previous question first"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pulse-check/{attemptId}/steps/{n}/answer": {
+      "post": {
+        "summary": "Submit an answer for the current Pulse Check question and grade it",
+        "description": "Server-graded and server-timed, same anti-cheat design as lesson-flow's steps/{n}/answer (docs/ARCHITECTURE.md D21) - the elapsed time used for the speed bonus/timeout is measured from this step's serve time, never a client-reported value. Idempotent: submitting again for an already-answered step returns the exact original graded result, no re-scoring. This is the only response that reveals this question's correct answer and explanation.",
+        "tags": [
+          "Pulse Check"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "attemptId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0
+            },
+            "required": true,
+            "name": "n",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answer": {
+                    "description": "Shape depends on the question's format - same per-format answer shapes as lesson questions"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The graded result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "isCorrect": {
+                      "type": "boolean"
+                    },
+                    "timedOut": {
+                      "type": "boolean"
+                    },
+                    "speedBonusAwarded": {
+                      "type": "boolean"
+                    },
+                    "comboAfter": {
+                      "type": "integer"
+                    },
+                    "vmAwarded": {
+                      "type": "integer",
+                      "description": "This question's own score (base+speed+combo), whole VM, before the multiplier/daily cap are applied at finish"
+                    },
+                    "correctAnswer": {},
+                    "explanation": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "isCorrect",
+                    "timedOut",
+                    "speedBonusAwarded",
+                    "comboAfter",
+                    "vmAwarded",
+                    "explanation"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The submitted answer doesn't match this question's format shape",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid answer for a \"single_select\" question"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No attempt or question with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Pulse Check attempt with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This step hasn't been served yet, or the attempt is already finished",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "This step hasn't been served yet"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pulse-check/{attemptId}/finish": {
+      "post": {
+        "summary": "Finish a Pulse Check attempt and credit V Money (NW-25, NW-26)",
+        "description": "Requires every question to already be answered. Computes the all-correct bonus, applies the global vm_issuance_multiplier, then clamps to what's left of today's daily VM cap (docs/ARCHITECTURE.md D51 - default 200 VM/day, admin-editable). Idempotent: calling this again for an already-finished attempt returns the exact original result, credits nothing twice. Crediting itself is keyed on (userId, edition) not (userId, attempt) - so however many attempts a learner plays at one edition, at most one nonzero credit is ever issued for it, matching this codebase's standard insert-and-onConflictDoNothing idempotency pattern (D26). Also records the pulse_check streak scope, unconditionally - a capped or even zero-VM attempt still counts as today's activity.",
+        "tags": [
+          "Pulse Check"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "attemptId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The finished attempt's payout summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accuracyPct": {
+                      "type": "integer"
+                    },
+                    "bestCombo": {
+                      "type": "integer"
+                    },
+                    "allCorrectBonusAwarded": {
+                      "type": "boolean"
+                    },
+                    "rawVmEarnedPaise": {
+                      "type": "integer"
+                    },
+                    "totalVmAwardedPaise": {
+                      "type": "integer"
+                    },
+                    "dailyCapReached": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "accuracyPct",
+                    "bestCombo",
+                    "allCorrectBonusAwarded",
+                    "rawVmEarnedPaise",
+                    "totalVmAwardedPaise",
+                    "dailyCapReached"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No attempt with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Pulse Check attempt with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not every question has been answered yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "Answer every question before finishing"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests - slow down and try again shortly",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pulse-check/{attemptId}/result": {
+      "get": {
+        "summary": "Get a finished Pulse Check attempt's result (NW-27..31)",
+        "description": "Self-contained - never depends on the source stories still being published (docs/ARCHITECTURE.md D51): every field comes from pulse_check_attempts/pulse_check_answers, which are snapshotted at answer time, not a live join. dailyCapReached (from D51's daily VM cap) is surfaced explicitly so a smaller-than-expected payout is never shown as a silent, unexplained number.",
+        "tags": [
+          "Pulse Check"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "attemptId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attempt's result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "attemptId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "accuracyPct": {
+                      "type": "integer"
+                    },
+                    "bestCombo": {
+                      "type": "integer"
+                    },
+                    "allCorrectBonusAwarded": {
+                      "type": "boolean"
+                    },
+                    "rawVmEarnedPaise": {
+                      "type": "integer"
+                    },
+                    "totalVmAwardedPaise": {
+                      "type": "integer"
+                    },
+                    "dailyCapReached": {
+                      "type": "boolean"
+                    },
+                    "answers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "stepIndex": {
+                            "type": "integer"
+                          },
+                          "isCorrect": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "timedOut": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "speedBonusAwarded": {
+                            "type": [
+                              "boolean",
+                              "null"
+                            ]
+                          },
+                          "vmAwarded": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "stepIndex",
+                          "isCorrect",
+                          "timedOut",
+                          "speedBonusAwarded",
+                          "vmAwarded"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "attemptId",
+                    "accuracyPct",
+                    "bestCombo",
+                    "allCorrectBonusAwarded",
+                    "rawVmEarnedPaise",
+                    "totalVmAwardedPaise",
+                    "dailyCapReached",
+                    "answers"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No attempt with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Pulse Check attempt with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "This attempt isn't finished yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CONFLICT",
+                    "message": "This attempt isn't finished yet"
                   }
                 },
                 "schema": {

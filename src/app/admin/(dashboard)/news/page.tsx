@@ -5,8 +5,11 @@ import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getNewsAuditLogForAdmin, getNewsKpisForAdmin, getNewsPipelineForAdmin, getNewsQuizGeneratorSettings } from "@/server/news/service";
+import { getPulseCheckEngagement, getPulseCheckScoring } from "@/server/pulse-check/service";
 import { listActiveTopicsForPicker } from "@/server/topics/service";
+import { EngagementChart } from "./engagement-chart";
 import { PipelineTable } from "./pipeline-table";
+import { PulseCheckScoringEditor } from "./pulse-check-scoring-editor";
 import { QuizGeneratorSettingsEditor } from "./quiz-generator-settings-editor";
 
 export default async function NewsDeskPage() {
@@ -15,19 +18,22 @@ export default async function NewsDeskPage() {
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
+  const [canManage, canPublish, canManageSettings] = await Promise.all([
     roleHasPermission(staff.roleId, "news.manage"),
     roleHasPermission(staff.roleId, "news.publish"),
+    roleHasPermission(staff.roleId, "settings.manage"),
   ]);
   if (!canManage && !canPublish) {
     return <Forbidden message="You don't have permission to use the News Desk." />;
   }
 
-  const [kpis, stories, topics, quizSettings, recentEvents] = await Promise.all([
+  const [kpis, stories, topics, quizSettings, pulseCheckScoring, engagement, recentEvents] = await Promise.all([
     getNewsKpisForAdmin(),
     getNewsPipelineForAdmin(),
     listActiveTopicsForPicker(),
     getNewsQuizGeneratorSettings(),
+    getPulseCheckScoring(),
+    getPulseCheckEngagement(),
     getNewsAuditLogForAdmin(),
   ]);
 
@@ -91,7 +97,16 @@ export default async function NewsDeskPage() {
         topics={topics.map((t) => ({ id: t.id, name: t.name }))}
       />
 
-      {canManage && <QuizGeneratorSettingsEditor settings={quizSettings} />}
+      {/* NW-38..42's quiz generator settings and D51's Pulse Check scoring/
+          daily-cap are settings.manage-gated in the actions themselves
+          (a narrower trust bar than news.manage) - shown only to a viewer
+          who could actually save a change, same reasoning
+          /admin/settings's economy section already documents for exactly
+          this "would silently fail on submit instead of being hidden" gap. */}
+      <EngagementChart daily={engagement.daily} averagePct={engagement.averagePct} />
+
+      {canManageSettings && <QuizGeneratorSettingsEditor settings={quizSettings} />}
+      {canManageSettings && <PulseCheckScoringEditor scoring={pulseCheckScoring} />}
 
       <div className="space-y-2 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between">

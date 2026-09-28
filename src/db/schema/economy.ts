@@ -27,13 +27,21 @@ export const rewardActivityKindEnum = pgEnum("reward_activity_kind", [
   "role_play",
   "quiz",
   "boss_quiz",
-  // Phase 5: Pulse Check completions credit through the same reward_rules/
-  // ledger path as every lesson kind (docs/ARCHITECTURE.md D26's comment
-  // anticipated this exact addition). Unlike the lesson kinds above, Pulse
-  // Check's actual VM amount is performance-computed per attempt
-  // (base+speed+combo+all-correct, settings_kv-driven like D21's lesson-flow
-  // scoring), not a flat reward_rules default - this row exists mainly for
-  // XP and so the activity has a place in earn-by-source breakdowns.
+  // Phase 5 Checkpoint 4 (docs/ARCHITECTURE.md D51): Pulse Check pays VM
+  // only, never XP - confirmed against the actual prototype (its only real
+  // reward computation for Pulse Check is `p4.coinsWon`, VM; no XP field
+  // exists anywhere in that flow), correcting an earlier, unverified
+  // assumption made when this value was first added in Checkpoint 1. No
+  // `reward_rules` row is ever created for "pulse_check" - there's no flat
+  // default to store, since VM is fully performance-computed per attempt
+  // (base+speed+combo+all-correct, settings_kv-driven, src/server/pulse-check)
+  // and credited via economy/repo.ts's creditVmoneyRow directly, the same
+  // VM-only path reward refunds use, bypassing reward_rules entirely.
+  // vmoney_ledger.sourceType (a plain string, "pulse_check_attempt") is
+  // unrelated to this enum - only reward_rules.activityKind actually uses
+  // it. This value is genuinely unused today; left in place rather than
+  // removed because dropping an enum value needs a more invasive migration
+  // than adding one, for zero functional gain.
   "pulse_check",
 ]);
 

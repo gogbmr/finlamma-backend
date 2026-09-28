@@ -15,7 +15,7 @@ import {
   getStoryById,
   getStoryStatusCounts,
   getUndraftedRawCount,
-  insertDraftStory,
+  insertDraftStoryWithQuestion,
   insertRawItemsIfNew,
   insertReadIfNew,
   listActiveDeskPicks,
@@ -80,7 +80,7 @@ export async function draftPendingStories(limit = 10): Promise<{ drafted: number
         adviceLikeWarningCount: adviceLikeWarnings.length,
       });
 
-      await insertDraftStory({
+      await insertDraftStoryWithQuestion({
         rawId: raw.id,
         category: draft.category,
         impact: draft.impact,
@@ -90,6 +90,7 @@ export async function draftPendingStories(limit = 10): Promise<{ drafted: number
         sourceUrl: raw.url,
         qualityGrade,
         adviceLikeWarnings,
+        question: draft.question,
       });
       drafted++;
     } catch (err) {

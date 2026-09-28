@@ -86,6 +86,15 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/news/{id}/read` — Mark a news story as read (NW-09)
 - `GET /api/v1/news/desk-picks` — Get the currently active News Desk picks (NW-05, NW-46)
 
+**Pulse Check**
+
+- `GET /api/v1/pulse-check/current` — Get today's Pulse Check meta (NW-03)
+- `POST /api/v1/pulse-check/start` — Start (or resume) today's Pulse Check attempt (NW-12)
+- `POST /api/v1/pulse-check/{attemptId}/steps/{n}/serve` — Serve the next question in a Pulse Check attempt
+- `POST /api/v1/pulse-check/{attemptId}/steps/{n}/answer` — Submit an answer for the current Pulse Check question and grade it
+- `POST /api/v1/pulse-check/{attemptId}/finish` — Finish a Pulse Check attempt and credit V Money (NW-25, NW-26)
+- `GET /api/v1/pulse-check/{attemptId}/result` — Get a finished Pulse Check attempt's result (NW-27..31)
+
 **Webhooks**
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
@@ -4011,6 +4020,509 @@ Staff-curated highlight cards (Desk Pick / Exam Alert / Scam Watch), shown separ
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+## Pulse Check
+
+### `GET /api/v1/pulse-check/current`
+
+**Get today's Pulse Check meta (NW-03)**
+
+The CTA card's data: question count, per-question timer, max VM payout (best-case, before D51's daily cap), and whether the caller already has an in-progress or completed attempt today. editionId is null if today's edition hasn't been built yet (no eligible questions published) - POST .../start builds it lazily on first use.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Today's Pulse Check meta
+
+```json
+{
+  "editionId": "00000000-0000-0000-0000-000000000000",
+  "date": "2026-09-28",
+  "questionCount": 0,
+  "perQuestionTimerSeconds": 0,
+  "baseVmPerQuestion": 0,
+  "maxVmPayout": 0,
+  "alreadyCompletedToday": true,
+  "inProgressAttemptId": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/pulse-check/start`
+
+**Start (or resume) today's Pulse Check attempt (NW-12)**
+
+Builds today's edition on first use if it doesn't exist yet (a random selection of published, AI-drafted-then-staff-published questions, size and formats per the News Desk's quiz generator settings). Idempotent in spirit, not by header: a caller with an already-in-progress attempt for today gets that same attempt back (resumed: true) rather than a new one. A learner who already completed today's edition CAN start a fresh attempt (replay) - per docs/ARCHITECTURE.md D51, a replay is graded and playable but never earns further VM once the edition's one credit-eligible slot is already used.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The attempt to play
+
+```json
+{
+  "attemptId": "00000000-0000-0000-0000-000000000000",
+  "editionId": "00000000-0000-0000-0000-000000000000",
+  "totalSteps": 0,
+  "resumed": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No Pulse Check questions are available yet today
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Pulse Check questions are available yet today"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/pulse-check/{attemptId}/steps/{n}/serve`
+
+**Serve the next question in a Pulse Check attempt**
+
+Server-timed, same design as lesson-flow's steps/{n}/serve (docs/ARCHITECTURE.md D21): the returned timer starts from this call, never trusted from the client on submit. Only the current, next-in-sequence step can be served - no skipping ahead. Idempotent re-serve of an unanswered step returns the original servedAt. Includes the question's source headline (NW-13) - never its correct answer or explanation.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `attemptId` | path | string | yes |  |
+| `n` | path | integer | yes |  |
+
+**Responses**
+
+- **200** — The question to render
+
+```json
+{
+  "stepIndex": 0,
+  "totalSteps": 0,
+  "question": {
+    "questionId": "00000000-0000-0000-0000-000000000000",
+    "format": "string",
+    "topic": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "sourceHeadline": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "prompt": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "payload": {},
+    "timerSeconds": 0
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No attempt with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Pulse Check attempt with this id"
+  }
+}
+```
+
+- **409** — Not the current step, or the attempt is already finished
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Answer the previous question first"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/pulse-check/{attemptId}/steps/{n}/answer`
+
+**Submit an answer for the current Pulse Check question and grade it**
+
+Server-graded and server-timed, same anti-cheat design as lesson-flow's steps/{n}/answer (docs/ARCHITECTURE.md D21) - the elapsed time used for the speed bonus/timeout is measured from this step's serve time, never a client-reported value. Idempotent: submitting again for an already-answered step returns the exact original graded result, no re-scoring. This is the only response that reveals this question's correct answer and explanation.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `attemptId` | path | string | yes |  |
+| `n` | path | integer | yes |  |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `answer` | object | no | Shape depends on the question's format - same per-format answer shapes as lesson questions |
+
+```json
+{
+  "answer": null
+}
+```
+
+**Responses**
+
+- **200** — The graded result
+
+```json
+{
+  "isCorrect": true,
+  "timedOut": true,
+  "speedBonusAwarded": true,
+  "comboAfter": 0,
+  "vmAwarded": 0,
+  "correctAnswer": null,
+  "explanation": {
+    "en": "string",
+    "hi": "string",
+    "hx": "string"
+  }
+}
+```
+
+- **400** — The submitted answer doesn't match this question's format shape
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid answer for a \"single_select\" question"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No attempt or question with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Pulse Check attempt with this id"
+  }
+}
+```
+
+- **409** — This step hasn't been served yet, or the attempt is already finished
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "This step hasn't been served yet"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/pulse-check/{attemptId}/finish`
+
+**Finish a Pulse Check attempt and credit V Money (NW-25, NW-26)**
+
+Requires every question to already be answered. Computes the all-correct bonus, applies the global vm_issuance_multiplier, then clamps to what's left of today's daily VM cap (docs/ARCHITECTURE.md D51 - default 200 VM/day, admin-editable). Idempotent: calling this again for an already-finished attempt returns the exact original result, credits nothing twice. Crediting itself is keyed on (userId, edition) not (userId, attempt) - so however many attempts a learner plays at one edition, at most one nonzero credit is ever issued for it, matching this codebase's standard insert-and-onConflictDoNothing idempotency pattern (D26). Also records the pulse_check streak scope, unconditionally - a capped or even zero-VM attempt still counts as today's activity.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `attemptId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The finished attempt's payout summary
+
+```json
+{
+  "accuracyPct": 0,
+  "bestCombo": 0,
+  "allCorrectBonusAwarded": true,
+  "rawVmEarnedPaise": 0,
+  "totalVmAwardedPaise": 0,
+  "dailyCapReached": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No attempt with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Pulse Check attempt with this id"
+  }
+}
+```
+
+- **409** — Not every question has been answered yet
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "Answer every question before finishing"
+  }
+}
+```
+
+- **429** — Too many requests - slow down and try again shortly
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/pulse-check/{attemptId}/result`
+
+**Get a finished Pulse Check attempt's result (NW-27..31)**
+
+Self-contained - never depends on the source stories still being published (docs/ARCHITECTURE.md D51): every field comes from pulse_check_attempts/pulse_check_answers, which are snapshotted at answer time, not a live join. dailyCapReached (from D51's daily VM cap) is surfaced explicitly so a smaller-than-expected payout is never shown as a silent, unexplained number.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `attemptId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The attempt's result
+
+```json
+{
+  "attemptId": "00000000-0000-0000-0000-000000000000",
+  "accuracyPct": 0,
+  "bestCombo": 0,
+  "allCorrectBonusAwarded": true,
+  "rawVmEarnedPaise": 0,
+  "totalVmAwardedPaise": 0,
+  "dailyCapReached": true,
+  "answers": [
+    {
+      "stepIndex": 0,
+      "isCorrect": true,
+      "timedOut": true,
+      "speedBonusAwarded": true,
+      "vmAwarded": 0
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No attempt with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Pulse Check attempt with this id"
+  }
+}
+```
+
+- **409** — This attempt isn't finished yet
+
+```json
+{
+  "error": {
+    "code": "CONFLICT",
+    "message": "This attempt isn't finished yet"
   }
 }
 ```

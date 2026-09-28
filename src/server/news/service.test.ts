@@ -41,7 +41,7 @@ const mockGetRawIngestedCount = vi.fn();
 const mockGetStoryById = vi.fn();
 const mockGetStoryStatusCounts = vi.fn();
 const mockGetUndraftedRawCount = vi.fn();
-const mockInsertDraftStory = vi.fn();
+const mockInsertDraftStoryWithQuestion = vi.fn();
 const mockInsertRawItemsIfNew = vi.fn();
 const mockInsertReadIfNew = vi.fn();
 const mockListActiveDeskPicks = vi.fn();
@@ -60,7 +60,7 @@ vi.mock("./repo", () => ({
   getStoryById: (id: unknown) => mockGetStoryById(id),
   getStoryStatusCounts: () => mockGetStoryStatusCounts(),
   getUndraftedRawCount: () => mockGetUndraftedRawCount(),
-  insertDraftStory: (input: unknown) => mockInsertDraftStory(input),
+  insertDraftStoryWithQuestion: (input: unknown) => mockInsertDraftStoryWithQuestion(input),
   insertRawItemsIfNew: (source: unknown, items: unknown) => mockInsertRawItemsIfNew(source, items),
   insertReadIfNew: (userId: unknown, storyId: unknown, dwell: unknown) =>
     mockInsertReadIfNew(userId, storyId, dwell),
@@ -135,24 +135,35 @@ const DRAFT_OUTPUT = {
   jargon: { term: { en: "repo rate", hi: "x", hx: "x" }, explanation: { en: "x", hi: "x", hx: "x" } },
   category: "rbi_rates",
   impact: "neutral",
+  question: {
+    prompt: { en: "What did the RBI do?", hi: "x", hx: "x" },
+    options: [
+      { en: "Held the rate", hi: "x", hx: "x" },
+      { en: "Raised the rate", hi: "x", hx: "x" },
+      { en: "Cut the rate", hi: "x", hx: "x" },
+    ],
+    correctIndex: 0,
+    explanation: { en: "The RBI held rates steady.", hi: "x", hx: "x" },
+  },
 };
 
 describe("draftPendingStories", () => {
   it("drafts every pending raw item, quality-grading and advice-checking each one", async () => {
     mockListUndraftedRaw.mockResolvedValueOnce([RAW_ITEM]);
     mockDraftNewsStoryFromRaw.mockResolvedValueOnce(DRAFT_OUTPUT);
-    mockInsertDraftStory.mockResolvedValueOnce({ id: "story_1" });
+    mockInsertDraftStoryWithQuestion.mockResolvedValueOnce({ story: { id: "story_1" }, question: { id: "q_1" } });
 
     const result = await draftPendingStories(10);
 
     expect(result).toEqual({ drafted: 1, failed: 0 });
-    expect(mockInsertDraftStory).toHaveBeenCalledWith(
+    expect(mockInsertDraftStoryWithQuestion).toHaveBeenCalledWith(
       expect.objectContaining({
         rawId: "raw_1",
         category: "rbi_rates",
         outlet: "mock",
         qualityGrade: "A", // 2 paragraphs, has jargon, long-enough summary, no advice warnings
         adviceLikeWarnings: [],
+        question: DRAFT_OUTPUT.question,
       }),
     );
   });
@@ -161,7 +172,7 @@ describe("draftPendingStories", () => {
     mockListUndraftedRaw.mockResolvedValueOnce([RAW_ITEM, { ...RAW_ITEM, id: "raw_2", externalId: "b" }]);
     mockDraftNewsStoryFromRaw.mockRejectedValueOnce(new Error("model refused"));
     mockDraftNewsStoryFromRaw.mockResolvedValueOnce(DRAFT_OUTPUT);
-    mockInsertDraftStory.mockResolvedValueOnce({ id: "story_2" });
+    mockInsertDraftStoryWithQuestion.mockResolvedValueOnce({ story: { id: "story_2" }, question: { id: "q_2" } });
 
     const result = await draftPendingStories(10);
 
@@ -173,11 +184,11 @@ describe("draftPendingStories", () => {
     mockListUndraftedRaw.mockResolvedValueOnce([RAW_ITEM]);
     mockDraftNewsStoryFromRaw.mockResolvedValueOnce(DRAFT_OUTPUT);
     mockFindAdviceLikePhrases.mockReturnValueOnce(["guaranteed profit"]);
-    mockInsertDraftStory.mockResolvedValueOnce({ id: "story_1" });
+    mockInsertDraftStoryWithQuestion.mockResolvedValueOnce({ story: { id: "story_1" }, question: { id: "q_1" } });
 
     await draftPendingStories(10);
 
-    expect(mockInsertDraftStory).toHaveBeenCalledWith(
+    expect(mockInsertDraftStoryWithQuestion).toHaveBeenCalledWith(
       expect.objectContaining({ qualityGrade: "C", adviceLikeWarnings: ["guaranteed profit"] }),
     );
   });

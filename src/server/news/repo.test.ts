@@ -16,7 +16,7 @@ const {
   getRawIngestedCount,
   getStoryStatusCounts,
   getUndraftedRawCount,
-  insertDraftStory,
+  insertDraftStoryWithQuestion,
   insertRawItemsIfNew,
   insertReadIfNew,
   listActiveDeskPicks,
@@ -43,6 +43,25 @@ const JARGON = {
   term: { en: "repo rate", hi: "x", hx: "x" },
   explanation: { en: "The rate...", hi: "x", hx: "x" },
 };
+const QUESTION = {
+  prompt: { en: "What happened?", hi: "x", hx: "x" },
+  explanation: { en: "x", hi: "x", hx: "x" },
+  options: [
+    { en: "A", hi: "x", hx: "x" },
+    { en: "B", hi: "x", hx: "x" },
+    { en: "C", hi: "x", hx: "x" },
+  ],
+  correctIndex: 0,
+};
+
+// Thin wrapper returning just the story half of insertDraftStoryWithQuestion
+// - most of this file's tests only care about the story row; the bundled
+// question insert is exercised directly in the "insertDraftStoryWithQuestion"
+// describe block below.
+async function draftStory(input: Omit<Parameters<typeof insertDraftStoryWithQuestion>[0], "question">) {
+  const { story } = await insertDraftStoryWithQuestion({ ...input, question: QUESTION });
+  return story;
+}
 
 async function seedRaw(externalId: string, source = "mock") {
   const [row] = await insertRawItemsIfNew(source, [
@@ -82,6 +101,31 @@ describe("insertRawItemsIfNew", () => {
   });
 });
 
+describe("insertDraftStoryWithQuestion", () => {
+  it("creates both the story and its bundled question, linked by sourceStoryId", async () => {
+    const raw = await seedRaw("bundle-a");
+
+    const { story, question } = await insertDraftStoryWithQuestion({
+      rawId: raw.id,
+      category: "rbi_rates",
+      impact: "neutral",
+      content: CONTENT,
+      jargon: JARGON,
+      outlet: "mock",
+      sourceUrl: raw.url,
+      qualityGrade: "A",
+      adviceLikeWarnings: [],
+      question: QUESTION,
+    });
+
+    expect(story.status).toBe("draft");
+    expect(question.status).toBe("draft");
+    expect(question.sourceStoryId).toBe(story.id);
+    expect(question.format).toBe("single_select");
+    expect(question.topicId).toBeNull();
+  });
+});
+
 describe("listUndraftedRaw / insertDraftStory", () => {
   it("a freshly-ingested raw item shows up as undrafted", async () => {
     const raw = await seedRaw("undrafted-a");
@@ -91,7 +135,7 @@ describe("listUndraftedRaw / insertDraftStory", () => {
 
   it("drafting a story removes the raw item from the undrafted list", async () => {
     const raw = await seedRaw("undrafted-b");
-    await insertDraftStory({
+    await draftStory({
       rawId: raw.id,
       category: "inflation",
       impact: "neutral",
@@ -111,7 +155,7 @@ describe("listUndraftedRaw / insertDraftStory", () => {
 describe("listAllStories / status + override + topic writes", () => {
   it("a new draft story appears in the pipeline as status draft", async () => {
     const raw = await seedRaw("pipeline-a");
-    const created = await insertDraftStory({
+    const created = await draftStory({
       rawId: raw.id,
       category: "rbi_rates",
       impact: "neutral",
@@ -130,7 +174,7 @@ describe("listAllStories / status + override + topic writes", () => {
 
   it("updateStoryStatusRow publishes and stamps publishedAt", async () => {
     const raw = await seedRaw("pipeline-b");
-    const created = await insertDraftStory({
+    const created = await draftStory({
       rawId: raw.id,
       category: "banking",
       impact: "good",
@@ -149,7 +193,7 @@ describe("listAllStories / status + override + topic writes", () => {
 
   it("updateStoryQualityOverrideRow and updateStoryTopicRow update in place", async () => {
     const raw = await seedRaw("pipeline-c");
-    const created = await insertDraftStory({
+    const created = await draftStory({
       rawId: raw.id,
       category: "currency",
       impact: "bad",
@@ -195,7 +239,7 @@ describe("KPI counts", () => {
 
 async function publishStory(externalIdSuffix: string) {
   const raw = await seedRaw(`feed-${externalIdSuffix}`);
-  const created = await insertDraftStory({
+  const created = await draftStory({
     rawId: raw.id,
     category: "inflation",
     impact: "neutral",
@@ -212,7 +256,7 @@ async function publishStory(externalIdSuffix: string) {
 describe("listPublishedStories / getPublishedStoryById", () => {
   it("only returns published stories, never draft or hidden ones", async () => {
     const raw = await seedRaw("feed-draft-only");
-    await insertDraftStory({
+    await draftStory({
       rawId: raw.id,
       category: "inflation",
       impact: "neutral",
@@ -232,7 +276,7 @@ describe("listPublishedStories / getPublishedStoryById", () => {
 
   it("filters by category when given", async () => {
     const raw = await seedRaw("feed-category");
-    const created = await insertDraftStory({
+    const created = await draftStory({
       rawId: raw.id,
       category: "banking",
       impact: "good",
@@ -252,7 +296,7 @@ describe("listPublishedStories / getPublishedStoryById", () => {
 
   it("getPublishedStoryById returns null for a draft story", async () => {
     const raw = await seedRaw("feed-not-published");
-    const created = await insertDraftStory({
+    const created = await draftStory({
       rawId: raw.id,
       category: "currency",
       impact: "neutral",

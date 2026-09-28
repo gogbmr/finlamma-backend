@@ -1,6 +1,6 @@
 import { and, count, desc, eq, inArray, isNull, like, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { activityLogs, newsDeskPicks, newsRaw, newsReads, newsStories } from "@/db/schema";
+import { activityLogs, newsDeskPicks, newsRaw, newsReads, newsStories, questions } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import type { NewsCategory } from "./schemas";
 import type { RawNewsItem } from "./providers/mock";
@@ -42,7 +42,17 @@ export async function listUndraftedRaw(limit: number) {
   return rows.map((r) => r.raw);
 }
 
-export async function insertDraftStory(input: {
+// Inserts the draft story AND its bundled AI-drafted "Quick Check" MCQ
+// (src/server/news/ai.ts) atomically - CLAUDE.md rule 5 (multi-table
+// writes in one transaction), so a failure between the two inserts never
+// leaves an orphaned story with no question. The question is a plain draft
+// `questions` row - draft/publish, topic tagging and everything else about
+// it works exactly like a staff-authored question (same admin editor, same
+// publish gate) once it exists; `sourceStoryId` is the only thing marking
+// it as AI-drafted-from-a-story rather than hand-authored. topicId starts
+// null (the AI has no knowledge of our topic UUIDs, same reasoning
+// news_stories.topicId starts null) - staff tag it before publishing.
+export async function insertDraftStoryWithQuestion(input: {
   rawId: string;
   category: NewsCategory;
   impact: "good" | "bad" | "neutral";
@@ -52,9 +62,42 @@ export async function insertDraftStory(input: {
   sourceUrl: string;
   qualityGrade: "A" | "B" | "C";
   adviceLikeWarnings: string[];
+  question: {
+    prompt: LocalizedText;
+    explanation: LocalizedText;
+    options: LocalizedText[];
+    correctIndex: number;
+  };
 }) {
-  const [row] = await db.insert(newsStories).values(input).returning();
-  return row;
+  return db.transaction(async (tx) => {
+    const [story] = await tx
+      .insert(newsStories)
+      .values({
+        rawId: input.rawId,
+        category: input.category,
+        impact: input.impact,
+        content: input.content,
+        jargon: input.jargon,
+        outlet: input.outlet,
+        sourceUrl: input.sourceUrl,
+        qualityGrade: input.qualityGrade,
+        adviceLikeWarnings: input.adviceLikeWarnings,
+      })
+      .returning();
+    const [question] = await tx
+      .insert(questions)
+      .values({
+        format: "single_select",
+        sourceStoryId: story.id,
+        topicId: null,
+        prompt: input.question.prompt,
+        explanation: input.question.explanation,
+        payload: { options: input.question.options },
+        answer: { correctIndex: input.question.correctIndex },
+      })
+      .returning();
+    return { story, question };
+  });
 }
 
 // Admin pipeline: every story regardless of status, newest first.
