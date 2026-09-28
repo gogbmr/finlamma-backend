@@ -1,5 +1,54 @@
 # Status
 
+## 2026-09-28 — Phase 5 audit fixes: D51 cap-race closed, seed scripts no longer auto-publish
+
+Applied the `/phase-audit 5` fix list (daily-cap concurrency race fixed with a locked transaction,
+attempts now expire once their edition's IST day has passed, `finish`'s rate limit now fails
+closed, `startAttempt`/`submitAnswer` now log activity, the News Desk permission-visibility gap
+fixed, the advice-language heuristic extended to AI-drafted questions) - see the commit on
+`phase-5-news-pulse` for the full account. One follow-up finding from that audit's guard sweep is
+closed out here:
+
+**`scripts/seed-mentors.ts` and `scripts/seed-worlds.ts` no longer insert learner-visible content.**
+Both previously inserted their rows with `status: "published"` directly, with no staff actor -
+safe today only because nobody has run either script against production, but a real risk since
+preview and production share one database (CLAUDE.md rule 6). Fixed by seeding as `"draft"`
+(the schema's own default - `status` is no longer set explicitly at all) rather than adding a
+"only auto-publish outside production" check: a `DATABASE_URL` mis-pointed at production would
+silently defeat a prod-detection check, but a draft row can't be fooled that way - it always needs
+a real staff publish action, in every environment, no matter which database the script runs
+against. `seed-worlds.ts`'s mentor-must-already-be-published check was also relaxed to
+mentor-must-exist, since that dependency is already correctly enforced at actual publish time by
+`publishWorld` (`src/server/worlds/service.ts`) - the seed script no longer needs to duplicate it.
+`logActivity` calls changed from `mentor.published`/`world.published` to `mentor.created`/
+`world.created`, matching what a real draft-creation actually is.
+
+**Checked every other seed script for the same pattern** (`seed-funds`, `seed-instruments`,
+`seed-market-holidays`, `seed-reward-rules`, `seed-settings`, `seed-super-admin`, `seed-roles`,
+`seed-topics`): none of them have a draft/published concept at all - instruments/holidays are
+explicitly "no draft/publish split" content (per `scripts/seed-roles.ts`'s own permission
+descriptions), and reward rules/topics use a plain `active` boolean with no review workflow, by
+design. **`seed-legal-documents.ts` was deliberately left seeding as published, not converted**:
+unlike mentors/worlds (where the app degrades gracefully with zero published rows - a learner just
+sees an empty list), onboarding cannot complete at all without a published `terms`/`privacy`/
+`risk_disclosure` document for every user, in every environment, including local dev - converting
+it to draft would make onboarding unusable out of the box after a fresh migration. Its seeded
+content is already unambiguously marked `[PLACEHOLDER — NOT FOR LAUNCH]` in the text itself, is
+its own separately-tracked pre-launch checklist item (real text after outside legal review), and
+`isPlaceholder: true` is already stored on the row - a materially different risk shape from
+AI-drafted or editorial content silently reaching a learner. Flagging this exclusion explicitly
+rather than applying the same change quietly.
+
+**Important: this only changes future script runs.** The mentors/worlds already seeded in the
+shared database (Baby/Father/Grandpa Lamma, the 7 worlds) were seeded under the old script and are
+**already published** - this fix does not retroactively unpublish or touch them. Re-running either
+script against the same database is still a no-op for those existing rows (both scripts skip a
+key/order that already exists), so nothing changes for the current environment; the fix only takes
+effect the next time either script creates a genuinely new mentor or world.
+
+`pnpm typecheck` clean. Neither script is imported by any test (they're standalone, run via
+`pnpm seed:mentors`/`pnpm seed:worlds`), so no test changes were needed.
+
 ## 2026-09-28 — Phase 5 kickoff: news-source licensing research (D50 blocker), Checkpoint 1 (schema) merged to branch
 
 **News-vendor licensing check, before writing any ingestion code**: checked actual ToS text (not

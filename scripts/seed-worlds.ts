@@ -12,12 +12,19 @@
 // docs/DATA_MODEL.md) are best-effort values, not exact prototype extracts -
 // staff can adjust either through the admin World editor.
 //
+// Seeds as DRAFT (status defaults to "draft" - never set explicitly here),
+// never published: a seed script isn't a real staff publish action, and
+// draft-by-default can't be fooled by a mis-set DATABASE_URL the way a
+// "only auto-publish outside production" check could be. A staff member
+// still has to publish each world through the admin World editor before
+// it's ever learner-visible (Phase 5 security audit finding) - at which
+// point publishWorld (src/server/worlds/service.ts) already enforces that
+// the world's mentor is published first, so this script no longer needs to
+// check the mentor's status itself, only that it exists.
+//
 // Refuses to touch an order that already has a world, so this is safe to
 // run again (e.g. against a fresh database) without overwriting staff
-// edits. Seeds as PUBLISHED (not legal text, no outside-review gate) - but
-// only once its mentor is already published, since publishing enforces
-// that dependency (see src/server/worlds/service.ts publishWorld). Run via
-// `pnpm seed:worlds`.
+// edits. Run via `pnpm seed:worlds`.
 import "../envConfig";
 import { eq } from "drizzle-orm";
 import { db } from "../src/db/client";
@@ -132,13 +139,6 @@ async function seed() {
       );
       continue;
     }
-    if (mentor.status !== "published") {
-      console.log(
-        `Skipping order ${world.order} ("${world.title.en}"): mentor "${world.mentorKey}" isn't ` +
-          "published yet.",
-      );
-      continue;
-    }
 
     const [created] = await db
       .insert(worlds)
@@ -149,22 +149,22 @@ async function seed() {
         theme: world.theme,
         displayXpTarget: world.displayXpTarget,
         mentorId: mentor.id,
-        status: "published",
-        publishedAt: new Date(),
-        // No staff actor - script-seeded, not a real staff publish action.
+        // status defaults to "draft" - a staff member must publish this
+        // through the admin World editor before it's learner-visible
+        // (which also requires the mentor to already be published).
       })
       .returning();
 
     await logActivity({
       actorType: "system",
-      action: "world.published",
+      action: "world.created",
       targetType: "world",
       targetId: created.id,
       metadata: { order: created.order, title: created.title.en, source: "seed-worlds" },
     });
 
     createdCount++;
-    console.log(`Seeded world ${world.order} "${world.title.en}" (published).`);
+    console.log(`Seeded world ${world.order} "${world.title.en}" (draft - publish it in the admin World editor).`);
   }
 
   console.log(`Done. ${createdCount} world(s) newly created.`);
