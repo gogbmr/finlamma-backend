@@ -1,5 +1,37 @@
 # Status
 
+## 2026-09-28 — `questions.topic` dropped for real. `drop-questions-topic` merged (`85ef90f`), production fully verified
+
+`drop-questions-topic` merged into `main` via merge commit `85ef90f`. The DROP COLUMN SQL (with its
+matching `drizzle.__drizzle_migrations` tracker row - see the entry below for the exact block and
+hash) was run in the Supabase SQL Editor **after** confirming the merge had deployed, per the
+ordering this migration specifically required (code first, SQL second - see below for why that's
+the opposite of the `vmoney_ledger.amount` precedent).
+
+**First run silently did nothing**: the SQL Editor showed `ALTER TABLE` / `INSERT 0 1` / `COMMIT`,
+but a read-only recheck immediately after found production `GET /api/v1/health` still `503`
+("migrations pending", `actualLatestAppliedAtMs` still at migration `0037`'s timestamp),
+`questions.topic` still present in `information_schema`, and `drizzle.__drizzle_migrations` still
+at 38 rows with no new hash - i.e. none of it had actually landed on the real database, despite the
+Editor reporting success on all three statements. Root cause: the SQL Editor tab was pointed at a
+different Supabase project than the one `DATABASE_URL` actually targets (`rzymlgyhifphdsqnczsm`) -
+an easy mistake with more than one project open, and one a "did it succeed" glance at the Editor's
+own output can't catch, since a valid connection to the WRONG database still reports normal
+success for every statement. **Caught before being recorded as done, by re-running the same
+read-only checks against the real project rather than trusting the Editor's output alone.**
+
+**Re-run in the correct project, verified clean afterward:**
+- `GET /api/v1/health`: `200`, `version: "85ef90f"` matching the merge commit, `migrations: "ok"`,
+  every other field unchanged/healthy from the prior verification.
+- `information_schema.columns` on `questions`: `topic` gone, `topic_id` present.
+- `drizzle.__drizzle_migrations`: 39 rows, matching `drizzle/meta/_journal.json`'s 39 entries on
+  `main` exactly. Latest row (`id: 39`) has `hash: c496af52756a254d1d6e2ed2b9c2ee480c059440f76b237
+  687369de45148c0ab`, `created_at: 1790606220902` - both match the migration file's computed hash
+  and the journal's last entry (`0038_massive_pete_wisdom`) exactly.
+
+**`questions.topic` is fully retired.** Its replacement, `questions.topic_id` (FK to the shared
+`topics` table, D18/Phase 5), has been the only live taxonomy since Checkpoint 1.
+
 ## 2026-09-28 — `fix-report-card-topic-id` merged to `main` (`7733523`), verified in production. `questions.topic` drop migration prepared on its own branch
 
 Production `GET /api/v1/health` confirmed `version: "7733523"` matching the merge commit, everything
