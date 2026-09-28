@@ -2,6 +2,7 @@ import type { LessonFlowScoring } from "@/server/settings/schemas";
 import type {
   FillBlankAnswer,
   MatchPairsAnswer,
+  NumberGuessAnswer,
   OrderingAnswer,
   QuestionFormat,
   SingleSelectAnswer,
@@ -52,6 +53,15 @@ export function answerMatches(format: QuestionFormat, submitted: unknown, correc
       );
     case "spot_mistake":
       return (submitted as SpotMistakeAnswer).wrongLineIndex === (correct as SpotMistakeAnswer).wrongLineIndex;
+    case "number_guess": {
+      // The client submits its guess in the same field the stored answer key
+      // uses (correctValue) - same single-schema-reused-for-both convention
+      // every other format follows. Its own submitted `tolerance` is never
+      // read; only the STORED answer's tolerance defines the correct band.
+      const guess = (submitted as NumberGuessAnswer).correctValue;
+      const { correctValue, tolerance } = correct as NumberGuessAnswer;
+      return Math.abs(guess - correctValue) <= tolerance;
+    }
   }
 }
 

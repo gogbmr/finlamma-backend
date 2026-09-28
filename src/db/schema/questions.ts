@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { idAndTimestamps, type LocalizedText } from "./_helpers";
 import { staffMembers } from "./staff";
+import { topics } from "./topics";
 
 export const questionFormatEnum = pgEnum("question_format", [
   "single_select",
@@ -19,6 +20,11 @@ export const questionFormatEnum = pgEnum("question_format", [
   "fill_blank",
   "match_pairs",
   "spot_mistake",
+  // Phase 5: Pulse Check's "Number Pakdo" slider - the one prototype format
+  // with no existing equivalent (single_select already covers MCQ/binary/
+  // odd-one-out by original Phase 2b design - see this file's own comment
+  // on single_select in src/server/questions/schemas.ts).
+  "number_guess",
 ]);
 export const questionStatusEnum = pgEnum("question_status", ["draft", "published"]);
 
@@ -40,7 +46,14 @@ export const questions = pgTable(
   {
     ...idAndTimestamps(),
     format: questionFormatEnum("format").notNull(),
-    topic: text("topic"), // fixed admin-extensible taxonomy (see NW gap #4) - refined later
+    // Deprecated by Phase 5's `topics` table (topicId, below) - kept
+    // nullable and unread by any new code so main's pre-Phase-5 code (which
+    // doesn't exist - nothing has ever written a real value here, verified
+    // empty in production) has nothing to lose. Dropped in a follow-up
+    // migration once this phase's code is confirmed deployed to main, per
+    // CLAUDE.md rule 8.
+    topic: text("topic"),
+    topicId: uuid("topic_id").references(() => topics.id, { onDelete: "set null" }),
     prompt: jsonb("prompt").$type<LocalizedText>().notNull(),
     explanation: jsonb("explanation").$type<LocalizedText>().notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
@@ -59,7 +72,7 @@ export const questions = pgTable(
       onDelete: "set null",
     }),
   },
-  (t) => [index("questions_status_idx").on(t.status)],
+  (t) => [index("questions_status_idx").on(t.status), index("questions_topic_id_idx").on(t.topicId)],
 ).enableRLS();
 
 // Full-content snapshot of a question at one revision (D22,

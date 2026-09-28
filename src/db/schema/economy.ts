@@ -27,6 +27,14 @@ export const rewardActivityKindEnum = pgEnum("reward_activity_kind", [
   "role_play",
   "quiz",
   "boss_quiz",
+  // Phase 5: Pulse Check completions credit through the same reward_rules/
+  // ledger path as every lesson kind (docs/ARCHITECTURE.md D26's comment
+  // anticipated this exact addition). Unlike the lesson kinds above, Pulse
+  // Check's actual VM amount is performance-computed per attempt
+  // (base+speed+combo+all-correct, settings_kv-driven like D21's lesson-flow
+  // scoring), not a flat reward_rules default - this row exists mainly for
+  // XP and so the activity has a place in earn-by-source breakdowns.
+  "pulse_check",
 ]);
 
 // Admin-editable default XP/VM per activity kind (docs/ECONOMY.md's seeded

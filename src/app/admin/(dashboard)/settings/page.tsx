@@ -8,12 +8,14 @@ import { listRankTitlesForAdmin } from "@/server/rank-titles/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getStreaksSettings } from "@/server/streaks/service";
+import { listTopicsForAdmin } from "@/server/topics/service";
 import { EconomySettingsEditor } from "./economy-settings-editor";
 import { LevelCurveSettingsEditor } from "./level-curve-settings-editor";
 import { DailyGoalsSettingsEditor } from "./daily-goals-settings-editor";
 import { RankTitlesEditor } from "./rank-titles-editor";
 import { ScoringSettingsEditor } from "./scoring-settings-editor";
 import { StreaksSettingsEditor } from "./streaks-settings-editor";
+import { TopicsEditor } from "./topics-editor";
 
 export default async function SettingsPage() {
   let staff;
@@ -38,6 +40,7 @@ export default async function SettingsPage() {
   const levelCurveSettings = await getLevelCurveSettings();
   const rankTitles = await listRankTitlesForAdmin();
   const dailyGoalsSettings = await getDailyGoalsSettings();
+  const topics = await listTopicsForAdmin();
 
   return (
     <div className="space-y-8">
@@ -53,6 +56,7 @@ export default async function SettingsPage() {
       <DailyGoalsSettingsEditor settings={dailyGoalsSettings} />
       <LevelCurveSettingsEditor settings={levelCurveSettings} />
       <RankTitlesEditor rankTitles={rankTitles} />
+      <TopicsEditor topics={topics} />
     </div>
   );
 }

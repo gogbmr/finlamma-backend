@@ -45,7 +45,7 @@ const ACTOR = { id: "staff_1" };
 const QUESTION_ID = "11111111-1111-4111-8111-111111111111";
 const VALID_INPUT = {
   format: "single_select" as const,
-  topic: null,
+  topicId: null,
   prompt: { en: "What is a stock?", hi: "x", hx: "x" },
   explanation: { en: "A share.", hi: "x", hx: "x" },
   payload: { options: [{ en: "A", hi: "x", hx: "x" }, { en: "B", hi: "x", hx: "x" }] },

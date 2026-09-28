@@ -23,6 +23,8 @@ import { LessonFlowScoringSchema } from "@/server/settings/schemas";
 import { updateLessonFlowScoringSettings } from "@/server/settings/service";
 import { StreaksSettingsSchema } from "@/server/streaks/schemas";
 import { updateStreaksSettings } from "@/server/streaks/service";
+import { createTopicForAdmin, updateTopicForAdmin } from "@/server/topics/service";
+import { TopicInputSchema } from "@/server/topics/schemas";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -121,6 +123,24 @@ export async function deleteRankTitleAction(id: string): Promise<ActionResult> {
   return runAction(async () => {
     const actor = await requireStaff("settings.manage");
     await deleteRankTitleForAdmin(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function createTopicAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = TopicInputSchema.parse(input);
+    await createTopicForAdmin(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updateTopicAction(id: string, input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = TopicInputSchema.parse(input);
+    await updateTopicForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }

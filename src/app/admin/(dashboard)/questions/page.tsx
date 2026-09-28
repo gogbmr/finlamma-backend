@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getQuestionEditorData } from "@/server/questions/service";
+import { listActiveTopicsForPicker } from "@/server/topics/service";
 import { QuestionEditor } from "./question-editor";
 
 export default async function QuestionsPage() {
@@ -19,7 +20,7 @@ export default async function QuestionsPage() {
     return <Forbidden message="You don't have permission to manage questions." />;
   }
 
-  const questions = await getQuestionEditorData();
+  const [questions, topics] = await Promise.all([getQuestionEditorData(), listActiveTopicsForPicker()]);
 
   return (
     <div className="space-y-6">
@@ -33,13 +34,14 @@ export default async function QuestionsPage() {
         questions={questions.map((q) => ({
           id: q.id,
           format: q.format,
-          topic: q.topic,
+          topicId: q.topicId,
           prompt: q.prompt,
           explanation: q.explanation,
           payload: q.payload,
           answer: q.answer,
           status: q.status,
         }))}
+        topics={topics.map((t) => ({ id: t.id, name: t.name }))}
         canManage={canManage}
         canPublish={canPublish}
       />

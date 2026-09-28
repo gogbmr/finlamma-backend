@@ -29,6 +29,7 @@
     "seed:instruments": "tsx scripts/seed-instruments.ts",
     "seed:market-holidays": "tsx scripts/seed-market-holidays.ts",
     "seed:funds": "tsx scripts/seed-funds.ts",
+    "seed:topics": "tsx scripts/seed-topics.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
   },
   "dependencies": {

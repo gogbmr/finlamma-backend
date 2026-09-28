@@ -13,6 +13,7 @@ export const QuestionFormatSchema = z.enum([
   "fill_blank",
   "match_pairs",
   "spot_mistake",
+  "number_guess",
 ]);
 export type QuestionFormat = z.infer<typeof QuestionFormatSchema>;
 
@@ -85,6 +86,23 @@ export const SpotMistakeAnswerSchema = z.object({
 export type SpotMistakePayload = z.infer<typeof SpotMistakePayloadSchema>;
 export type SpotMistakeAnswer = z.infer<typeof SpotMistakeAnswerSchema>;
 
+// --- number_guess: drag a slider to guess a number within a tolerance band
+// (Pulse Check's "Number Pakdo" - FEATURE_MAP NW-17). The one Pulse Check
+// format with no existing equivalent; every other prototype format reuses
+// single_select/ordering/sort_buckets/fill_blank/match_pairs/spot_mistake. ---
+export const NumberGuessPayloadSchema = z.object({
+  unit: LocalizedTextSchema, // e.g. "PERCENT · CPI" - shown next to the slider
+  min: z.number(),
+  max: z.number(),
+  step: z.number().positive(),
+});
+export const NumberGuessAnswerSchema = z.object({
+  correctValue: z.number(),
+  tolerance: z.number().nonnegative(), // an answer within [correctValue - tolerance, correctValue + tolerance] counts as correct
+});
+export type NumberGuessPayload = z.infer<typeof NumberGuessPayloadSchema>;
+export type NumberGuessAnswer = z.infer<typeof NumberGuessAnswerSchema>;
+
 export function payloadSchemaForFormat(format: QuestionFormat) {
   switch (format) {
     case "single_select":
@@ -99,6 +117,8 @@ export function payloadSchemaForFormat(format: QuestionFormat) {
       return MatchPairsPayloadSchema;
     case "spot_mistake":
       return SpotMistakePayloadSchema;
+    case "number_guess":
+      return NumberGuessPayloadSchema;
   }
 }
 
@@ -116,6 +136,8 @@ export function answerSchemaForFormat(format: QuestionFormat) {
       return MatchPairsAnswerSchema;
     case "spot_mistake":
       return SpotMistakeAnswerSchema;
+    case "number_guess":
+      return NumberGuessAnswerSchema;
   }
 }
 
@@ -205,6 +227,20 @@ export function validateAnswerBounds(
       }
       break;
     }
+    case "number_guess": {
+      const { min, max } = p.data as NumberGuessPayload;
+      const { correctValue, tolerance } = a.data as NumberGuessAnswer;
+      if (max <= min) {
+        errors.push(`payload.max (${max}) must be greater than payload.min (${min})`);
+      }
+      if (correctValue < min || correctValue > max) {
+        errors.push(`answer.correctValue (${correctValue}) is out of range [${min}, ${max}]`);
+      }
+      if (tolerance > max - min) {
+        errors.push(`answer.tolerance (${tolerance}) is wider than the payload's own range [${min}, ${max}]`);
+      }
+      break;
+    }
   }
   return errors;
 }
@@ -269,6 +305,12 @@ export const QUESTION_PAYLOAD_TEMPLATES: Record<QuestionFormat, unknown> = {
       { en: "", hi: "", hx: "" },
     ],
   } satisfies SpotMistakePayload,
+  number_guess: {
+    unit: { en: "", hi: "", hx: "" },
+    min: 0,
+    max: 10,
+    step: 1,
+  } satisfies NumberGuessPayload,
 };
 
 export const QUESTION_ANSWER_TEMPLATES: Record<QuestionFormat, unknown> = {
@@ -278,6 +320,7 @@ export const QUESTION_ANSWER_TEMPLATES: Record<QuestionFormat, unknown> = {
   fill_blank: { correctFillIndices: [0] } satisfies FillBlankAnswer,
   match_pairs: { rightIndexByLeftIndex: [0, 1] } satisfies MatchPairsAnswer,
   spot_mistake: { wrongLineIndex: 0 } satisfies SpotMistakeAnswer,
+  number_guess: { correctValue: 5, tolerance: 1 } satisfies NumberGuessAnswer,
 };
 
 // --- Staff (admin) - plain Zod, not OpenAPI-registered (admin mutations
@@ -290,7 +333,7 @@ export const QUESTION_ANSWER_TEMPLATES: Record<QuestionFormat, unknown> = {
 export const CreateQuestionDraftSchema = z
   .object({
     format: QuestionFormatSchema,
-    topic: z.string().min(1).nullable(),
+    topicId: z.string().uuid().nullable(),
     prompt: LocalizedTextSchema,
     explanation: LocalizedTextSchema,
     payload: z.record(z.string(), z.unknown()),
@@ -323,7 +366,7 @@ export type CreateQuestionDraftInput = z.infer<typeof CreateQuestionDraftSchema>
 // payload/answer against it there.
 export const UpdateQuestionDraftSchema = z.object({
   id: z.string().uuid(),
-  topic: z.string().min(1).nullable(),
+  topicId: z.string().uuid().nullable(),
   prompt: LocalizedTextSchema,
   explanation: LocalizedTextSchema,
   payload: z.record(z.string(), z.unknown()),
