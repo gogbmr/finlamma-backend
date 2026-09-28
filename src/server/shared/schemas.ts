@@ -1,5 +1,53 @@
 import { z } from "zod";
 
+// India's 28 states + 8 union territories - a fixed, closed list (not free
+// text) since this value is used as an Arena leaderboard scope-bucketing key
+// (docs/PRODUCT_SPEC.md §3, FEATURE_MAP AR-07): free text would fragment the
+// state-scope pool (e.g. "Delhi" vs "New Delhi" vs "delhi") and could carry
+// arbitrary content into a column nothing ever displays back to the learner
+// who typed it, but that Arena's grouping logic does trust.
+export const INDIAN_STATES = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal",
+  "Andaman and Nicobar Islands",
+  "Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Jammu and Kashmir",
+  "Ladakh",
+  "Lakshadweep",
+  "Puducherry",
+] as const;
+
+export const IndianStateSchema = z.enum(INDIAN_STATES);
+export type IndianState = (typeof INDIAN_STATES)[number];
+
 // Leaf-level trilingual text - see src/db/schema/_helpers.ts's LocalizedText
 // (the same shape at the db layer) and docs/DATA_MODEL.md's Learning
 // section for why this is one shared structure with localized leaves, not

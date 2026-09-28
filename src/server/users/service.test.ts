@@ -207,6 +207,7 @@ const USER_ROW = {
   language: "en" as const,
   theme: "dark" as const,
   bio: null,
+  state: null,
   preferences: { sound: true, haptics: true, dataSaver: false },
   clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
   deletedAt: null,
@@ -225,6 +226,7 @@ describe("getMe", () => {
       language: "en",
       theme: "dark",
       bio: null,
+      state: null,
       preferences: { sound: true, haptics: true, dataSaver: false },
     });
   });
@@ -261,6 +263,16 @@ describe("updateMe", () => {
 
     expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { bio: "Saving up!" });
     expect(result.bio).toBe("Saving up!");
+  });
+
+  it("persists a state update (Arena's state-scope leaderboard, never shown on any profile)", async () => {
+    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, state: "Maharashtra" });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    const result = await updateMe(USER_ROW, { state: "Maharashtra" }, META);
+
+    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { state: "Maharashtra" });
+    expect(result.state).toBe("Maharashtra");
   });
 
   it("persists a whole-object preferences update", async () => {

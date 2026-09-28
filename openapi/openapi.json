@@ -284,6 +284,53 @@
             "example": "Saving up for my first SIP!",
             "description": "Free-text, self-editable, private to the owner - never shown to any other learner."
           },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Andhra Pradesh",
+              "Arunachal Pradesh",
+              "Assam",
+              "Bihar",
+              "Chhattisgarh",
+              "Goa",
+              "Gujarat",
+              "Haryana",
+              "Himachal Pradesh",
+              "Jharkhand",
+              "Karnataka",
+              "Kerala",
+              "Madhya Pradesh",
+              "Maharashtra",
+              "Manipur",
+              "Meghalaya",
+              "Mizoram",
+              "Nagaland",
+              "Odisha",
+              "Punjab",
+              "Rajasthan",
+              "Sikkim",
+              "Tamil Nadu",
+              "Telangana",
+              "Tripura",
+              "Uttar Pradesh",
+              "Uttarakhand",
+              "West Bengal",
+              "Andaman and Nicobar Islands",
+              "Chandigarh",
+              "Dadra and Nagar Haveli and Daman and Diu",
+              "Delhi",
+              "Jammu and Kashmir",
+              "Ladakh",
+              "Lakshadweep",
+              "Puducherry",
+              null
+            ],
+            "example": "Maharashtra",
+            "description": "Optional. Used only to place you in Arena's state-scope leaderboard - never shown on your or anyone else's public profile."
+          },
           "preferences": {
             "type": "object",
             "properties": {
@@ -324,6 +371,7 @@
           "language",
           "theme",
           "bio",
+          "state",
           "preferences"
         ]
       },
@@ -367,6 +415,53 @@
             "maxLength": 280,
             "example": "Saving up for my first SIP!",
             "description": "Free-text, self-editable, private to the owner - never shown to any other learner."
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Andhra Pradesh",
+              "Arunachal Pradesh",
+              "Assam",
+              "Bihar",
+              "Chhattisgarh",
+              "Goa",
+              "Gujarat",
+              "Haryana",
+              "Himachal Pradesh",
+              "Jharkhand",
+              "Karnataka",
+              "Kerala",
+              "Madhya Pradesh",
+              "Maharashtra",
+              "Manipur",
+              "Meghalaya",
+              "Mizoram",
+              "Nagaland",
+              "Odisha",
+              "Punjab",
+              "Rajasthan",
+              "Sikkim",
+              "Tamil Nadu",
+              "Telangana",
+              "Tripura",
+              "Uttar Pradesh",
+              "Uttarakhand",
+              "West Bengal",
+              "Andaman and Nicobar Islands",
+              "Chandigarh",
+              "Dadra and Nagar Haveli and Daman and Diu",
+              "Delhi",
+              "Jammu and Kashmir",
+              "Ladakh",
+              "Lakshadweep",
+              "Puducherry",
+              null
+            ],
+            "example": "Maharashtra",
+            "description": "Optional. Used only to place you in Arena's state-scope leaderboard - never shown on your or anyone else's public profile."
           },
           "preferences": {
             "type": "object",
@@ -3382,7 +3477,7 @@
       },
       "patch": {
         "summary": "Update my preferences",
-        "description": "Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged.",
+        "description": "Updates language, theme, bio, state and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged. `state` is optional and used only to place the learner in Arena's state-scope leaderboard - it is never shown on any profile.",
         "tags": [
           "Users"
         ],
@@ -3421,7 +3516,7 @@
                     "message": "Request validation failed",
                     "details": {
                       "_errors": [
-                        "Provide at least one of language, theme, bio or preferences"
+                        "Provide at least one of language, theme, bio, state or preferences"
                       ]
                     }
                   }
@@ -10306,6 +10401,221 @@
             "description": "Webhook signing secret not configured",
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/leaderboard": {
+      "get": {
+        "summary": "Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)",
+        "description": "Ranks every learner by XP earned since Monday IST, for the requested scope. 'state' and 'world' are resolved from the caller's own profile (users.state / their current world) - there is no way to view another scope's raw pool directly. A thin scope (below settings_kv's arena_min_leaderboard_pool_size, default 20) either falls back to a broader scope (state -> india) or is returned with notEnoughPlayers: true (world/india/global, which have no broader fallback) - see docs/ARCHITECTURE.md's Phase 6 kickoff decision. Every XP credit behind this ranking is idempotent per (user, source) at the ledger level (D26), so replaying a lesson or quiz can never inflate a learner's weekly total.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "world",
+                "state",
+                "india",
+                "global"
+              ],
+              "example": "global",
+              "description": "Which leaderboard to view (FEATURE_MAP AR-07). 'world' is the caller's own current world team; 'state' uses the caller's own users.state if set. A thin state pool transparently falls back to 'india' (see fallbackApplied on the response)."
+            },
+            "required": true,
+            "description": "Which leaderboard to view (FEATURE_MAP AR-07). 'world' is the caller's own current world team; 'state' uses the caller's own users.state if set. A thin state pool transparently falls back to 'india' (see fallbackApplied on the response).",
+            "name": "scope",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The requested (or fallback) scope's weekly leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "requestedScope": {
+                          "type": "string",
+                          "example": "state:Maharashtra",
+                          "description": "The scope actually requested, before any privacy-floor fallback."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "example": "india",
+                          "description": "The scope actually returned - may differ from requestedScope, see fallbackApplied."
+                        },
+                        "fallbackApplied": {
+                          "type": "boolean",
+                          "example": true,
+                          "description": "true when the requested scope's pool was below the minimum size (settings_kv, default 20) and this response falls back to a broader scope instead."
+                        },
+                        "notEnoughPlayers": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true when even the returned scope doesn't meet the minimum pool size - the app should render 'not enough players yet' rather than this (possibly empty) list."
+                        },
+                        "weekStartDate": {
+                          "type": "string",
+                          "example": "2026-09-28",
+                          "description": "Monday IST, this week."
+                        },
+                        "poolSize": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 214
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 1
+                              },
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "Aarav"
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "S",
+                                "description": "Kid-safe display name is always firstName + lastInitial - never a full name."
+                              },
+                              "xp": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 2710,
+                                "description": "XP earned this week."
+                              },
+                              "isSelf": {
+                                "type": "boolean",
+                                "example": false
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "userId",
+                              "firstName",
+                              "lastInitial",
+                              "xp",
+                              "isSelf"
+                            ]
+                          }
+                        },
+                        "self": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "xp": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "xp"
+                          ],
+                          "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
+                        }
+                      },
+                      "required": [
+                        "requestedScope",
+                        "scope",
+                        "fallbackApplied",
+                        "notEnoughPlayers",
+                        "weekStartDate",
+                        "poolSize",
+                        "rows",
+                        "self"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or missing scope query parameter",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "scope must be one of world, state, india, global"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }

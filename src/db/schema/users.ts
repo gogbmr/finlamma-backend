@@ -48,6 +48,16 @@ export const users = pgTable("users", {
   // projection is first-name + last-initial only, per CLAUDE.md rule 10 -
   // bio is a Settings/account-page field, not a social one).
   bio: text("bio"),
+  // Optional, self-editable (PATCH /me, same as bio/language/theme) - Phase 6
+  // Arena's state-scope leaderboard (docs/PRODUCT_SPEC.md §3, FEATURE_MAP
+  // AR-07) is the ONLY thing that ever reads this column. Never serialized
+  // into any Arena response or public profile - it's read server-side only,
+  // to bucket which state-scope pool a learner's own row belongs to. A
+  // plain-language explanation of why it's asked belongs wherever the app
+  // collects it, per the founder's decision. See docs/ARCHITECTURE.md's
+  // Phase 6 kickoff decision for the state-scope privacy floor this column
+  // exists to feed.
+  state: text("state"),
   preferences: jsonb("preferences").$type<UserPreferences>().default(DEFAULT_USER_PREFERENCES).notNull(),
   // Clerk's own updated_at for the last change we applied, so the Clerk
   // webhook can ignore an out-of-order/stale redelivery instead of

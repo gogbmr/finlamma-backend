@@ -8,6 +8,7 @@ export type UserPrefsUpdate = {
   language?: "en" | "hi" | "hx";
   theme?: "dark" | "light";
   bio?: string | null;
+  state?: string | null;
   preferences?: UserPreferences;
 };
 
@@ -100,6 +101,8 @@ export async function anonymizeUserFromClerk(clerkUserId: string) {
       // address, social handle, ...), so it's cleared on deletion the same
       // as everything else.
       bio: null,
+      // Location data - cleared for the same reason as dateOfBirth above.
+      state: null,
     })
     .where(and(eq(users.clerkUserId, clerkUserId), isNull(users.deletedAt)))
     .returning();

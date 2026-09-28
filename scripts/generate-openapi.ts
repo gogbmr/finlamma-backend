@@ -68,6 +68,7 @@ import "../src/app/api/v1/pulse-check/[attemptId]/finish/route";
 import "../src/app/api/v1/pulse-check/[attemptId]/result/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
+import "../src/app/api/v1/arena/leaderboard/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

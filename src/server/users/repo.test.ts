@@ -222,4 +222,22 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
     expect(row.bio).toBeNull();
   });
+
+  it("clears state on deletion - location data is scrubbed the same as everything else", async () => {
+    const clerkUserId = uniqueClerkUserId("state-scrub");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    await db.update(users).set({ state: "Maharashtra" }).where(eq(users.clerkUserId, clerkUserId));
+
+    await anonymizeUserFromClerk(clerkUserId);
+
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    expect(row.state).toBeNull();
+  });
 });

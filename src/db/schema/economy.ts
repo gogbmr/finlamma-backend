@@ -89,6 +89,13 @@ export const xpEvents = pgTable(
   (t) => [
     uniqueIndex("xp_events_user_source_idx").on(t.userId, t.sourceType, t.sourceId),
     index("xp_events_user_id_idx").on(t.userId),
+    // Phase 6: Arena's weekly leaderboard aggregates "every xp_events row
+    // since Monday IST, grouped by user" (src/server/arena/repo.ts) - this
+    // is what keeps that scan bounded to the current week's volume instead
+    // of a sequential scan over the whole append-only table as it grows
+    // (same "scope every query to the time window that matters" reasoning
+    // as docs/ARCHITECTURE.md D48).
+    index("xp_events_created_at_idx").on(t.createdAt),
   ],
 ).enableRLS();
 

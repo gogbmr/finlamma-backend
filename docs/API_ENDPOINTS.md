@@ -100,6 +100,10 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
 - `POST /api/webhooks/clerk-staff` — Clerk user webhook (staff app)
 
+**Arena**
+
+- `GET /api/v1/arena/leaderboard` — Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)
+
 ## System
 
 ### `GET /api/v1/health`
@@ -176,6 +180,7 @@ Returns the signed-in user's own profile.
     "language": "en",
     "theme": "dark",
     "bio": "Saving up for my first SIP!",
+    "state": "Maharashtra",
     "preferences": {
       "sound": true,
       "haptics": true,
@@ -203,7 +208,7 @@ Returns the signed-in user's own profile.
 
 **Update my preferences**
 
-Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged.
+Updates language, theme, bio, state and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged. `state` is optional and used only to place the learner in Arena's state-scope leaderboard - it is never shown on any profile.
 
 **Auth:** bearerAuth
 
@@ -214,6 +219,7 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
 | `language` | string (en, hi, hx) | no | en (English), hi (Hindi) or hx (Hinglish). |
 | `theme` | string (dark, light) | no |  |
 | `bio` | string or null | no | Free-text, self-editable, private to the owner - never shown to any other learner. |
+| `state` | string or null (Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, Goa, Gujarat, Haryana, Himachal Pradesh, Jharkhand, Karnataka, Kerala, Madhya Pradesh, Maharashtra, Manipur, Meghalaya, Mizoram, Nagaland, Odisha, Punjab, Rajasthan, Sikkim, Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, West Bengal, Andaman and Nicobar Islands, Chandigarh, Dadra and Nagar Haveli and Daman and Diu, Delhi, Jammu and Kashmir, Ladakh, Lakshadweep, Puducherry, ) | no | Optional. Used only to place you in Arena's state-scope leaderboard - never shown on your or anyone else's public profile. |
 | `preferences` | object | no |  |
 | `preferences.sound` | boolean | yes | In-app sound effects on/off. |
 | `preferences.haptics` | boolean | yes | Haptic feedback on/off. |
@@ -224,6 +230,7 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
   "language": "en",
   "theme": "dark",
   "bio": "Saving up for my first SIP!",
+  "state": "Maharashtra",
   "preferences": {
     "sound": true,
     "haptics": true,
@@ -247,6 +254,7 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
     "language": "en",
     "theme": "dark",
     "bio": "Saving up for my first SIP!",
+    "state": "Maharashtra",
     "preferences": {
       "sound": true,
       "haptics": true,
@@ -265,7 +273,7 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
     "message": "Request validation failed",
     "details": {
       "_errors": [
-        "Provide at least one of language, theme, bio or preferences"
+        "Provide at least one of language, theme, bio, state or preferences"
       ]
     }
   }
@@ -4663,6 +4671,89 @@ Called by Clerk on user.created and user.deleted for the STAFF Clerk application
     "code": "NOT_FOUND",
     "message": "Resource not found",
     "details": {}
+  }
+}
+```
+
+
+---
+
+## Arena
+
+### `GET /api/v1/arena/leaderboard`
+
+**Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)**
+
+Ranks every learner by XP earned since Monday IST, for the requested scope. 'state' and 'world' are resolved from the caller's own profile (users.state / their current world) - there is no way to view another scope's raw pool directly. A thin scope (below settings_kv's arena_min_leaderboard_pool_size, default 20) either falls back to a broader scope (state -> india) or is returned with notEnoughPlayers: true (world/india/global, which have no broader fallback) - see docs/ARCHITECTURE.md's Phase 6 kickoff decision. Every XP credit behind this ranking is idempotent per (user, source) at the ledger level (D26), so replaying a lesson or quiz can never inflate a learner's weekly total.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `scope` | query | string (world, state, india, global) | yes | Which leaderboard to view (FEATURE_MAP AR-07). 'world' is the caller's own current world team; 'state' uses the caller's own users.state if set. A thin state pool transparently falls back to 'india' (see fallbackApplied on the response). |
+
+**Responses**
+
+- **200** — The requested (or fallback) scope's weekly leaderboard
+
+```json
+{
+  "data": {
+    "requestedScope": "state:Maharashtra",
+    "scope": "india",
+    "fallbackApplied": true,
+    "notEnoughPlayers": false,
+    "weekStartDate": "2026-09-28",
+    "poolSize": 214,
+    "rows": [
+      {
+        "rank": 1,
+        "userId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+        "firstName": "Aarav",
+        "lastInitial": "S",
+        "xp": 2710,
+        "isSelf": false
+      }
+    ],
+    "self": {
+      "rank": 0,
+      "xp": 0
+    }
+  }
+}
+```
+
+- **400** — Invalid or missing scope query parameter
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "scope must be one of world, state, india, global"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```
