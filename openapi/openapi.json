@@ -12221,6 +12221,791 @@
           }
         }
       }
+    },
+    "/api/v1/arena/competitions/current": {
+      "get": {
+        "summary": "Get the current Monthly Competition (AR-14)",
+        "description": "The competition hero card: name, instrument, virtual capital (a non-convertible sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands and rules text. Null when no competition is currently published and within its window - the app should show an empty state, not an error. Live LTP/% change isn't included here - use GET /trade/instruments/{symbol} for that.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current competition, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "instrumentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "virtualCapitalPaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 10000000,
+                          "description": "₹1,00,000 in paise - a sandbox balance, never V Money (docs/ARCHITECTURE.md D57)."
+                        },
+                        "windowStart": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "windowEnd": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "daysLeft": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 12
+                        },
+                        "prizes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rankFrom": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "rankTo": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "vmAmount": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "badgeId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "rankFrom",
+                              "rankTo",
+                              "vmAmount",
+                              "badgeId"
+                            ]
+                          }
+                        },
+                        "rules": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "playersCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 340
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "instrumentId",
+                        "virtualCapitalPaise",
+                        "windowStart",
+                        "windowEnd",
+                        "daysLeft",
+                        "prizes",
+                        "rules",
+                        "playersCount"
+                      ],
+                      "description": "Null when no competition is currently published and within its window."
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/enter": {
+      "post": {
+        "summary": "Enter the current Monthly Competition (AR-14)",
+        "description": "Creates the caller's entry, seeded with the competition's virtual capital (never V Money - docs/ARCHITECTURE.md D57). Calling this again after already entering just returns the existing entry, not an error. Requires trading to already be unlocked, and only accepts entries within the first part of the competition's window (docs/ARCHITECTURE.md D59, settings_kv-tunable) - closes a late-entry-lucky-trade gap.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's competition entry (new or existing)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "competitionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "cashPaise": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "qtyHeld": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "enteredAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "competitionId",
+                        "cashPaise",
+                        "qtyHeld",
+                        "enteredAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active competition right now",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No active competition right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The entry window for this competition has closed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "COMPETITION_ENTRY_CLOSED",
+                    "message": "Entry for this competition has closed"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/trades": {
+      "post": {
+        "summary": "Place a trade inside the current Monthly Competition (AR-14)",
+        "description": "MARKET-only, whole shares, against the competition's single fixed instrument and the caller's own isolated entry - never the real order book, `holdings` or `vmoney_ledger` (docs/ARCHITECTURE.md D57). Requires an Idempotency-Key header, same convention as real orders. Rejected the same way a real order is for market/symbol halts, a paused feed, a closed market, or a stale/unavailable price (never a different, looser price path for the sandbox) - plus a competition-specific max-trades limit (settings_kv, default 10).",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per trade attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per trade attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "side": "buy",
+                "qty": 5
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "buy",
+                      "sell"
+                    ]
+                  },
+                  "qty": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5,
+                    "description": "Whole shares only."
+                  }
+                },
+                "required": [
+                  "side",
+                  "qty"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The trade (filled, or replayed from an identical earlier request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "side": {
+                          "type": "string",
+                          "enum": [
+                            "buy",
+                            "sell"
+                          ]
+                        },
+                        "qty": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "fillPricePaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "realizedPnlPaise": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "filledAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "side",
+                        "qty",
+                        "fillPricePaise",
+                        "realizedPnlPaise",
+                        "filledAt",
+                        "replayed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a missing Idempotency-Key header",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Idempotency-Key header is required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or the caller hasn't entered this competition",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Enter the competition before trading in it"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active competition right now",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No active competition right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Market/symbol halted, feed paused, market closed, price stale/unavailable, the max-trades limit reached, or insufficient cash/holdings",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "COMPETITION_MAX_TRADES_REACHED",
+                    "message": "You've reached the 10-trade limit for this competition"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many trade attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/me": {
+      "get": {
+        "summary": "Get my status in the current Monthly Competition (AR-15)",
+        "description": "The \"You\" rank card - live rank/ROI% among every entrant, computed the instant it's requested (never a cached snapshot - a competition is a single ongoing event, not a recurring weekly cycle like Arena leagues). `entered: false` if the caller hasn't entered yet; `data: null` if there's no active competition at all right now. ROI% is computed against the FULL starting capital, never just the deployed cost basis.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's competition status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "entered": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            }
+                          },
+                          "required": [
+                            "entered"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "entered": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "rank": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "example": 42
+                            },
+                            "poolSize": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "example": 340
+                            },
+                            "roiPctBasisPoints": {
+                              "type": "integer",
+                              "example": 823,
+                              "description": "ROI% x 100 (823 = 8.23%). Computed against the FULL starting capital, never just the deployed cost basis."
+                            },
+                            "tradeCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "cashPaise": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "qtyHeld": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "entered",
+                            "rank",
+                            "poolSize",
+                            "roiPctBasisPoints",
+                            "tradeCount",
+                            "cashPaise",
+                            "qtyHeld"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null when there's no active competition at all right now."
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/leaderboard": {
+      "get": {
+        "summary": "Get the current Monthly Competition's ranked board (AR-16)",
+        "description": "Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current competition's leaderboard, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "roiPctBasisPoints": {
+                                "type": "integer"
+                              },
+                              "isSelf": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "userId",
+                              "firstName",
+                              "lastInitial",
+                              "roiPctBasisPoints",
+                              "isSelf"
+                            ]
+                          }
+                        },
+                        "poolSize": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "poolSize"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "webhooks": {}

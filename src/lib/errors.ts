@@ -75,6 +75,15 @@ export const ErrorCode = {
   // client mistake" shape as LESSON_TOO_SOON/RESEND_TOO_SOON - the request
   // succeeds if simply retried once enough real time has passed.
   NEWS_READ_TOO_SOON: "NEWS_READ_TOO_SOON",
+
+  // Monthly Competition (src/server/competitions, Phase 6 Checkpoint 7,
+  // docs/ARCHITECTURE.md D59) - trade rejections reuse the existing
+  // MARKET_CLOSED/MARKET_HALTED/SYMBOL_HALTED/MARKET_PAUSED/PRICE_STALE/
+  // PRICE_UNAVAILABLE/INSUFFICIENT_MARGIN/INSUFFICIENT_HOLDINGS codes above
+  // (identical meaning, same isolated sandbox pricing path) - these two are
+  // genuinely new concepts with no existing equivalent.
+  COMPETITION_ENTRY_CLOSED: "COMPETITION_ENTRY_CLOSED",
+  COMPETITION_MAX_TRADES_REACHED: "COMPETITION_MAX_TRADES_REACHED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -115,6 +124,9 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   CHEER_RECEIVER_OPTED_OUT: 409,
 
   NEWS_READ_TOO_SOON: 429,
+
+  COMPETITION_ENTRY_CLOSED: 409,
+  COMPETITION_MAX_TRADES_REACHED: 409,
 };
 
 export class AppError extends Error {

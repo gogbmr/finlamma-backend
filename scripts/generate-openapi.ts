@@ -77,6 +77,11 @@ import "../src/app/api/v1/me/arena/cheers/route";
 import "../src/app/api/v1/arena/chips/route";
 import "../src/app/api/v1/me/arena/chips/route";
 import "../src/app/api/v1/users/[userId]/public-profile/route";
+import "../src/app/api/v1/arena/competitions/current/route";
+import "../src/app/api/v1/arena/competitions/current/enter/route";
+import "../src/app/api/v1/arena/competitions/current/trades/route";
+import "../src/app/api/v1/arena/competitions/current/me/route";
+import "../src/app/api/v1/arena/competitions/current/leaderboard/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

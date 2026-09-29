@@ -295,6 +295,13 @@
       "when": 1790661001984,
       "tag": "0041_lonely_hammerhead",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790672729031,
+      "tag": "0042_short_christian_walker",
+      "breakpoints": true
     }
   ]
 }

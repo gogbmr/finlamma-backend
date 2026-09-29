@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldCheck,
   Siren,
+  Trophy,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -44,6 +45,7 @@ export type AdminNavVisibility = {
   instruments: boolean;
   opsConsole: boolean;
   newsDesk: boolean;
+  competitions: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -82,6 +84,7 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
       items: [
         { href: "/admin/badges", label: "Badges", icon: Award, visible: v.badges },
         { href: "/admin/rewards", label: "Rewards", icon: Gift, visible: v.rewards },
+        { href: "/admin/competitions", label: "Competitions", icon: Trophy, visible: v.competitions },
       ],
     },
     {

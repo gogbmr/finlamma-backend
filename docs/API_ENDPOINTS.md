@@ -112,6 +112,11 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/arena/chips` — Get my selected about-me chips (AR-20)
 - `PUT /api/v1/me/arena/chips` — Set my selected about-me chips (AR-20)
 - `GET /api/v1/users/{userId}/public-profile` — Get a learner's public Arena profile (AR-20)
+- `GET /api/v1/arena/competitions/current` — Get the current Monthly Competition (AR-14)
+- `POST /api/v1/arena/competitions/current/enter` — Enter the current Monthly Competition (AR-14)
+- `POST /api/v1/arena/competitions/current/trades` — Place a trade inside the current Monthly Competition (AR-14)
+- `GET /api/v1/arena/competitions/current/me` — Get my status in the current Monthly Competition (AR-15)
+- `GET /api/v1/arena/competitions/current/leaderboard` — Get the current Monthly Competition's ranked board (AR-16)
 
 ## System
 
@@ -5412,6 +5417,361 @@ Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: 
   "error": {
     "code": "NOT_FOUND",
     "message": "Learner not found"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current`
+
+**Get the current Monthly Competition (AR-14)**
+
+The competition hero card: name, instrument, virtual capital (a non-convertible sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands and rules text. Null when no competition is currently published and within its window - the app should show an empty state, not an error. Live LTP/% change isn't included here - use GET /trade/instruments/{symbol} for that.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The current competition, or null
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "instrumentId": "00000000-0000-0000-0000-000000000000",
+    "virtualCapitalPaise": 10000000,
+    "windowStart": "2026-01-01T00:00:00.000Z",
+    "windowEnd": "2026-01-01T00:00:00.000Z",
+    "daysLeft": 12,
+    "prizes": [
+      {
+        "rankFrom": 0,
+        "rankTo": 0,
+        "vmAmount": 0,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      }
+    ],
+    "rules": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "playersCount": 340
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/arena/competitions/current/enter`
+
+**Enter the current Monthly Competition (AR-14)**
+
+Creates the caller's entry, seeded with the competition's virtual capital (never V Money - docs/ARCHITECTURE.md D57). Calling this again after already entering just returns the existing entry, not an error. Requires trading to already be unlocked, and only accepts entries within the first part of the competition's window (docs/ARCHITECTURE.md D59, settings_kv-tunable) - closes a late-entry-lucky-trade gap.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's competition entry (new or existing)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "competitionId": "00000000-0000-0000-0000-000000000000",
+    "cashPaise": 0,
+    "qtyHeld": 0,
+    "enteredAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active competition right now
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No active competition right now"
+  }
+}
+```
+
+- **409** — The entry window for this competition has closed
+
+```json
+{
+  "error": {
+    "code": "COMPETITION_ENTRY_CLOSED",
+    "message": "Entry for this competition has closed"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/arena/competitions/current/trades`
+
+**Place a trade inside the current Monthly Competition (AR-14)**
+
+MARKET-only, whole shares, against the competition's single fixed instrument and the caller's own isolated entry - never the real order book, `holdings` or `vmoney_ledger` (docs/ARCHITECTURE.md D57). Requires an Idempotency-Key header, same convention as real orders. Rejected the same way a real order is for market/symbol halts, a paused feed, a closed market, or a stale/unavailable price (never a different, looser price path for the sandbox) - plus a competition-specific max-trades limit (settings_kv, default 10).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `Idempotency-Key` | header | string | yes | Client-generated, unique per trade attempt. |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `side` | string (buy, sell) | yes |  |
+| `qty` | integer | yes | Whole shares only. |
+
+```json
+{
+  "side": "buy",
+  "qty": 5
+}
+```
+
+**Responses**
+
+- **200** — The trade (filled, or replayed from an identical earlier request)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "side": "buy",
+    "qty": 0,
+    "fillPricePaise": 0,
+    "realizedPnlPaise": 0,
+    "filledAt": "2026-01-01T00:00:00.000Z",
+    "replayed": true
+  }
+}
+```
+
+- **400** — Invalid input, or a missing Idempotency-Key header
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Idempotency-Key header is required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or the caller hasn't entered this competition
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Enter the competition before trading in it"
+  }
+}
+```
+
+- **404** — No active competition right now
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No active competition right now"
+  }
+}
+```
+
+- **409** — Market/symbol halted, feed paused, market closed, price stale/unavailable, the max-trades limit reached, or insufficient cash/holdings
+
+```json
+{
+  "error": {
+    "code": "COMPETITION_MAX_TRADES_REACHED",
+    "message": "You've reached the 10-trade limit for this competition"
+  }
+}
+```
+
+- **429** — Too many trade attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many order attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current/me`
+
+**Get my status in the current Monthly Competition (AR-15)**
+
+The "You" rank card - live rank/ROI% among every entrant, computed the instant it's requested (never a cached snapshot - a competition is a single ongoing event, not a recurring weekly cycle like Arena leagues). `entered: false` if the caller hasn't entered yet; `data: null` if there's no active competition at all right now. ROI% is computed against the FULL starting capital, never just the deployed cost basis.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's competition status
+
+```json
+{
+  "data": {
+    "entered": false
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current/leaderboard`
+
+**Get the current Monthly Competition's ranked board (AR-16)**
+
+Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The current competition's leaderboard, or null
+
+```json
+{
+  "data": {
+    "rows": [
+      {
+        "rank": 0,
+        "userId": "00000000-0000-0000-0000-000000000000",
+        "firstName": "string",
+        "lastInitial": "string",
+        "roiPctBasisPoints": 0,
+        "isSelf": true
+      }
+    ],
+    "poolSize": 0
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```
