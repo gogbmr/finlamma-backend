@@ -2,12 +2,17 @@ import { z } from "zod";
 // Side-effect import: registers Zod's .openapi() extension method - must run
 // before any .openapi() call in this file (see src/lib/openapi.ts).
 import "@/lib/openapi";
+import { MAX_REWARD_AMOUNT } from "@/server/economy/schemas";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 
 const PrizeBandSchema = z.object({
   rankFrom: z.number().int().positive(),
   rankTo: z.number().int().positive(),
-  vmAmount: z.number().int().nonnegative(),
+  // Same sanity ceiling every other admin-set VM figure in this codebase
+  // uses (badges' MAX_BADGE_VM_REWARD, Arena's MAX_ARENA_VM_AMOUNT) - a
+  // typo'd prize amount would otherwise auto-pay every qualifying entrant
+  // at the next daily settlement sweep with no second check.
+  vmAmount: z.number().int().nonnegative().max(MAX_REWARD_AMOUNT),
   badgeId: z.uuid().nullable(),
 });
 

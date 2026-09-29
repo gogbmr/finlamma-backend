@@ -289,10 +289,16 @@ skill for the full idempotency/reversal design)
   the SIP idempotency mechanism, D46, failure_reason — SIP-triggered failures only)
 - `sip_plans` (user_id, fund_id, amount_paise, day_of_month — 1-28 only, status — active/paused/
   cancelled, paused_at, cancelled_at)
-- `competitions` (name, instrument_id, virtual_capital_vm, window_start, window_end, prizes jsonb
-  — V Money / badge / coupon only, **never real currency**, admin-set per competition — and rules
-  jsonb), `competition_entries`/`competition_trades` (isolated from the user's main paper-trading
-  portfolio)
+- `competitions` (name, instrument_id, virtual_capital_paise — a non-convertible sandbox balance,
+  never V Money, renamed from an earlier `virtual_capital_vm` before any code existed specifically
+  to avoid reading as a VM grant, see `docs/ARCHITECTURE.md` D57 — window_start, window_end, prizes
+  jsonb — V Money / badge / coupon only, **never real currency**, admin-set per competition, capped
+  per band at `MAX_REWARD_AMOUNT` — and rules jsonb), `competition_entries` (cash_paise, qty_held,
+  avg_price_paise — mirrors `holdings`/`orders`' weighted-avg-cost shape exactly, but against this
+  isolated table pair, never the user's main paper-trading portfolio), `competition_trades`
+  (idempotency_key, unique per entry), `competition_prizes` (rank, ending_value_paise,
+  roi_pct_basis_points, vm_awarded, badge_id — the ONE place a competition ever creates real VM,
+  unique per (competition, user), D57/D58/D59)
 
 **News** (Phase 5 — built; see `docs/ARCHITECTURE.md` D50/D51)
 - `topics` (name jsonb {en,hi,hx}, order, active) — the ONE shared taxonomy for both a question's
@@ -346,10 +352,23 @@ skill for the full idempotency/reversal design)
   pattern as every other ledger credit (D26)
 
 **Social & notifications**
-- `leaderboard_snapshots` (week, scope, rankings jsonb), `leagues`, `league_members`
-- `cheers` (sender_id, receiver_id, created_at, unique on (sender_id, receiver_id, date) — one
-  cheer per recipient per sender per day; XP awarded is also capped per receiver per day via
-  `settings_kv.cheer_daily_xp_cap`; un-cheer/re-cheer never re-awards XP)
+- `leaderboard_snapshots` (week_start_date, scope, pool_size, rankings jsonb — one row per
+  {rank, userId, xp, zone, prevRank} per scope per week, unique on (week_start_date, scope)),
+  `leagues` (scope, unique), `league_members` (league_id, user_id, zone, rank — replaced whole each
+  settlement, never merged), `league_settlements` (user_id, week_start_date, scope, zone, xp,
+  vm_awarded — the idempotency record for a learner's single best-zone weekly payout, unique on
+  (user_id, week_start_date), `docs/ARCHITECTURE.md` D55)
+- `world_xp_snapshots` (world_id, date_ist, xp_total, member_count — one row per world per IST day,
+  unique on (world_id, date_ist), a daily Inngest rollup backing the 7-day sparkline, AR-04/05)
+- `cheers` (sender_id, receiver_id, created_at, unique on (sender_id, receiver_id, cheer_date_ist)
+  — one cheer per recipient per sender per day; XP awarded is capped per receiver per day via
+  `settings_kv.arena_cheer_daily_xp_cap` AND per (sender, receiver) per week via
+  `settings_kv.arena_cheer_weekly_sender_receiver_cap` (`docs/ARCHITECTURE.md` D56); un-cheer/
+  re-cheer never re-awards XP)
+- `about_me_chips` (name jsonb {en,hi,hx}, icon_key, active — an admin-managed preset catalog),
+  `user_about_me_chips` (user_id, chip_id — a learner's selection, capped at 3, replaced whole each
+  edit, unique on (user_id, chip_id)) — AR-20's public-profile chips, never free text
+  (`docs/ARCHITECTURE.md` D36)
 - `push_tokens`, `notification_prefs`, `notifications`
 - `doubt_threads`, `doubt_messages` — Phase 7's live AI mentor; the in-lesson "Doubt Zone" node in
   Phase 2b is scripted content (`lessons.content`), not these tables (see PRODUCT_SPEC.md §1)

@@ -29,7 +29,6 @@ const {
   ensureLeague,
   getCurrentWorldIdForUser,
   getLastWeekRanksForScope,
-  getLeagueMemberZone,
   getLeagueZonesForScope,
   getSelectedChipsForUser,
   getSnapshotEntryForUser,
@@ -319,7 +318,7 @@ describe("about-me chips: selection replace + delete-while-in-use", () => {
   });
 });
 
-describe("ensureLeague / replaceLeagueMembers / getLeagueZonesForScope / getLeagueMemberZone", () => {
+describe("ensureLeague / replaceLeagueMembers / getLeagueZonesForScope", () => {
   it("get-or-creates a league row for a scope, idempotently", async () => {
     const scope = `test-scope-${uniqueKey()}`;
 
@@ -344,16 +343,6 @@ describe("ensureLeague / replaceLeagueMembers / getLeagueZonesForScope / getLeag
     zones = await getLeagueZonesForScope(scope);
     expect(zones.has(u1.id)).toBe(false); // u1 is gone, not still present
     expect(zones.get(u2.id)).toBe("demote");
-  });
-
-  it("getLeagueMemberZone reads a single member's zone, or null if absent", async () => {
-    const scope = `test-scope-${uniqueKey()}`;
-    const league = await ensureLeague(scope);
-    const user = await makeUser();
-    await replaceLeagueMembers(league.id, [{ userId: user.id, zone: "safe", rank: 3 }]);
-
-    expect(await getLeagueMemberZone(scope, user.id)).toBe("safe");
-    expect(await getLeagueMemberZone(scope, "00000000-0000-4000-8000-000000000000")).toBeNull();
   });
 });
 

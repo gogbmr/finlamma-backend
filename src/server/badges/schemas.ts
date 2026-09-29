@@ -62,7 +62,7 @@ export const BadgeListResponseSchema = registry.register(
 // --- Staff (admin) - plain Zod, not OpenAPI-registered (admin mutations are
 // Server Actions per docs/ARCHITECTURE.md D16) ---
 
-export const CreateBadgeDraftSchema = z.object({
+const BadgeDraftBaseSchema = z.object({
   name: LocalizedTextSchema,
   description: LocalizedTextSchema,
   category: BadgeCategoryEnum,
@@ -70,11 +70,30 @@ export const CreateBadgeDraftSchema = z.object({
   vmReward: z.number().int().nonnegative().max(MAX_BADGE_VM_REWARD),
   iconKey: z.string().nullable().optional(),
 });
+
+// "external" badges are awarded directly by other code's own settlement
+// logic calling insertUserBadgeIfAbsent (the Arena crest, Competition
+// prizes) - never through this badge's own vmReward path. A nonzero
+// vmReward here would display a VM figure the badge itself never actually
+// pays, which is a bug waiting to happen (Phase 6 audit finding,
+// 2026-09-29), not just a copy-editing concern - so it's forced to 0 at
+// the schema level rather than left to an admin-form note.
+const externalVmRewardMustBeZero = {
+  check: (input: { criteria: { type: string }; vmReward: number }) =>
+    input.criteria.type !== "external" || input.vmReward === 0,
+  message: "External badges are awarded directly by other code, not this vmReward - it must be 0",
+};
+
+export const CreateBadgeDraftSchema = BadgeDraftBaseSchema.refine(externalVmRewardMustBeZero.check, {
+  message: externalVmRewardMustBeZero.message,
+  path: ["vmReward"],
+});
 export type CreateBadgeDraftInput = z.infer<typeof CreateBadgeDraftSchema>;
 
-export const UpdateBadgeDraftSchema = CreateBadgeDraftSchema.extend({
-  id: z.string().uuid(),
-});
+export const UpdateBadgeDraftSchema = BadgeDraftBaseSchema.extend({ id: z.string().uuid() }).refine(
+  externalVmRewardMustBeZero.check,
+  { message: externalVmRewardMustBeZero.message, path: ["vmReward"] },
+);
 export type UpdateBadgeDraftInput = z.infer<typeof UpdateBadgeDraftSchema>;
 
 export const BadgeIdSchema = z.object({ id: z.string().uuid() });

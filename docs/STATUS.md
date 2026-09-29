@@ -1,5 +1,59 @@
 # Status
 
+## 2026-09-29 — `/phase-audit 6` complete. Six findings fixed, branch ready for merge
+
+Audited Phase 6 (Arena & Social) in full: ROADMAP items vs. code, every FEATURE_MAP AR-row and
+PR-03 vs. code, code health (typecheck/lint/test/build), the Supabase database (migrations,
+schema drift, RLS, advisors), the full API surface and contract freshness, the live production
+deployment, a dedicated security review, and an independent re-verification of the D60 tx-handle
+sweep. Full method and evidence in the audit transcript; summary below.
+
+**Clean**: kid-safety field exposure (every Arena/competition response schema read end to end -
+no email/DOB/state/school/parent info/full name/bio anywhere; `users.state` only ever appears as
+the caller's own scope label, never on another learner's row), the D52 privacy floor (proven to
+gate settlement and payout, not just display), D54 demote-visibility (never leaks on another
+learner's row through any endpoint), league settlement and competition-prize money paths
+(idempotent under concurrency, weekly-cap and best-zone-only enforced correctly, D57's
+"competition trading never writes to `vmoney_ledger`" guarantee holds), and the D60 sweep (a
+fresh, independent re-check of all 29 `db.transaction` blocks found 0 violations, matching the
+original sweep exactly). Database: 43/43 migrations applied with zero drift, zero schema drift
+across all 13 Phase 6 tables, RLS enabled on 63/63 public tables with zero policies anywhere,
+nothing above INFO on either advisor. API surface: all 74 route files / 78 endpoints registered,
+documented and contract-current; every mutating route logs activity; every route authenticated
+or intentionally public. Production: health OK, auth/webhook/admin-redirect behavior all correct,
+deployed commit matches `origin/main` exactly (Phase 6's own endpoints correctly 404 in
+production since this branch hasn't merged yet).
+
+**Six issues found and fixed same day:**
+1. **[Medium] Cheer daily-cap concurrency race** (`src/server/arena/service.ts`'s `sendCheer`) -
+   distinct simultaneous senders could each read the per-receiver daily cap as unreached and each
+   credit past it. Fixed by locking the receiver's row and wrapping insert-cheer + read-caps +
+   credit-XP in one transaction (docs/ARCHITECTURE.md D61), proven with a real-Postgres (PGlite)
+   concurrency test (`src/server/arena/cheer-concurrency.test.ts`).
+2. **[Low] Competition prize `vmAmount` had no upper bound** - added `.max(MAX_REWARD_AMOUNT)`,
+   matching every other admin-set VM figure in the codebase (D61).
+3. **[Low, docs] `docs/DATA_MODEL.md` was stale for the whole of Phase 6** - still showed the
+   pre-rename `virtual_capital_vm` column name D57 says was changed before any code existed
+   specifically to avoid this confusion, and was missing four tables entirely. Fixed, and D61
+   records that the drift undermined D57's own stated reasoning.
+4. **[Info] AR-20's "Arena ROI" field, never built, now a recorded decision** - omitted
+   deliberately (a minor's trading-performance figure on a public page invites unhealthy skill
+   comparison), not left as an undocumented gap. Recorded as D62.
+5. **[Info] `getLeagueMemberZone` was dead code** that would have bypassed D54's visibility
+   masking if ever wired up. Deleted (no callers existed).
+6. **[Info] "External" badges' `vmReward` could be set to a nonzero value that nothing ever
+   pays** - forced to 0 for `criteria.type === "external"` at the schema level
+   (`src/server/badges/schemas.ts`), not left as an admin-form note.
+
+Re-verified after fixes: `pnpm typecheck` (0 errors), `pnpm lint` (0 errors, 3 pre-existing
+warnings), `pnpm test` (197 files, 1996 tests, all passing), `pnpm build` (succeeds). All six
+`docs/FEATURE_MAP.md` rows this audit touched (AR-01 through AR-24, PR-03) have their Status
+column set to what was actually verified, not assumed.
+
+**Ready for merge to `main`** pending the user's own `/publish-contract` step (openapi.json/
+docs/API_ENDPOINTS.md regeneration was deliberately left to that step, not run as part of this
+commit, since the `vmAmount` cap change touches the generated schema).
+
 ## 2026-09-28 — `questions.topic` dropped for real. `drop-questions-topic` merged (`85ef90f`), production fully verified
 
 `drop-questions-topic` merged into `main` via merge commit `85ef90f`. The DROP COLUMN SQL (with its

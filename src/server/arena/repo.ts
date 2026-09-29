@@ -17,6 +17,7 @@ import {
 } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import { istDateStartUtc } from "@/lib/ist-date";
+import type { DbOrTx } from "@/server/economy/repo";
 import type { ArenaScope } from "./scope";
 
 // A learner's "current world" for Arena's Worlds leaderboard (PRODUCT_SPEC.md
@@ -291,19 +292,6 @@ export async function replaceLeagueMembers(
   });
 }
 
-export async function getLeagueMemberZone(
-  scope: string,
-  userId: string,
-): Promise<"promote" | "safe" | "demote" | null> {
-  const [row] = await db
-    .select({ zone: leagueMembers.zone })
-    .from(leagues)
-    .innerJoin(leagueMembers, eq(leagueMembers.leagueId, leagues.id))
-    .where(and(eq(leagues.scope, scope), eq(leagueMembers.userId, userId)))
-    .limit(1);
-  return row?.zone ?? null;
-}
-
 // Bulk read for the leaderboard response's per-row zone (D54 visibility) -
 // one query per scope's whole membership rather than one per row.
 export async function getLeagueZonesForScope(scope: string): Promise<Map<string, "promote" | "safe" | "demote">> {
@@ -393,8 +381,9 @@ export async function sumCheerXpFromSenderToReceiverSince(
   senderId: string,
   receiverId: string,
   sinceUtc: Date,
+  txDb: DbOrTx = db,
 ): Promise<number> {
-  const [row] = await db
+  const [row] = await txDb
     .select({ total: sql<string | number>`coalesce(sum(${xpEvents.amount}), 0)` })
     .from(cheers)
     .innerJoin(
@@ -421,8 +410,13 @@ export async function findCheerableUser(userId: string) {
 // application-level check, so a race between two rapid identical requests
 // can never double-insert. Returns null on a conflict (already cheered this
 // pair today), which the service reads as "no additional XP this time."
-export async function insertCheerIfNew(senderId: string, receiverId: string, cheerDateIst: string) {
-  const [row] = await db
+export async function insertCheerIfNew(
+  senderId: string,
+  receiverId: string,
+  cheerDateIst: string,
+  txDb: DbOrTx = db,
+) {
+  const [row] = await txDb
     .insert(cheers)
     .values({ senderId, receiverId, cheerDateIst })
     .onConflictDoNothing({ target: [cheers.senderId, cheers.receiverId, cheers.cheerDateIst] })
@@ -435,10 +429,10 @@ export async function insertCheerIfNew(senderId: string, receiverId: string, che
 // sourceType 'cheer' only, never the receiver's total XP for the day, since
 // the cap is specifically about bounding the CHEERS income stream, not
 // activity in general.
-export async function sumCheerXpCreditedToday(receiverId: string, todayIst: string): Promise<number> {
+export async function sumCheerXpCreditedToday(receiverId: string, todayIst: string, txDb: DbOrTx = db): Promise<number> {
   const startUtc = istDateStartUtc(new Date(`${todayIst}T00:00:00Z`));
   const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
-  const [row] = await db
+  const [row] = await txDb
     .select({ total: sql<string | number>`coalesce(sum(${xpEvents.amount}), 0)` })
     .from(xpEvents)
     .where(

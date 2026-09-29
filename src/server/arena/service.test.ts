@@ -65,7 +65,7 @@ vi.mock("./repo", () => ({
     mockSumCheerXpFromSenderToReceiverSince(s, r, since),
 }));
 
-const mockDbTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({}));
+const mockDbTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({ execute: vi.fn() }));
 vi.mock("@/db/client", () => ({ db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => mockDbTransaction(fn) } }));
 
 vi.mock("@/server/economy/schemas", () => ({ VM_TO_LEDGER_PAISE: 100 }));
@@ -81,11 +81,11 @@ vi.mock("@/server/badges/repo", () => ({
     mockInsertUserBadgeIfAbsent(userId, badgeId, tx),
 }));
 
-const mockCreditXpRow = vi.fn();
+const mockInsertXpEventIfNew = vi.fn();
 const mockSumXpSince = vi.fn();
 const mockInsertVmoneyLedgerEntryIfNew = vi.fn();
 vi.mock("@/server/economy/repo", () => ({
-  creditXpRow: (input: unknown) => mockCreditXpRow(input),
+  insertXpEventIfNew: (tx: unknown, input: unknown) => mockInsertXpEventIfNew(tx, input),
   sumXpSince: (userId: unknown, since: unknown) => mockSumXpSince(userId, since),
   insertVmoneyLedgerEntryIfNew: (tx: unknown, input: unknown) => mockInsertVmoneyLedgerEntryIfNew(tx, input),
 }));
@@ -389,7 +389,8 @@ describe("sendCheer", () => {
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
     expect(result).toEqual({ alreadyCheeredToday: false, xpAwarded: 5, dailyCapReached: false });
-    expect(mockCreditXpRow).toHaveBeenCalledWith(
+    expect(mockInsertXpEventIfNew).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({ userId: "u2", amount: 5, sourceType: "cheer", sourceId: "cheer-1" }),
     );
     expect(mockLogActivity).toHaveBeenCalledWith(
@@ -404,7 +405,7 @@ describe("sendCheer", () => {
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
     expect(result).toEqual({ alreadyCheeredToday: true, xpAwarded: 0, dailyCapReached: false });
-    expect(mockCreditXpRow).not.toHaveBeenCalled();
+    expect(mockInsertXpEventIfNew).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
@@ -418,7 +419,7 @@ describe("sendCheer", () => {
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
     expect(result).toEqual({ alreadyCheeredToday: false, xpAwarded: 2, dailyCapReached: true });
-    expect(mockCreditXpRow).toHaveBeenCalledWith(expect.objectContaining({ amount: 2 }));
+    expect(mockInsertXpEventIfNew).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ amount: 2 }));
   });
 
   it("credits zero (never negative) and skips the ledger write once the cap is fully used", async () => {
@@ -431,7 +432,7 @@ describe("sendCheer", () => {
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
     expect(result).toEqual({ alreadyCheeredToday: false, xpAwarded: 0, dailyCapReached: true });
-    expect(mockCreditXpRow).not.toHaveBeenCalled();
+    expect(mockInsertXpEventIfNew).not.toHaveBeenCalled();
     // The cheer itself (and its idempotency record) still logs, even at 0 XP.
     expect(mockLogActivity).toHaveBeenCalled();
   });

@@ -53,7 +53,7 @@ type CreditInput = {
 // silently no-ops rather than erroring. .returning() comes back empty on a
 // conflict, which is how the caller tells "this credited for real" apart
 // from "already credited, nothing to do".
-async function insertXpEventIfNew(txDb: DbOrTx, input: CreditInput & { amount: number }) {
+export async function insertXpEventIfNew(txDb: DbOrTx, input: CreditInput & { amount: number }) {
   const [row] = await txDb
     .insert(xpEvents)
     .values(input)
@@ -119,14 +119,6 @@ export async function creditVmoneyRow(
   input: CreditInput & { amountPaise: number; multiplierApplied: number },
 ) {
   return insertVmoneyLedgerEntryIfNew(db, input);
-}
-
-// The XP-only mirror of creditVmoneyRow above - Phase 6's Cheers (AR-12,
-// docs/ARCHITECTURE.md D53) is the first caller: a cheer pays XP only, never
-// VM, so creditLessonCompletionRow's bundled XP+VM shape doesn't fit. Same
-// (userId, sourceType, sourceId) idempotency as every other ledger write.
-export async function creditXpRow(input: CreditInput & { amount: number }) {
-  return insertXpEventIfNew(db, input);
 }
 
 // Same as sumVmoneyBalance below, but runs against a caller-supplied

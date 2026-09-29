@@ -1,10 +1,12 @@
+import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { users } from "@/db/schema";
 import { istDateString, istWeekStartDate, istWeekStartUtc } from "@/lib/ist-date";
 import { getSettingJson, getSettingNumber, setSettingJson } from "@/lib/settings";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
-import { creditXpRow, insertVmoneyLedgerEntryIfNew, sumXpSince } from "@/server/economy/repo";
+import { insertVmoneyLedgerEntryIfNew, insertXpEventIfNew, sumXpSince } from "@/server/economy/repo";
 import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import { getLevelInfo } from "@/server/leveling/service";
@@ -371,8 +373,61 @@ export async function sendCheer(
   }
 
   const todayIst = istDateString(new Date());
-  const cheerRow = await insertCheerIfNew(sender.id, receiverId, todayIst);
-  if (!cheerRow) {
+  const weekStartUtc = istWeekStartUtc(new Date());
+  const [cheerXpAmount, dailyCap, weeklyPairCap] = await Promise.all([
+    getSettingNumber(CHEER_XP_AMOUNT_KEY, DEFAULT_CHEER_XP_AMOUNT),
+    getSettingNumber(CHEER_DAILY_XP_CAP_KEY, DEFAULT_CHEER_DAILY_XP_CAP),
+    getSettingNumber(CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY, DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP),
+  ]);
+
+  // Locks the RECEIVER's row before reading or crediting anything, so two
+  // concurrent cheers from DIFFERENT senders to the SAME receiver can never
+  // both read the daily cap as "not yet reached" and both credit past it -
+  // same lock-then-check idiom claimRewardTx/finishAttemptTx already use
+  // (docs/ARCHITECTURE.md D30). The weekly per-sender-receiver cap (D56) was
+  // already race-safe on its own (the cheers table's own unique index
+  // serializes any two cheers from the SAME pair), but that index can't
+  // protect the daily per-receiver cap against DISTINCT senders arriving at
+  // the same instant - a security-audit finding, Phase 6 audit 2026-09-29.
+  const result = await db.transaction(async (tx) => {
+    await tx.execute(sql`select id from ${users} where id = ${receiverId} for update`);
+
+    const cheerRow = await insertCheerIfNew(sender.id, receiverId, todayIst, tx);
+    if (!cheerRow) {
+      return { alreadyCheeredToday: true as const, xpAwarded: 0, dailyCapReached: false, cheerId: null };
+    }
+
+    const [alreadyCreditedToday, alreadyCreditedThisPairThisWeek] = await Promise.all([
+      sumCheerXpCreditedToday(receiverId, todayIst, tx),
+      sumCheerXpFromSenderToReceiverSince(sender.id, receiverId, weekStartUtc, tx),
+    ]);
+    const remainingDaily = Math.max(0, dailyCap - alreadyCreditedToday);
+    const remainingWeeklyPair = Math.max(0, weeklyPairCap - alreadyCreditedThisPairThisWeek);
+    const toCredit = Math.min(cheerXpAmount, remainingDaily, remainingWeeklyPair);
+
+    if (toCredit > 0) {
+      await insertXpEventIfNew(tx, {
+        userId: receiverId,
+        amount: toCredit,
+        sourceType: "cheer",
+        sourceId: cheerRow.id,
+        ruleId: null,
+        reason: "Cheer received",
+      });
+    }
+
+    // Named for the common case, but also true when D56's weekly per-pair
+    // cap (not just the receiver's daily cap) reduced the award - the app
+    // shows one generic "capped" message either way, so one boolean is enough.
+    return {
+      alreadyCheeredToday: false as const,
+      xpAwarded: toCredit,
+      dailyCapReached: toCredit < cheerXpAmount,
+      cheerId: cheerRow.id,
+    };
+  });
+
+  if (result.alreadyCheeredToday) {
     return { alreadyCheeredToday: true, xpAwarded: 0, dailyCapReached: false };
   }
 
@@ -382,39 +437,12 @@ export async function sendCheer(
     action: "arena.cheer_sent",
     targetType: "user",
     targetId: receiverId,
-    metadata: { cheerId: cheerRow.id },
+    metadata: { cheerId: result.cheerId },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
 
-  const weekStartUtc = istWeekStartUtc(new Date());
-  const [cheerXpAmount, dailyCap, weeklyPairCap, alreadyCreditedToday, alreadyCreditedThisPairThisWeek] =
-    await Promise.all([
-      getSettingNumber(CHEER_XP_AMOUNT_KEY, DEFAULT_CHEER_XP_AMOUNT),
-      getSettingNumber(CHEER_DAILY_XP_CAP_KEY, DEFAULT_CHEER_DAILY_XP_CAP),
-      getSettingNumber(CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY, DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP),
-      sumCheerXpCreditedToday(receiverId, todayIst),
-      sumCheerXpFromSenderToReceiverSince(sender.id, receiverId, weekStartUtc),
-    ]);
-  const remainingDaily = Math.max(0, dailyCap - alreadyCreditedToday);
-  const remainingWeeklyPair = Math.max(0, weeklyPairCap - alreadyCreditedThisPairThisWeek);
-  const toCredit = Math.min(cheerXpAmount, remainingDaily, remainingWeeklyPair);
-
-  if (toCredit > 0) {
-    await creditXpRow({
-      userId: receiverId,
-      amount: toCredit,
-      sourceType: "cheer",
-      sourceId: cheerRow.id,
-      ruleId: null,
-      reason: "Cheer received",
-    });
-  }
-
-  // Named for the common case, but also true when D56's weekly per-pair cap
-  // (not just the receiver's daily cap) reduced the award - the app shows
-  // one generic "capped" message either way, so one boolean is enough.
-  return { alreadyCheeredToday: false, xpAwarded: toCredit, dailyCapReached: toCredit < cheerXpAmount };
+  return { alreadyCheeredToday: false, xpAwarded: result.xpAwarded, dailyCapReached: result.dailyCapReached };
 }
 
 // The aggregate-only weekly count a learner sees about the cheers THEY
