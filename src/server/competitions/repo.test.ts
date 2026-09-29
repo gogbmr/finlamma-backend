@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { instruments, marketControls, users, vmoneyLedger, MARKET_CONTROLS_SINGLETON_ID } from "@/db/schema";
+import { instruments, marketControls, roles, staffMembers, users, vmoneyLedger, MARKET_CONTROLS_SINGLETON_ID } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -59,6 +59,18 @@ async function makeUser() {
     })
     .returning();
   return user!;
+}
+
+async function makeStaffMember() {
+  const [role] = await db
+    .insert(roles)
+    .values({ key: `test-role-${randomUUID()}`, name: "Test Role" })
+    .returning();
+  const [staff] = await db
+    .insert(staffMembers)
+    .values({ clerkUserId: uniqueClerkUserId("competitions-repo-staff"), roleId: role!.id })
+    .returning();
+  return staff!;
 }
 
 async function makeInstrument(overrides: Partial<Record<string, unknown>> = {}) {
@@ -337,7 +349,8 @@ describe("settlement idempotency", () => {
   it("claimCompetitionForSettlement claims once; a second attempt on an already-settled competition returns null", async () => {
     const instrument = await makeInstrument();
     const competition = await makeDraftCompetition(instrument.id);
-    await publishCompetitionRow(competition.id, randomUUID());
+    const staff = await makeStaffMember();
+    await publishCompetitionRow(competition.id, staff.id);
 
     const first = await claimCompetitionForSettlement(competition.id, MARKET_OPEN_NOW);
     const second = await claimCompetitionForSettlement(competition.id, MARKET_OPEN_NOW);
@@ -372,19 +385,20 @@ describe("settlement idempotency", () => {
 describe("listPublishedCompetitionsPastWindowEnd", () => {
   it("only returns published, unsettled competitions whose window has already ended", async () => {
     const instrument = await makeInstrument();
+    const staff = await makeStaffMember();
     const now = new Date("2026-11-01T00:00:00.000Z");
 
     const past = await makeDraftCompetition(instrument.id, {
       windowStart: new Date("2026-09-01T00:00:00.000Z"),
       windowEnd: new Date("2026-09-30T00:00:00.000Z"),
     });
-    await publishCompetitionRow(past.id, randomUUID());
+    await publishCompetitionRow(past.id, staff.id);
 
     const future = await makeDraftCompetition(instrument.id, {
       windowStart: new Date("2026-12-01T00:00:00.000Z"),
       windowEnd: new Date("2026-12-31T00:00:00.000Z"),
     });
-    await publishCompetitionRow(future.id, randomUUID());
+    await publishCompetitionRow(future.id, staff.id);
 
     const stillDraft = await makeDraftCompetition(instrument.id, {
       windowStart: new Date("2026-09-01T00:00:00.000Z"),
@@ -404,7 +418,8 @@ describe("admin CRUD", () => {
   it("updateDraftCompetition only affects a competition still in draft", async () => {
     const instrument = await makeInstrument();
     const competition = await makeDraftCompetition(instrument.id);
-    await publishCompetitionRow(competition.id, randomUUID());
+    const staff = await makeStaffMember();
+    await publishCompetitionRow(competition.id, staff.id);
 
     const updated = await updateDraftCompetition(competition.id, {
       name: { en: "Changed", hi: "Changed", hx: "Changed" },
@@ -422,9 +437,10 @@ describe("admin CRUD", () => {
   it("publishCompetitionRow only publishes a draft, never a published competition twice", async () => {
     const instrument = await makeInstrument();
     const competition = await makeDraftCompetition(instrument.id);
+    const staff = await makeStaffMember();
 
-    const firstPublish = await publishCompetitionRow(competition.id, randomUUID());
-    const secondPublish = await publishCompetitionRow(competition.id, randomUUID());
+    const firstPublish = await publishCompetitionRow(competition.id, staff.id);
+    const secondPublish = await publishCompetitionRow(competition.id, staff.id);
 
     expect(firstPublish).not.toBeNull();
     expect(firstPublish!.status).toBe("published");

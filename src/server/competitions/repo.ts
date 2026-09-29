@@ -69,8 +69,8 @@ export async function insertEntryIfNew(
   return row ?? null;
 }
 
-export async function countTradesForEntry(entryId: string): Promise<number> {
-  const [row] = await db.select({ n: count() }).from(competitionTrades).where(eq(competitionTrades.entryId, entryId));
+export async function countTradesForEntry(entryId: string, txDb: DbOrTx = db): Promise<number> {
+  const [row] = await txDb.select({ n: count() }).from(competitionTrades).where(eq(competitionTrades.entryId, entryId));
   return row?.n ?? 0;
 }
 
@@ -152,7 +152,7 @@ export async function placeCompetitionTradeTx(
     const holidayDates = new Set(marketHolidays.map((h) => h.date));
     if (!isMarketOpen(now, holidayDates)) return { status: "market_closed" };
 
-    const tradeCount = await countTradesForEntry(entryId);
+    const tradeCount = await countTradesForEntry(entryId, tx);
     if (tradeCount >= maxTrades) return { status: "max_trades_reached" };
 
     const price = await getRelayPrice(instrument.symbol, instrument.exchange);
