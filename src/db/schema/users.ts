@@ -8,11 +8,22 @@ export const themeEnum = pgEnum("theme", ["dark", "light"]);
 // LocalizedText - Settings' sound/haptics/data-saver toggles (SET-08/09/10)
 // have no independent lifecycle, versioning or query need of their own, so a
 // jsonb blob avoids three narrow columns for values nothing ever queries by.
-export type UserPreferences = { sound: boolean; haptics: boolean; dataSaver: boolean };
+// `cheersEnabled` (Phase 6, docs/ARCHITECTURE.md D53) joined this blob later
+// than the other three - an existing row's stored jsonb predates the key and
+// simply won't have it, so every reader treats a missing key as `true`
+// (opt-out is the explicit `false`, never the absent case), never assuming
+// the key exists.
+export type UserPreferences = {
+  sound: boolean;
+  haptics: boolean;
+  dataSaver: boolean;
+  cheersEnabled: boolean;
+};
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   sound: true,
   haptics: true,
   dataSaver: false,
+  cheersEnabled: true,
 };
 
 // One row per Clerk identity. Clerk supports email, phone, Google, Apple and

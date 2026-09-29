@@ -115,7 +115,7 @@ describe("PATCH /api/v1/me", () => {
 
   it("updates preferences as a whole object, not merged", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
-    const preferences = { sound: false, haptics: true, dataSaver: true };
+    const preferences = { sound: false, haptics: true, dataSaver: true, cheersEnabled: false };
     mockUpdateMe.mockResolvedValueOnce({ id: "u1", language: "en", theme: "dark", preferences });
 
     const res = await PATCH(makeRequest("PATCH", { preferences }));

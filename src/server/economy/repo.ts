@@ -121,6 +121,14 @@ export async function creditVmoneyRow(
   return insertVmoneyLedgerEntryIfNew(db, input);
 }
 
+// The XP-only mirror of creditVmoneyRow above - Phase 6's Cheers (AR-12,
+// docs/ARCHITECTURE.md D53) is the first caller: a cheer pays XP only, never
+// VM, so creditLessonCompletionRow's bundled XP+VM shape doesn't fit. Same
+// (userId, sourceType, sourceId) idempotency as every other ledger write.
+export async function creditXpRow(input: CreditInput & { amount: number }) {
+  return insertXpEventIfNew(db, input);
+}
+
 // Same as sumVmoneyBalance below, but runs against a caller-supplied
 // transaction handle - src/server/rewards/service.ts's claimReward reads
 // this AFTER locking the user's row (lockUserRowForUpdate) and BEFORE

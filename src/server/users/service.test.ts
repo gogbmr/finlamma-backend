@@ -208,7 +208,7 @@ const USER_ROW = {
   theme: "dark" as const,
   bio: null,
   state: null,
-  preferences: { sound: true, haptics: true, dataSaver: false },
+  preferences: { sound: true, haptics: true, dataSaver: false, cheersEnabled: true },
   clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
   deletedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -227,7 +227,7 @@ describe("getMe", () => {
       theme: "dark",
       bio: null,
       state: null,
-      preferences: { sound: true, haptics: true, dataSaver: false },
+      preferences: { sound: true, haptics: true, dataSaver: false, cheersEnabled: true },
     });
   });
 });
@@ -276,7 +276,7 @@ describe("updateMe", () => {
   });
 
   it("persists a whole-object preferences update", async () => {
-    const preferences = { sound: false, haptics: false, dataSaver: true };
+    const preferences = { sound: false, haptics: false, dataSaver: true, cheersEnabled: false };
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, preferences });
     mockLogActivity.mockResolvedValueOnce(undefined);
 

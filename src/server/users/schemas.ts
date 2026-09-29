@@ -19,6 +19,12 @@ const PreferencesSchema = z
       example: false,
       description: "Serves lower-resolution lesson videos when on.",
     }),
+    cheersEnabled: z.boolean().openapi({
+      example: true,
+      description:
+        "Off hides this learner's cheer button from every other learner's Arena view - no " +
+        "cheers can be sent to them while off. Never affects cheers they've already received.",
+    }),
   })
   .openapi({ example: DEFAULT_USER_PREFERENCES });
 

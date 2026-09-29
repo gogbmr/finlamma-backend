@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.0.0) on 2026-09-28.
+> Generated from `openapi/openapi.json` (version 1.0.0) on 2026-09-29.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -103,6 +103,15 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 **Arena**
 
 - `GET /api/v1/arena/leaderboard` — Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)
+- `GET /api/v1/arena/worlds` — Get the Worlds leaderboard (AR-04/05)
+- `GET /api/v1/arena/worlds/{worldId}/leaderboard` — Get one world's own weekly leaderboard (AR-06)
+- `GET /api/v1/arena/activity` — Get the recent-activity ticker (AR-03)
+- `POST /api/v1/arena/cheers` — Cheer another learner (AR-12)
+- `GET /api/v1/me/arena/cheers` — Get my cheers-received summary (AR-12)
+- `GET /api/v1/arena/chips` — List the active about-me chip catalog (AR-20)
+- `GET /api/v1/me/arena/chips` — Get my selected about-me chips (AR-20)
+- `PUT /api/v1/me/arena/chips` — Set my selected about-me chips (AR-20)
+- `GET /api/v1/users/{userId}/public-profile` — Get a learner's public Arena profile (AR-20)
 
 ## System
 
@@ -184,7 +193,8 @@ Returns the signed-in user's own profile.
     "preferences": {
       "sound": true,
       "haptics": true,
-      "dataSaver": false
+      "dataSaver": false,
+      "cheersEnabled": true
     }
   }
 }
@@ -224,6 +234,7 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
 | `preferences.sound` | boolean | yes | In-app sound effects on/off. |
 | `preferences.haptics` | boolean | yes | Haptic feedback on/off. |
 | `preferences.dataSaver` | boolean | yes | Serves lower-resolution lesson videos when on. |
+| `preferences.cheersEnabled` | boolean | yes | Off hides this learner's cheer button from every other learner's Arena view - no cheers can be sent to them while off. Never affects cheers they've already received. |
 
 ```json
 {
@@ -234,7 +245,8 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
   "preferences": {
     "sound": true,
     "haptics": true,
-    "dataSaver": false
+    "dataSaver": false,
+    "cheersEnabled": true
   }
 }
 ```
@@ -258,7 +270,8 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
     "preferences": {
       "sound": true,
       "haptics": true,
-      "dataSaver": false
+      "dataSaver": false,
+      "cheersEnabled": true
     }
   }
 }
@@ -4754,6 +4767,624 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/worlds`
+
+**Get the Worlds leaderboard (AR-04/05)**
+
+Every currently-populated world, ranked by total weekly XP earned by learners currently attributed to it (their furthest world with a completed lesson) - includes xpPerMember so a small world can compete on average, week-over-week deltaPct, and a 7-day daily sparkline.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The current Worlds leaderboard
+
+```json
+{
+  "data": {
+    "weekStartDate": "2026-09-28",
+    "worlds": [
+      {
+        "worldId": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+        "title": {
+          "en": "Money World",
+          "hi": "मनी वर्ल्ड",
+          "hx": "Money World"
+        },
+        "xp": 48210,
+        "memberCount": 214,
+        "xpPerMember": 225,
+        "deltaPct": 21,
+        "sparkline": [
+          {
+            "date": "2026-09-22",
+            "xp": 0
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/worlds/{worldId}/leaderboard`
+
+**Get one world's own weekly leaderboard (AR-06)**
+
+Drilling into a specific world tapped from GET /arena/worlds - not necessarily the caller's own current world. Same shape, privacy floor and self-row handling as GET /arena/leaderboard (a thin world has no broader scope to fall back to, so it reports notEnoughPlayers instead).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `worldId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — That world's weekly leaderboard
+
+```json
+{
+  "data": {
+    "requestedScope": "state:Maharashtra",
+    "scope": "india",
+    "fallbackApplied": true,
+    "notEnoughPlayers": false,
+    "weekStartDate": "2026-09-28",
+    "poolSize": 214,
+    "rows": [
+      {
+        "rank": 1,
+        "userId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+        "firstName": "Aarav",
+        "lastInitial": "S",
+        "xp": 2710,
+        "isSelf": false
+      }
+    ],
+    "self": {
+      "rank": 0,
+      "xp": 0
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/activity`
+
+**Get the recent-activity ticker (AR-03)**
+
+The most recent real XP credits app-wide, newest first, kid-safe display name only.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Recent activity
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "firstName": "Meera",
+        "lastInitial": "K",
+        "amount": 80,
+        "createdAt": "2026-09-28T10:12:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/arena/cheers`
+
+**Cheer another learner (AR-12)**
+
+Sends a cheer, worth a fixed amount of XP (settings_kv, default 5) to the receiver. One cheer per sender-receiver pair per IST day - repeating the same day is a successful no-op, never a second credit. A daily total cap on how much XP a receiver can bank from cheers (settings_kv) may reduce or zero xpAwarded even on a fresh cheer. Fails if the receiver has turned off cheersEnabled (PATCH /me's preferences) - never shows another learner's identity, only whether the cheer itself succeeded.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `receiverId` | string | yes |  |
+
+```json
+{
+  "receiverId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+}
+```
+
+**Responses**
+
+- **200** — The cheer was processed (possibly a no-op replay, possibly capped)
+
+```json
+{
+  "data": {
+    "alreadyCheeredToday": false,
+    "xpAwarded": 5,
+    "dailyCapReached": false
+  }
+}
+```
+
+- **400** — Invalid request, or cheering yourself
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "You can't cheer yourself"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — Receiver not found
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Learner not found"
+  }
+}
+```
+
+- **409** — The receiver has turned off cheersEnabled
+
+```json
+{
+  "error": {
+    "code": "CHEER_RECEIVER_OPTED_OUT",
+    "message": "This learner isn't receiving cheers right now"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/arena/cheers`
+
+**Get my cheers-received summary (AR-12)**
+
+An aggregate-only weekly count of cheers received - docs/ARCHITECTURE.md D53: sender identity is never shown, in any form, not even a partial breakdown.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's cheers-received summary
+
+```json
+{
+  "data": {
+    "receivedThisWeek": 12
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/chips`
+
+**List the active about-me chip catalog (AR-20)**
+
+The admin-managed preset chips a learner can pick for their public profile - never free text (docs/ARCHITECTURE.md D36).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active chips
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "iconKey": "piggy-bank"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/arena/chips`
+
+**Get my selected about-me chips (AR-20)**
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's currently-selected chips
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "iconKey": "piggy-bank"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `PUT /api/v1/me/arena/chips`
+
+**Set my selected about-me chips (AR-20)**
+
+Replaces the caller's whole chip selection - at most 3, and every id must be an active chip.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `chipIds` | array<string> | yes | Replaces your whole chip selection - at most 3 (settings, not schema-fixed). |
+
+```json
+{
+  "chipIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ]
+}
+```
+
+**Responses**
+
+- **200** — The caller's new chip selection
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "iconKey": "piggy-bank"
+    }
+  ]
+}
+```
+
+- **400** — Too many chips, or one isn't currently active
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Pick at most 3 chips"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/users/{userId}/public-profile`
+
+**Get a learner's public Arena profile (AR-20)**
+
+Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe display name (first name + last initial, never a full name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class or `bio` - `users.bio` stays private to its owner forever.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `userId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The learner's public profile
+
+```json
+{
+  "data": {
+    "firstName": "Aarav",
+    "lastInitial": "S",
+    "level": 4,
+    "rankTitle": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "badges": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "name": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "description": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "iconKey": "string"
+      }
+    ],
+    "chips": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "name": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "iconKey": "piggy-bank"
+      }
+    ],
+    "weekXp": 1240,
+    "streak": {
+      "current": 4,
+      "longest": 12
+    },
+    "quizAccuracyPct": 82,
+    "currentWorld": {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "title": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "completedLessons": 6,
+      "totalLessons": 40
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — Learner not found
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Learner not found"
   }
 }
 ```

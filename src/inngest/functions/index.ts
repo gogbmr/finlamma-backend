@@ -1,4 +1,5 @@
 import { amfiNavIngestJob } from "./amfi-nav-ingest";
+import { arenaWorldXpRollupJob } from "./arena-world-xp-rollup";
 import { legalReapprovalEmailsJob } from "./legal-reapproval-emails";
 import { limitOrderEodCancelJob } from "./limit-order-eod-cancel";
 import { limitOrderMatchingJob } from "./limit-order-matching";
@@ -18,4 +19,5 @@ export const functions = [
   sipExecutionJob,
   newsIngestJob,
   newsDraftJob,
+  arenaWorldXpRollupJob,
 ];

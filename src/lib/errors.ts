@@ -63,6 +63,12 @@ export const ErrorCode = {
   NAV_UNAVAILABLE: "NAV_UNAVAILABLE",
   NAV_STALE: "NAV_STALE",
 
+  // Cheers (src/server/arena, Phase 6, docs/ARCHITECTURE.md D53) - the
+  // receiver has turned off cheersEnabled (users.preferences), so no cheer
+  // button should ever have been shown for them - this is the server-side
+  // enforcement of that, never trusting the client alone to hide it.
+  CHEER_RECEIVER_OPTED_OUT: "CHEER_RECEIVER_OPTED_OUT",
+
   // News (src/server/news, Phase 5) - a client-reported dwellSeconds below
   // the story's own computed minimum read time (NW-09: "server should also
   // validate min dwell, not trust client alone"). Same "temporary, not a
@@ -105,6 +111,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 
   NAV_UNAVAILABLE: 409,
   NAV_STALE: 409,
+
+  CHEER_RECEIVER_OPTED_OUT: 409,
 
   NEWS_READ_TOO_SOON: 429,
 };

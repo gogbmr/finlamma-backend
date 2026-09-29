@@ -1,6 +1,18 @@
-import { and, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { lessonProgress, lessons, users, worlds, xpEvents } from "@/db/schema";
+import {
+  aboutMeChips,
+  cheers,
+  lessonProgress,
+  lessons,
+  userAboutMeChips,
+  users,
+  worldXpSnapshots,
+  worlds,
+  xpEvents,
+} from "@/db/schema";
+import type { LocalizedText } from "@/db/schema/_helpers";
+import { istDateStartUtc } from "@/lib/ist-date";
 import type { ArenaScope } from "./scope";
 
 // A learner's "current world" for Arena's Worlds leaderboard (PRODUCT_SPEC.md
@@ -43,7 +55,7 @@ export async function getCurrentWorldIdForUser(userId: string): Promise<string |
 // each user's MAX(order) back to `worlds` can never match more than one row
 // - no DISTINCT ON / window function needed, which keeps this expressible in
 // Drizzle's plain query builder rather than a raw SQL string.
-async function currentWorldIdByUser(): Promise<Map<string, string>> {
+export async function currentWorldIdByUser(): Promise<Map<string, string>> {
   const maxOrderPerUser = db
     .select({
       userId: lessonProgress.userId,
@@ -103,6 +115,284 @@ export async function weeklyXpByScope(scope: ArenaScope, weekStartUtc: Date): Pr
     .groupBy(xpEvents.userId);
 
   return rows.map((r) => ({ userId: r.userId, xp: toNumber(r.total) }));
+}
+
+// XP summed per userId in [sinceUtc, beforeUtc) (beforeUtc omitted = open-
+// ended, "since sinceUtc"). The shared primitive behind both the weekly
+// Worlds leaderboard and the daily sparkline rollup job below - only the
+// time window differs between the two callers.
+async function xpByUserInRange(sinceUtc: Date, beforeUtc?: Date): Promise<Map<string, number>> {
+  const conditions = [gte(xpEvents.createdAt, sinceUtc), isNull(users.deletedAt)];
+  if (beforeUtc) conditions.push(lt(xpEvents.createdAt, beforeUtc));
+
+  const rows = await db
+    .select({ userId: xpEvents.userId, total: sql<string | number>`sum(${xpEvents.amount})` })
+    .from(xpEvents)
+    .innerJoin(users, eq(users.id, xpEvents.userId))
+    .where(and(...conditions))
+    .groupBy(xpEvents.userId);
+
+  return new Map(rows.map((r) => [r.userId, toNumber(r.total)]));
+}
+
+export type WorldXpTotals = { worldId: string; xp: number; memberCount: number };
+
+// XP + member count per world in [sinceUtc, beforeUtc) - the Worlds
+// leaderboard (AR-04/05) and the daily sparkline rollup job both call this,
+// just with different time windows. A world with zero currently-attributed
+// members simply doesn't appear in the result.
+export async function xpByWorldInRange(sinceUtc: Date, beforeUtc?: Date): Promise<WorldXpTotals[]> {
+  const worldMap = await currentWorldIdByUser();
+  const membersByWorld = new Map<string, string[]>();
+  for (const [userId, worldId] of worldMap) {
+    membersByWorld.set(worldId, [...(membersByWorld.get(worldId) ?? []), userId]);
+  }
+  if (membersByWorld.size === 0) return [];
+
+  const xpByUser = await xpByUserInRange(sinceUtc, beforeUtc);
+
+  return [...membersByWorld.entries()].map(([worldId, memberIds]) => ({
+    worldId,
+    memberCount: memberIds.length,
+    xp: memberIds.reduce((sum, id) => sum + (xpByUser.get(id) ?? 0), 0),
+  }));
+}
+
+export async function listPublishedWorldsOrdered() {
+  return db
+    .select({ id: worlds.id, title: worlds.title, order: worlds.order })
+    .from(worlds)
+    .where(eq(worlds.status, "published"))
+    .orderBy(worlds.order);
+}
+
+// Writes today's (IST) per-world XP total - src/inngest/functions/
+// arena-world-xp-rollup.ts calls this once daily. Idempotent the same way
+// every other daily rollup in this codebase is (D26-style
+// onConflictDoUpdate on the (worldId, dateIst) unique index) - a retried run
+// for the same day overwrites with the same recomputed number rather than
+// erroring or double-counting, since nothing here is a ledger credit.
+export async function upsertWorldXpSnapshotsForDate(dateIst: string): Promise<number> {
+  const startUtc = istDateStartUtc(new Date(`${dateIst}T00:00:00Z`));
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  const totals = await xpByWorldInRange(startUtc, endUtc);
+
+  for (const t of totals) {
+    await db
+      .insert(worldXpSnapshots)
+      .values({ worldId: t.worldId, dateIst, xpTotal: t.xp, memberCount: t.memberCount })
+      .onConflictDoUpdate({
+        target: [worldXpSnapshots.worldId, worldXpSnapshots.dateIst],
+        set: { xpTotal: t.xp, memberCount: t.memberCount },
+      });
+  }
+  return totals.length;
+}
+
+// Oldest-first daily totals for the last `days` IST days (AR-04's 7-day
+// sparkline) - a world with fewer days of history than `days` just returns
+// fewer points, never a fabricated zero-filled past (matches D44's "empty,
+// not fabricated" precedent for the portfolio equity curve).
+export async function getWorldXpSparklines(
+  worldIds: string[],
+  days: number,
+): Promise<Map<string, { date: string; xp: number }[]>> {
+  if (worldIds.length === 0) return new Map();
+  const rows = await db
+    .select({ worldId: worldXpSnapshots.worldId, date: worldXpSnapshots.dateIst, xp: worldXpSnapshots.xpTotal })
+    .from(worldXpSnapshots)
+    .where(inArray(worldXpSnapshots.worldId, worldIds))
+    .orderBy(desc(worldXpSnapshots.dateIst));
+
+  const byWorld = new Map<string, { date: string; xp: number }[]>();
+  for (const row of rows) {
+    const list = byWorld.get(row.worldId) ?? [];
+    if (list.length < days) list.push({ date: row.date, xp: row.xp });
+    byWorld.set(row.worldId, list);
+  }
+  for (const list of byWorld.values()) list.reverse();
+  return byWorld;
+}
+
+export type RecentXpEvent = {
+  userId: string;
+  firstName: string | null;
+  lastInitial: string | null;
+  amount: number;
+  createdAt: Date;
+};
+
+// AR-03's activity ticker - the most recent real XP credits, newest first.
+// Deliberately unfiltered by source kind (a lesson, a badge, a cheer, ...)
+// since the ticker is meant to feel alive, not curated; excludes deleted
+// users the same way every other Arena query does.
+export async function listRecentXpEvents(limit: number): Promise<RecentXpEvent[]> {
+  const rows = await db
+    .select({
+      userId: xpEvents.userId,
+      firstName: users.firstName,
+      lastInitial: users.lastInitial,
+      amount: xpEvents.amount,
+      createdAt: xpEvents.createdAt,
+    })
+    .from(xpEvents)
+    .innerJoin(users, eq(users.id, xpEvents.userId))
+    .where(isNull(users.deletedAt))
+    .orderBy(desc(xpEvents.createdAt))
+    .limit(limit);
+  return rows;
+}
+
+// --- Cheers (AR-12, docs/ARCHITECTURE.md D53) ---
+
+export async function findCheerableUser(userId: string) {
+  const [row] = await db
+    .select({ id: users.id, deletedAt: users.deletedAt, preferences: users.preferences })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row ?? null;
+}
+
+// One cheer per (sender, receiver) per IST day - the DB's own unique index
+// is the idempotency mechanism (D26-style onConflictDoNothing), not an
+// application-level check, so a race between two rapid identical requests
+// can never double-insert. Returns null on a conflict (already cheered this
+// pair today), which the service reads as "no additional XP this time."
+export async function insertCheerIfNew(senderId: string, receiverId: string, cheerDateIst: string) {
+  const [row] = await db
+    .insert(cheers)
+    .values({ senderId, receiverId, cheerDateIst })
+    .onConflictDoNothing({ target: [cheers.senderId, cheers.receiverId, cheers.cheerDateIst] })
+    .returning();
+  return row ?? null;
+}
+
+// How much XP a receiver has already banked from cheers today - what the
+// daily cap (settings_kv.cheer_daily_xp_cap) clamps against. Scoped to
+// sourceType 'cheer' only, never the receiver's total XP for the day, since
+// the cap is specifically about bounding the CHEERS income stream, not
+// activity in general.
+export async function sumCheerXpCreditedToday(receiverId: string, todayIst: string): Promise<number> {
+  const startUtc = istDateStartUtc(new Date(`${todayIst}T00:00:00Z`));
+  const endUtc = new Date(startUtc.getTime() + 24 * 60 * 60 * 1000);
+  const [row] = await db
+    .select({ total: sql<string | number>`coalesce(sum(${xpEvents.amount}), 0)` })
+    .from(xpEvents)
+    .where(
+      and(
+        eq(xpEvents.userId, receiverId),
+        eq(xpEvents.sourceType, "cheer"),
+        gte(xpEvents.createdAt, startUtc),
+        lt(xpEvents.createdAt, endUtc),
+      ),
+    );
+  return toNumber(row?.total ?? 0);
+}
+
+// The aggregate-only weekly count a receiver sees about themselves
+// (docs/ARCHITECTURE.md D53: "12 cheers this week", never sender identity).
+export async function countCheersReceivedSince(receiverId: string, sinceUtc: Date): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<string | number>`count(*)` })
+    .from(cheers)
+    .where(and(eq(cheers.receiverId, receiverId), gte(cheers.createdAt, sinceUtc)));
+  return toNumber(row?.count ?? 0);
+}
+
+// --- About-me chips (AR-20, docs/ARCHITECTURE.md D36) ---
+
+export async function listAboutMeChips() {
+  return db.select().from(aboutMeChips).orderBy(aboutMeChips.createdAt);
+}
+
+export async function listActiveAboutMeChips() {
+  return db.select().from(aboutMeChips).where(eq(aboutMeChips.active, true)).orderBy(aboutMeChips.createdAt);
+}
+
+export async function getAboutMeChipById(id: string) {
+  const [row] = await db.select().from(aboutMeChips).where(eq(aboutMeChips.id, id)).limit(1);
+  return row ?? null;
+}
+
+export async function insertAboutMeChip(input: { name: LocalizedText; iconKey: string | null; active: boolean }) {
+  const [row] = await db.insert(aboutMeChips).values(input).returning();
+  return row;
+}
+
+export async function updateAboutMeChipRow(
+  id: string,
+  input: { name: LocalizedText; iconKey: string | null; active: boolean },
+) {
+  const [row] = await db.update(aboutMeChips).set(input).where(eq(aboutMeChips.id, id)).returning();
+  return row ?? null;
+}
+
+export async function deleteAboutMeChipRow(id: string) {
+  const [row] = await db.delete(aboutMeChips).where(eq(aboutMeChips.id, id)).returning();
+  return row ?? null;
+}
+
+export async function getSelectedChipIdsForUser(userId: string): Promise<string[]> {
+  const rows = await db
+    .select({ chipId: userAboutMeChips.chipId })
+    .from(userAboutMeChips)
+    .where(eq(userAboutMeChips.userId, userId));
+  return rows.map((r) => r.chipId);
+}
+
+// Replaces the learner's whole chip selection atomically (delete-then-insert
+// in one transaction) - same "always sent whole, never merged" reasoning
+// users.preferences already follows, since the app always holds the full
+// current selection before showing the picker. The service layer validates
+// every id is a currently-active chip before calling this - a bad id here
+// would fail loudly (the chipId FK is `onDelete: "restrict"`), which is
+// exactly the backstop wanted if that validation is ever bypassed.
+export async function replaceUserChipSelection(userId: string, chipIds: string[]) {
+  await db.transaction(async (tx) => {
+    await tx.delete(userAboutMeChips).where(eq(userAboutMeChips.userId, userId));
+    if (chipIds.length === 0) return;
+    await tx.insert(userAboutMeChips).values(chipIds.map((chipId) => ({ userId, chipId })));
+  });
+}
+
+export async function getSelectedChipsForUser(userId: string) {
+  const rows = await db
+    .select({ id: aboutMeChips.id, name: aboutMeChips.name, iconKey: aboutMeChips.iconKey })
+    .from(userAboutMeChips)
+    .innerJoin(aboutMeChips, eq(aboutMeChips.id, userAboutMeChips.chipId))
+    .where(eq(userAboutMeChips.userId, userId));
+  return rows;
+}
+
+// --- Public profile support (AR-20) ---
+
+export async function getWorldTitleById(worldId: string): Promise<LocalizedText | null> {
+  const [row] = await db.select({ title: worlds.title }).from(worlds).where(eq(worlds.id, worldId)).limit(1);
+  return row?.title ?? null;
+}
+
+export async function countPublishedLessonsInWorld(worldId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(lessons)
+    .where(and(eq(lessons.worldId, worldId), eq(lessons.status, "published")));
+  return row?.n ?? 0;
+}
+
+export async function countCompletedLessonsForUserInWorld(userId: string, worldId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(lessonProgress)
+    .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, "completed"),
+        eq(lessons.worldId, worldId),
+      ),
+    );
+  return row?.n ?? 0;
 }
 
 export async function getDisplayNamesForUserIds(

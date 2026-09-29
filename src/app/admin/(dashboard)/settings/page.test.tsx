@@ -40,6 +40,9 @@ vi.mock("@/server/daily-goals/service", () => ({
 vi.mock("@/server/topics/service", () => ({
   listTopicsForAdmin: () => Promise.resolve([]),
 }));
+vi.mock("@/server/arena/service", () => ({
+  listAboutMeChipsForAdmin: () => Promise.resolve([]),
+}));
 
 // The editor components pull in a lot of client-component/UI-library
 // machinery that isn't relevant here - stub them to plain markers so the
@@ -49,6 +52,7 @@ vi.mock("./daily-goals-settings-editor", () => ({ DailyGoalsSettingsEditor: () =
 vi.mock("./economy-settings-editor", () => ({ EconomySettingsEditor: () => null }));
 vi.mock("./level-curve-settings-editor", () => ({ LevelCurveSettingsEditor: () => null }));
 vi.mock("./rank-titles-editor", () => ({ RankTitlesEditor: () => null }));
+vi.mock("./about-me-chips-editor", () => ({ AboutMeChipsEditor: () => null }));
 vi.mock("./scoring-settings-editor", () => ({ ScoringSettingsEditor: () => null }));
 vi.mock("./streaks-settings-editor", () => ({ StreaksSettingsEditor: () => null }));
 vi.mock("./topics-editor", () => ({ TopicsEditor: () => null }));
@@ -104,6 +108,7 @@ describe("SettingsPage - economy.manage gates the reward-rules/VM-multiplier edi
     expect(containsComponentNamed(tree, "DailyGoalsSettingsEditor")).toBe(true);
     expect(containsComponentNamed(tree, "LevelCurveSettingsEditor")).toBe(true);
     expect(containsComponentNamed(tree, "RankTitlesEditor")).toBe(true);
+    expect(containsComponentNamed(tree, "AboutMeChipsEditor")).toBe(true);
     expect(containsComponentNamed(tree, "TopicsEditor")).toBe(true);
   });
 });

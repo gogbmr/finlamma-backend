@@ -69,6 +69,14 @@ import "../src/app/api/v1/pulse-check/[attemptId]/result/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
 import "../src/app/api/v1/arena/leaderboard/route";
+import "../src/app/api/v1/arena/worlds/route";
+import "../src/app/api/v1/arena/worlds/[worldId]/leaderboard/route";
+import "../src/app/api/v1/arena/activity/route";
+import "../src/app/api/v1/arena/cheers/route";
+import "../src/app/api/v1/me/arena/cheers/route";
+import "../src/app/api/v1/arena/chips/route";
+import "../src/app/api/v1/me/arena/chips/route";
+import "../src/app/api/v1/users/[userId]/public-profile/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

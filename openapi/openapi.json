@@ -348,17 +348,24 @@
                 "type": "boolean",
                 "example": false,
                 "description": "Serves lower-resolution lesson videos when on."
+              },
+              "cheersEnabled": {
+                "type": "boolean",
+                "example": true,
+                "description": "Off hides this learner's cheer button from every other learner's Arena view - no cheers can be sent to them while off. Never affects cheers they've already received."
               }
             },
             "required": [
               "sound",
               "haptics",
-              "dataSaver"
+              "dataSaver",
+              "cheersEnabled"
             ],
             "example": {
               "sound": true,
               "haptics": true,
-              "dataSaver": false
+              "dataSaver": false,
+              "cheersEnabled": true
             }
           }
         },
@@ -480,17 +487,24 @@
                 "type": "boolean",
                 "example": false,
                 "description": "Serves lower-resolution lesson videos when on."
+              },
+              "cheersEnabled": {
+                "type": "boolean",
+                "example": true,
+                "description": "Off hides this learner's cheer button from every other learner's Arena view - no cheers can be sent to them while off. Never affects cheers they've already received."
               }
             },
             "required": [
               "sound",
               "haptics",
-              "dataSaver"
+              "dataSaver",
+              "cheersEnabled"
             ],
             "example": {
               "sound": true,
               "haptics": true,
-              "dataSaver": false
+              "dataSaver": false,
+              "cheersEnabled": true
             }
           }
         }
@@ -10614,6 +10628,1394 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/worlds": {
+      "get": {
+        "summary": "Get the Worlds leaderboard (AR-04/05)",
+        "description": "Every currently-populated world, ranked by total weekly XP earned by learners currently attributed to it (their furthest world with a completed lesson) - includes xpPerMember so a small world can compete on average, week-over-week deltaPct, and a 7-day daily sparkline.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current Worlds leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "weekStartDate": {
+                          "type": "string",
+                          "example": "2026-09-28"
+                        },
+                        "worlds": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "worldId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "example": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                              },
+                              "title": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ],
+                                "example": {
+                                  "en": "Money World",
+                                  "hi": "मनी वर्ल्ड",
+                                  "hx": "Money World"
+                                }
+                              },
+                              "xp": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 48210,
+                                "description": "Total weekly XP, this world's team."
+                              },
+                              "memberCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 214
+                              },
+                              "xpPerMember": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 225,
+                                "description": "xp / memberCount, rounded - lets a small world compete on average, not just total."
+                              },
+                              "deltaPct": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 21,
+                                "description": "% change vs last week's total. Null if last week's total was 0 (nothing to compare against)."
+                              },
+                              "sparkline": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "date": {
+                                      "type": "string",
+                                      "example": "2026-09-22"
+                                    },
+                                    "xp": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "date",
+                                    "xp"
+                                  ]
+                                },
+                                "description": "Oldest-first daily totals, up to the last 7 IST days. Shorter if less history exists."
+                              }
+                            },
+                            "required": [
+                              "worldId",
+                              "title",
+                              "xp",
+                              "memberCount",
+                              "xpPerMember",
+                              "deltaPct",
+                              "sparkline"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "weekStartDate",
+                        "worlds"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/worlds/{worldId}/leaderboard": {
+      "get": {
+        "summary": "Get one world's own weekly leaderboard (AR-06)",
+        "description": "Drilling into a specific world tapped from GET /arena/worlds - not necessarily the caller's own current world. Same shape, privacy floor and self-row handling as GET /arena/leaderboard (a thin world has no broader scope to fall back to, so it reports notEnoughPlayers instead).",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "worldId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "That world's weekly leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "requestedScope": {
+                          "type": "string",
+                          "example": "state:Maharashtra",
+                          "description": "The scope actually requested, before any privacy-floor fallback."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "example": "india",
+                          "description": "The scope actually returned - may differ from requestedScope, see fallbackApplied."
+                        },
+                        "fallbackApplied": {
+                          "type": "boolean",
+                          "example": true,
+                          "description": "true when the requested scope's pool was below the minimum size (settings_kv, default 20) and this response falls back to a broader scope instead."
+                        },
+                        "notEnoughPlayers": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true when even the returned scope doesn't meet the minimum pool size - the app should render 'not enough players yet' rather than this (possibly empty) list."
+                        },
+                        "weekStartDate": {
+                          "type": "string",
+                          "example": "2026-09-28",
+                          "description": "Monday IST, this week."
+                        },
+                        "poolSize": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 214
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 1
+                              },
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "Aarav"
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "S",
+                                "description": "Kid-safe display name is always firstName + lastInitial - never a full name."
+                              },
+                              "xp": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 2710,
+                                "description": "XP earned this week."
+                              },
+                              "isSelf": {
+                                "type": "boolean",
+                                "example": false
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "userId",
+                              "firstName",
+                              "lastInitial",
+                              "xp",
+                              "isSelf"
+                            ]
+                          }
+                        },
+                        "self": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "xp": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "xp"
+                          ],
+                          "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
+                        }
+                      },
+                      "required": [
+                        "requestedScope",
+                        "scope",
+                        "fallbackApplied",
+                        "notEnoughPlayers",
+                        "weekStartDate",
+                        "poolSize",
+                        "rows",
+                        "self"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/activity": {
+      "get": {
+        "summary": "Get the recent-activity ticker (AR-03)",
+        "description": "The most recent real XP credits app-wide, newest first, kid-safe display name only.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent activity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "Meera"
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "K"
+                              },
+                              "amount": {
+                                "type": "integer",
+                                "example": 80
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "example": "2026-09-28T10:12:00.000Z"
+                              }
+                            },
+                            "required": [
+                              "firstName",
+                              "lastInitial",
+                              "amount",
+                              "createdAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/cheers": {
+      "post": {
+        "summary": "Cheer another learner (AR-12)",
+        "description": "Sends a cheer, worth a fixed amount of XP (settings_kv, default 5) to the receiver. One cheer per sender-receiver pair per IST day - repeating the same day is a successful no-op, never a second credit. A daily total cap on how much XP a receiver can bank from cheers (settings_kv) may reduce or zero xpAwarded even on a fresh cheer. Fails if the receiver has turned off cheersEnabled (PATCH /me's preferences) - never shows another learner's identity, only whether the cheer itself succeeded.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receiverId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                  }
+                },
+                "required": [
+                  "receiverId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The cheer was processed (possibly a no-op replay, possibly capped)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "alreadyCheeredToday": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true if you'd already cheered this learner today - no additional XP was awarded."
+                        },
+                        "xpAwarded": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 5
+                        },
+                        "dailyCapReached": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true if the receiver's daily cheer-XP cap limited (or zeroed) this award."
+                        }
+                      },
+                      "required": [
+                        "alreadyCheeredToday",
+                        "xpAwarded",
+                        "dailyCapReached"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, or cheering yourself",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "You can't cheer yourself"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Receiver not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Learner not found"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The receiver has turned off cheersEnabled",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CHEER_RECEIVER_OPTED_OUT",
+                    "message": "This learner isn't receiving cheers right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/arena/cheers": {
+      "get": {
+        "summary": "Get my cheers-received summary (AR-12)",
+        "description": "An aggregate-only weekly count of cheers received - docs/ARCHITECTURE.md D53: sender identity is never shown, in any form, not even a partial breakdown.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's cheers-received summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "receivedThisWeek": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 12,
+                          "description": "Aggregate count only - who sent them is never shown (docs/ARCHITECTURE.md D53)."
+                        }
+                      },
+                      "required": [
+                        "receivedThisWeek"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/chips": {
+      "get": {
+        "summary": "List the active about-me chip catalog (AR-20)",
+        "description": "The admin-managed preset chips a learner can pick for their public profile - never free text (docs/ARCHITECTURE.md D36).",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active chips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "iconKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "piggy-bank"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "iconKey"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/arena/chips": {
+      "get": {
+        "summary": "Get my selected about-me chips (AR-20)",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's currently-selected chips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "iconKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "piggy-bank"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "iconKey"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set my selected about-me chips (AR-20)",
+        "description": "Replaces the caller's whole chip selection - at most 3, and every id must be an active chip.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "chipIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 3,
+                    "description": "Replaces your whole chip selection - at most 3 (settings, not schema-fixed)."
+                  }
+                },
+                "required": [
+                  "chipIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The caller's new chip selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "iconKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "piggy-bank"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "iconKey"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many chips, or one isn't currently active",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Pick at most 3 chips"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{userId}/public-profile": {
+      "get": {
+        "summary": "Get a learner's public Arena profile (AR-20)",
+        "description": "Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe display name (first name + last initial, never a full name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class or `bio` - `users.bio` stays private to its owner forever.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The learner's public profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "firstName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "Aarav"
+                        },
+                        "lastInitial": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "S",
+                          "description": "Kid-safe display name is always firstName + lastInitial - never a full name or photo."
+                        },
+                        "level": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 4
+                        },
+                        "rankTitle": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "badges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ]
+                              },
+                              "description": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ]
+                              },
+                              "iconKey": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "description",
+                              "iconKey"
+                            ]
+                          }
+                        },
+                        "chips": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ]
+                              },
+                              "iconKey": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "piggy-bank"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "iconKey"
+                            ]
+                          },
+                          "description": "Preset chips this learner picked - never free text (docs/ARCHITECTURE.md D36)."
+                        },
+                        "weekXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1240
+                        },
+                        "streak": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 12
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest"
+                          ]
+                        },
+                        "quizAccuracyPct": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100,
+                          "example": 82
+                        },
+                        "currentWorld": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "title": {
+                              "type": "object",
+                              "properties": {
+                                "en": {
+                                  "type": "string"
+                                },
+                                "hi": {
+                                  "type": "string"
+                                },
+                                "hx": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "en",
+                                "hi",
+                                "hx"
+                              ]
+                            },
+                            "completedLessons": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 6
+                            },
+                            "totalLessons": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 40
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "completedLessons",
+                            "totalLessons"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "firstName",
+                        "lastInitial",
+                        "level",
+                        "rankTitle",
+                        "badges",
+                        "chips",
+                        "weekXp",
+                        "streak",
+                        "quizAccuracyPct",
+                        "currentWorld"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Learner not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Learner not found"
                   }
                 },
                 "schema": {
