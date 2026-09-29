@@ -10714,6 +10714,14 @@
                                 ],
                                 "example": "promote",
                                 "description": "This scope's current league zone (docs/ARCHITECTURE.md D54). Promotion and the neutral 'safe' band are visible on anyone's row; 'demote' is only ever shown on your OWN row - on someone else's row it's always null, whether they're actually in 'demote' or the league hasn't settled yet."
+                              },
+                              "rankDelta": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 3,
+                                "description": "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, negative = moved down, null = nothing to compare (a new entrant this week, or this scope didn't settle last week - e.g. below the privacy floor)."
                               }
                             },
                             "required": [
@@ -10723,7 +10731,8 @@
                               "lastInitial",
                               "xp",
                               "isSelf",
-                              "zone"
+                              "zone",
+                              "rankDelta"
                             ]
                           }
                         },
@@ -10740,11 +10749,19 @@
                             "xp": {
                               "type": "integer",
                               "minimum": 0
+                            },
+                            "rankDelta": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "example": 3
                             }
                           },
                           "required": [
                             "rank",
-                            "xp"
+                            "xp",
+                            "rankDelta"
                           ],
                           "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
                         }
@@ -11104,6 +11121,14 @@
                                 ],
                                 "example": "promote",
                                 "description": "This scope's current league zone (docs/ARCHITECTURE.md D54). Promotion and the neutral 'safe' band are visible on anyone's row; 'demote' is only ever shown on your OWN row - on someone else's row it's always null, whether they're actually in 'demote' or the league hasn't settled yet."
+                              },
+                              "rankDelta": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 3,
+                                "description": "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, negative = moved down, null = nothing to compare (a new entrant this week, or this scope didn't settle last week - e.g. below the privacy floor)."
                               }
                             },
                             "required": [
@@ -11113,7 +11138,8 @@
                               "lastInitial",
                               "xp",
                               "isSelf",
-                              "zone"
+                              "zone",
+                              "rankDelta"
                             ]
                           }
                         },
@@ -11130,11 +11156,19 @@
                             "xp": {
                               "type": "integer",
                               "minimum": 0
+                            },
+                            "rankDelta": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "example": 3
                             }
                           },
                           "required": [
                             "rank",
-                            "xp"
+                            "xp",
+                            "rankDelta"
                           ],
                           "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
                         }

@@ -4758,12 +4758,14 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
         "lastInitial": "S",
         "xp": 2710,
         "isSelf": false,
-        "zone": "promote"
+        "zone": "promote",
+        "rankDelta": 3
       }
     ],
     "self": {
       "rank": 0,
-      "xp": 0
+      "xp": 0,
+      "rankDelta": 3
     }
   }
 }
@@ -4905,12 +4907,14 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
         "lastInitial": "S",
         "xp": 2710,
         "isSelf": false,
-        "zone": "promote"
+        "zone": "promote",
+        "rankDelta": 3
       }
     ],
     "self": {
       "rank": 0,
-      "xp": 0
+      "xp": 0,
+      "rankDelta": 3
     }
   }
 }

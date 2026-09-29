@@ -95,6 +95,13 @@ export type LeaderboardRowView = {
   xp: number;
   isSelf: boolean;
   zone: LeagueZone | null;
+  // AR-09's weekly move indicator (▲▼—): positive = moved up N ranks since
+  // last week's settlement, negative = moved down, null = nothing to compare
+  // against (a new entrant this week, or the scope didn't settle last week -
+  // e.g. it was below the D52 privacy floor). Computed from the same
+  // leaderboard_snapshots row getMyArenaRankSummary's rankDelta cells already
+  // read, just against THIS scope's live rows instead of a single user.
+  rankDelta: number | null;
 };
 
 // docs/ARCHITECTURE.md D54: promotion (and the neutral "safe" band) are
@@ -116,7 +123,7 @@ export type LeaderboardView = {
   weekStartDate: string;
   poolSize: number;
   rows: LeaderboardRowView[];
-  self: { rank: number; xp: number } | null;
+  self: { rank: number; xp: number; rankDelta: number | null } | null;
 };
 
 async function requestedScopeForUser(
@@ -175,6 +182,15 @@ async function buildLeaderboardView(
   const ranked = rankRows(rows);
   const names = await getDisplayNamesForUserIds(ranked.map((r) => r.userId));
   const zones = await getLeagueZonesForScope(encodeScope(resolution.resolved));
+  // AR-09: last week's settled rank for this same (resolved) scope, keyed by
+  // user - a plain lookup against leaderboard_snapshots (empty map if that
+  // scope didn't settle last week, e.g. it was below the D52 privacy floor).
+  const previousWeekStartDate = istWeekStartDate(new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const prevRanks = await getLastWeekRanksForScope(encodeScope(resolution.resolved), previousWeekStartDate);
+  const rankDeltaFor = (userId: string, rank: number): number | null => {
+    const prevRank = prevRanks.get(userId);
+    return prevRank !== undefined ? prevRank - rank : null;
+  };
   const selfRanked = ranked.find((r) => r.userId === user.id) ?? null;
   const topRows = ranked.slice(0, LEADERBOARD_ROW_LIMIT);
   const selfInTop = topRows.some((r) => r.userId === user.id);
@@ -190,6 +206,7 @@ async function buildLeaderboardView(
       xp: r.xp,
       isSelf,
       zone: visibleZone(zones.get(r.userId), isSelf),
+      rankDelta: rankDeltaFor(r.userId, r.rank),
     };
   });
 
@@ -203,6 +220,7 @@ async function buildLeaderboardView(
       xp: selfRanked.xp,
       isSelf: true,
       zone: visibleZone(zones.get(selfRanked.userId), true),
+      rankDelta: rankDeltaFor(selfRanked.userId, selfRanked.rank),
     });
   }
 
@@ -214,7 +232,9 @@ async function buildLeaderboardView(
     weekStartDate,
     poolSize: rows.length,
     rows: viewRows,
-    self: selfRanked ? { rank: selfRanked.rank, xp: selfRanked.xp } : null,
+    self: selfRanked
+      ? { rank: selfRanked.rank, xp: selfRanked.xp, rankDelta: rankDeltaFor(selfRanked.userId, selfRanked.rank) }
+      : null,
   };
 }
 

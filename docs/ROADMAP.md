@@ -265,7 +265,14 @@ own repo later, hosted on Railway.
       D52, default 20 active learners) doesn't settle at all that week, not just hide from display.
       Demotion is visible only to the affected learner (`docs/ARCHITECTURE.md` D54 — a deliberate
       departure from the prototype, which broadcasts it); promotion and the crest badge (via a new
-      "external" badge criteria type) stay public.
+      "external" badge criteria type) stay public. Each row also reports `rankDelta` (AR-09's
+      weekly move indicator ▲▼—): positive/negative/null against last week's settled rank for
+      that same scope, from `leaderboard_snapshots` — null cleanly covers a new entrant or a
+      scope that didn't settle last week (below the D52 privacy floor), never a fabricated 0.
+      **AR-02 (season countdown): resolved, not a gap.** Confirmed at kickoff — "season" IS this
+      weekly reset cycle, not a separate longer-running concept; AR-02 is a client-side countdown
+      to next Monday 00:30 IST, computable from `weekStartDate` already on the response with no
+      new endpoint needed.
 - [x] Worlds table; daily `world_xp_snapshots` rollup job for the 7-day sparkline (AR-04/05). No
       real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost).
       **Not built**: cached per-user aggregate stats (lessons/quiz accuracy/sim P&L) for the
@@ -283,9 +290,19 @@ own repo later, hosted on Railway.
       chips** picked from an admin-managed catalog, never free-text `bio` (`docs/ARCHITECTURE.md`
       D36 - `users.bio` stays private to the owner forever). Chip catalog admin page
       (`/admin/settings`) and per-user chip-selection table (capped at 3) built.
-- [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
-      admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
-      currency) — depends on Phase 4's order execution primitives
+- [x] Monthly single-stock Competition (Checkpoint 7): isolated virtual capital
+      (`competitions.virtual_capital_paise`, `docs/ARCHITECTURE.md` D57) that never touches
+      `vmoney_ledger` — a non-convertible sandbox balance, structurally separate tables, no FK or
+      code path into the real ledger at all; only the prize at settlement ever creates VM
+      (regression-tested directly against the database). Ranked live by ROI% against the FULL
+      starting capital (closes tiny-position distortion by construction, not detection). Reduced
+      prize bands — 5,000 / 2,000 / 500 VM, D58 — after comparing the naive proposal against the
+      whole one-time lesson tree's total payout. Entry-window cutoff + a minimum-qualifying-trade
+      count (D59) close a late-lucky-trade gap without touching AR-18's already-decided rules
+      copy. Daily Inngest settlement sweep, same two-layer idempotent claim (outer: `settledAt`;
+      inner: `competition_prizes`' own unique index) as every other settlement job in this phase.
+      **Not built**: the ranked board's row-expansion (AR-16 — best trade, win rate, avg hold
+      time per entrant) — same documented fast-follow precedent as AR-10 above, not blocking.
 
 ## Phase 7 — Notifications & Doubt Zone
 - [ ] Expo push tokens, notification preferences, streak/boss/news jobs

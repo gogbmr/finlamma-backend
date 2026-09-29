@@ -30,6 +30,13 @@ const LeaderboardRowSchema = z.object({
       "on someone else's row it's always null, whether they're actually in 'demote' or the " +
       "league hasn't settled yet.",
   }),
+  rankDelta: z.number().int().nullable().openapi({
+    example: 3,
+    description:
+      "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, " +
+      "negative = moved down, null = nothing to compare (a new entrant this week, or this scope " +
+      "didn't settle last week - e.g. below the privacy floor).",
+  }),
 });
 
 export const ArenaLeaderboardResponseSchema = z.object({
@@ -58,7 +65,11 @@ export const ArenaLeaderboardResponseSchema = z.object({
     poolSize: z.number().int().nonnegative().openapi({ example: 214 }),
     rows: z.array(LeaderboardRowSchema),
     self: z
-      .object({ rank: z.number().int().positive(), xp: z.number().int().nonnegative() })
+      .object({
+        rank: z.number().int().positive(),
+        xp: z.number().int().nonnegative(),
+        rankDelta: z.number().int().nullable().openapi({ example: 3 }),
+      })
       .nullable()
       .openapi({ description: "The caller's own rank/xp, even if outside `rows` (AR-06)." }),
   }),

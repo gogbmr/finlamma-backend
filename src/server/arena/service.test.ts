@@ -159,6 +159,7 @@ beforeEach(() => {
   mockGetSettingNumber.mockResolvedValue(20);
   mockGetDisplayNamesForUserIds.mockImplementation((ids: string[]) => Promise.resolve(names(ids)));
   mockGetLeagueZonesForScope.mockResolvedValue(new Map());
+  mockGetLastWeekRanksForScope.mockResolvedValue(new Map());
 });
 
 describe("getLeaderboard", () => {
@@ -184,8 +185,24 @@ describe("getLeaderboard", () => {
     const result = await getLeaderboard({ id: "u59", state: null }, "global");
 
     expect(result.rows).toHaveLength(51); // top 50 + self appended
-    expect(result.self).toEqual({ rank: 60, xp: 1 });
+    expect(result.self).toEqual({ rank: 60, xp: 1, rankDelta: null });
     expect(result.rows.at(-1)).toMatchObject({ userId: "u59", isSelf: true, rank: 60 });
+  });
+
+  it("AR-09: reports a weekly move indicator from last week's settled rank, and null when there's nothing to compare", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([
+      { userId: "u1", xp: 30 }, // was rank 3 last week, now rank 1 -> moved up 2
+      { userId: "u2", xp: 20 }, // was rank 1 last week, now rank 2 -> moved down 1
+      { userId: "u3", xp: 10 }, // new entrant this week -> no comparison
+    ]);
+    mockGetLastWeekRanksForScope.mockResolvedValueOnce(new Map([["u1", 3], ["u2", 1]]));
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    expect(result.rows.find((r) => r.userId === "u1")).toMatchObject({ rank: 1, rankDelta: 2 });
+    expect(result.rows.find((r) => r.userId === "u2")).toMatchObject({ rank: 2, rankDelta: -1 });
+    expect(result.rows.find((r) => r.userId === "u3")).toMatchObject({ rank: 3, rankDelta: null });
+    expect(result.self).toMatchObject({ rank: 1, rankDelta: 2 });
   });
 
   it("falls back a thin state pool to india and reports fallbackApplied", async () => {
@@ -294,7 +311,7 @@ describe("getWorldLeaderboard", () => {
 
     expect(result.scope).toBe("world:world-9");
     expect(mockGetCurrentWorldIdForUser).not.toHaveBeenCalled();
-    expect(result.self).toEqual({ rank: 2, xp: 10 });
+    expect(result.self).toEqual({ rank: 2, xp: 10, rankDelta: null });
   });
 
   it("reports notEnoughPlayers for a thin world with no fallback", async () => {
