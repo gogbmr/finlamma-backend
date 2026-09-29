@@ -23,7 +23,7 @@ describe("lessons_completed evaluator", () => {
   it("returns the lifetime completed-lesson count", async () => {
     mockCountCompletedLessonsForUser.mockResolvedValueOnce(12);
 
-    expect(await BADGE_CRITERIA_EVALUATORS.lessons_completed(USER_ID)).toBe(12);
+    expect(await BADGE_CRITERIA_EVALUATORS.lessons_completed!(USER_ID)).toBe(12);
   });
 });
 
@@ -34,7 +34,7 @@ describe("streak_days evaluator", () => {
       pulseCheck: { current: 0, longest: 0, freezesLeft: 2 },
     });
 
-    expect(await BADGE_CRITERIA_EVALUATORS.streak_days(USER_ID)).toBe(20);
+    expect(await BADGE_CRITERIA_EVALUATORS.streak_days!(USER_ID)).toBe(20);
   });
 });
 
@@ -42,12 +42,18 @@ describe("quiz_accuracy_pct evaluator", () => {
   it("computes a rounded percentage", async () => {
     mockGetQuizAccuracyTotalsForUser.mockResolvedValueOnce({ correct: 2, total: 3 });
 
-    expect(await BADGE_CRITERIA_EVALUATORS.quiz_accuracy_pct(USER_ID)).toBe(67);
+    expect(await BADGE_CRITERIA_EVALUATORS.quiz_accuracy_pct!(USER_ID)).toBe(67);
   });
 
   it("returns 0 before any graded question is answered", async () => {
     mockGetQuizAccuracyTotalsForUser.mockResolvedValueOnce({ correct: 0, total: 0 });
 
-    expect(await BADGE_CRITERIA_EVALUATORS.quiz_accuracy_pct(USER_ID)).toBe(0);
+    expect(await BADGE_CRITERIA_EVALUATORS.quiz_accuracy_pct!(USER_ID)).toBe(0);
+  });
+});
+
+describe("external criteria type", () => {
+  it("has no evaluator - it's only ever awarded by external code, never auto-computed", () => {
+    expect(BADGE_CRITERIA_EVALUATORS.external).toBeUndefined();
   });
 });

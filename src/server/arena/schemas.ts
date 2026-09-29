@@ -22,6 +22,14 @@ const LeaderboardRowSchema = z.object({
   }),
   xp: z.number().int().nonnegative().openapi({ example: 2710, description: "XP earned this week." }),
   isSelf: z.boolean().openapi({ example: false }),
+  zone: z.enum(["promote", "safe", "demote"]).nullable().openapi({
+    example: "promote",
+    description:
+      "This scope's current league zone (docs/ARCHITECTURE.md D54). Promotion and the neutral " +
+      "'safe' band are visible on anyone's row; 'demote' is only ever shown on your OWN row - " +
+      "on someone else's row it's always null, whether they're actually in 'demote' or the " +
+      "league hasn't settled yet.",
+  }),
 });
 
 export const ArenaLeaderboardResponseSchema = z.object({
@@ -197,3 +205,17 @@ export const AboutMeChipInputSchema = z.object({
   active: z.boolean(),
 });
 export type AboutMeChipInput = z.infer<typeof AboutMeChipInputSchema>;
+
+// Phase 6 Checkpoint 3 (docs/ARCHITECTURE.md D55/D56) - same MAX_REWARD_AMOUNT
+// bound every other admin-authored VM figure in this codebase uses
+// (src/server/economy/schemas.ts), since a league reward is the same order
+// of magnitude as a lesson/badge reward, not a separate scale.
+const MAX_ARENA_VM_AMOUNT = 5000;
+export const ArenaLeagueSettingsInputSchema = z.object({
+  promoteVmReward: z.number().int().nonnegative().max(MAX_ARENA_VM_AMOUNT),
+  safeVmReward: z.number().int().nonnegative().max(MAX_ARENA_VM_AMOUNT),
+  weeklyVmCap: z.number().int().nonnegative().max(MAX_ARENA_VM_AMOUNT),
+  cheerWeeklySenderReceiverCap: z.number().int().nonnegative().max(MAX_ARENA_VM_AMOUNT),
+  crestBadgeId: z.string().uuid().nullable(),
+});
+export type ArenaLeagueSettingsInput = z.infer<typeof ArenaLeagueSettingsInputSchema>;

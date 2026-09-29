@@ -120,6 +120,36 @@ export const cheers = pgTable(
   ],
 ).enableRLS();
 
+// The idempotency + audit record for Phase 6 Checkpoint 3's weekly VM/crest
+// payout - one row per (userId, weekStartDate), enforced by the DB unique
+// index below, never by an app-level "have I already paid this" check (same
+// D26 insert-and-treat-conflict-as-done shape every other money-moving write
+// in this codebase uses). `scope`/`zone`/`xp` record the SINGLE
+// best-qualifying scope this payout was based on (docs/ARCHITECTURE.md D55:
+// a learner is paid once, for their best zone across scopes, never summed) -
+// distinct from `league_members`, which still holds the learner's CURRENT
+// zone in every scope they're in, for display. `vmAwarded` is the actual
+// amount credited after the weekly cap clamp (settings_kv), which can be
+// less than the zone's nominal reward.
+export const leagueSettlements = pgTable(
+  "league_settlements",
+  {
+    ...idAndTimestamps(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    weekStartDate: date("week_start_date", { mode: "string" }).notNull(),
+    scope: text("scope").notNull(),
+    zone: leagueZoneEnum("zone").notNull(),
+    xp: integer("xp").notNull(),
+    vmAwarded: integer("vm_awarded").notNull(),
+  },
+  (t) => [
+    uniqueIndex("league_settlements_user_week_idx").on(t.userId, t.weekStartDate),
+    index("league_settlements_week_idx").on(t.weekStartDate),
+  ],
+).enableRLS();
+
 // AR-20's preset "about me" chip catalog (docs/ARCHITECTURE.md D36 - the
 // free-text-bio replacement). Admin-managed, same LocalizedText/iconKey
 // shape as badges' display fields, minus badges' criteria/vmReward since a

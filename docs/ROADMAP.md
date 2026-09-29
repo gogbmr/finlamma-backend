@@ -248,20 +248,41 @@ own repo later, hosted on Railway.
       endpoint or UI exists; another real gap for `/phase-audit 5`, not silently dropped
 
 ## Phase 6 — Arena & social
-- [ ] Weekly leaderboards (Redis sorted sets), scopes (state scope uses `users.state`, optional,
-      collected with an explanation, never shown publicly), leagues with promote/demote job.
-      Leagues are a flat pool per scope with computed top/bottom ~25% (matches the prototype) —
-      no named tiers (Bronze/Silver/Gold) for v1. Promote/safe/demote reward amounts admin-editable
-      via `reward_rules`
-- [ ] Worlds table; daily `world_xp_snapshots`/rollup job for the 7-day sparkline; cached
-      per-user aggregate stats (lessons/quiz accuracy/sim P&L) for leaderboard row expansion. No
-      real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost)
-- [ ] Cheers (+5 XP, notification) — one cheer per recipient per sender per day, a daily
-      per-receiver XP cap from cheers, un-cheer/re-cheer never re-awards XP
-- [ ] Public player profile (FEATURE_MAP AR-20): display name, level, rank title, badges, stats -
-      and a set of **preset "about me" chips** picked from an admin-managed catalog, never
-      free-text `bio` (`docs/ARCHITECTURE.md` D36 - `users.bio` stays private to the owner
-      forever). Needs a chip-catalog admin page and a per-user chip-selection table/column
+- [x] Weekly leaderboards, scopes (World/State/India/Global — state scope uses `users.state`,
+      optional, collected via `PATCH /me`, never shown publicly), leagues with a weekly
+      promote/safe/demote settlement job (Checkpoint 3). Leagues are a flat pool per scope with
+      computed top/bottom `max(1, round(n/4))` (the prototype's own formula) — no named tiers
+      (Bronze/Silver/Gold). Promote/safe reward amounts (default 500/0 VM — safe departs from the
+      prototype's 150 by deliberate design, `docs/ARCHITECTURE.md` D55) are admin-editable in
+      `/admin/settings`, not `reward_rules` (a dedicated Arena-league settings group instead —
+      `reward_rules` is keyed by lesson `activity_kind`, which doesn't fit a zone-based reward).
+      **Built as direct Postgres aggregate queries + a weekly Inngest settlement job, not Redis
+      sorted sets** as this line originally planned — simpler and safer for a once-a-week payout
+      with no live-update requirement; nothing here needed sub-second freshness. A learner is paid
+      once for their single best-qualifying zone across scopes, never summed, capped by
+      `arena_league_weekly_vm_cap` (D55) — closes a passive-farming hole the multi-scope design
+      would otherwise open. A state/world scope below the privacy floor (`docs/ARCHITECTURE.md`
+      D52, default 20 active learners) doesn't settle at all that week, not just hide from display.
+      Demotion is visible only to the affected learner (`docs/ARCHITECTURE.md` D54 — a deliberate
+      departure from the prototype, which broadcasts it); promotion and the crest badge (via a new
+      "external" badge criteria type) stay public.
+- [x] Worlds table; daily `world_xp_snapshots` rollup job for the 7-day sparkline (AR-04/05). No
+      real-time "LIVE" presence tracking for v1 (cut, low value for the infra cost).
+      **Not built**: cached per-user aggregate stats (lessons/quiz accuracy/sim P&L) for the
+      player-ladder row expansion (AR-10) — the base ladder ships without the expand-a-row detail
+      view; a fast-follow, not blocking.
+- [x] Cheers (+5 XP) — one cheer per recipient per sender per day, a daily per-receiver XP cap, and
+      (`docs/ARCHITECTURE.md` D56) a weekly per-sender-receiver XP cap closing a same-pair
+      day-after-day collusion gap the daily cap alone didn't cover. Receiver sees only an
+      aggregate weekly count (`docs/ARCHITECTURE.md` D53) — sender identity is never shown, and a
+      `cheersEnabled` opt-out exists on `users.preferences`. Push notification not built (no
+      notifications infra exists yet — Phase 7); un-cheer/re-cheer never re-awards XP by
+      construction (no separate un-cheer action exists to re-trigger a credit).
+- [x] Public player profile (FEATURE_MAP AR-20): display name, level, rank title, unlocked badges,
+      week XP, streak, quiz accuracy, current world + completion - and a set of **preset "about me"
+      chips** picked from an admin-managed catalog, never free-text `bio` (`docs/ARCHITECTURE.md`
+      D36 - `users.bio` stays private to the owner forever). Chip catalog admin page
+      (`/admin/settings`) and per-user chip-selection table (capped at 3) built.
 - [ ] Monthly single-stock Competition: isolated virtual capital, ROI%-ranked leaderboard,
       admin-configurable **virtual-only** prizes (V Money / badges / coupons, never real
       currency) — depends on Phase 4's order execution primitives

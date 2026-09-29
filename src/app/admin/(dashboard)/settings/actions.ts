@@ -10,8 +10,9 @@ import {
   createAboutMeChipForAdmin,
   deleteAboutMeChipForAdmin,
   updateAboutMeChipForAdmin,
+  updateArenaLeagueSettingsForAdmin,
 } from "@/server/arena/service";
-import { AboutMeChipInputSchema } from "@/server/arena/schemas";
+import { AboutMeChipInputSchema, ArenaLeagueSettingsInputSchema } from "@/server/arena/schemas";
 import { DailyGoalsSettingsSchema } from "@/server/daily-goals/schemas";
 import { updateDailyGoalsSettings } from "@/server/daily-goals/service";
 import type { RewardActivityKind } from "@/server/economy/repo";
@@ -72,6 +73,17 @@ export async function deleteAboutMeChipAction(id: string): Promise<ActionResult>
   return runAction(async () => {
     const actor = await requireStaff("settings.manage");
     await deleteAboutMeChipForAdmin(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+// economy.manage, not settings.manage - this directly sets VM reward
+// amounts, same trust bar as reward_rules/the VM multiplier (D55).
+export async function updateArenaLeagueSettingsAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("economy.manage");
+    const parsed = ArenaLeagueSettingsInputSchema.parse(input);
+    await updateArenaLeagueSettingsForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }

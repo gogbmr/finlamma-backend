@@ -75,6 +75,22 @@ describe("insertUserBadgeIfAbsent", () => {
     expect(unlocked.has(badgeA.id)).toBe(true);
     expect(unlocked.has(badgeB.id)).toBe(true);
   });
+
+  it("accepts an explicit transaction handle (Phase 6 Checkpoint 3's league settlement awards the crest inside its own tx)", async () => {
+    const user = await makeUser();
+    const badge = await makeBadge();
+
+    await db.transaction(async (tx) => {
+      // `tx as never`: this function's DbOrTx type is derived from the real
+      // (postgres-js) db singleton - structurally identical at runtime to
+      // PGlite's tx, just a different driver type to TypeScript. Same
+      // test-only reconciliation src/server/economy/repo.test.ts already uses.
+      await insertUserBadgeIfAbsent(user.id, badge.id, tx as never);
+    });
+
+    const unlocked = await listUnlockedBadgeIdsForUser(user.id);
+    expect(unlocked.has(badge.id)).toBe(true);
+  });
 });
 
 describe("awardBadgeAndCreditVmoney", () => {

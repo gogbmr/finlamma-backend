@@ -6,7 +6,17 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { cheers, lessonProgress, lessons, mentors, users, worldXpSnapshots, worlds, xpEvents } from "@/db/schema";
+import {
+  cheers,
+  leaderboardSnapshots,
+  lessonProgress,
+  lessons,
+  mentors,
+  users,
+  worldXpSnapshots,
+  worlds,
+  xpEvents,
+} from "@/db/schema";
 import { istDateString } from "@/lib/ist-date";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
@@ -16,12 +26,20 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 const {
   countCheersReceivedSince,
   deleteAboutMeChipRow,
+  ensureLeague,
   getCurrentWorldIdForUser,
+  getLastWeekRanksForScope,
+  getLeagueMemberZone,
+  getLeagueZonesForScope,
   getSelectedChipsForUser,
   insertAboutMeChip,
   insertCheerIfNew,
+  insertLeagueSettlementIfNew,
+  replaceLeagueMembers,
   replaceUserChipSelection,
   sumCheerXpCreditedToday,
+  sumCheerXpFromSenderToReceiverSince,
+  upsertLeaderboardSnapshotIfNew,
   upsertWorldXpSnapshotsForDate,
   weeklyXpByScope,
 } = await import("./repo");
@@ -297,5 +315,164 @@ describe("about-me chips: selection replace + delete-while-in-use", () => {
     await replaceUserChipSelection(user.id, [chip.id]);
 
     await expect(deleteAboutMeChipRow(chip.id)).rejects.toThrow();
+  });
+});
+
+describe("ensureLeague / replaceLeagueMembers / getLeagueZonesForScope / getLeagueMemberZone", () => {
+  it("get-or-creates a league row for a scope, idempotently", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+
+    const first = await ensureLeague(scope);
+    const second = await ensureLeague(scope);
+
+    expect(second.id).toBe(first.id);
+  });
+
+  it("replaces the whole membership, not merges", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+    const league = await ensureLeague(scope);
+    const u1 = await makeUser();
+    const u2 = await makeUser();
+
+    await replaceLeagueMembers(league.id, [{ userId: u1.id, zone: "promote", rank: 1 }]);
+    let zones = await getLeagueZonesForScope(scope);
+    expect(zones.get(u1.id)).toBe("promote");
+    expect(zones.has(u2.id)).toBe(false);
+
+    await replaceLeagueMembers(league.id, [{ userId: u2.id, zone: "demote", rank: 1 }]);
+    zones = await getLeagueZonesForScope(scope);
+    expect(zones.has(u1.id)).toBe(false); // u1 is gone, not still present
+    expect(zones.get(u2.id)).toBe("demote");
+  });
+
+  it("getLeagueMemberZone reads a single member's zone, or null if absent", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+    const league = await ensureLeague(scope);
+    const user = await makeUser();
+    await replaceLeagueMembers(league.id, [{ userId: user.id, zone: "safe", rank: 3 }]);
+
+    expect(await getLeagueMemberZone(scope, user.id)).toBe("safe");
+    expect(await getLeagueMemberZone(scope, "00000000-0000-4000-8000-000000000000")).toBeNull();
+  });
+});
+
+describe("upsertLeaderboardSnapshotIfNew / getLastWeekRanksForScope", () => {
+  it("never overwrites once written for the same (week, scope) - a retry with different numbers is a no-op", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+    const user = await makeUser();
+    await upsertLeaderboardSnapshotIfNew({
+      weekStartDate: "2026-01-05",
+      scope,
+      poolSize: 1,
+      rankings: [{ userId: user.id, rank: 1, xp: 100, zone: "promote", prevRank: null }],
+    });
+
+    await upsertLeaderboardSnapshotIfNew({
+      weekStartDate: "2026-01-05",
+      scope,
+      poolSize: 99,
+      rankings: [{ userId: user.id, rank: 1, xp: 999, zone: "demote", prevRank: null }],
+    });
+
+    const rows = await db.select().from(leaderboardSnapshots).where(eq(leaderboardSnapshots.scope, scope));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].poolSize).toBe(1);
+  });
+
+  it("reads back a stored week's ranks by userId, and nothing for a week never written", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+    const user = await makeUser();
+    await upsertLeaderboardSnapshotIfNew({
+      weekStartDate: "2026-01-05",
+      scope,
+      poolSize: 1,
+      rankings: [{ userId: user.id, rank: 7, xp: 100, zone: "safe", prevRank: null }],
+    });
+
+    expect((await getLastWeekRanksForScope(scope, "2026-01-05")).get(user.id)).toBe(7);
+    expect((await getLastWeekRanksForScope(scope, "2026-01-12")).size).toBe(0);
+  });
+});
+
+describe("insertLeagueSettlementIfNew", () => {
+  // `db as never` below: insertLeagueSettlementIfNew's DbOrTx type is derived
+  // from the real (postgres-js) db singleton, structurally identical at
+  // runtime to PGlite's db (both plain Drizzle query builders) but seen as
+  // two different driver types by TypeScript - a test-only type
+  // reconciliation, same pattern src/server/economy/repo.test.ts already uses.
+  it("is idempotent per (userId, weekStartDate) - a retry with different numbers is a no-op, not a duplicate row", async () => {
+    const user = await makeUser();
+    const input = {
+      userId: user.id,
+      weekStartDate: "2026-01-05",
+      scope: "global",
+      zone: "promote" as const,
+      xp: 100,
+      vmAwarded: 500,
+    };
+
+    const first = await insertLeagueSettlementIfNew(db as never, input);
+    const second = await insertLeagueSettlementIfNew(db as never, { ...input, vmAwarded: 999 });
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+  });
+
+  it("allows the same user to be settled again for a different week", async () => {
+    const user = await makeUser();
+
+    const first = await insertLeagueSettlementIfNew(db as never, {
+      userId: user.id,
+      weekStartDate: "2026-01-05",
+      scope: "global",
+      zone: "promote",
+      xp: 100,
+      vmAwarded: 500,
+    });
+    const second = await insertLeagueSettlementIfNew(db as never, {
+      userId: user.id,
+      weekStartDate: "2026-01-12",
+      scope: "global",
+      zone: "safe",
+      xp: 50,
+      vmAwarded: 0,
+    });
+
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+  });
+});
+
+describe("sumCheerXpFromSenderToReceiverSince", () => {
+  it("sums only XP from cheers between this exact sender-receiver pair", async () => {
+    const sender = await makeUser();
+    const receiver = await makeUser();
+    const otherSender = await makeUser();
+    const today = istDateString(new Date());
+
+    const cheer1 = await insertCheerIfNew(sender.id, receiver.id, today);
+    await db.insert(xpEvents).values({
+      userId: receiver.id,
+      amount: 5,
+      sourceType: "cheer",
+      sourceId: cheer1!.id,
+      ruleId: null,
+      reason: "Cheer received",
+    });
+    // A different sender cheering the same receiver must not count toward THIS pair's cap.
+    const cheer2 = await insertCheerIfNew(otherSender.id, receiver.id, today);
+    await db.insert(xpEvents).values({
+      userId: receiver.id,
+      amount: 5,
+      sourceType: "cheer",
+      sourceId: cheer2!.id,
+      ruleId: null,
+      reason: "Cheer received",
+    });
+
+    const longAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const sum = await sumCheerXpFromSenderToReceiverSince(sender.id, receiver.id, longAgo);
+
+    expect(sum).toBe(5);
   });
 });

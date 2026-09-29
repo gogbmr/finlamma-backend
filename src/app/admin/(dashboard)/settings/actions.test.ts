@@ -64,6 +64,7 @@ vi.mock("@/server/rank-titles/service", () => ({
 const mockCreateAboutMeChipForAdmin = vi.fn();
 const mockUpdateAboutMeChipForAdmin = vi.fn();
 const mockDeleteAboutMeChipForAdmin = vi.fn();
+const mockUpdateArenaLeagueSettingsForAdmin = vi.fn();
 vi.mock("@/server/arena/service", () => ({
   createAboutMeChipForAdmin: (actor: unknown, input: unknown, meta: unknown) =>
     mockCreateAboutMeChipForAdmin(actor, input, meta),
@@ -71,6 +72,8 @@ vi.mock("@/server/arena/service", () => ({
     mockUpdateAboutMeChipForAdmin(actor, id, input, meta),
   deleteAboutMeChipForAdmin: (actor: unknown, id: unknown, meta: unknown) =>
     mockDeleteAboutMeChipForAdmin(actor, id, meta),
+  updateArenaLeagueSettingsForAdmin: (actor: unknown, input: unknown, meta: unknown) =>
+    mockUpdateArenaLeagueSettingsForAdmin(actor, input, meta),
 }));
 
 const mockCreateTopicForAdmin = vi.fn();
@@ -93,6 +96,7 @@ import {
   updateLevelCurveSettingsAction,
   updateRankTitleAction,
   updateRewardRuleAction,
+  updateArenaLeagueSettingsAction,
   updateStreaksSettingsAction,
   updateVmIssuanceMultiplierAction,
   createTopicAction,
@@ -141,6 +145,24 @@ describe("wrong role is rejected", () => {
     expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
     expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
     expect(mockUpdateVmIssuanceMultiplier).not.toHaveBeenCalled();
+  });
+
+  it("updateArenaLeagueSettingsAction: requires economy.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: economy.manage"),
+    );
+
+    const result = await updateArenaLeagueSettingsAction({
+      promoteVmReward: 500,
+      safeVmReward: 0,
+      weeklyVmCap: 500,
+      cheerWeeklySenderReceiverCap: 15,
+      crestBadgeId: null,
+    });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
+    expect(mockUpdateArenaLeagueSettingsForAdmin).not.toHaveBeenCalled();
   });
 
   it("updateRewardRuleAction: requires economy.manage", async () => {
@@ -278,6 +300,36 @@ describe("happy path", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateLessonFlowScoringSettings).not.toHaveBeenCalled();
+  });
+
+  it("updateArenaLeagueSettingsAction updates and revalidates", async () => {
+    const input = {
+      promoteVmReward: 600,
+      safeVmReward: 0,
+      weeklyVmCap: 600,
+      cheerWeeklySenderReceiverCap: 20,
+      crestBadgeId: "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+    };
+    mockUpdateArenaLeagueSettingsForAdmin.mockResolvedValueOnce(input);
+
+    const result = await updateArenaLeagueSettingsAction(input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdateArenaLeagueSettingsForAdmin).toHaveBeenCalledWith(ACTOR, input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("updateArenaLeagueSettingsAction rejects a negative reward without calling the service", async () => {
+    const result = await updateArenaLeagueSettingsAction({
+      promoteVmReward: -1,
+      safeVmReward: 0,
+      weeklyVmCap: 500,
+      cheerWeeklySenderReceiverCap: 15,
+      crestBadgeId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdateArenaLeagueSettingsForAdmin).not.toHaveBeenCalled();
   });
 
   it("updateVmIssuanceMultiplierAction updates and revalidates", async () => {

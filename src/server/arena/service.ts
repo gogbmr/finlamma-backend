@@ -1,42 +1,56 @@
+import { db } from "@/db/client";
 import { istDateString, istWeekStartDate, istWeekStartUtc } from "@/lib/ist-date";
-import { getSettingNumber } from "@/lib/settings";
+import { getSettingJson, getSettingNumber, setSettingJson } from "@/lib/settings";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
-import { creditXpRow, sumXpSince } from "@/server/economy/repo";
+import { creditXpRow, insertVmoneyLedgerEntryIfNew, sumXpSince } from "@/server/economy/repo";
+import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
+import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import { getLevelInfo } from "@/server/leveling/service";
 import { getQuizAccuracyTotalsForUser } from "@/server/quiz-attempts/repo";
 import { getRankTitleForLevel } from "@/server/rank-titles/service";
 import { getStreakStats } from "@/server/streaks/service";
 import { getMyBadges } from "@/server/badges/service";
+import { insertUserBadgeIfAbsent } from "@/server/badges/repo";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { INDIAN_STATES } from "@/server/shared/schemas";
 import type { LocalizedText } from "@/db/schema/_helpers";
-import type { AboutMeChipInput } from "./schemas";
+import type { AboutMeChipInput, ArenaLeagueSettingsInput } from "./schemas";
 import {
   countCheersReceivedSince,
   countCompletedLessonsForUserInWorld,
   countPublishedLessonsInWorld,
   deleteAboutMeChipRow,
+  ensureLeague,
   findCheerableUser,
   getAboutMeChipById,
   getCurrentWorldIdForUser,
   getDisplayNamesForUserIds,
+  getLastWeekRanksForScope,
+  getLeagueZonesForScope,
   getSelectedChipsForUser,
   getWorldTitleById,
   getWorldXpSparklines,
   insertAboutMeChip,
   insertCheerIfNew,
+  insertLeagueSettlementIfNew,
   listActiveAboutMeChips,
   listAboutMeChips,
   listPublishedWorldsOrdered,
   listRecentXpEvents,
+  replaceLeagueMembers,
   replaceUserChipSelection,
   sumCheerXpCreditedToday,
+  sumCheerXpFromSenderToReceiverSince,
   updateAboutMeChipRow,
+  upsertLeaderboardSnapshotIfNew,
   weeklyXpByScope,
   xpByWorldInRange,
 } from "./repo";
 import { encodeScope, resolveScopeForRequest, type ArenaScope } from "./scope";
+
+type LeagueZone = "promote" | "safe" | "demote";
 
 export const ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY = "arena_min_leaderboard_pool_size";
 export const DEFAULT_ARENA_MIN_LEADERBOARD_POOL_SIZE = 20;
@@ -50,6 +64,15 @@ export const CHEER_XP_AMOUNT_KEY = "arena_cheer_xp_amount";
 export const DEFAULT_CHEER_XP_AMOUNT = 5;
 export const CHEER_DAILY_XP_CAP_KEY = "arena_cheer_daily_xp_cap";
 export const DEFAULT_CHEER_DAILY_XP_CAP = 50;
+
+// docs/ARCHITECTURE.md D56: closes a gap the daily cap above doesn't - two
+// accounts cheering each other every single day would still net up to
+// 7x`arena_cheer_xp_amount` from that one relationship alone. Default 15 =
+// three cheers' worth at the default per-cheer amount, so sustained
+// day-after-day cheering between the same two accounts stops paying out
+// partway through the week without cutting off normal cheering.
+export const CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY = "arena_cheer_weekly_sender_receiver_cap";
+export const DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP = 15;
 
 // The number of ranked rows returned outright - AR-06/AR-10 also want the
 // caller's own row even when it falls outside this window, handled
@@ -69,7 +92,19 @@ export type LeaderboardRowView = {
   lastInitial: string | null;
   xp: number;
   isSelf: boolean;
+  zone: LeagueZone | null;
 };
+
+// docs/ARCHITECTURE.md D54: promotion (and the neutral "safe" band) are
+// visible on anyone's row; demotion is visible only on the viewer's OWN
+// row. `zone` here is this scope's CURRENT league_members state (as of the
+// last settlement), not necessarily the zone Checkpoint 3 actually paid -
+// see league_settlements for the single best-zone-per-week payout record.
+function visibleZone(zone: LeagueZone | undefined, isSelf: boolean): LeagueZone | null {
+  if (!zone) return null;
+  if (isSelf) return zone;
+  return zone === "demote" ? null : zone;
+}
 
 export type LeaderboardView = {
   requestedScope: string;
@@ -137,19 +172,22 @@ async function buildLeaderboardView(
 
   const ranked = rankRows(rows);
   const names = await getDisplayNamesForUserIds(ranked.map((r) => r.userId));
+  const zones = await getLeagueZonesForScope(encodeScope(resolution.resolved));
   const selfRanked = ranked.find((r) => r.userId === user.id) ?? null;
   const topRows = ranked.slice(0, LEADERBOARD_ROW_LIMIT);
   const selfInTop = topRows.some((r) => r.userId === user.id);
 
   const viewRows: LeaderboardRowView[] = topRows.map((r) => {
     const name = names.get(r.userId);
+    const isSelf = r.userId === user.id;
     return {
       rank: r.rank,
       userId: r.userId,
       firstName: name?.firstName ?? null,
       lastInitial: name?.lastInitial ?? null,
       xp: r.xp,
-      isSelf: r.userId === user.id,
+      isSelf,
+      zone: visibleZone(zones.get(r.userId), isSelf),
     };
   });
 
@@ -162,6 +200,7 @@ async function buildLeaderboardView(
       lastInitial: name?.lastInitial ?? null,
       xp: selfRanked.xp,
       isSelf: true,
+      zone: visibleZone(zones.get(selfRanked.userId), true),
     });
   }
 
@@ -326,13 +365,18 @@ export async function sendCheer(
     userAgent: meta.userAgent,
   });
 
-  const [cheerXpAmount, dailyCap, alreadyCreditedToday] = await Promise.all([
-    getSettingNumber(CHEER_XP_AMOUNT_KEY, DEFAULT_CHEER_XP_AMOUNT),
-    getSettingNumber(CHEER_DAILY_XP_CAP_KEY, DEFAULT_CHEER_DAILY_XP_CAP),
-    sumCheerXpCreditedToday(receiverId, todayIst),
-  ]);
-  const remaining = Math.max(0, dailyCap - alreadyCreditedToday);
-  const toCredit = Math.min(cheerXpAmount, remaining);
+  const weekStartUtc = istWeekStartUtc(new Date());
+  const [cheerXpAmount, dailyCap, weeklyPairCap, alreadyCreditedToday, alreadyCreditedThisPairThisWeek] =
+    await Promise.all([
+      getSettingNumber(CHEER_XP_AMOUNT_KEY, DEFAULT_CHEER_XP_AMOUNT),
+      getSettingNumber(CHEER_DAILY_XP_CAP_KEY, DEFAULT_CHEER_DAILY_XP_CAP),
+      getSettingNumber(CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY, DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP),
+      sumCheerXpCreditedToday(receiverId, todayIst),
+      sumCheerXpFromSenderToReceiverSince(sender.id, receiverId, weekStartUtc),
+    ]);
+  const remainingDaily = Math.max(0, dailyCap - alreadyCreditedToday);
+  const remainingWeeklyPair = Math.max(0, weeklyPairCap - alreadyCreditedThisPairThisWeek);
+  const toCredit = Math.min(cheerXpAmount, remainingDaily, remainingWeeklyPair);
 
   if (toCredit > 0) {
     await creditXpRow({
@@ -345,6 +389,9 @@ export async function sendCheer(
     });
   }
 
+  // Named for the common case, but also true when D56's weekly per-pair cap
+  // (not just the receiver's daily cap) reduced the award - the app shows
+  // one generic "capped" message either way, so one boolean is enough.
   return { alreadyCheeredToday: false, xpAwarded: toCredit, dailyCapReached: toCredit < cheerXpAmount };
 }
 
@@ -550,4 +597,214 @@ export async function getPublicProfile(targetUserId: string): Promise<PublicProf
       quizAccuracy.total > 0 ? Math.round((quizAccuracy.correct / quizAccuracy.total) * 100) : null,
     currentWorld,
   };
+}
+
+// --- League settlement (Phase 6 Checkpoint 3, docs/ARCHITECTURE.md D55/D56) ---
+
+export const ARENA_PROMOTE_VM_REWARD_KEY = "arena_promote_vm_reward";
+export const DEFAULT_ARENA_PROMOTE_VM_REWARD = 500; // prototype-sourced, unchanged
+export const ARENA_SAFE_VM_REWARD_KEY = "arena_safe_vm_reward";
+export const DEFAULT_ARENA_SAFE_VM_REWARD = 0; // D55: departs from the prototype's 150, by design
+export const ARENA_LEAGUE_WEEKLY_VM_CAP_KEY = "arena_league_weekly_vm_cap";
+export const DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP = 500;
+// Points at a real row in the existing badge catalog (admin-created via the
+// normal badge editor, criteria.type "external") - null until an admin sets
+// one up, in which case settlement pays VM but skips the crest rather than
+// failing the whole payout over a missing configuration.
+export const ARENA_CREST_BADGE_ID_KEY = "arena_crest_badge_id";
+
+const ZONE_VALUE: Record<LeagueZone, number> = { promote: 2, safe: 1, demote: 0 };
+
+// Pure and exported for direct testing - the prototype's own formula
+// (`Finlamma App.dc.html` L6229: `Math.max(1, Math.round(n/4))` for both the
+// promote and demote zone sizes), unchanged.
+export function computeZonesForRankedList(
+  ranked: { userId: string; rank: number }[],
+): Map<string, LeagueZone> {
+  const n = ranked.length;
+  const zoneN = Math.max(1, Math.round(n / 4));
+  const map = new Map<string, LeagueZone>();
+  ranked.forEach((r, i) => {
+    map.set(r.userId, i < zoneN ? "promote" : i >= n - zoneN ? "demote" : "safe");
+  });
+  return map;
+}
+
+type BestZoneEntry = { scope: string; zone: LeagueZone; xp: number };
+
+// Every scope that could conceivably have a league this week - every
+// published world, every Indian state (a fixed, small, bounded list - see
+// src/server/shared/schemas.ts), plus india/global. A scope below the
+// privacy floor (docs/ARCHITECTURE.md D52) is simply skipped entirely below,
+// not just hidden from display - the floor gates whether a scope pays out
+// at all, not only whether its ladder renders.
+async function allCandidateScopes(): Promise<ArenaScope[]> {
+  const worlds = await listPublishedWorldsOrdered();
+  return [
+    { kind: "india" as const },
+    { kind: "global" as const },
+    ...INDIAN_STATES.map((state) => ({ kind: "state" as const, state })),
+    ...worlds.map((w) => ({ kind: "world" as const, worldId: w.id })),
+  ];
+}
+
+// Runs weekly (src/inngest/functions/arena-league-settlement.ts, Monday
+// 00:30 IST) against the week that just ended. Two phases: (1) per scope,
+// rank + assign zones + persist league_members/leaderboard_snapshots -
+// every scope that meets the floor, independent of who gets paid; (2) per
+// learner, pick their single BEST-qualifying zone across every scope they
+// were ranked in this week (docs/ARCHITECTURE.md D55 - never summed) and pay
+// it once, idempotently (league_settlements' own unique index is what makes
+// a retried run a no-op, not an app-level "already paid?" check).
+export async function settleArenaLeaguesForWeek(): Promise<{
+  weekStartDate: string;
+  scopesSettled: number;
+  usersSettled: number;
+}> {
+  const now = new Date();
+  const weekEndUtc = istWeekStartUtc(now); // start of the CURRENT week = exclusive end of the one just closed
+  const weekStartUtc = new Date(weekEndUtc.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const weekStartDate = istWeekStartDate(weekStartUtc);
+  const previousWeekStartDate = istWeekStartDate(new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000));
+
+  const [promoteVm, safeVm, weeklyCap, minPoolSize, multiplier, crestBadgeIdRaw, scopes] = await Promise.all([
+    getSettingNumber(ARENA_PROMOTE_VM_REWARD_KEY, DEFAULT_ARENA_PROMOTE_VM_REWARD),
+    getSettingNumber(ARENA_SAFE_VM_REWARD_KEY, DEFAULT_ARENA_SAFE_VM_REWARD),
+    getSettingNumber(ARENA_LEAGUE_WEEKLY_VM_CAP_KEY, DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP),
+    getSettingNumber(ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY, DEFAULT_ARENA_MIN_LEADERBOARD_POOL_SIZE),
+    getVmIssuanceMultiplier(),
+    getSettingJson(ARENA_CREST_BADGE_ID_KEY),
+    allCandidateScopes(),
+  ]);
+  const crestBadgeId = typeof crestBadgeIdRaw === "string" ? crestBadgeIdRaw : null;
+
+  const bestByUser = new Map<string, BestZoneEntry>();
+  let scopesSettled = 0;
+
+  for (const scope of scopes) {
+    const encoded = encodeScope(scope);
+    const rows = await weeklyXpByScope(scope, weekStartUtc, weekEndUtc);
+    if (rows.length < minPoolSize) continue; // D52: below the floor, this scope doesn't settle at all
+
+    const ranked = rankRows(rows);
+    const zones = computeZonesForRankedList(ranked);
+    const prevRanks = await getLastWeekRanksForScope(encoded, previousWeekStartDate);
+    const league = await ensureLeague(encoded);
+
+    await replaceLeagueMembers(
+      league.id,
+      ranked.map((r) => ({ userId: r.userId, zone: zones.get(r.userId)!, rank: r.rank })),
+    );
+    await upsertLeaderboardSnapshotIfNew({
+      weekStartDate,
+      scope: encoded,
+      poolSize: ranked.length,
+      rankings: ranked.map((r) => ({
+        userId: r.userId,
+        rank: r.rank,
+        xp: r.xp,
+        zone: zones.get(r.userId)!,
+        prevRank: prevRanks.get(r.userId) ?? null,
+      })),
+    });
+    scopesSettled++;
+
+    for (const r of ranked) {
+      const zone = zones.get(r.userId)!;
+      const existing = bestByUser.get(r.userId);
+      if (!existing || ZONE_VALUE[zone] > ZONE_VALUE[existing.zone]) {
+        bestByUser.set(r.userId, { scope: encoded, zone, xp: r.xp });
+      }
+    }
+  }
+
+  let usersSettled = 0;
+  for (const [userId, best] of bestByUser) {
+    const nominal = best.zone === "promote" ? promoteVm : best.zone === "safe" ? safeVm : 0;
+    const vmAwarded = Math.min(Math.round(nominal * multiplier), weeklyCap);
+
+    const paid = await db.transaction(async (tx) => {
+      const settlement = await insertLeagueSettlementIfNew(tx, {
+        userId,
+        weekStartDate,
+        scope: best.scope,
+        zone: best.zone,
+        xp: best.xp,
+        vmAwarded,
+      });
+      if (!settlement) return false; // already settled this week - no-op
+
+      if (vmAwarded > 0) {
+        await insertVmoneyLedgerEntryIfNew(tx, {
+          userId,
+          amountPaise: vmAwarded * VM_TO_LEDGER_PAISE,
+          sourceType: "arena_league_reward",
+          sourceId: settlement.id,
+          ruleId: null,
+          multiplierApplied: multiplier,
+          reason: `Arena ${best.zone} zone reward (week of ${weekStartDate})`,
+        });
+      }
+      if (best.zone === "promote" && crestBadgeId) {
+        await insertUserBadgeIfAbsent(userId, crestBadgeId, tx);
+      }
+      return true;
+    });
+    if (paid) usersSettled++;
+  }
+
+  return { weekStartDate, scopesSettled, usersSettled };
+}
+
+// Admin editor (`/admin/settings`, settings.manage) for every settlement
+// tunable at once - staff see and change these as one form, same as every
+// other grouped settings_kv editor in this codebase.
+export async function getArenaLeagueSettingsForAdmin(): Promise<ArenaLeagueSettingsInput> {
+  const [promoteVmReward, safeVmReward, weeklyVmCap, cheerWeeklySenderReceiverCap, crestBadgeIdRaw] =
+    await Promise.all([
+      getSettingNumber(ARENA_PROMOTE_VM_REWARD_KEY, DEFAULT_ARENA_PROMOTE_VM_REWARD),
+      getSettingNumber(ARENA_SAFE_VM_REWARD_KEY, DEFAULT_ARENA_SAFE_VM_REWARD),
+      getSettingNumber(ARENA_LEAGUE_WEEKLY_VM_CAP_KEY, DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP),
+      getSettingNumber(CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY, DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP),
+      getSettingJson(ARENA_CREST_BADGE_ID_KEY),
+    ]);
+  return {
+    promoteVmReward,
+    safeVmReward,
+    weeklyVmCap,
+    cheerWeeklySenderReceiverCap,
+    crestBadgeId: typeof crestBadgeIdRaw === "string" ? crestBadgeIdRaw : null,
+  };
+}
+
+export async function updateArenaLeagueSettingsForAdmin(
+  actor: { id: string },
+  input: ArenaLeagueSettingsInput,
+  meta: RequestMeta,
+): Promise<ArenaLeagueSettingsInput> {
+  const previous = await getArenaLeagueSettingsForAdmin();
+
+  await Promise.all([
+    setSettingJson(ARENA_PROMOTE_VM_REWARD_KEY, input.promoteVmReward, "Arena league promote-zone weekly VM reward"),
+    setSettingJson(ARENA_SAFE_VM_REWARD_KEY, input.safeVmReward, "Arena league safe-zone weekly VM reward"),
+    setSettingJson(ARENA_LEAGUE_WEEKLY_VM_CAP_KEY, input.weeklyVmCap, "Arena league weekly VM cap per learner"),
+    setSettingJson(
+      CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY,
+      input.cheerWeeklySenderReceiverCap,
+      "Arena cheers: weekly XP cap per sender-receiver pair",
+    ),
+    setSettingJson(ARENA_CREST_BADGE_ID_KEY, input.crestBadgeId, "Badge id awarded for the Arena promote-zone crest"),
+  ]);
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "arena.league_settings_updated",
+    targetType: "settings_kv",
+    targetId: "arena_league_settings",
+    metadata: { previous, next: input },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return input;
 }

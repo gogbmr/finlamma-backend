@@ -22,6 +22,13 @@ const mockReplaceUserChipSelection = vi.fn();
 const mockGetWorldTitleById = vi.fn();
 const mockCountPublishedLessonsInWorld = vi.fn();
 const mockCountCompletedLessonsForUserInWorld = vi.fn();
+const mockGetLeagueZonesForScope = vi.fn();
+const mockEnsureLeague = vi.fn();
+const mockReplaceLeagueMembers = vi.fn();
+const mockGetLastWeekRanksForScope = vi.fn();
+const mockUpsertLeaderboardSnapshotIfNew = vi.fn();
+const mockInsertLeagueSettlementIfNew = vi.fn();
+const mockSumCheerXpFromSenderToReceiverSince = vi.fn();
 vi.mock("./repo", () => ({
   getCurrentWorldIdForUser: (userId: unknown) => mockGetCurrentWorldIdForUser(userId),
   weeklyXpByScope: (scope: unknown, since: unknown) => mockWeeklyXpByScope(scope, since),
@@ -45,13 +52,39 @@ vi.mock("./repo", () => ({
   getWorldTitleById: (id: unknown) => mockGetWorldTitleById(id),
   countPublishedLessonsInWorld: (id: unknown) => mockCountPublishedLessonsInWorld(id),
   countCompletedLessonsForUserInWorld: (u: unknown, w: unknown) => mockCountCompletedLessonsForUserInWorld(u, w),
+  getLeagueZonesForScope: (scope: unknown) => mockGetLeagueZonesForScope(scope),
+  ensureLeague: (scope: unknown) => mockEnsureLeague(scope),
+  replaceLeagueMembers: (leagueId: unknown, entries: unknown) => mockReplaceLeagueMembers(leagueId, entries),
+  getLastWeekRanksForScope: (scope: unknown, week: unknown) => mockGetLastWeekRanksForScope(scope, week),
+  upsertLeaderboardSnapshotIfNew: (input: unknown) => mockUpsertLeaderboardSnapshotIfNew(input),
+  insertLeagueSettlementIfNew: (tx: unknown, input: unknown) => mockInsertLeagueSettlementIfNew(tx, input),
+  sumCheerXpFromSenderToReceiverSince: (s: unknown, r: unknown, since: unknown) =>
+    mockSumCheerXpFromSenderToReceiverSince(s, r, since),
+}));
+
+const mockDbTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({}));
+vi.mock("@/db/client", () => ({ db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => mockDbTransaction(fn) } }));
+
+vi.mock("@/server/economy/schemas", () => ({ VM_TO_LEDGER_PAISE: 100 }));
+
+const mockGetVmIssuanceMultiplier = vi.fn();
+vi.mock("@/server/economy/service", () => ({
+  getVmIssuanceMultiplier: () => mockGetVmIssuanceMultiplier(),
+}));
+
+const mockInsertUserBadgeIfAbsent = vi.fn();
+vi.mock("@/server/badges/repo", () => ({
+  insertUserBadgeIfAbsent: (userId: unknown, badgeId: unknown, tx: unknown) =>
+    mockInsertUserBadgeIfAbsent(userId, badgeId, tx),
 }));
 
 const mockCreditXpRow = vi.fn();
 const mockSumXpSince = vi.fn();
+const mockInsertVmoneyLedgerEntryIfNew = vi.fn();
 vi.mock("@/server/economy/repo", () => ({
   creditXpRow: (input: unknown) => mockCreditXpRow(input),
   sumXpSince: (userId: unknown, since: unknown) => mockSumXpSince(userId, since),
+  insertVmoneyLedgerEntryIfNew: (tx: unknown, input: unknown) => mockInsertVmoneyLedgerEntryIfNew(tx, input),
 }));
 
 const mockGetLevelInfo = vi.fn();
@@ -82,8 +115,13 @@ vi.mock("@/lib/activity-log", () => ({
 }));
 
 const mockGetSettingNumber = vi.fn();
+const mockGetSettingJson = vi.fn();
+const mockSetSettingJson = vi.fn();
 vi.mock("@/lib/settings", () => ({
   getSettingNumber: (key: unknown, fallback: unknown) => mockGetSettingNumber(key, fallback),
+  getSettingJson: (key: unknown) => mockGetSettingJson(key),
+  setSettingJson: (key: unknown, value: unknown, description: unknown) =>
+    mockSetSettingJson(key, value, description),
 }));
 
 import {
@@ -96,10 +134,14 @@ import {
   getPublicProfile,
   getWorldLeaderboard,
   getWorldsLeaderboard,
+  computeZonesForRankedList,
+  getArenaLeagueSettingsForAdmin,
   listAboutMeChipsForAdmin,
   sendCheer,
   setMySelectedChips,
+  settleArenaLeaguesForWeek,
   updateAboutMeChipForAdmin,
+  updateArenaLeagueSettingsForAdmin,
 } from "./service";
 
 const META = { ip: null, userAgent: null };
@@ -112,6 +154,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetSettingNumber.mockResolvedValue(20);
   mockGetDisplayNamesForUserIds.mockImplementation((ids: string[]) => Promise.resolve(names(ids)));
+  mockGetLeagueZonesForScope.mockResolvedValue(new Map());
 });
 
 describe("getLeaderboard", () => {
@@ -197,6 +240,43 @@ describe("getLeaderboard", () => {
 
     expect(result.self).toBeNull();
   });
+
+  it("D54: shows demote only on the caller's own row, never on anyone else's", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([
+      { userId: "u1", xp: 10 }, // the caller - actually in the demote zone
+      { userId: "u2", xp: 20 },
+    ]);
+    mockGetLeagueZonesForScope.mockResolvedValueOnce(new Map([["u1", "demote"], ["u2", "demote"]]));
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    const self = result.rows.find((r) => r.userId === "u1")!;
+    const other = result.rows.find((r) => r.userId === "u2")!;
+    expect(self.zone).toBe("demote"); // visible to the caller about themselves
+    expect(other.zone).toBeNull(); // never visible for a peer, even though it's really "demote" too
+  });
+
+  it("D54: shows promote and safe on any row, not just the caller's own", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([
+      { userId: "u1", xp: 30 },
+      { userId: "u2", xp: 20 },
+    ]);
+    mockGetLeagueZonesForScope.mockResolvedValueOnce(new Map([["u1", "promote"], ["u2", "safe"]]));
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    expect(result.rows.find((r) => r.userId === "u1")!.zone).toBe("promote");
+    expect(result.rows.find((r) => r.userId === "u2")!.zone).toBe("safe");
+  });
+
+  it("returns zone: null for a scope that hasn't settled yet (no league_members row)", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([{ userId: "u1", xp: 10 }]);
+    // mockGetLeagueZonesForScope's beforeEach default (empty Map) applies.
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    expect(result.rows[0].zone).toBeNull();
+  });
 });
 
 describe("getWorldLeaderboard", () => {
@@ -281,8 +361,9 @@ describe("sendCheer", () => {
   it("allows a receiver with cheersEnabled missing (predates the preference) - defaults to enabled", async () => {
     mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null, preferences: {} });
     mockInsertCheerIfNew.mockResolvedValueOnce({ id: "cheer-1" });
-    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50);
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50).mockResolvedValueOnce(15);
     mockSumCheerXpCreditedToday.mockResolvedValueOnce(0);
+    mockSumCheerXpFromSenderToReceiverSince.mockResolvedValueOnce(0);
 
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
@@ -309,8 +390,9 @@ describe("sendCheer", () => {
   it("clamps the award to what remains of the receiver's daily cap", async () => {
     mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null, preferences: { cheersEnabled: true } });
     mockInsertCheerIfNew.mockResolvedValueOnce({ id: "cheer-2" });
-    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50);
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50).mockResolvedValueOnce(15);
     mockSumCheerXpCreditedToday.mockResolvedValueOnce(48); // only 2 remain of the 50 cap
+    mockSumCheerXpFromSenderToReceiverSince.mockResolvedValueOnce(0);
 
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
@@ -321,8 +403,9 @@ describe("sendCheer", () => {
   it("credits zero (never negative) and skips the ledger write once the cap is fully used", async () => {
     mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null, preferences: { cheersEnabled: true } });
     mockInsertCheerIfNew.mockResolvedValueOnce({ id: "cheer-3" });
-    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50);
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50).mockResolvedValueOnce(15);
     mockSumCheerXpCreditedToday.mockResolvedValueOnce(50);
+    mockSumCheerXpFromSenderToReceiverSince.mockResolvedValueOnce(0);
 
     const result = await sendCheer({ id: "u1" }, "u2", META);
 
@@ -330,6 +413,19 @@ describe("sendCheer", () => {
     expect(mockCreditXpRow).not.toHaveBeenCalled();
     // The cheer itself (and its idempotency record) still logs, even at 0 XP.
     expect(mockLogActivity).toHaveBeenCalled();
+  });
+
+  it("D56: clamps to what remains of the weekly per-sender-receiver cap, even under the daily cap", async () => {
+    mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null, preferences: { cheersEnabled: true } });
+    mockInsertCheerIfNew.mockResolvedValueOnce({ id: "cheer-4" });
+    mockGetSettingNumber.mockResolvedValueOnce(5).mockResolvedValueOnce(50).mockResolvedValueOnce(15);
+    mockSumCheerXpCreditedToday.mockResolvedValueOnce(0); // nowhere near the daily cap
+    mockSumCheerXpFromSenderToReceiverSince.mockResolvedValueOnce(13); // only 2 remain of this pair's 15/week
+
+    const result = await sendCheer({ id: "u1" }, "u2", META);
+
+    expect(result).toEqual({ alreadyCheeredToday: false, xpAwarded: 2, dailyCapReached: true });
+    expect(mockSumCheerXpFromSenderToReceiverSince).toHaveBeenCalledWith("u1", "u2", expect.any(Date));
   });
 });
 
@@ -506,5 +602,253 @@ describe("getPublicProfile", () => {
     expect(result.currentWorld).toBeNull();
     expect(result.quizAccuracyPct).toBeNull();
     expect(mockGetWorldTitleById).not.toHaveBeenCalled();
+  });
+});
+
+describe("computeZonesForRankedList", () => {
+  it("matches the prototype's formula: promoN = demoN = max(1, round(n/4))", () => {
+    const ranked = Array.from({ length: 20 }, (_, i) => ({ userId: `u${i}`, rank: i + 1 }));
+
+    const zones = computeZonesForRankedList(ranked);
+
+    expect(zones.get("u0")).toBe("promote"); // rank 1
+    expect(zones.get("u4")).toBe("promote"); // rank 5 - last of the top 5 (zoneN=5)
+    expect(zones.get("u5")).toBe("safe"); // rank 6
+    expect(zones.get("u14")).toBe("safe"); // rank 15
+    expect(zones.get("u15")).toBe("demote"); // rank 16 - first of the bottom 5
+    expect(zones.get("u19")).toBe("demote"); // rank 20
+  });
+
+  it("never produces a zero-size zone for a tiny pool - max(1, ...)", () => {
+    const ranked = [{ userId: "u0", rank: 1 }, { userId: "u1", rank: 2 }, { userId: "u2", rank: 3 }];
+
+    const zones = computeZonesForRankedList(ranked);
+
+    expect(zones.get("u0")).toBe("promote");
+    expect(zones.get("u1")).toBe("safe");
+    expect(zones.get("u2")).toBe("demote");
+  });
+});
+
+describe("settleArenaLeaguesForWeek", () => {
+  function settingsImpl(overrides: Record<string, number> = {}) {
+    const defaults: Record<string, number> = {
+      arena_promote_vm_reward: 500,
+      arena_safe_vm_reward: 0,
+      arena_league_weekly_vm_cap: 500,
+      arena_min_leaderboard_pool_size: 2,
+    };
+    return (key: string, fallback: number) => Promise.resolve(overrides[key] ?? defaults[key] ?? fallback);
+  }
+
+  beforeEach(() => {
+    mockListPublishedWorldsOrdered.mockResolvedValue([]);
+    mockGetLastWeekRanksForScope.mockResolvedValue(new Map());
+    mockEnsureLeague.mockImplementation((scope: string) => Promise.resolve({ id: `league-${scope}` }));
+    mockGetVmIssuanceMultiplier.mockResolvedValue(1);
+    mockGetSettingJson.mockResolvedValue(null); // no crest badge configured, by default
+  });
+
+  it("pays the promote-zone reward, writes league_members + snapshot, no crest when none is configured", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl());
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global"
+        ? Promise.resolve([{ userId: "u1", xp: 100 }, { userId: "u2", xp: 10 }])
+        : Promise.resolve([]),
+    );
+    mockInsertLeagueSettlementIfNew.mockImplementation((_tx: unknown, input: unknown) =>
+      Promise.resolve({ id: "settlement-1", ...(input as object) }),
+    );
+
+    const result = await settleArenaLeaguesForWeek();
+
+    expect(result.scopesSettled).toBe(1); // only "global" met the floor
+    expect(result.usersSettled).toBe(2);
+    expect(mockReplaceLeagueMembers).toHaveBeenCalledWith("league-global", [
+      { userId: "u1", zone: "promote", rank: 1 },
+      { userId: "u2", zone: "demote", rank: 2 },
+    ]);
+    expect(mockInsertVmoneyLedgerEntryIfNew).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: "u1", amountPaise: 500 * 100, sourceType: "arena_league_reward" }),
+    );
+    expect(mockInsertVmoneyLedgerEntryIfNew).toHaveBeenCalledTimes(1); // u2 (demote) gets none
+    expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+  });
+
+  it("D55: pays only the single best zone across scopes, never summed", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl());
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string; state?: string }) => {
+      if (scope.kind === "global") {
+        return Promise.resolve([
+          { userId: "u1", xp: 100 },
+          { userId: "u2", xp: 50 },
+          { userId: "u3", xp: 40 },
+          { userId: "u4", xp: 10 },
+        ]); // n=4, zoneN=1: u1 promote
+      }
+      if (scope.kind === "state" && scope.state === "Maharashtra") {
+        return Promise.resolve([
+          { userId: "u5", xp: 100 },
+          { userId: "u1", xp: 50 }, // u1 only "safe" here
+          { userId: "u6", xp: 10 },
+          { userId: "u7", xp: 5 },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+    mockInsertLeagueSettlementIfNew.mockImplementation((_tx: unknown, input: unknown) =>
+      Promise.resolve({ id: "settlement", ...(input as object) }),
+    );
+
+    await settleArenaLeaguesForWeek();
+
+    expect(mockInsertLeagueSettlementIfNew).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: "u1", scope: "global", zone: "promote", xp: 100, vmAwarded: 500 }),
+    );
+  });
+
+  it("clamps the awarded VM to the weekly cap even for a promote-zone reward", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl({ arena_league_weekly_vm_cap: 200, arena_min_leaderboard_pool_size: 1 }));
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global" ? Promise.resolve([{ userId: "u1", xp: 100 }]) : Promise.resolve([]),
+    );
+    mockInsertLeagueSettlementIfNew.mockImplementation((_tx: unknown, input: unknown) =>
+      Promise.resolve({ id: "s1", ...(input as object) }),
+    );
+
+    await settleArenaLeaguesForWeek();
+
+    expect(mockInsertVmoneyLedgerEntryIfNew).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ amountPaise: 200 * 100 }),
+    );
+  });
+
+  it("applies the global VM issuance multiplier before the weekly cap clamp", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl({ arena_league_weekly_vm_cap: 5000, arena_min_leaderboard_pool_size: 1 }));
+    mockGetVmIssuanceMultiplier.mockResolvedValueOnce(2);
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global" ? Promise.resolve([{ userId: "u1", xp: 100 }]) : Promise.resolve([]),
+    );
+    mockInsertLeagueSettlementIfNew.mockImplementation((_tx: unknown, input: unknown) =>
+      Promise.resolve({ id: "s1", ...(input as object) }),
+    );
+
+    await settleArenaLeaguesForWeek();
+
+    expect(mockInsertVmoneyLedgerEntryIfNew).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ amountPaise: 1000 * 100, multiplierApplied: 2 }),
+    );
+  });
+
+  it("is idempotent - a user already settled this week is skipped, no VM/badge credit attempted", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl());
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global" ? Promise.resolve([{ userId: "u1", xp: 100 }]) : Promise.resolve([]),
+    );
+    mockInsertLeagueSettlementIfNew.mockResolvedValueOnce(null); // conflict - already settled
+
+    const result = await settleArenaLeaguesForWeek();
+
+    expect(result.usersSettled).toBe(0);
+    expect(mockInsertVmoneyLedgerEntryIfNew).not.toHaveBeenCalled();
+    expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+  });
+
+  it("D55: safe zone pays 0 VM by default but still records a settlement row", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl());
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global"
+        ? Promise.resolve([
+            { userId: "u1", xp: 100 },
+            { userId: "u2", xp: 50 },
+            { userId: "u3", xp: 10 },
+            { userId: "u4", xp: 5 },
+          ])
+        : Promise.resolve([]),
+    );
+    mockInsertLeagueSettlementIfNew.mockImplementation((_tx: unknown, input: unknown) =>
+      Promise.resolve({ id: `s-${(input as { userId: string }).userId}`, ...(input as object) }),
+    );
+
+    await settleArenaLeaguesForWeek();
+
+    expect(mockInsertLeagueSettlementIfNew).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: "u2", zone: "safe", vmAwarded: 0 }),
+    );
+    expect(mockInsertVmoneyLedgerEntryIfNew).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ userId: "u2" }),
+    );
+  });
+
+  it("awards the configured crest badge for a promote-zone payout, inside the same transaction", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl({ arena_min_leaderboard_pool_size: 1 }));
+    mockGetSettingJson.mockResolvedValueOnce("badge-123");
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global" ? Promise.resolve([{ userId: "u1", xp: 100 }]) : Promise.resolve([]),
+    );
+    mockInsertLeagueSettlementIfNew.mockImplementation((_tx: unknown, input: unknown) =>
+      Promise.resolve({ id: "s1", ...(input as object) }),
+    );
+
+    await settleArenaLeaguesForWeek();
+
+    expect(mockInsertUserBadgeIfAbsent).toHaveBeenCalledWith("u1", "badge-123", expect.anything());
+  });
+
+  it("D52: skips a scope entirely when its pool is below the privacy floor - no league_members or snapshot write", async () => {
+    mockGetSettingNumber.mockImplementation(settingsImpl({ arena_min_leaderboard_pool_size: 10 }));
+    mockWeeklyXpByScope.mockImplementation((scope: { kind: string }) =>
+      scope.kind === "global" ? Promise.resolve([{ userId: "u1", xp: 100 }, { userId: "u2", xp: 10 }]) : Promise.resolve([]),
+    );
+
+    const result = await settleArenaLeaguesForWeek();
+
+    expect(result.scopesSettled).toBe(0);
+    expect(result.usersSettled).toBe(0);
+    expect(mockReplaceLeagueMembers).not.toHaveBeenCalled();
+    expect(mockUpsertLeaderboardSnapshotIfNew).not.toHaveBeenCalled();
+  });
+});
+
+describe("getArenaLeagueSettingsForAdmin / updateArenaLeagueSettingsForAdmin", () => {
+  it("reads every setting with its documented default", async () => {
+    mockGetSettingNumber.mockImplementation((_key: string, fallback: number) => Promise.resolve(fallback));
+    mockGetSettingJson.mockResolvedValueOnce(null);
+
+    const result = await getArenaLeagueSettingsForAdmin();
+
+    expect(result).toEqual({
+      promoteVmReward: 500,
+      safeVmReward: 0,
+      weeklyVmCap: 500,
+      cheerWeeklySenderReceiverCap: 15,
+      crestBadgeId: null,
+    });
+  });
+
+  it("writes every setting and logs the change", async () => {
+    mockGetSettingNumber.mockImplementation((_key: string, fallback: number) => Promise.resolve(fallback));
+    mockGetSettingJson.mockResolvedValueOnce(null);
+    const input = {
+      promoteVmReward: 600,
+      safeVmReward: 50,
+      weeklyVmCap: 600,
+      cheerWeeklySenderReceiverCap: 20,
+      crestBadgeId: "badge-1",
+    };
+
+    const result = await updateArenaLeagueSettingsForAdmin({ id: "staff1" }, input, META);
+
+    expect(result).toEqual(input);
+    expect(mockSetSettingJson).toHaveBeenCalledTimes(5);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "arena.league_settings_updated", actorId: "staff1" }),
+    );
   });
 });

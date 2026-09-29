@@ -9,8 +9,18 @@ export const BadgeCategoryEnum = z.enum(["learning", "streak", "trading", "news"
 // (src/server/badges/evaluators.ts) - same "evaluator in code, which one and
 // its threshold in data" split as src/server/daily-goals/schemas.ts. Staff
 // pick an existing type and a threshold; a genuinely new type needs a new
-// evaluator (a code change).
-export const BadgeCriteriaTypeEnum = z.enum(["lessons_completed", "streak_days", "quiz_accuracy_pct"]);
+// evaluator (a code change). "external" (docs/ARCHITECTURE.md D55) is the
+// one deliberate exception: it's never auto-evaluated - only awarded by
+// external code calling insertUserBadgeIfAbsent directly (Phase 6
+// Checkpoint 3's Arena league crest is the first caller). `threshold` is a
+// meaningless placeholder for this type (staff just set 1) since there's no
+// progress to measure toward something nothing computes.
+export const BadgeCriteriaTypeEnum = z.enum([
+  "lessons_completed",
+  "streak_days",
+  "quiz_accuracy_pct",
+  "external",
+]);
 export const BadgeCriteriaSchema = z.object({
   type: BadgeCriteriaTypeEnum,
   threshold: z.number().int().positive(),

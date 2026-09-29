@@ -288,6 +288,13 @@
       "when": 1790609256574,
       "tag": "0040_careless_black_widow",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790661001984,
+      "tag": "0041_lonely_hammerhead",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,10 @@ import { db } from "@/db/client";
 import {
   aboutMeChips,
   cheers,
+  leaderboardSnapshots,
+  leagueMembers,
+  leagues,
+  leagueSettlements,
   lessonProgress,
   lessons,
   userAboutMeChips,
@@ -90,8 +94,13 @@ export type LeaderboardRow = { userId: string; xp: number };
 // `users` yet, so nothing distinguishes them until a real need for one
 // arises; kept as two scope kinds now because the app's own lens switch
 // (AR-01/AR-07) already names both, not because they differ in practice yet.
-export async function weeklyXpByScope(scope: ArenaScope, weekStartUtc: Date): Promise<LeaderboardRow[]> {
+export async function weeklyXpByScope(
+  scope: ArenaScope,
+  weekStartUtc: Date,
+  weekEndUtc?: Date,
+): Promise<LeaderboardRow[]> {
   const conditions = [gte(xpEvents.createdAt, weekStartUtc), isNull(users.deletedAt)];
+  if (weekEndUtc) conditions.push(lt(xpEvents.createdAt, weekEndUtc));
 
   if (scope.kind === "state") {
     conditions.push(eq(users.state, scope.state));
@@ -241,6 +250,135 @@ export async function listRecentXpEvents(limit: number): Promise<RecentXpEvent[]
     .orderBy(desc(xpEvents.createdAt))
     .limit(limit);
   return rows;
+}
+
+// --- League settlement (Phase 6 Checkpoint 3, docs/ARCHITECTURE.md D55) ---
+
+// leagues has one persistent row per scope (see the top-of-file scope-key
+// comment) - get-or-create rather than a separate seed step, since the set
+// of scopes that ever need a row (every world, every state with an active
+// learner, india, global) isn't known ahead of time.
+export async function ensureLeague(scope: string) {
+  const [existing] = await db.select().from(leagues).where(eq(leagues.scope, scope)).limit(1);
+  if (existing) return existing;
+  const [created] = await db
+    .insert(leagues)
+    .values({ scope })
+    .onConflictDoNothing({ target: leagues.scope })
+    .returning();
+  if (created) return created;
+  // Lost a create race against a concurrent settlement run for the same
+  // scope (shouldn't happen in practice - settlement runs once, sequentially
+  // per scope - but a plain re-select is the honest fallback rather than
+  // assuming created is never null).
+  const [row] = await db.select().from(leagues).where(eq(leagues.scope, scope)).limit(1);
+  return row!;
+}
+
+// Replaces a scope's entire current membership - the ranked list this
+// settlement computed IS the new membership; a learner absent from it
+// (zero XP this week) simply isn't a current member, same "always sent
+// whole, never merged" reasoning src/server/arena/repo.ts's chip-selection
+// replace already uses.
+export async function replaceLeagueMembers(
+  leagueId: string,
+  entries: { userId: string; zone: "promote" | "safe" | "demote"; rank: number }[],
+) {
+  await db.transaction(async (tx) => {
+    await tx.delete(leagueMembers).where(eq(leagueMembers.leagueId, leagueId));
+    if (entries.length === 0) return;
+    await tx.insert(leagueMembers).values(entries.map((e) => ({ leagueId, ...e })));
+  });
+}
+
+export async function getLeagueMemberZone(
+  scope: string,
+  userId: string,
+): Promise<"promote" | "safe" | "demote" | null> {
+  const [row] = await db
+    .select({ zone: leagueMembers.zone })
+    .from(leagues)
+    .innerJoin(leagueMembers, eq(leagueMembers.leagueId, leagues.id))
+    .where(and(eq(leagues.scope, scope), eq(leagueMembers.userId, userId)))
+    .limit(1);
+  return row?.zone ?? null;
+}
+
+// Bulk read for the leaderboard response's per-row zone (D54 visibility) -
+// one query per scope's whole membership rather than one per row.
+export async function getLeagueZonesForScope(scope: string): Promise<Map<string, "promote" | "safe" | "demote">> {
+  const rows = await db
+    .select({ userId: leagueMembers.userId, zone: leagueMembers.zone })
+    .from(leagues)
+    .innerJoin(leagueMembers, eq(leagueMembers.leagueId, leagues.id))
+    .where(eq(leagues.scope, scope));
+  return new Map(rows.map((r) => [r.userId, r.zone]));
+}
+
+export async function getLastWeekRanksForScope(
+  scope: string,
+  weekStartDate: string,
+): Promise<Map<string, number>> {
+  const [row] = await db
+    .select({ rankings: leaderboardSnapshots.rankings })
+    .from(leaderboardSnapshots)
+    .where(and(eq(leaderboardSnapshots.scope, scope), eq(leaderboardSnapshots.weekStartDate, weekStartDate)))
+    .limit(1);
+  if (!row) return new Map();
+  return new Map(row.rankings.map((r) => [r.userId, r.rank]));
+}
+
+// Never overwritten once written for a given (weekStartDate, scope) - a
+// retried settlement run for the same week just no-ops on conflict, same
+// "the finished week's record is permanent" reasoning report_snapshots
+// already follows.
+export async function upsertLeaderboardSnapshotIfNew(input: {
+  weekStartDate: string;
+  scope: string;
+  poolSize: number;
+  rankings: { userId: string; rank: number; xp: number; zone: string; prevRank: number | null }[];
+}) {
+  await db
+    .insert(leaderboardSnapshots)
+    .values(input)
+    .onConflictDoNothing({ target: [leaderboardSnapshots.weekStartDate, leaderboardSnapshots.scope] });
+}
+
+// The idempotency mechanism for the whole weekly payout - a conflict here
+// (this user already has a settlement row for this week) means "already
+// paid," full stop, checked BEFORE any VM/badge credit is attempted, inside
+// the same transaction as both (src/server/arena/service.ts's
+// settleArenaLeaguesForWeek).
+export async function insertLeagueSettlementIfNew(
+  txDb: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0],
+  input: { userId: string; weekStartDate: string; scope: string; zone: "promote" | "safe" | "demote"; xp: number; vmAwarded: number },
+) {
+  const [row] = await txDb
+    .insert(leagueSettlements)
+    .values(input)
+    .onConflictDoNothing({ target: [leagueSettlements.userId, leagueSettlements.weekStartDate] })
+    .returning();
+  return row ?? null;
+}
+
+// docs/ARCHITECTURE.md D56: the weekly per-(sender,receiver) cheer-XP cap -
+// sums XP already credited from THIS sender to THIS receiver via cheers
+// since the current IST week's start, so sendCheer can clamp against
+// whatever of the pair's weekly allowance remains.
+export async function sumCheerXpFromSenderToReceiverSince(
+  senderId: string,
+  receiverId: string,
+  sinceUtc: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ total: sql<string | number>`coalesce(sum(${xpEvents.amount}), 0)` })
+    .from(cheers)
+    .innerJoin(
+      xpEvents,
+      and(eq(xpEvents.sourceType, "cheer"), eq(xpEvents.sourceId, cheers.id), eq(xpEvents.userId, cheers.receiverId)),
+    )
+    .where(and(eq(cheers.senderId, senderId), eq(cheers.receiverId, receiverId), gte(cheers.createdAt, sinceUtc)));
+  return toNumber(row?.total ?? 0);
 }
 
 // --- Cheers (AR-12, docs/ARCHITECTURE.md D53) ---

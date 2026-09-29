@@ -1,7 +1,8 @@
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
-import { listAboutMeChipsForAdmin } from "@/server/arena/service";
+import { getArenaLeagueSettingsForAdmin, listAboutMeChipsForAdmin } from "@/server/arena/service";
+import { getBadgeEditorData } from "@/server/badges/service";
 import { getDailyGoalsSettings } from "@/server/daily-goals/service";
 import { getVmIssuanceMultiplier, listRewardRulesForAdmin } from "@/server/economy/service";
 import { getLevelCurveSettings } from "@/server/leveling/service";
@@ -15,6 +16,7 @@ import { LevelCurveSettingsEditor } from "./level-curve-settings-editor";
 import { DailyGoalsSettingsEditor } from "./daily-goals-settings-editor";
 import { RankTitlesEditor } from "./rank-titles-editor";
 import { AboutMeChipsEditor } from "./about-me-chips-editor";
+import { ArenaLeagueSettingsEditor } from "./arena-league-settings-editor";
 import { ScoringSettingsEditor } from "./scoring-settings-editor";
 import { StreaksSettingsEditor } from "./streaks-settings-editor";
 import { TopicsEditor } from "./topics-editor";
@@ -68,5 +70,14 @@ export default async function SettingsPage() {
 async function EconomyManagedSettings() {
   const rewardRules = await listRewardRulesForAdmin();
   const vmIssuanceMultiplier = await getVmIssuanceMultiplier();
-  return <EconomySettingsEditor rewardRules={rewardRules} vmIssuanceMultiplier={vmIssuanceMultiplier} />;
+  const arenaLeagueSettings = await getArenaLeagueSettingsForAdmin();
+  const externalBadges = (await getBadgeEditorData())
+    .filter((b) => b.criteria.type === "external")
+    .map((b) => ({ id: b.id, name: b.name }));
+  return (
+    <>
+      <EconomySettingsEditor rewardRules={rewardRules} vmIssuanceMultiplier={vmIssuanceMultiplier} />
+      <ArenaLeagueSettingsEditor settings={arenaLeagueSettings} externalBadges={externalBadges} />
+    </>
+  );
 }

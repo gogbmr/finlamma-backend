@@ -4727,7 +4727,8 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
         "firstName": "Aarav",
         "lastInitial": "S",
         "xp": 2710,
-        "isSelf": false
+        "isSelf": false,
+        "zone": "promote"
       }
     ],
     "self": {
@@ -4873,7 +4874,8 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
         "firstName": "Aarav",
         "lastInitial": "S",
         "xp": 2710,
-        "isSelf": false
+        "isSelf": false,
+        "zone": "promote"
       }
     ],
     "self": {
