@@ -328,6 +328,30 @@ export async function getLastWeekRanksForScope(
   return new Map(row.rankings.map((r) => [r.userId, r.rank]));
 }
 
+export type SnapshotEntry = { rank: number; poolSize: number; prevRank: number | null };
+
+// Phase 6 Checkpoint 6 (PR-01/03/30 percentile/rank wiring): a single
+// learner's entry in one scope's settled snapshot for one week, or null if
+// there's nothing to report - the scope never settled that week (didn't
+// exist yet, or was below the D52 privacy floor), or the learner had no XP
+// that week even though the scope itself settled for others. Callers treat
+// null as "omit this rank cleanly," never as a 0 or a fabricated value.
+export async function getSnapshotEntryForUser(
+  scope: string,
+  weekStartDate: string,
+  userId: string,
+): Promise<SnapshotEntry | null> {
+  const [row] = await db
+    .select({ poolSize: leaderboardSnapshots.poolSize, rankings: leaderboardSnapshots.rankings })
+    .from(leaderboardSnapshots)
+    .where(and(eq(leaderboardSnapshots.scope, scope), eq(leaderboardSnapshots.weekStartDate, weekStartDate)))
+    .limit(1);
+  if (!row) return null;
+  const entry = row.rankings.find((r) => r.userId === userId);
+  if (!entry) return null;
+  return { rank: entry.rank, poolSize: row.poolSize, prevRank: entry.prevRank };
+}
+
 // Never overwritten once written for a given (weekStartDate, scope) - a
 // retried settlement run for the same week just no-ops on conflict, same
 // "the finished week's record is permanent" reasoning report_snapshots

@@ -86,6 +86,13 @@ export const ReportCardResponseSchema = registry.register(
             "docs/ARCHITECTURE.md D33. Non-null does not mean the weekly email is sending; check " +
             "weeklyEmailOn for that.",
         }),
+      globalRank: z.number().int().positive().nullable().openapi({
+        example: 186,
+        description:
+          "PR-30 (Phase 6 Checkpoint 6): rank in Arena's Global scope, last weekly settlement. " +
+          "Independent of `current`'s own weekly cadence. Null until the first settlement has " +
+          "run for this learner, or if they had no XP that week.",
+      }),
     }),
   }),
 );

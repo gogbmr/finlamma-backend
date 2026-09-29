@@ -29,7 +29,10 @@ const mockGetLastWeekRanksForScope = vi.fn();
 const mockUpsertLeaderboardSnapshotIfNew = vi.fn();
 const mockInsertLeagueSettlementIfNew = vi.fn();
 const mockSumCheerXpFromSenderToReceiverSince = vi.fn();
+const mockGetSnapshotEntryForUser = vi.fn();
 vi.mock("./repo", () => ({
+  getSnapshotEntryForUser: (scope: unknown, week: unknown, userId: unknown) =>
+    mockGetSnapshotEntryForUser(scope, week, userId),
   getCurrentWorldIdForUser: (userId: unknown) => mockGetCurrentWorldIdForUser(userId),
   weeklyXpByScope: (scope: unknown, since: unknown) => mockWeeklyXpByScope(scope, since),
   getDisplayNamesForUserIds: (ids: unknown) => mockGetDisplayNamesForUserIds(ids),
@@ -129,6 +132,7 @@ import {
   deleteAboutMeChipForAdmin,
   getActivityFeed,
   getLeaderboard,
+  getMyArenaRankSummary,
   getMyCheersSummary,
   getMySelectedChips,
   getPublicProfile,
@@ -850,5 +854,120 @@ describe("getArenaLeagueSettingsForAdmin / updateArenaLeagueSettingsForAdmin", (
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "arena.league_settings_updated", actorId: "staff1" }),
     );
+  });
+});
+
+describe("getMyArenaRankSummary", () => {
+  it("returns all-null when Arena has never settled a week for this learner", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce("w1");
+    mockGetSnapshotEntryForUser.mockResolvedValue(null);
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: "Maharashtra" });
+
+    expect(result).toEqual({ world: null, stateOrIndia: null, global: null });
+  });
+
+  it("a scope the settlement job skipped for being below the privacy floor reads identically to 'never settled' - both are cleanly null", async () => {
+    // The repo layer collapses "never settled" and "below the D52 floor"
+    // into the same null (neither ever gets a leaderboard_snapshots row) -
+    // this test documents that both real-world causes produce the same,
+    // correctly-empty result here, not a distinguishable third state.
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockResolvedValue(null);
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: "Sikkim" });
+
+    expect(result).toEqual({ world: null, stateOrIndia: null, global: null });
+  });
+
+  it("world is null outright when the learner has no current world at all", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockResolvedValue(null);
+
+    await getMyArenaRankSummary({ id: "u1", state: null });
+
+    expect(mockGetSnapshotEntryForUser).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^world:/),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("shapes a real entry into rank/poolSize/topPercentPct/rankDelta", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockImplementation((scope: string) =>
+      scope === "global" ? Promise.resolve({ rank: 8, poolSize: 100, prevRank: 20 }) : Promise.resolve(null),
+    );
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: null });
+
+    expect(result.global).toEqual({
+      scope: "global",
+      rank: 8,
+      poolSize: 100,
+      topPercentPct: 8, // ceil(8/100*100)
+      rankDelta: 12, // prevRank(20) - rank(8) = improved by 12 places
+    });
+  });
+
+  it("never reports a 0% - a rank-1 entry in a huge pool still reads as top 1%, and rankDelta is null with no prior week", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockImplementation((scope: string) =>
+      scope === "global" ? Promise.resolve({ rank: 1, poolSize: 10000, prevRank: null }) : Promise.resolve(null),
+    );
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: null });
+
+    expect(result.global!.topPercentPct).toBe(1);
+    expect(result.global!.rankDelta).toBeNull();
+  });
+
+  it("state-or-india: uses the state entry when the learner has a state and it settled", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockImplementation((scope: string) =>
+      scope === "state:Maharashtra"
+        ? Promise.resolve({ rank: 5, poolSize: 200, prevRank: null })
+        : Promise.resolve(null),
+    );
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: "Maharashtra" });
+
+    expect(result.stateOrIndia).toEqual({
+      scope: "state:Maharashtra",
+      rank: 5,
+      poolSize: 200,
+      topPercentPct: 3,
+      rankDelta: null,
+    });
+  });
+
+  it("state-or-india: falls back to India when the learner has no state set", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockImplementation((scope: string) =>
+      scope === "india" ? Promise.resolve({ rank: 40, poolSize: 500, prevRank: null }) : Promise.resolve(null),
+    );
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: null });
+
+    expect(result.stateOrIndia).toEqual({
+      scope: "india",
+      rank: 40,
+      poolSize: 500,
+      topPercentPct: 8,
+      rankDelta: null,
+    });
+  });
+
+  it("state-or-india: falls back to India when the state scope has a state set but didn't settle (below floor) that week", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce(null);
+    mockGetSnapshotEntryForUser.mockImplementation((scope: string) => {
+      if (scope === "state:Sikkim") return Promise.resolve(null); // below floor, never settled
+      if (scope === "india") return Promise.resolve({ rank: 40, poolSize: 500, prevRank: null });
+      return Promise.resolve(null);
+    });
+
+    const result = await getMyArenaRankSummary({ id: "u1", state: "Sikkim" });
+
+    expect(result.stateOrIndia?.scope).toBe("india");
   });
 });

@@ -79,6 +79,11 @@ vi.mock("@/server/worlds/repo", () => ({
   getWorldById: (id: unknown) => mockGetWorldById(id),
 }));
 
+const mockGetMyArenaRankSummary = vi.fn();
+vi.mock("@/server/arena/service", () => ({
+  getMyArenaRankSummary: (user: unknown) => mockGetMyArenaRankSummary(user),
+}));
+
 import {
   computeAndStoreWeeklySnapshot,
   createCoachNoteTemplate,
@@ -98,6 +103,7 @@ const AT = new Date("2026-09-24T10:00:00Z"); // Thursday, IST week starting 2026
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetMyArenaRankSummary.mockResolvedValue({ world: null, stateOrIndia: null, global: null });
 });
 
 describe("admin coach note template CRUD", () => {
@@ -377,5 +383,31 @@ describe("getMyReportCard", () => {
     const result = await getMyReportCard({ id: USER_ID, dateOfBirth: "2015-01-01" }, AT);
 
     expect(result.sharedWithParent).toEqual({ maskedEmail: "p***@example.com", weeklyEmailOn: true });
+  });
+
+  it("Phase 6 Checkpoint 6: globalRank is null before Arena has ever settled a week for this learner", async () => {
+    mockGetReportSnapshot.mockResolvedValueOnce(null);
+    mockListReportSnapshotsForUser.mockResolvedValueOnce([]);
+    // beforeEach's default already returns all-null - this pins that case down explicitly.
+
+    const result = await getMyReportCard({ id: USER_ID, dateOfBirth: "1990-01-01" }, AT);
+
+    expect(result.globalRank).toBeNull();
+  });
+
+  it("Phase 6 Checkpoint 6: globalRank reads the Global scope's rank, independent of the efficiency snapshot", async () => {
+    mockGetReportSnapshot.mockResolvedValueOnce(null); // current is null...
+    mockListReportSnapshotsForUser.mockResolvedValueOnce([]);
+    mockGetMyArenaRankSummary.mockResolvedValueOnce({
+      world: null,
+      stateOrIndia: null,
+      global: { scope: "global", rank: 186, poolSize: 2400, topPercentPct: 8, rankDelta: null },
+    });
+
+    const result = await getMyReportCard({ id: USER_ID, dateOfBirth: "1990-01-01" }, AT);
+
+    expect(result.current).toBeNull(); // ...but globalRank is still populated
+    expect(result.globalRank).toBe(186);
+    expect(mockGetMyArenaRankSummary).toHaveBeenCalledWith({ id: USER_ID, state: null });
   });
 });

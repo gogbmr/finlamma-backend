@@ -32,6 +32,7 @@ const {
   getLeagueMemberZone,
   getLeagueZonesForScope,
   getSelectedChipsForUser,
+  getSnapshotEntryForUser,
   insertAboutMeChip,
   insertCheerIfNew,
   insertLeagueSettlementIfNew,
@@ -474,5 +475,46 @@ describe("sumCheerXpFromSenderToReceiverSince", () => {
     const sum = await sumCheerXpFromSenderToReceiverSince(sender.id, receiver.id, longAgo);
 
     expect(sum).toBe(5);
+  });
+});
+
+describe("getSnapshotEntryForUser", () => {
+  it("returns null when the scope never settled that week (no snapshot row at all)", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+
+    const result = await getSnapshotEntryForUser(scope, "2026-01-05", "any-user");
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the scope settled but this learner had no XP that week", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+    const rankedUser = await makeUser();
+    const unrankedUser = await makeUser();
+    await upsertLeaderboardSnapshotIfNew({
+      weekStartDate: "2026-01-05",
+      scope,
+      poolSize: 1,
+      rankings: [{ userId: rankedUser.id, rank: 1, xp: 100, zone: "promote", prevRank: null }],
+    });
+
+    const result = await getSnapshotEntryForUser(scope, "2026-01-05", unrankedUser.id);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns the entry's rank, the snapshot's poolSize, and prevRank when the learner is in it", async () => {
+    const scope = `test-scope-${uniqueKey()}`;
+    const user = await makeUser();
+    await upsertLeaderboardSnapshotIfNew({
+      weekStartDate: "2026-01-05",
+      scope,
+      poolSize: 240,
+      rankings: [{ userId: user.id, rank: 8, xp: 500, zone: "promote", prevRank: 20 }],
+    });
+
+    const result = await getSnapshotEntryForUser(scope, "2026-01-05", user.id);
+
+    expect(result).toEqual({ rank: 8, poolSize: 240, prevRank: 20 });
   });
 });

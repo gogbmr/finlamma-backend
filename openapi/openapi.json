@@ -2367,12 +2367,22 @@
                   "weeklyEmailOn"
                 ],
                 "description": "Non-null whenever this learner is currently under 18 with a consented parent - see docs/ARCHITECTURE.md D33. Non-null does not mean the weekly email is sending; check weeklyEmailOn for that."
+              },
+              "globalRank": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "exclusiveMinimum": 0,
+                "example": 186,
+                "description": "PR-30 (Phase 6 Checkpoint 6): rank in Arena's Global scope, last weekly settlement. Independent of `current`'s own weekly cadence. Null until the first settlement has run for this learner, or if they had no XP that week."
               }
             },
             "required": [
               "current",
               "trend",
-              "sharedWithParent"
+              "sharedWithParent",
+              "globalRank"
             ]
           }
         },
@@ -5361,7 +5371,7 @@
     "/api/v1/me/profile/overview": {
       "get": {
         "summary": "Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)",
-        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.",
+        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).",
         "tags": [
           "Learning"
         ],
@@ -5442,6 +5452,159 @@
                             "hx"
                           ],
                           "description": "The highest rank title the learner's current level qualifies for, or null if no rank_titles row has a minLevel at or below their level yet."
+                        },
+                        "percentile": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 8,
+                          "description": "PR-01: \"top N%\" from Arena's Global scope, last weekly settlement. Null until the first settlement has run for this learner."
+                        },
+                        "rankDeltaCells": {
+                          "type": "object",
+                          "properties": {
+                            "world": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string",
+                                  "example": "global"
+                                },
+                                "rank": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 186
+                                },
+                                "poolSize": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 2400
+                                },
+                                "topPercentPct": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "example": 8,
+                                  "description": "\"Top N%\" - smaller is better. Never 0."
+                                },
+                                "rankDelta": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "example": 14,
+                                  "description": "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare."
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "rank",
+                                "poolSize",
+                                "topPercentPct",
+                                "rankDelta"
+                              ]
+                            },
+                            "stateOrIndia": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string",
+                                  "example": "global"
+                                },
+                                "rank": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 186
+                                },
+                                "poolSize": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 2400
+                                },
+                                "topPercentPct": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "example": 8,
+                                  "description": "\"Top N%\" - smaller is better. Never 0."
+                                },
+                                "rankDelta": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "example": 14,
+                                  "description": "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare."
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "rank",
+                                "poolSize",
+                                "topPercentPct",
+                                "rankDelta"
+                              ]
+                            },
+                            "global": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string",
+                                  "example": "global"
+                                },
+                                "rank": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 186
+                                },
+                                "poolSize": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 2400
+                                },
+                                "topPercentPct": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "example": 8,
+                                  "description": "\"Top N%\" - smaller is better. Never 0."
+                                },
+                                "rankDelta": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "example": 14,
+                                  "description": "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare."
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "rank",
+                                "poolSize",
+                                "topPercentPct",
+                                "rankDelta"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "world",
+                            "stateOrIndia",
+                            "global"
+                          ],
+                          "description": "PR-03's three rank-delta cells. Each is independently null when there's nothing to report for that scope - never a fabricated 0."
                         },
                         "streak": {
                           "type": "object",
@@ -5535,6 +5698,8 @@
                         "xpIntoLevel",
                         "xpToNextLevel",
                         "rankTitle",
+                        "percentile",
+                        "rankDeltaCells",
                         "streak",
                         "lessons",
                         "quizAccuracyPct",
@@ -6450,7 +6615,7 @@
     "/api/v1/me/report-card": {
       "get": {
         "summary": "My weekly report card (PR-30/31/32/33)",
-        "description": "The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.",
+        "description": "The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33), and PR-30's global Arena rank (null until the first weekly settlement has run). Coach notes are progress-only and never comparative.",
         "tags": [
           "Learning"
         ],

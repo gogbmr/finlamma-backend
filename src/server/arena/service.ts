@@ -17,6 +17,7 @@ import { isUniqueViolation } from "@/lib/db-errors";
 import { INDIAN_STATES } from "@/server/shared/schemas";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import type { AboutMeChipInput, ArenaLeagueSettingsInput } from "./schemas";
+import type { SnapshotEntry } from "./repo";
 import {
   countCheersReceivedSince,
   countCompletedLessonsForUserInWorld,
@@ -30,6 +31,7 @@ import {
   getLastWeekRanksForScope,
   getLeagueZonesForScope,
   getSelectedChipsForUser,
+  getSnapshotEntryForUser,
   getWorldTitleById,
   getWorldXpSparklines,
   insertAboutMeChip,
@@ -807,4 +809,89 @@ export async function updateArenaLeagueSettingsForAdmin(
     userAgent: meta.userAgent,
   });
   return input;
+}
+
+// --- Percentile/rank wiring (Phase 6 Checkpoint 6, PR-01/03/30) ---
+
+export type ScopeRankInfo = {
+  scope: string;
+  rank: number;
+  poolSize: number;
+  // "Top N%" framing (smaller is better), matching the prototype's own
+  // notification copy ("Top 8% mein aa gaye!") - never 0, a rank-1 learner
+  // in a huge pool still reads as "top 1%", not "top 0%".
+  topPercentPct: number;
+  // Positive = moved toward rank 1 (improved) since last week; null when
+  // there's no prior week's entry to compare against (first time settled,
+  // or the scope didn't settle last week).
+  rankDelta: number | null;
+};
+
+export type ArenaRankSummary = {
+  world: ScopeRankInfo | null;
+  stateOrIndia: ScopeRankInfo | null;
+  global: ScopeRankInfo | null;
+};
+
+function shapeSnapshotEntry(entry: SnapshotEntry | null, scope: string): ScopeRankInfo | null {
+  if (!entry) return null;
+  return {
+    scope,
+    rank: entry.rank,
+    poolSize: entry.poolSize,
+    topPercentPct: Math.max(1, Math.ceil((entry.rank / entry.poolSize) * 100)),
+    rankDelta: entry.prevRank !== null ? entry.prevRank - entry.rank : null,
+  };
+}
+
+// PR-01's headline "percentile", PR-03's three rank-delta cells (World /
+// State-or-India / Global) and PR-30's report-card "global rank" all read
+// from here - one shared lookup against the last WEEKLY SETTLEMENT
+// (src/inngest/functions/arena-league-settlement.ts), never a live
+// aggregate. Each cell is null, cleanly, in every case that isn't a real
+// rank: the scope never settled (too new, or below the D52 privacy floor
+// that week - a below-floor scope never gets a leaderboard_snapshots row at
+// all), or the learner had no XP that week even though the scope settled
+// for others. Never a fabricated 0 or a broken partial state.
+//
+// Known, accepted imprecision (same spirit as D43/D44's documented
+// simplifications elsewhere): "world" uses the learner's CURRENT world
+// (today), not necessarily the world they were actually ranked in during
+// last week's settlement - a learner who has since advanced to a new world
+// simply reads world: null until settlement next runs under their new
+// world. Nothing tracks "which world was I in as of last Monday," and nothing
+// needs to for this to be honest (null, not wrong).
+export async function getMyArenaRankSummary(user: { id: string; state: string | null }): Promise<ArenaRankSummary> {
+  const lastSettledWeekStartUtc = new Date(istWeekStartUtc(new Date()).getTime() - 7 * 24 * 60 * 60 * 1000);
+  const weekStartDate = istWeekStartDate(lastSettledWeekStartUtc);
+
+  const worldId = await getCurrentWorldIdForUser(user.id);
+  const worldScope = worldId ? encodeScope({ kind: "world", worldId }) : null;
+  const globalScope = encodeScope({ kind: "global" });
+  const indiaScope = encodeScope({ kind: "india" });
+  const stateScope = user.state ? encodeScope({ kind: "state", state: user.state }) : null;
+
+  const [worldEntry, globalEntry, stateEntry] = await Promise.all([
+    worldScope ? getSnapshotEntryForUser(worldScope, weekStartDate, user.id) : Promise.resolve(null),
+    getSnapshotEntryForUser(globalScope, weekStartDate, user.id),
+    stateScope ? getSnapshotEntryForUser(stateScope, weekStartDate, user.id) : Promise.resolve(null),
+  ]);
+
+  // State-or-India (PR-03): prefer the state entry when one genuinely
+  // exists; otherwise fall back to India - the same fallback shape GET
+  // /arena/leaderboard already uses, for the same reason (a learner with no
+  // state set, or whose thin state scope didn't settle, has nothing
+  // state-specific to show).
+  let stateOrIndiaEntry = stateEntry;
+  let stateOrIndiaScope = stateScope ?? indiaScope;
+  if (!stateOrIndiaEntry) {
+    stateOrIndiaEntry = await getSnapshotEntryForUser(indiaScope, weekStartDate, user.id);
+    stateOrIndiaScope = indiaScope;
+  }
+
+  return {
+    world: worldScope ? shapeSnapshotEntry(worldEntry, worldScope) : null,
+    stateOrIndia: shapeSnapshotEntry(stateOrIndiaEntry, stateOrIndiaScope),
+    global: shapeSnapshotEntry(globalEntry, globalScope),
+  };
 }

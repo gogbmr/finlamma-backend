@@ -2,6 +2,7 @@ import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { istDateString, istWeekStartDate, istWeekStartUtc } from "@/lib/ist-date";
+import { getMyArenaRankSummary } from "@/server/arena/service";
 import { getConsentRecord, getParentContact } from "@/server/onboarding/repo";
 import { isMinor } from "@/server/onboarding/service";
 import type { LocalizedText } from "@/server/shared/schemas";
@@ -344,17 +345,22 @@ async function getSharedWithParentInfo(
 
 // PR-30/31/32/33: the caller's own weekly report card - current week's
 // snapshot (or null if the first Monday since signup hasn't run yet), an
-// 8-week efficiency-score trend, and whether it's currently shared with a
-// parent (D33).
+// 8-week efficiency-score trend, whether it's currently shared with a
+// parent (D33), and PR-30's "global rank" tile (Phase 6 Checkpoint 6) - read
+// live from Arena's last weekly settlement, independent of this report
+// card's own weekly cadence, so it's never gated on `current` being
+// non-null. Null cleanly whenever there's nothing to report yet (no
+// settlement, or no XP that week) - never a fabricated 0.
 export async function getMyReportCard(
   user: { id: string; dateOfBirth: string | null },
   at: Date = new Date(),
 ) {
   const weekStartDate = istWeekStartDate(at);
-  const [current, recent, sharedWithParent] = await Promise.all([
+  const [current, recent, sharedWithParent, rankSummary] = await Promise.all([
     getReportSnapshot(user.id, weekStartDate),
     listReportSnapshotsForUser(user.id, 8),
     getSharedWithParentInfo(user),
+    getMyArenaRankSummary({ id: user.id, state: null }),
   ]);
 
   const coachNotes = current ? await renderCoachNotes(current) : [];
@@ -374,5 +380,6 @@ export async function getMyReportCard(
       .map((s) => ({ weekStartDate: s.weekStartDate, efficiencyScore: s.efficiencyScore }))
       .reverse(),
     sharedWithParent,
+    globalRank: rankSummary.global?.rank ?? null,
   };
 }

@@ -1682,7 +1682,7 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
 
 **Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)**
 
-Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.
+Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).
 
 **Auth:** bearerAuth
 
@@ -1704,6 +1704,30 @@ Kid-safe identity (first name + last initial only - never a full name or photo, 
       "en": "string",
       "hi": "string",
       "hx": "string"
+    },
+    "percentile": 8,
+    "rankDeltaCells": {
+      "world": {
+        "scope": "global",
+        "rank": 186,
+        "poolSize": 2400,
+        "topPercentPct": 8,
+        "rankDelta": 14
+      },
+      "stateOrIndia": {
+        "scope": "global",
+        "rank": 186,
+        "poolSize": 2400,
+        "topPercentPct": 8,
+        "rankDelta": 14
+      },
+      "global": {
+        "scope": "global",
+        "rank": 186,
+        "poolSize": 2400,
+        "topPercentPct": 8,
+        "rankDelta": 14
+      }
     },
     "streak": {
       "current": 4,
@@ -2407,7 +2431,7 @@ The caller's full earn/spend ledger, newest first, cursor-paginated.
 
 **My weekly report card (PR-30/31/32/33)**
 
-The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.
+The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33), and PR-30's global Arena rank (null until the first weekly settlement has run). Coach notes are progress-only and never comparative.
 
 **Auth:** bearerAuth
 
@@ -2463,7 +2487,8 @@ The current IST week's efficiency snapshot (null until the first Monday after si
     "sharedWithParent": {
       "maskedEmail": "j***@gmail.com",
       "weeklyEmailOn": true
-    }
+    },
+    "globalRank": 186
   }
 }
 ```
