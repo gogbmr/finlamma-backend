@@ -82,6 +82,8 @@ import "../src/app/api/v1/arena/competitions/current/enter/route";
 import "../src/app/api/v1/arena/competitions/current/trades/route";
 import "../src/app/api/v1/arena/competitions/current/me/route";
 import "../src/app/api/v1/arena/competitions/current/leaderboard/route";
+import "../src/app/api/v1/doubt-zone/threads/route";
+import "../src/app/api/v1/doubt-zone/threads/[id]/messages/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

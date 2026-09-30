@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { registry } from "@/lib/openapi";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 
 // settings_kv key "doubt_zone_safety" (Phase 7 kickoff decisions,
@@ -24,6 +25,12 @@ export const DoubtZoneSafetySettingsSchema = z.object({
   // for whatever partial sentence was cut off, never the partial text
   // itself.
   adviceLanguageFallbackMessage: LocalizedTextSchema,
+  // Shown on a genuine mid-stream failure (the Anthropic call itself
+  // errors after streaming has already started, e.g. a transient API
+  // outage) - not a safety or advice-language event, just "please try
+  // again," but still a fixed, deterministic substitute rather than
+  // whatever partial text had streamed so far.
+  temporaryUnavailableMessage: LocalizedTextSchema,
   // Shown once at the start of every new Doubt Zone thread (Phase 7
   // kickoff decision): upfront, honest, non-scary disclosure that this is
   // an AI, not a person, can't give investment advice, and a flagged
@@ -79,6 +86,11 @@ export const DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS: DoubtZoneSafetySettings = {
       "karti hai, lekin yeh nahi bata sakta ki real money se kya buy, sell ya karna chahiye. Chaho " +
       "toh main general idea explain kar doon?",
   },
+  temporaryUnavailableMessage: {
+    en: "Lamma AI is having trouble responding right now. Please try again in a moment.",
+    hi: "Lamma AI abhi respond karne mein dikkat ho rahi hai. Kripya thodi der baad phir try karein.",
+    hx: "Lamma AI abhi respond karne mein thodi dikkat aa rahi hai. Thodi der baad phir try karo.",
+  },
   threadDisclosureMessage: {
     en:
       "Hi! I'm Lamma AI - a computer program, not a real person. I can help you understand money " +
@@ -119,3 +131,85 @@ export const SafetyClassificationSchema = z.object({
   reason: z.string(),
 });
 export type SafetyClassification = z.infer<typeof SafetyClassificationSchema>;
+
+// --- App-facing (registered in OpenAPI) ---
+
+export const ThreadIdParamSchema = z.object({ id: z.string().uuid() });
+
+// Exactly one of lessonId/mentorId, enforced at the service layer (not
+// here): lessonId set opens/resumes the in-lesson doubt_zone node's thread
+// (mentor is derived server-side from the lesson's world, never trusted
+// from the client); lessonId omitted opens/resumes the standalone Doubt
+// Zone entry point (SET-14), where the client must say which mentor - the
+// World Home screen already knows which mentor it's showing.
+export const CreateThreadInputSchema = z.object({
+  lessonId: z.string().uuid().optional().openapi({ description: "Open from an in-lesson Doubt Zone node." }),
+  mentorId: z.string().uuid().optional().openapi({
+    description: "Required when lessonId is omitted (the standalone Doubt Zone entry point).",
+  }),
+});
+export type CreateThreadInput = z.infer<typeof CreateThreadInputSchema>;
+
+export const ThreadResponseSchema = registry.register(
+  "DoubtZoneThread",
+  z.object({
+    id: z.string().uuid(),
+    mentorId: z.string().uuid(),
+    lessonId: z.string().uuid().nullable(),
+    // Shown once by the client at the top of a NEW thread (Phase 7 kickoff
+    // decision) - already resolved to the caller's own language, so the
+    // client doesn't need its own copy of every language's text.
+    disclosureMessage: z.string(),
+  }),
+);
+
+export const DoubtZoneMessageSchema = registry.register(
+  "DoubtZoneMessage",
+  z.object({
+    id: z.string().uuid(),
+    role: z.enum(["learner", "assistant"]),
+    content: z.string(),
+    createdAt: z.string().datetime(),
+  }),
+);
+
+export const MessagesListResponseSchema = registry.register(
+  "DoubtZoneMessagesListResponse",
+  z.object({
+    data: z.array(DoubtZoneMessageSchema),
+    nextCursor: z.string().nullable(),
+  }),
+);
+
+export const SendMessageInputSchema = z.object({
+  content: z.string().trim().min(1).max(2000).openapi({ example: "What is a mutual fund?" }),
+});
+export type SendMessageInput = z.infer<typeof SendMessageInputSchema>;
+
+// The streamed response body is newline-delimited JSON (one compact JSON
+// object per line, `application/x-ndjson`) - not a JSON array and not SSE,
+// chosen so the mobile client can parse it by splitting on "\n" with no SSE
+// library dependency. "delta" lines repeat as the reply grows; exactly one
+// "done" line always ends the stream. When "done".replaced is true, the
+// client MUST discard whatever text it accumulated from "delta" lines and
+// show replacementText instead - this covers the classifier-flagged case
+// (no "delta" lines precede it at all - the redirect is instant, not
+// streamed), the output-filter-cut case (some safe "delta" lines may have
+// already streamed before the cut), and a genuine transient failure
+// mid-stream. `replaced` is a transport-level "use replacementText, not the
+// stream" flag - it is NOT the same thing as doubt_messages.flagged (a
+// moderation/staff-visibility flag): a temporary-unavailable replacement is
+// `replaced: true` but never a moderation flag, since nothing unsafe
+// happened.
+export const DoubtZoneStreamLineSchema = registry.register(
+  "DoubtZoneStreamLine",
+  z.union([
+    z.object({ type: z.literal("delta"), text: z.string() }),
+    z.object({
+      type: z.literal("done"),
+      messageId: z.string().uuid(),
+      replaced: z.boolean(),
+      replacementText: z.string().optional(),
+    }),
+  ]),
+);

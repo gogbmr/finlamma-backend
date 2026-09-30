@@ -3032,6 +3032,133 @@
           "data"
         ]
       },
+      "DoubtZoneThread": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mentorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lessonId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "disclosureMessage": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "mentorId",
+          "lessonId",
+          "disclosureMessage"
+        ]
+      },
+      "DoubtZoneMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "learner",
+              "assistant"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "createdAt"
+        ]
+      },
+      "DoubtZoneMessagesListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DoubtZoneMessage"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "DoubtZoneStreamLine": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "delta"
+                ]
+              },
+              "text": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "text"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "done"
+                ]
+              },
+              "messageId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "replaced": {
+                "type": "boolean"
+              },
+              "replacementText": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "messageId",
+              "replaced"
+            ]
+          }
+        ]
+      },
       "NewsStoryPreview": {
         "type": "object",
         "properties": {
@@ -13031,6 +13158,370 @@
                   "error": {
                     "code": "FORBIDDEN",
                     "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/doubt-zone/threads": {
+      "post": {
+        "summary": "Open or resume a Doubt Zone AI thread (Phase 7 live 'Ask Lamma AI' mentor)",
+        "description": "Idempotent by (learner, context): passing the same lessonId (or, for the standalone entry point, the same mentorId with no lessonId) returns the existing thread rather than creating a new one. lessonId set derives the mentor from that lesson's world server-side (never trusted from the client); lessonId omitted requires mentorId, since the client already knows which mentor it's showing. disclosureMessage is the upfront, non-scary notice - this is an AI, not a person, can't give investment advice, and a flagged message may be reviewed by a Finlamma team member - already resolved to the caller's own language.",
+        "tags": [
+          "Doubt Zone"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lessonId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Open from an in-lesson Doubt Zone node."
+                  },
+                  "mentorId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Required when lessonId is omitted (the standalone Doubt Zone entry point)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The (possibly pre-existing) thread",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoubtZoneThread"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "mentorId missing when lessonId is omitted",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "mentorId is required when lessonId is omitted"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published lesson/mentor with the given id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published mentor with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/doubt-zone/threads/{id}/messages": {
+      "get": {
+        "summary": "Get a Doubt Zone thread's message history",
+        "description": "The caller's own thread only, newest first, cursor-paginated.",
+        "tags": [
+          "Doubt Zone"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of this thread's messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoubtZoneMessagesListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No thread with this id belonging to the caller",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Doubt Zone thread with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Send a message to the Doubt Zone AI mentor and stream its reply",
+        "description": "The response body is always newline-delimited JSON (`application/x-ndjson`, one compact JSON object per line matching DoubtZoneStreamLine), never a single JSON object - even when the safety classifier or the advice-language output filter replaces the reply, since that still arrives as a single 'done' line on the same stream, not a different response shape. Every message runs through a safety classifier BEFORE the AI ever sees it, biased heavily toward flagging when uncertain (docs/ARCHITECTURE.md's Phase 7 kickoff decisions) - a flagged message gets a fixed, settings_kv-driven safety redirect instead of a normal reply, and is queued for staff review (doubt_zone.moderate). The AI never receives the learner's name, age, email, phone, state, school or any other identifying detail - only language, the mentor's persona, and (when opened from a lesson) that lesson's own public topic.",
+        "tags": [
+          "Doubt Zone"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "example": "What is a mutual fund?"
+                  }
+                },
+                "required": [
+                  "content"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A newline-delimited stream of DoubtZoneStreamLine objects: zero or more 'delta' lines followed by exactly one 'done' line. When 'done'.replaced is true, discard any accumulated 'delta' text and show replacementText instead.",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoubtZoneStreamLine"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Message is empty or too long",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Request validation failed"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No thread with this id belonging to the caller",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No Doubt Zone thread with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Burst, daily-per-learner, or global daily message cap exceeded",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many messages - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The safety classifier or the AI model is not configured / unavailable",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "SERVICE_UNAVAILABLE",
+                    "message": "Safety classifier call failed"
                   }
                 },
                 "schema": {
