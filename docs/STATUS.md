@@ -1,5 +1,30 @@
 # Status
 
+## 2026-09-30 — Phase 7 Doubt Zone AI: built and unit-tested, NOT yet verified against a real model
+
+Checkpoints 1-3 (schema, safety classifier core, streaming endpoints) are built with the safety
+design from the Phase 7 kickoff decisions (`docs/ARCHITECTURE.md`): the classifier fails closed
+and is biased heavily toward false positives, the advice-language circuit breaker cuts a reply
+mid-stream, staff visibility is flagged-only, and every replacement message (safety redirect,
+advice-language fallback, thread disclosure) is a fixed `settings_kv` string, never model-generated.
+
+**All of this is verified only against mocked Anthropic responses in the automated test suite.**
+An attempt to run live probes against the real API (a normal question, a direct advice request, an
+off-topic question, a safety-worded probe, a prompt-extraction attempt, a personal-details message,
+each in all three languages) was blocked: `ANTHROPIC_API_KEY` isn't set in the local `.env.local`
+(confirmed by presence check only, per CLAUDE.md rule 9 - never read/print the actual value). The
+static, non-model-generated copy (thread disclosure, safety redirect with helpline numbers, advice-
+language fallback) was printed and read directly - see below - but no real model output has been
+seen for this feature yet. Added as a BLOCKING `docs/ROADMAP.md` pre-launch item: run these probes
+for real once the key is available, and review actual (not mocked) responses before launch,
+especially the safety-redirect tone and whether the model ever slips into advice-like phrasing the
+circuit breaker has to catch.
+
+**Static copy read directly (not summarized) and looks reasonable as a first draft**, but the
+safety-redirect message is explicitly marked DRAFT pending review by someone qualified (a
+counsellor or child-safety professional) - see the separate BLOCKING helpline-verification item
+already in `docs/ROADMAP.md`.
+
 ## 2026-09-29 — `/phase-audit 6` complete. Six findings fixed, branch ready for merge
 
 Audited Phase 6 (Arena & Social) in full: ROADMAP items vs. code, every FEATURE_MAP AR-row and

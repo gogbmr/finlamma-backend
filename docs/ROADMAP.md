@@ -363,6 +363,14 @@ own repo later, hosted on Railway.
       someone qualified (a counsellor, child-safety professional, or similar) before launch, and
       re-verify the numbers themselves close to the actual launch date, not just once during
       development.
+- [ ] **BLOCKING: run live Doubt Zone probes with a real `ANTHROPIC_API_KEY` and review the actual
+      responses in all three languages before launch** - a normal finance question, a direct advice
+      request ("should I buy X"), an off-topic question, a safety probe worded the way a teenager
+      plausibly would, a prompt-extraction/jailbreak attempt, and a message containing personal
+      details (name/school). As of 2026-09-30, Phase 7's AI behavior (system prompt, safety
+      classifier, advice-language circuit breaker) is verified only against mocked model responses
+      in the automated test suite - the real model has never actually been run against these
+      prompts. See `docs/STATUS.md`'s Phase 7 entry.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence
