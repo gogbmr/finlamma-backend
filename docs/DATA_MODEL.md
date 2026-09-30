@@ -369,9 +369,23 @@ skill for the full idempotency/reversal design)
   `user_about_me_chips` (user_id, chip_id — a learner's selection, capped at 3, replaced whole each
   edit, unique on (user_id, chip_id)) — AR-20's public-profile chips, never free text
   (`docs/ARCHITECTURE.md` D36)
-- `push_tokens`, `notification_prefs`, `notifications`
-- `doubt_threads`, `doubt_messages` — Phase 7's live AI mentor; the in-lesson "Doubt Zone" node in
-  Phase 2b is scripted content (`lessons.content`), not these tables (see PRODUCT_SPEC.md §1)
+- `push_tokens` (user_id, expo_push_token unique, platform ios|android, last_seen_at — one row per
+  device; a token moving accounts on reinstall is reassigned via onConflictDoUpdate, never
+  duplicated), `notification_prefs` (user_id unique, enabled — SET-07's single on/off toggle,
+  quiet_hours jsonb {startHourIst,endHourIst} nullable override of `settings_kv`'s global default),
+  `notifications` (user_id, kind enum: streak_risk|boss_battle|market_news|session_goal|
+  cheer_received|league_rank_change, title/body jsonb {en,hi,hx}, data jsonb — loose per-kind
+  deep-link payload, read_at nullable; WH-20's 30-day auto-expiry is a retention job querying
+  created_at, not a stored column)
+- `doubt_threads` (user_id, mentor_id, lesson_id nullable — null for the standalone Doubt Zone entry
+  point, set for an in-lesson `doubt_zone` node thread, last_message_at), `doubt_messages`
+  (thread_id, role learner|assistant, content, flagged, flagged_reason) — Phase 7's live AI mentor;
+  the in-lesson "Doubt Zone" node in Phase 2b is scripted content (`lessons.content`), not these
+  tables (see PRODUCT_SPEC.md §1). `flagged`/`flagged_reason` implement the Phase 7 kickoff's
+  flagged-only staff-visibility decision (`docs/ARCHITECTURE.md`): full transcripts are never
+  staff-browsable; a message is visible only once the safety classifier trips on it or a learner
+  reports it, gated by the new `doubt_zone.moderate` permission and logged like every staff view of
+  sensitive data
 
 **Monetisation**
 - `entitlements` (user_id, entitlement, source revenuecat|razorpay, expires_at, raw)
