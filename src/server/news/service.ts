@@ -3,6 +3,7 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { decodeCursor, encodeCursor, logInternalError } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
+import { notifyUser } from "@/server/notifications/service";
 import { findAdviceLikePhrases } from "@/server/trading/advice-language";
 import { draftNewsStoryFromRaw } from "./ai";
 import { computeQualityGrade } from "./grading";
@@ -21,9 +22,12 @@ import {
   listActiveDeskPicks,
   listAllStories,
   listPublishedStories,
+  listPublishedStoriesPendingNotification,
   listReadStoryIdsForUser,
+  listRecentlyEngagedNewsReaderIds,
   listRecentNewsEvents,
   listUndraftedRaw,
+  markStoryNotified,
   type NewsFeedCursor,
   updateStoryQualityOverrideRow,
   updateStoryStatusRow,
@@ -111,6 +115,43 @@ export async function draftPendingStories(limit = 10): Promise<{ drafted: number
   }
 
   return { drafted, failed };
+}
+
+// Phase 7's market_news push notification. Fans a published story out to
+// recently engaged readers only (listRecentlyEngagedNewsReaderIds - never
+// every registered account), title/body straight from the story's own
+// already-vetted simplified content (never a separate hardcoded template
+// the way the other five notification kinds use src/server/notifications/
+// copy.ts - there's nothing to template here, the headline/summary already
+// exist per-language). Marks the story notified even if some individual
+// sends fail (notifyUser itself never throws - a partial fan-out is still
+// "handled", not something to retry from scratch and risk double-pushing
+// the readers who already got it).
+export async function broadcastPendingNewsNotifications(opts: {
+  storyLimit: number;
+  engagementWindowDays: number;
+}): Promise<{ storiesNotified: number; pushesSent: number }> {
+  const pending = await listPublishedStoriesPendingNotification(opts.storyLimit);
+  if (pending.length === 0) return { storiesNotified: 0, pushesSent: 0 };
+
+  const since = new Date(Date.now() - opts.engagementWindowDays * 24 * 60 * 60 * 1000);
+  const readerIds = await listRecentlyEngagedNewsReaderIds(since);
+
+  let pushesSent = 0;
+  for (const story of pending) {
+    for (const userId of readerIds) {
+      await notifyUser(
+        userId,
+        "market_news",
+        { title: story.content.headline, body: story.content.summary },
+        { newsStoryId: story.id },
+      );
+      pushesSent++;
+    }
+    await markStoryNotified(story.id);
+  }
+
+  return { storiesNotified: pending.length, pushesSent };
 }
 
 // --- Learner-facing feed (NW-01..11) ---

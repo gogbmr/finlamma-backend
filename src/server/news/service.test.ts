@@ -47,9 +47,12 @@ const mockInsertReadIfNew = vi.fn();
 const mockListActiveDeskPicks = vi.fn();
 const mockListAllStories = vi.fn();
 const mockListPublishedStories = vi.fn();
+const mockListPublishedStoriesPendingNotification = vi.fn();
 const mockListReadStoryIdsForUser = vi.fn();
+const mockListRecentlyEngagedNewsReaderIds = vi.fn();
 const mockListRecentNewsEvents = vi.fn();
 const mockListUndraftedRaw = vi.fn();
+const mockMarkStoryNotified = vi.fn();
 const mockUpdateStoryQualityOverrideRow = vi.fn();
 const mockUpdateStoryStatusRow = vi.fn();
 const mockUpdateStoryTopicRow = vi.fn();
@@ -67,15 +70,24 @@ vi.mock("./repo", () => ({
   listActiveDeskPicks: () => mockListActiveDeskPicks(),
   listAllStories: () => mockListAllStories(),
   listPublishedStories: (opts: unknown) => mockListPublishedStories(opts),
+  listPublishedStoriesPendingNotification: (limit: unknown) => mockListPublishedStoriesPendingNotification(limit),
   listReadStoryIdsForUser: (userId: unknown, ids: unknown) => mockListReadStoryIdsForUser(userId, ids),
+  listRecentlyEngagedNewsReaderIds: (since: unknown) => mockListRecentlyEngagedNewsReaderIds(since),
   listRecentNewsEvents: (limit: unknown) => mockListRecentNewsEvents(limit),
   listUndraftedRaw: (limit: unknown) => mockListUndraftedRaw(limit),
+  markStoryNotified: (id: unknown) => mockMarkStoryNotified(id),
   updateStoryQualityOverrideRow: (id: unknown, v: unknown) => mockUpdateStoryQualityOverrideRow(id, v),
   updateStoryStatusRow: (id: unknown, v: unknown) => mockUpdateStoryStatusRow(id, v),
   updateStoryTopicRow: (id: unknown, v: unknown) => mockUpdateStoryTopicRow(id, v),
 }));
 
+const mockNotifyUser = vi.fn();
+vi.mock("@/server/notifications/service", () => ({
+  notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
+}));
+
 import {
+  broadcastPendingNewsNotifications,
   draftPendingStories,
   getNewsDeskPicksForApp,
   getNewsFeed,
@@ -365,5 +377,57 @@ describe("getNewsDeskPicksForApp", () => {
     mockListActiveDeskPicks.mockResolvedValueOnce([{ id: "pick_1" }]);
 
     expect(await getNewsDeskPicksForApp()).toHaveLength(1);
+  });
+});
+
+describe("broadcastPendingNewsNotifications", () => {
+  const STORY = {
+    id: "story_1",
+    content: {
+      headline: { en: "H", hi: "H", hx: "H" },
+      summary: { en: "S", hi: "S", hx: "S" },
+    },
+  };
+
+  it("does nothing (never queries readers) when no story is pending", async () => {
+    mockListPublishedStoriesPendingNotification.mockResolvedValueOnce([]);
+
+    const result = await broadcastPendingNewsNotifications({ storyLimit: 5, engagementWindowDays: 30 });
+
+    expect(mockListRecentlyEngagedNewsReaderIds).not.toHaveBeenCalled();
+    expect(result).toEqual({ storiesNotified: 0, pushesSent: 0 });
+  });
+
+  it("notifies every engaged reader with the story's own headline/summary as title/body, then marks it notified", async () => {
+    mockListPublishedStoriesPendingNotification.mockResolvedValueOnce([STORY]);
+    mockListRecentlyEngagedNewsReaderIds.mockResolvedValueOnce(["u1", "u2"]);
+
+    const result = await broadcastPendingNewsNotifications({ storyLimit: 5, engagementWindowDays: 30 });
+
+    expect(mockNotifyUser).toHaveBeenCalledWith(
+      "u1",
+      "market_news",
+      { title: STORY.content.headline, body: STORY.content.summary },
+      { newsStoryId: "story_1" },
+    );
+    expect(mockNotifyUser).toHaveBeenCalledWith(
+      "u2",
+      "market_news",
+      { title: STORY.content.headline, body: STORY.content.summary },
+      { newsStoryId: "story_1" },
+    );
+    expect(mockMarkStoryNotified).toHaveBeenCalledWith("story_1");
+    expect(result).toEqual({ storiesNotified: 1, pushesSent: 2 });
+  });
+
+  it("still marks a story notified even with zero engaged readers", async () => {
+    mockListPublishedStoriesPendingNotification.mockResolvedValueOnce([STORY]);
+    mockListRecentlyEngagedNewsReaderIds.mockResolvedValueOnce([]);
+
+    const result = await broadcastPendingNewsNotifications({ storyLimit: 5, engagementWindowDays: 30 });
+
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(mockMarkStoryNotified).toHaveBeenCalledWith("story_1");
+    expect(result).toEqual({ storiesNotified: 1, pushesSent: 0 });
   });
 });

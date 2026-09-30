@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import { db } from "@/db/client";
 import { notificationPrefs, notifications, pushTokens, users, type NotificationKind } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
@@ -79,6 +79,20 @@ export async function upsertNotificationPrefs(
 }
 
 // --- Notification feed ---
+
+// Dedup check for a cron-driven trigger that can't rely on a discrete
+// mutation event (session_goal - see src/server/daily-goals/service.ts's
+// own doc comment: daily goals are computed live, never stored as a
+// completion event, so the job re-checks every active user on every run
+// and uses this to avoid notifying the same learner twice in one IST day).
+export async function hasNotificationSince(userId: string, kind: NotificationKind, since: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: notifications.id })
+    .from(notifications)
+    .where(and(eq(notifications.userId, userId), eq(notifications.kind, kind), gte(notifications.createdAt, since)))
+    .limit(1);
+  return !!row;
+}
 
 export async function insertNotification(input: {
   userId: string;

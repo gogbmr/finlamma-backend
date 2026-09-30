@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db/client";
 import { streaks } from "@/db/schema";
 import { daysBetweenIstDates } from "@/lib/ist-date";
@@ -13,6 +13,21 @@ export async function getStreak(userId: string, scope: StreakScope) {
     .where(and(eq(streaks.userId, userId), eq(streaks.scope, scope)))
     .limit(1);
   return row ?? null;
+}
+
+// Phase 7's streak_risk push notification: an active learning streak
+// (current > 0) whose last activity was yesterday IST, not yet today -
+// exactly the set of learners recordStreakActivity would grow the streak
+// for if they act today, and break it for if they don't. Never includes a
+// streak that already broke (lastActiveDateIst further in the past than
+// yesterday) - by the time that's true, a nudge is too late for THIS
+// streak, and the learner already got their notification the evening
+// before while it was still savable.
+export async function listAtRiskLearningStreaks(yesterdayIst: string) {
+  return db
+    .select({ userId: streaks.userId })
+    .from(streaks)
+    .where(and(eq(streaks.scope, "learning"), eq(streaks.lastActiveDateIst, yesterdayIst), gt(streaks.current, 0)));
 }
 
 // The whole point of the row lock (docs/ARCHITECTURE.md D30): two genuine,

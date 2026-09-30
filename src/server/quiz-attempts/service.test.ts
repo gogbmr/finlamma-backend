@@ -14,13 +14,18 @@ vi.mock("@/server/questions/repo", () => ({
   getQuestionsByIds: () => Promise.resolve([]),
 }));
 
-// Never actually called (extractQuestionIds is a pure content parser), but
-// @/server/lessons/service (imported for extractQuestionIds) also imports
-// this at module scope - unmocked, it would pull in the real @/db/client
-// and fail on missing env vars in this unit-test environment.
+// getWorldById/listPublishedWorlds: never actually called for most tests
+// (extractQuestionIds is a pure content parser), but @/server/lessons/service
+// (imported for extractQuestionIds) also imports this at module scope -
+// unmocked, it would pull in the real @/db/client and fail on missing env
+// vars in this unit-test environment. getNextPublishedWorldByOrder backs
+// the boss_battle notification (Phase 7) - see its own describe block below.
+const mockGetWorldById = vi.fn();
+const mockGetNextPublishedWorldByOrder = vi.fn();
 vi.mock("@/server/worlds/repo", () => ({
-  getWorldById: () => Promise.resolve(null),
+  getWorldById: (id: unknown) => mockGetWorldById(id),
   listPublishedWorlds: () => Promise.resolve([]),
+  getNextPublishedWorldByOrder: (order: unknown) => mockGetNextPublishedWorldByOrder(order),
 }));
 
 const mockGetLessonFlowScoringSettings = vi.fn();
@@ -98,6 +103,11 @@ vi.mock("@/server/badges/service", () => ({
 const mockLogInternalError = vi.fn();
 vi.mock("@/lib/http", () => ({
   logInternalError: (errorId: unknown, err: unknown) => mockLogInternalError(errorId, err),
+}));
+
+const mockNotifyUser = vi.fn();
+vi.mock("@/server/notifications/service", () => ({
+  notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
 }));
 
 import { serveStep, submitAnswer } from "./service";
@@ -228,6 +238,8 @@ beforeEach(() => {
   // snapshot - tests that specifically exercise a hotfix-between-serve-and-
   // answer scenario override this per-call.
   mockGetQuestionRevision.mockResolvedValue(questionRevisionRow());
+  mockGetWorldById.mockResolvedValue(null);
+  mockGetNextPublishedWorldByOrder.mockResolvedValue(null);
   // Matches servedAnswerRow()'s default servedAt, so any test that doesn't
   // care about elapsed time gets elapsed=0 by default - tests that DO care
   // move the clock forward explicitly with vi.setSystemTime().
@@ -870,6 +882,81 @@ describe("submitAnswer", () => {
       await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
 
       expect(mockIssueCertificateIfEligible).toHaveBeenCalledWith(USER, "world_1", 100, META);
+    });
+
+    it("sends a boss_battle notification when passing unlocks a next world, only on a genuinely new credit", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_1" }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+      mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true });
+      mockGetWorldById.mockResolvedValueOnce({ id: "world_1", order: 1 });
+      mockGetNextPublishedWorldByOrder.mockResolvedValueOnce({ id: "world_2", order: 2 });
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockGetNextPublishedWorldByOrder).toHaveBeenCalledWith(1);
+      expect(mockNotifyUser).toHaveBeenCalledWith("user_1", "boss_battle", expect.anything(), { worldId: "world_2" });
+    });
+
+    it("never sends a boss_battle notification when this was the last published world (nothing new to unlock)", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_1" }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+      mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true });
+      mockGetWorldById.mockResolvedValueOnce({ id: "world_1", order: 1 });
+      mockGetNextPublishedWorldByOrder.mockResolvedValueOnce(null); // last world - nothing next
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockNotifyUser).not.toHaveBeenCalled();
+    });
+
+    it("never sends a boss_battle notification on an idempotent replay (credited: false)", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_1" }),
+      );
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+      // mockCreditLessonCompletion default from beforeEach: { credited: false }
+
+      await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(mockGetNextPublishedWorldByOrder).not.toHaveBeenCalled();
+      expect(mockNotifyUser).not.toHaveBeenCalled();
     });
 
     it("never issues a certificate for a Boss Quiz that failed to pass", async () => {

@@ -28,3 +28,18 @@ export async function getSessionSecondsForDate(userId: string, dateIst: string):
     .limit(1);
   return row?.seconds ?? 0;
 }
+
+// Phase 7's session_goal push notification candidate set: everyone with a
+// session-time ping today. An imperfect proxy for "active today" (a learner
+// who somehow completes a lesson_completed-type goal with zero session-time
+// pings would be missed), accepted because real usage practically always
+// generates a ping - a precise "any activity at all" query would need to
+// union several other domains' tables for one notification's candidate
+// list.
+export async function listUserIdsActiveOnDate(dateIst: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ userId: sessionTimeDaily.userId })
+    .from(sessionTimeDaily)
+    .where(eq(sessionTimeDaily.dateIst, dateIst));
+  return rows.map((r) => r.userId);
+}

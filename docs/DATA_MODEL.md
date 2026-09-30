@@ -315,7 +315,9 @@ skill for the full idempotency/reversal design)
   {en,hi,hx}, jargon jsonb {term,explanation}, outlet, source_url, quality_grade A|B|C
   (auto-heuristic, `src/server/news/grading.ts`, staff-overridable via quality_grade_override),
   advice_like_warnings jsonb — the existing instrument-tip guardrail reused against AI drafts,
-  status draft|published|hidden) — AI-drafted (Anthropic, via a forced tool-use call), always a
+  status draft|published|hidden, notified_at nullable — Phase 7's market_news push broadcast job
+  sets this once a published story has been fanned out, so a retried/rescheduled run never
+  notifies the same story twice) — AI-drafted (Anthropic, via a forced tool-use call), always a
   draft until a staff member with `news.publish` toggles it live (CLAUDE.md rule 11)
 - `news_editions` (date UNIQUE, question_ids jsonb array, published) — one per IST calendar day,
   built lazily on first Pulse Check request from a random selection of published,

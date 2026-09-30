@@ -21,6 +21,22 @@ export async function getWorldById(id: string) {
   return row ?? null;
 }
 
+// The next published world after `currentOrder`, by position - used by
+// src/server/quiz-attempts/service.ts to find which world a passing Boss
+// Quiz just unlocked (D25: sequential unlock is by world POSITION, never a
+// specific id/name), so the boss_battle notification (Phase 7) can deep-link
+// to it. Null when the learner just passed the last published world's Boss
+// Quiz - there's nothing new to notify about.
+export async function getNextPublishedWorldByOrder(currentOrder: number) {
+  const [row] = await db
+    .select()
+    .from(worlds)
+    .where(and(gt(worlds.order, currentOrder), eq(worlds.status, "published")))
+    .orderBy(asc(worlds.order))
+    .limit(1);
+  return row ?? null;
+}
+
 // Used by mentors/service.ts's unpublishMentor to block unpublishing a
 // mentor that a published world still references - see docs/DATA_MODEL.md
 // and the Phase 2b Checkpoint 3 kickoff discussion.

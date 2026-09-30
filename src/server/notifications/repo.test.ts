@@ -18,6 +18,7 @@ const {
   deletePushTokenByValue,
   getNotificationPrefsRow,
   getUserLanguageForNotifications,
+  hasNotificationSince,
   insertNotification,
   listNotificationsPage,
   listPushTokensForUser,
@@ -228,5 +229,37 @@ describe("notifications feed", () => {
     expect(deletedCount).toBe(1);
     const remaining = await listNotificationsPage(user.id, { limit: 20 });
     expect(remaining.map((r) => r.id)).toEqual([recent.id]);
+  });
+});
+
+describe("hasNotificationSince", () => {
+  it("is true once a matching-kind notification exists since the cutoff", async () => {
+    const user = await makeUser();
+    const since = new Date(Date.now() - 60_000);
+
+    expect(await hasNotificationSince(user.id, "session_goal", since)).toBe(false);
+
+    await insertNotification({ userId: user.id, kind: "session_goal", title: TITLE, body: BODY });
+
+    expect(await hasNotificationSince(user.id, "session_goal", since)).toBe(true);
+  });
+
+  it("does not match a different kind", async () => {
+    const user = await makeUser();
+    const since = new Date(Date.now() - 60_000);
+    await insertNotification({ userId: user.id, kind: "boss_battle", title: TITLE, body: BODY });
+
+    expect(await hasNotificationSince(user.id, "session_goal", since)).toBe(false);
+  });
+
+  it("does not match a notification older than the cutoff", async () => {
+    const user = await makeUser();
+    const notif = await insertNotification({ userId: user.id, kind: "session_goal", title: TITLE, body: BODY });
+    await db
+      .update(notifications)
+      .set({ createdAt: new Date(Date.now() - 60_000) })
+      .where(eq(notifications.id, notif.id));
+
+    expect(await hasNotificationSince(user.id, "session_goal", new Date())).toBe(false);
   });
 });

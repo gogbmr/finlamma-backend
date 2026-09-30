@@ -24,9 +24,22 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
+const mockListUserIdsActiveOnDate = vi.fn();
+vi.mock("@/server/session-time/repo", () => ({
+  listUserIdsActiveOnDate: (dateIst: unknown) => mockListUserIdsActiveOnDate(dateIst),
+}));
+
+const mockNotifyUser = vi.fn();
+const mockHasBeenNotifiedSince = vi.fn();
+vi.mock("@/server/notifications/service", () => ({
+  notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
+  hasBeenNotifiedSince: (...args: unknown[]) => mockHasBeenNotifiedSince(...args),
+}));
+
 import {
   getDailyGoalsSettings,
   getMyDailyGoals,
+  notifyLearnersWithCompletedDailyGoal,
   updateDailyGoalsSettings,
 } from "./service";
 import { DEFAULT_DAILY_GOALS } from "./schemas";
@@ -116,5 +129,53 @@ describe("getMyDailyGoals", () => {
     const [goal] = await getMyDailyGoals(USER_ID, AT);
 
     expect(goal.completed).toBe(true);
+  });
+});
+
+describe("notifyLearnersWithCompletedDailyGoal", () => {
+  const ACTIVE_GOALS = [{ type: "study_minutes" as const, target: 20, active: true }];
+
+  it("notifies a learner who completed a goal today and wasn't already notified", async () => {
+    mockListUserIdsActiveOnDate.mockResolvedValueOnce(["u1"]);
+    mockHasBeenNotifiedSince.mockResolvedValueOnce(false);
+    mockGetSettingJson.mockResolvedValueOnce(ACTIVE_GOALS);
+    mockStudyMinutes.mockResolvedValueOnce(25); // over target - completed
+
+    const result = await notifyLearnersWithCompletedDailyGoal(AT);
+
+    expect(mockNotifyUser).toHaveBeenCalledWith("u1", "session_goal", expect.anything());
+    expect(result).toEqual({ notified: 1 });
+  });
+
+  it("skips a learner whose goals aren't complete yet, without notifying", async () => {
+    mockListUserIdsActiveOnDate.mockResolvedValueOnce(["u1"]);
+    mockHasBeenNotifiedSince.mockResolvedValueOnce(false);
+    mockGetSettingJson.mockResolvedValueOnce(ACTIVE_GOALS);
+    mockStudyMinutes.mockResolvedValueOnce(5); // under target
+
+    const result = await notifyLearnersWithCompletedDailyGoal(AT);
+
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(result).toEqual({ notified: 0 });
+  });
+
+  it("skips a learner already notified today, without even evaluating their goals", async () => {
+    mockListUserIdsActiveOnDate.mockResolvedValueOnce(["u1"]);
+    mockHasBeenNotifiedSince.mockResolvedValueOnce(true);
+
+    const result = await notifyLearnersWithCompletedDailyGoal(AT);
+
+    expect(mockGetSettingJson).not.toHaveBeenCalled();
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(result).toEqual({ notified: 0 });
+  });
+
+  it("notifies nobody when nobody was active today", async () => {
+    mockListUserIdsActiveOnDate.mockResolvedValueOnce([]);
+
+    const result = await notifyLearnersWithCompletedDailyGoal(AT);
+
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(result).toEqual({ notified: 0 });
   });
 });

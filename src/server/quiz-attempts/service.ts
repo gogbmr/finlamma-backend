@@ -11,7 +11,10 @@ import { VideoContentSchema } from "@/server/lessons/schemas";
 import { completeLessonProgress, startLessonProgress } from "@/server/lesson-progress/repo";
 import { getQuestionById, getQuestionRevision } from "@/server/questions/repo";
 import { answerSchemaForFormat, type QuestionFormat } from "@/server/questions/schemas";
+import { NOTIFICATION_COPY } from "@/server/notifications/copy";
+import { notifyUser } from "@/server/notifications/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { getNextPublishedWorldByOrder, getWorldById } from "@/server/worlds/repo";
 import {
   completeAttempt,
   countAttemptsForUserLesson,
@@ -326,6 +329,22 @@ export async function submitAnswer(
           await issueCertificateIfEligible(user, lesson.worldId, accuracyPct, meta);
         } catch (err) {
           logInternalError("certificates.issue_failed", err);
+        }
+      }
+      // boss_battle notification (Phase 7): only on a genuinely NEW credit
+      // (`credited`, never a retry) and only when passing this Boss Quiz
+      // actually unlocked a next world (D25: position-based - null when
+      // this was the last published world). Best-effort/isolated, same
+      // reasoning as certificates/badges above.
+      if (lesson.kind === "boss_quiz" && successful && credited) {
+        try {
+          const currentWorld = await getWorldById(lesson.worldId);
+          const nextWorld = currentWorld ? await getNextPublishedWorldByOrder(currentWorld.order) : null;
+          if (nextWorld) {
+            await notifyUser(user.id, "boss_battle", NOTIFICATION_COPY.boss_battle, { worldId: nextWorld.id });
+          }
+        } catch (err) {
+          logInternalError("notifications.boss_battle_notify_failed", err);
         }
       }
       // Badges: re-evaluated after every real credit (any lesson kind, not

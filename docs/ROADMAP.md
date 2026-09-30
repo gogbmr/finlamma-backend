@@ -305,7 +305,12 @@ own repo later, hosted on Railway.
       time per entrant) — same documented fast-follow precedent as AR-10 above, not blocking.
 
 ## Phase 7 — Notifications & Doubt Zone
-- [ ] Expo push tokens, notification preferences, streak/boss/news jobs
+- [x] Expo push tokens, notification preferences, streak/boss/news jobs - push provider behind
+      an adapter (mock/Expo, mirroring src/server/market/provider.ts's Twelve Data pattern, no
+      Expo account needed to build/test - see `GET /api/v1/health`'s `push` field), all 6
+      notification kinds wired (streak_risk/boss_battle/market_news/session_goal/cheer_received/
+      league_rank_change), quiet hours + per-category opt-out, 30-day retention job. See
+      FEATURE_MAP WH-18 through WH-24, PR-29, SET-07.
 - [x] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point (Checkpoints 1-4: schema, safety

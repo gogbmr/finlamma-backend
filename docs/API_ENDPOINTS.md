@@ -133,6 +133,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `PATCH /api/v1/me/notification-prefs` — Update my notification preferences
 - `GET /api/v1/me/notifications` — Get my notification feed (PR-29)
 - `POST /api/v1/me/notifications/mark-read` — Mark my notifications as read (PR-29)
+- `GET /api/v1/me/notifications/unread-count` — Get my unread notification count (WH-18)
 
 ## System
 
@@ -6413,6 +6414,38 @@ ids omitted: marks every currently-unread notification as read ('mark all read')
 ```json
 {
   "marked": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/notifications/unread-count`
+
+**Get my unread notification count (WH-18)**
+
+Backs the bell icon's badge count - a dedicated endpoint rather than a query flag on the feed list, so the client can poll it cheaply without paging through notifications.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's unread count
+
+```json
+{
+  "count": 0
 }
 ```
 

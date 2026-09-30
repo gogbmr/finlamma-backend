@@ -3,8 +3,9 @@
 // NODE_ENV=test guard). Proves the (source, externalId) dedupe index, the
 // undrafted-raw join, and the pipeline status writes actually hold at the
 // database level.
+import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { users } from "@/db/schema";
+import { newsReads, users } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -22,8 +23,11 @@ const {
   listActiveDeskPicks,
   listAllStories,
   listPublishedStories,
+  listPublishedStoriesPendingNotification,
   listReadStoryIdsForUser,
+  listRecentlyEngagedNewsReaderIds,
   listUndraftedRaw,
+  markStoryNotified,
   updateStoryQualityOverrideRow,
   updateStoryStatusRow,
   updateStoryTopicRow,
@@ -357,5 +361,79 @@ describe("listActiveDeskPicks", () => {
     // build desk-pick authoring) - this proves the function runs cleanly
     // against an empty/absent table state rather than asserting content.
     expect(await listActiveDeskPicks()).toEqual([]);
+  });
+});
+
+describe("Phase 7: market_news notification broadcast", () => {
+  async function seedUser(label: string) {
+    const [user] = await db
+      .insert(users)
+      .values({ clerkUserId: uniqueClerkUserId(`news-broadcast-${label}`), clerkUpdatedAt: new Date() })
+      .returning();
+    return user;
+  }
+
+  describe("listPublishedStoriesPendingNotification / markStoryNotified", () => {
+    it("only returns published stories with no notifiedAt yet", async () => {
+      const published = await publishStory(`pending-${Date.now()}`);
+      const raw2 = await seedRaw(`draft-${Date.now()}`);
+      const draft = await draftStory({
+        rawId: raw2.id,
+        category: "inflation",
+        impact: "neutral",
+        content: CONTENT,
+        jargon: JARGON,
+        outlet: "Test",
+        sourceUrl: "https://example.com",
+        qualityGrade: "A",
+        adviceLikeWarnings: [],
+      });
+
+      const pending = await listPublishedStoriesPendingNotification(50);
+
+      const ids = pending.map((s) => s.id);
+      expect(ids).toContain(published!.id);
+      expect(ids).not.toContain(draft.id); // never-published story excluded
+    });
+
+    it("excludes a story once markStoryNotified has been called", async () => {
+      const published = await publishStory(`mark-${Date.now()}`);
+
+      await markStoryNotified(published!.id);
+      const pending = await listPublishedStoriesPendingNotification(50);
+
+      expect(pending.map((s) => s.id)).not.toContain(published!.id);
+    });
+  });
+
+  describe("listRecentlyEngagedNewsReaderIds", () => {
+    it("includes a user who read a story within the window, excludes one outside it", async () => {
+      const recentReader = await seedUser("recent");
+      const staleReader = await seedUser("stale");
+      const story = await publishStory(`engagement-${Date.now()}`);
+      await insertReadIfNew(recentReader.id, story!.id, 30);
+      const staleRead = await insertReadIfNew(staleReader.id, story!.id, 30);
+      await db
+        .update(newsReads)
+        .set({ readAt: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) }) // 60 days ago
+        .where(eq(newsReads.id, staleRead!.id));
+
+      const engaged = await listRecentlyEngagedNewsReaderIds(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+
+      expect(engaged).toContain(recentReader.id);
+      expect(engaged).not.toContain(staleReader.id);
+    });
+
+    it("returns each reader only once even with multiple reads in the window", async () => {
+      const reader = await seedUser("multi");
+      const storyA = await publishStory(`engagement-a-${Date.now()}`);
+      const storyB = await publishStory(`engagement-b-${Date.now()}`);
+      await insertReadIfNew(reader.id, storyA!.id, 30);
+      await insertReadIfNew(reader.id, storyB!.id, 30);
+
+      const engaged = await listRecentlyEngagedNewsReaderIds(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+
+      expect(engaged.filter((id) => id === reader.id)).toHaveLength(1);
+    });
   });
 });

@@ -2,7 +2,9 @@ import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
 import { daysBetweenIstDates, istDateString } from "@/lib/ist-date";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
-import { getStreak, recordStreakActivity, type StreakScope } from "./repo";
+import { NOTIFICATION_COPY } from "@/server/notifications/copy";
+import { notifyUser } from "@/server/notifications/service";
+import { getStreak, listAtRiskLearningStreaks, recordStreakActivity, type StreakScope } from "./repo";
 import {
   DEFAULT_STREAKS_SETTINGS,
   STREAKS_SETTINGS_KEY,
@@ -117,4 +119,20 @@ export async function getStreakStats(userId: string, at: Date = new Date()) {
     learning: shapeStreak(learning, todayIst, settings.streakFreezesPerMonth),
     pulseCheck: shapeStreak(pulseCheck, todayIst, settings.streakFreezesPerMonth),
   };
+}
+
+// Phase 7's streak_risk push notification (src/inngest/functions/
+// streak-risk-notifications.ts) - run once, in the evening IST so there's
+// still real time left to act. Notifies every learner whose learning streak
+// is at risk today (listAtRiskLearningStreaks) regardless of remaining
+// freezes - a real lesson is always better than passively spending one.
+export async function notifyLearnersWithStreakAtRisk(at: Date = new Date()): Promise<{ notified: number }> {
+  const yesterdayIst = istDateString(new Date(at.getTime() - 24 * 60 * 60 * 1000));
+  const atRisk = await listAtRiskLearningStreaks(yesterdayIst);
+
+  for (const { userId } of atRisk) {
+    await notifyUser(userId, "streak_risk", NOTIFICATION_COPY.streak_risk);
+  }
+
+  return { notified: atRisk.length };
 }

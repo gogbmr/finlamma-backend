@@ -11,6 +11,7 @@ import {
   deletePushTokenByValue,
   getNotificationPrefsRow,
   getUserLanguageForNotifications,
+  hasNotificationSince,
   insertNotification,
   listNotificationsPage,
   listPushTokensForUser,
@@ -190,4 +191,14 @@ export async function notifyUser(
   } catch (err) {
     logInternalError("notifications.notify_user_failed", err);
   }
+}
+
+// Dedup helper for a cron-driven trigger with no discrete completion event
+// to key off of (session_goal - see src/server/streaks... no, see
+// src/server/daily-goals/service.ts's own doc comment on why daily goals
+// have nothing to hook a mutation onto). `since` is normally today's IST
+// midnight, so this answers "has this learner already gotten this kind of
+// notification today".
+export async function hasBeenNotifiedSince(userId: string, kind: NotificationKind, since: Date): Promise<boolean> {
+  return hasNotificationSince(userId, kind, since);
 }

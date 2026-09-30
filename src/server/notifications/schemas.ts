@@ -95,6 +95,11 @@ export const NotificationsListResponseSchema = registry.register(
   }),
 );
 
+export const UnreadNotificationCountResponseSchema = registry.register(
+  "UnreadNotificationCountResponse",
+  z.object({ count: z.number().int().nonnegative() }),
+);
+
 export const MarkNotificationsReadInputSchema = z.object({
   // Omitted = mark every currently-unread notification as read (PR-29's
   // "mark-all-read"). Given = mark only these ids (all must belong to the

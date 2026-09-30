@@ -1552,6 +1552,166 @@
           "data"
         ]
       },
+      "RegisterPushTokenResponse": {
+        "type": "object",
+        "properties": {
+          "registered": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "registered"
+        ]
+      },
+      "UnregisterPushTokenResponse": {
+        "type": "object",
+        "properties": {
+          "unregistered": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "unregistered"
+        ]
+      },
+      "NotificationPrefs": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "quietHours": {
+            "type": "object",
+            "properties": {
+              "startHourIst": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+              },
+              "endHourIst": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+              }
+            },
+            "required": [
+              "startHourIst",
+              "endHourIst"
+            ]
+          },
+          "disabledCategories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "streak_risk",
+                "boss_battle",
+                "market_news",
+                "session_goal",
+                "cheer_received",
+                "league_rank_change"
+              ]
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "quietHours",
+          "disabledCategories"
+        ]
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "streak_risk",
+              "boss_battle",
+              "market_news",
+              "session_goal",
+              "cheer_received",
+              "league_rank_change"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "readAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "data",
+          "readAt",
+          "createdAt"
+        ]
+      },
+      "NotificationsListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "UnreadNotificationCountResponse": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "count"
+        ]
+      },
       "ServeStepResponse": {
         "type": "object",
         "properties": {
@@ -3182,154 +3342,6 @@
         },
         "required": [
           "reported"
-        ]
-      },
-      "RegisterPushTokenResponse": {
-        "type": "object",
-        "properties": {
-          "registered": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          }
-        },
-        "required": [
-          "registered"
-        ]
-      },
-      "UnregisterPushTokenResponse": {
-        "type": "object",
-        "properties": {
-          "unregistered": {
-            "type": "boolean",
-            "enum": [
-              true
-            ]
-          }
-        },
-        "required": [
-          "unregistered"
-        ]
-      },
-      "NotificationPrefs": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "quietHours": {
-            "type": "object",
-            "properties": {
-              "startHourIst": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 23
-              },
-              "endHourIst": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 23
-              }
-            },
-            "required": [
-              "startHourIst",
-              "endHourIst"
-            ]
-          },
-          "disabledCategories": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "streak_risk",
-                "boss_battle",
-                "market_news",
-                "session_goal",
-                "cheer_received",
-                "league_rank_change"
-              ]
-            }
-          }
-        },
-        "required": [
-          "enabled",
-          "quietHours",
-          "disabledCategories"
-        ]
-      },
-      "Notification": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "streak_risk",
-              "boss_battle",
-              "market_news",
-              "session_goal",
-              "cheer_received",
-              "league_rank_change"
-            ]
-          },
-          "title": {
-            "type": "string"
-          },
-          "body": {
-            "type": "string"
-          },
-          "data": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "additionalProperties": {}
-          },
-          "readAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "body",
-          "data",
-          "readAt",
-          "createdAt"
-        ]
-      },
-      "NotificationsListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/Notification"
-            }
-          },
-          "nextCursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        },
-        "required": [
-          "data",
-          "nextCursor"
         ]
       },
       "MarkNotificationsReadResponse": {
@@ -14207,6 +14219,48 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notifications/unread-count": {
+      "get": {
+        "summary": "Get my unread notification count (WH-18)",
+        "description": "Backs the bell icon's badge count - a dedicated endpoint rather than a query flag on the feed list, so the client can poll it cheaply without paging through notifications.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's unread count",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnreadNotificationCountResponse"
                 }
               }
             }

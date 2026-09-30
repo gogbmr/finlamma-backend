@@ -15,15 +15,23 @@ vi.mock("@/lib/activity-log", () => ({
 
 const mockGetStreak = vi.fn();
 const mockRecordStreakActivity = vi.fn();
+const mockListAtRiskLearningStreaks = vi.fn();
 vi.mock("./repo", () => ({
   getStreak: (userId: unknown, scope: unknown) => mockGetStreak(userId, scope),
   recordStreakActivity: (userId: unknown, scope: unknown, todayIst: unknown, freezes: unknown) =>
     mockRecordStreakActivity(userId, scope, todayIst, freezes),
+  listAtRiskLearningStreaks: (yesterdayIst: unknown) => mockListAtRiskLearningStreaks(yesterdayIst),
+}));
+
+const mockNotifyUser = vi.fn();
+vi.mock("@/server/notifications/service", () => ({
+  notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
 }));
 
 import {
   getStreaksSettings,
   getStreakStats,
+  notifyLearnersWithStreakAtRisk,
   recordLearningActivity,
   updateStreaksSettings,
 } from "./service";
@@ -208,5 +216,27 @@ describe("getStreakStats", () => {
     // The allowance is treated as freshly reset for January, so the one
     // missed day is still coverable and the streak still reads as current.
     expect(result.learning).toEqual({ current: 5, longest: 12, freezesLeft: 2 });
+  });
+});
+
+describe("notifyLearnersWithStreakAtRisk", () => {
+  it("queries yesterday's IST date and notifies every at-risk learner", async () => {
+    mockListAtRiskLearningStreaks.mockResolvedValueOnce([{ userId: "u1" }, { userId: "u2" }]);
+
+    const result = await notifyLearnersWithStreakAtRisk(new Date("2026-09-30T12:00:00.000Z")); // ~5:30pm IST, still Sep 30 IST
+
+    expect(mockListAtRiskLearningStreaks).toHaveBeenCalledWith("2026-09-29");
+    expect(mockNotifyUser).toHaveBeenCalledWith("u1", "streak_risk", expect.anything());
+    expect(mockNotifyUser).toHaveBeenCalledWith("u2", "streak_risk", expect.anything());
+    expect(result).toEqual({ notified: 2 });
+  });
+
+  it("notifies nobody when no streak is at risk", async () => {
+    mockListAtRiskLearningStreaks.mockResolvedValueOnce([]);
+
+    const result = await notifyLearnersWithStreakAtRisk(new Date("2026-09-30T12:00:00.000Z"));
+
+    expect(mockNotifyUser).not.toHaveBeenCalled();
+    expect(result).toEqual({ notified: 0 });
   });
 });

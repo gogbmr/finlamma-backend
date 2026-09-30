@@ -10,6 +10,7 @@ const mockRepo = {
   deletePushTokenByValue: vi.fn(),
   getNotificationPrefsRow: vi.fn(),
   getUserLanguageForNotifications: vi.fn(),
+  hasNotificationSince: vi.fn(),
   insertNotification: vi.fn(),
   listNotificationsPage: vi.fn(),
   listPushTokensForUser: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("./settings", () => ({ getNotificationsSettings: () => mockGetNotificati
 const {
   getMyNotificationPrefs,
   getMyUnreadNotificationCount,
+  hasBeenNotifiedSince,
   isWithinQuietHours,
   listMyNotifications,
   markMyNotificationsRead,
@@ -265,5 +267,17 @@ describe("notifyUser", () => {
     await expect(notifyUser("u1", "session_goal", { title: TITLE, body: BODY })).resolves.toBeUndefined();
 
     vi.useRealTimers();
+  });
+});
+
+describe("hasBeenNotifiedSince", () => {
+  it("delegates straight to the repo", async () => {
+    const since = new Date("2026-09-30T00:00:00Z");
+    mockRepo.hasNotificationSince.mockResolvedValueOnce(true);
+
+    const result = await hasBeenNotifiedSince("u1", "session_goal", since);
+
+    expect(result).toBe(true);
+    expect(mockRepo.hasNotificationSince).toHaveBeenCalledWith("u1", "session_goal", since);
   });
 });
