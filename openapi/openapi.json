@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -284,6 +284,53 @@
             "example": "Saving up for my first SIP!",
             "description": "Free-text, self-editable, private to the owner - never shown to any other learner."
           },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Andhra Pradesh",
+              "Arunachal Pradesh",
+              "Assam",
+              "Bihar",
+              "Chhattisgarh",
+              "Goa",
+              "Gujarat",
+              "Haryana",
+              "Himachal Pradesh",
+              "Jharkhand",
+              "Karnataka",
+              "Kerala",
+              "Madhya Pradesh",
+              "Maharashtra",
+              "Manipur",
+              "Meghalaya",
+              "Mizoram",
+              "Nagaland",
+              "Odisha",
+              "Punjab",
+              "Rajasthan",
+              "Sikkim",
+              "Tamil Nadu",
+              "Telangana",
+              "Tripura",
+              "Uttar Pradesh",
+              "Uttarakhand",
+              "West Bengal",
+              "Andaman and Nicobar Islands",
+              "Chandigarh",
+              "Dadra and Nagar Haveli and Daman and Diu",
+              "Delhi",
+              "Jammu and Kashmir",
+              "Ladakh",
+              "Lakshadweep",
+              "Puducherry",
+              null
+            ],
+            "example": "Maharashtra",
+            "description": "Optional. Used only to place you in Arena's state-scope leaderboard - never shown on your or anyone else's public profile."
+          },
           "preferences": {
             "type": "object",
             "properties": {
@@ -301,17 +348,24 @@
                 "type": "boolean",
                 "example": false,
                 "description": "Serves lower-resolution lesson videos when on."
+              },
+              "cheersEnabled": {
+                "type": "boolean",
+                "example": true,
+                "description": "Off hides this learner's cheer button from every other learner's Arena view - no cheers can be sent to them while off. Never affects cheers they've already received."
               }
             },
             "required": [
               "sound",
               "haptics",
-              "dataSaver"
+              "dataSaver",
+              "cheersEnabled"
             ],
             "example": {
               "sound": true,
               "haptics": true,
-              "dataSaver": false
+              "dataSaver": false,
+              "cheersEnabled": true
             }
           }
         },
@@ -324,6 +378,7 @@
           "language",
           "theme",
           "bio",
+          "state",
           "preferences"
         ]
       },
@@ -368,6 +423,53 @@
             "example": "Saving up for my first SIP!",
             "description": "Free-text, self-editable, private to the owner - never shown to any other learner."
           },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Andhra Pradesh",
+              "Arunachal Pradesh",
+              "Assam",
+              "Bihar",
+              "Chhattisgarh",
+              "Goa",
+              "Gujarat",
+              "Haryana",
+              "Himachal Pradesh",
+              "Jharkhand",
+              "Karnataka",
+              "Kerala",
+              "Madhya Pradesh",
+              "Maharashtra",
+              "Manipur",
+              "Meghalaya",
+              "Mizoram",
+              "Nagaland",
+              "Odisha",
+              "Punjab",
+              "Rajasthan",
+              "Sikkim",
+              "Tamil Nadu",
+              "Telangana",
+              "Tripura",
+              "Uttar Pradesh",
+              "Uttarakhand",
+              "West Bengal",
+              "Andaman and Nicobar Islands",
+              "Chandigarh",
+              "Dadra and Nagar Haveli and Daman and Diu",
+              "Delhi",
+              "Jammu and Kashmir",
+              "Ladakh",
+              "Lakshadweep",
+              "Puducherry",
+              null
+            ],
+            "example": "Maharashtra",
+            "description": "Optional. Used only to place you in Arena's state-scope leaderboard - never shown on your or anyone else's public profile."
+          },
           "preferences": {
             "type": "object",
             "properties": {
@@ -385,17 +487,24 @@
                 "type": "boolean",
                 "example": false,
                 "description": "Serves lower-resolution lesson videos when on."
+              },
+              "cheersEnabled": {
+                "type": "boolean",
+                "example": true,
+                "description": "Off hides this learner's cheer button from every other learner's Arena view - no cheers can be sent to them while off. Never affects cheers they've already received."
               }
             },
             "required": [
               "sound",
               "haptics",
-              "dataSaver"
+              "dataSaver",
+              "cheersEnabled"
             ],
             "example": {
               "sound": true,
               "haptics": true,
-              "dataSaver": false
+              "dataSaver": false,
+              "cheersEnabled": true
             }
           }
         }
@@ -2258,12 +2367,22 @@
                   "weeklyEmailOn"
                 ],
                 "description": "Non-null whenever this learner is currently under 18 with a consented parent - see docs/ARCHITECTURE.md D33. Non-null does not mean the weekly email is sending; check weeklyEmailOn for that."
+              },
+              "globalRank": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "exclusiveMinimum": 0,
+                "example": 186,
+                "description": "PR-30 (Phase 6 Checkpoint 6): rank in Arena's Global scope, last weekly settlement. Independent of `current`'s own weekly cadence. Null until the first settlement has run for this learner, or if they had no XP that week."
               }
             },
             "required": [
               "current",
               "trend",
-              "sharedWithParent"
+              "sharedWithParent",
+              "globalRank"
             ]
           }
         },
@@ -3382,7 +3501,7 @@
       },
       "patch": {
         "summary": "Update my preferences",
-        "description": "Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged.",
+        "description": "Updates language, theme, bio, state and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged. `state` is optional and used only to place the learner in Arena's state-scope leaderboard - it is never shown on any profile.",
         "tags": [
           "Users"
         ],
@@ -3421,7 +3540,7 @@
                     "message": "Request validation failed",
                     "details": {
                       "_errors": [
-                        "Provide at least one of language, theme, bio or preferences"
+                        "Provide at least one of language, theme, bio, state or preferences"
                       ]
                     }
                   }
@@ -5252,7 +5371,7 @@
     "/api/v1/me/profile/overview": {
       "get": {
         "summary": "Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)",
-        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.",
+        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).",
         "tags": [
           "Learning"
         ],
@@ -5333,6 +5452,159 @@
                             "hx"
                           ],
                           "description": "The highest rank title the learner's current level qualifies for, or null if no rank_titles row has a minLevel at or below their level yet."
+                        },
+                        "percentile": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 1,
+                          "maximum": 100,
+                          "example": 8,
+                          "description": "PR-01: \"top N%\" from Arena's Global scope, last weekly settlement. Null until the first settlement has run for this learner."
+                        },
+                        "rankDeltaCells": {
+                          "type": "object",
+                          "properties": {
+                            "world": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string",
+                                  "example": "global"
+                                },
+                                "rank": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 186
+                                },
+                                "poolSize": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 2400
+                                },
+                                "topPercentPct": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "example": 8,
+                                  "description": "\"Top N%\" - smaller is better. Never 0."
+                                },
+                                "rankDelta": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "example": 14,
+                                  "description": "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare."
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "rank",
+                                "poolSize",
+                                "topPercentPct",
+                                "rankDelta"
+                              ]
+                            },
+                            "stateOrIndia": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string",
+                                  "example": "global"
+                                },
+                                "rank": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 186
+                                },
+                                "poolSize": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 2400
+                                },
+                                "topPercentPct": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "example": 8,
+                                  "description": "\"Top N%\" - smaller is better. Never 0."
+                                },
+                                "rankDelta": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "example": 14,
+                                  "description": "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare."
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "rank",
+                                "poolSize",
+                                "topPercentPct",
+                                "rankDelta"
+                              ]
+                            },
+                            "global": {
+                              "type": [
+                                "object",
+                                "null"
+                              ],
+                              "properties": {
+                                "scope": {
+                                  "type": "string",
+                                  "example": "global"
+                                },
+                                "rank": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 186
+                                },
+                                "poolSize": {
+                                  "type": "integer",
+                                  "exclusiveMinimum": 0,
+                                  "example": 2400
+                                },
+                                "topPercentPct": {
+                                  "type": "integer",
+                                  "minimum": 1,
+                                  "maximum": 100,
+                                  "example": 8,
+                                  "description": "\"Top N%\" - smaller is better. Never 0."
+                                },
+                                "rankDelta": {
+                                  "type": [
+                                    "integer",
+                                    "null"
+                                  ],
+                                  "example": 14,
+                                  "description": "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare."
+                                }
+                              },
+                              "required": [
+                                "scope",
+                                "rank",
+                                "poolSize",
+                                "topPercentPct",
+                                "rankDelta"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "world",
+                            "stateOrIndia",
+                            "global"
+                          ],
+                          "description": "PR-03's three rank-delta cells. Each is independently null when there's nothing to report for that scope - never a fabricated 0."
                         },
                         "streak": {
                           "type": "object",
@@ -5426,6 +5698,8 @@
                         "xpIntoLevel",
                         "xpToNextLevel",
                         "rankTitle",
+                        "percentile",
+                        "rankDeltaCells",
                         "streak",
                         "lessons",
                         "quizAccuracyPct",
@@ -6341,7 +6615,7 @@
     "/api/v1/me/report-card": {
       "get": {
         "summary": "My weekly report card (PR-30/31/32/33)",
-        "description": "The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.",
+        "description": "The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33), and PR-30's global Arena rank (null until the first weekly settlement has run). Coach notes are progress-only and never comparative.",
         "tags": [
           "Learning"
         ],
@@ -10306,6 +10580,2459 @@
             "description": "Webhook signing secret not configured",
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/leaderboard": {
+      "get": {
+        "summary": "Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)",
+        "description": "Ranks every learner by XP earned since Monday IST, for the requested scope. 'state' and 'world' are resolved from the caller's own profile (users.state / their current world) - there is no way to view another scope's raw pool directly. A thin scope (below settings_kv's arena_min_leaderboard_pool_size, default 20) either falls back to a broader scope (state -> india) or is returned with notEnoughPlayers: true (world/india/global, which have no broader fallback) - see docs/ARCHITECTURE.md's Phase 6 kickoff decision. Every XP credit behind this ranking is idempotent per (user, source) at the ledger level (D26), so replaying a lesson or quiz can never inflate a learner's weekly total.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "world",
+                "state",
+                "india",
+                "global"
+              ],
+              "example": "global",
+              "description": "Which leaderboard to view (FEATURE_MAP AR-07). 'world' is the caller's own current world team; 'state' uses the caller's own users.state if set. A thin state pool transparently falls back to 'india' (see fallbackApplied on the response)."
+            },
+            "required": true,
+            "description": "Which leaderboard to view (FEATURE_MAP AR-07). 'world' is the caller's own current world team; 'state' uses the caller's own users.state if set. A thin state pool transparently falls back to 'india' (see fallbackApplied on the response).",
+            "name": "scope",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The requested (or fallback) scope's weekly leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "requestedScope": {
+                          "type": "string",
+                          "example": "state:Maharashtra",
+                          "description": "The scope actually requested, before any privacy-floor fallback."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "example": "india",
+                          "description": "The scope actually returned - may differ from requestedScope, see fallbackApplied."
+                        },
+                        "fallbackApplied": {
+                          "type": "boolean",
+                          "example": true,
+                          "description": "true when the requested scope's pool was below the minimum size (settings_kv, default 20) and this response falls back to a broader scope instead."
+                        },
+                        "notEnoughPlayers": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true when even the returned scope doesn't meet the minimum pool size - the app should render 'not enough players yet' rather than this (possibly empty) list."
+                        },
+                        "weekStartDate": {
+                          "type": "string",
+                          "example": "2026-09-28",
+                          "description": "Monday IST, this week."
+                        },
+                        "poolSize": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 214
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 1
+                              },
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "Aarav"
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "S",
+                                "description": "Kid-safe display name is always firstName + lastInitial - never a full name."
+                              },
+                              "xp": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 2710,
+                                "description": "XP earned this week."
+                              },
+                              "isSelf": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "zone": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "promote",
+                                  "safe",
+                                  "demote",
+                                  null
+                                ],
+                                "example": "promote",
+                                "description": "This scope's current league zone (docs/ARCHITECTURE.md D54). Promotion and the neutral 'safe' band are visible on anyone's row; 'demote' is only ever shown on your OWN row - on someone else's row it's always null, whether they're actually in 'demote' or the league hasn't settled yet."
+                              },
+                              "rankDelta": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 3,
+                                "description": "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, negative = moved down, null = nothing to compare (a new entrant this week, or this scope didn't settle last week - e.g. below the privacy floor)."
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "userId",
+                              "firstName",
+                              "lastInitial",
+                              "xp",
+                              "isSelf",
+                              "zone",
+                              "rankDelta"
+                            ]
+                          }
+                        },
+                        "self": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "xp": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "rankDelta": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "example": 3
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "xp",
+                            "rankDelta"
+                          ],
+                          "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
+                        }
+                      },
+                      "required": [
+                        "requestedScope",
+                        "scope",
+                        "fallbackApplied",
+                        "notEnoughPlayers",
+                        "weekStartDate",
+                        "poolSize",
+                        "rows",
+                        "self"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or missing scope query parameter",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "scope must be one of world, state, india, global"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/worlds": {
+      "get": {
+        "summary": "Get the Worlds leaderboard (AR-04/05)",
+        "description": "Every currently-populated world, ranked by total weekly XP earned by learners currently attributed to it (their furthest world with a completed lesson) - includes xpPerMember so a small world can compete on average, week-over-week deltaPct, and a 7-day daily sparkline.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current Worlds leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "weekStartDate": {
+                          "type": "string",
+                          "example": "2026-09-28"
+                        },
+                        "worlds": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "worldId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "example": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                              },
+                              "title": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ],
+                                "example": {
+                                  "en": "Money World",
+                                  "hi": "मनी वर्ल्ड",
+                                  "hx": "Money World"
+                                }
+                              },
+                              "xp": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 48210,
+                                "description": "Total weekly XP, this world's team."
+                              },
+                              "memberCount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 214
+                              },
+                              "xpPerMember": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 225,
+                                "description": "xp / memberCount, rounded - lets a small world compete on average, not just total."
+                              },
+                              "deltaPct": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 21,
+                                "description": "% change vs last week's total. Null if last week's total was 0 (nothing to compare against)."
+                              },
+                              "sparkline": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "date": {
+                                      "type": "string",
+                                      "example": "2026-09-22"
+                                    },
+                                    "xp": {
+                                      "type": "integer",
+                                      "minimum": 0
+                                    }
+                                  },
+                                  "required": [
+                                    "date",
+                                    "xp"
+                                  ]
+                                },
+                                "description": "Oldest-first daily totals, up to the last 7 IST days. Shorter if less history exists."
+                              }
+                            },
+                            "required": [
+                              "worldId",
+                              "title",
+                              "xp",
+                              "memberCount",
+                              "xpPerMember",
+                              "deltaPct",
+                              "sparkline"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "weekStartDate",
+                        "worlds"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/worlds/{worldId}/leaderboard": {
+      "get": {
+        "summary": "Get one world's own weekly leaderboard (AR-06)",
+        "description": "Drilling into a specific world tapped from GET /arena/worlds - not necessarily the caller's own current world. Same shape, privacy floor and self-row handling as GET /arena/leaderboard (a thin world has no broader scope to fall back to, so it reports notEnoughPlayers instead).",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "worldId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "That world's weekly leaderboard",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "requestedScope": {
+                          "type": "string",
+                          "example": "state:Maharashtra",
+                          "description": "The scope actually requested, before any privacy-floor fallback."
+                        },
+                        "scope": {
+                          "type": "string",
+                          "example": "india",
+                          "description": "The scope actually returned - may differ from requestedScope, see fallbackApplied."
+                        },
+                        "fallbackApplied": {
+                          "type": "boolean",
+                          "example": true,
+                          "description": "true when the requested scope's pool was below the minimum size (settings_kv, default 20) and this response falls back to a broader scope instead."
+                        },
+                        "notEnoughPlayers": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true when even the returned scope doesn't meet the minimum pool size - the app should render 'not enough players yet' rather than this (possibly empty) list."
+                        },
+                        "weekStartDate": {
+                          "type": "string",
+                          "example": "2026-09-28",
+                          "description": "Monday IST, this week."
+                        },
+                        "poolSize": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 214
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "example": 1
+                              },
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "Aarav"
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "S",
+                                "description": "Kid-safe display name is always firstName + lastInitial - never a full name."
+                              },
+                              "xp": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "example": 2710,
+                                "description": "XP earned this week."
+                              },
+                              "isSelf": {
+                                "type": "boolean",
+                                "example": false
+                              },
+                              "zone": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "promote",
+                                  "safe",
+                                  "demote",
+                                  null
+                                ],
+                                "example": "promote",
+                                "description": "This scope's current league zone (docs/ARCHITECTURE.md D54). Promotion and the neutral 'safe' band are visible on anyone's row; 'demote' is only ever shown on your OWN row - on someone else's row it's always null, whether they're actually in 'demote' or the league hasn't settled yet."
+                              },
+                              "rankDelta": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "example": 3,
+                                "description": "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, negative = moved down, null = nothing to compare (a new entrant this week, or this scope didn't settle last week - e.g. below the privacy floor)."
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "userId",
+                              "firstName",
+                              "lastInitial",
+                              "xp",
+                              "isSelf",
+                              "zone",
+                              "rankDelta"
+                            ]
+                          }
+                        },
+                        "self": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "rank": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "xp": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "rankDelta": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "example": 3
+                            }
+                          },
+                          "required": [
+                            "rank",
+                            "xp",
+                            "rankDelta"
+                          ],
+                          "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
+                        }
+                      },
+                      "required": [
+                        "requestedScope",
+                        "scope",
+                        "fallbackApplied",
+                        "notEnoughPlayers",
+                        "weekStartDate",
+                        "poolSize",
+                        "rows",
+                        "self"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/activity": {
+      "get": {
+        "summary": "Get the recent-activity ticker (AR-03)",
+        "description": "The most recent real XP credits app-wide, newest first, kid-safe display name only.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent activity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "Meera"
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "K"
+                              },
+                              "amount": {
+                                "type": "integer",
+                                "example": 80
+                              },
+                              "createdAt": {
+                                "type": "string",
+                                "format": "date-time",
+                                "example": "2026-09-28T10:12:00.000Z"
+                              }
+                            },
+                            "required": [
+                              "firstName",
+                              "lastInitial",
+                              "amount",
+                              "createdAt"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "items"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/cheers": {
+      "post": {
+        "summary": "Cheer another learner (AR-12)",
+        "description": "Sends a cheer, worth a fixed amount of XP (settings_kv, default 5) to the receiver. One cheer per sender-receiver pair per IST day - repeating the same day is a successful no-op, never a second credit. A daily total cap on how much XP a receiver can bank from cheers (settings_kv) may reduce or zero xpAwarded even on a fresh cheer. Fails if the receiver has turned off cheersEnabled (PATCH /me's preferences) - never shows another learner's identity, only whether the cheer itself succeeded.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "receiverId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                  }
+                },
+                "required": [
+                  "receiverId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The cheer was processed (possibly a no-op replay, possibly capped)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "alreadyCheeredToday": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true if you'd already cheered this learner today - no additional XP was awarded."
+                        },
+                        "xpAwarded": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 5
+                        },
+                        "dailyCapReached": {
+                          "type": "boolean",
+                          "example": false,
+                          "description": "true if the receiver's daily cheer-XP cap limited (or zeroed) this award."
+                        }
+                      },
+                      "required": [
+                        "alreadyCheeredToday",
+                        "xpAwarded",
+                        "dailyCapReached"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, or cheering yourself",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "You can't cheer yourself"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Receiver not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Learner not found"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The receiver has turned off cheersEnabled",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "CHEER_RECEIVER_OPTED_OUT",
+                    "message": "This learner isn't receiving cheers right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/arena/cheers": {
+      "get": {
+        "summary": "Get my cheers-received summary (AR-12)",
+        "description": "An aggregate-only weekly count of cheers received - docs/ARCHITECTURE.md D53: sender identity is never shown, in any form, not even a partial breakdown.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's cheers-received summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "receivedThisWeek": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 12,
+                          "description": "Aggregate count only - who sent them is never shown (docs/ARCHITECTURE.md D53)."
+                        }
+                      },
+                      "required": [
+                        "receivedThisWeek"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/chips": {
+      "get": {
+        "summary": "List the active about-me chip catalog (AR-20)",
+        "description": "The admin-managed preset chips a learner can pick for their public profile - never free text (docs/ARCHITECTURE.md D36).",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active chips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "iconKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "piggy-bank"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "iconKey"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/arena/chips": {
+      "get": {
+        "summary": "Get my selected about-me chips (AR-20)",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's currently-selected chips",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "iconKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "piggy-bank"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "iconKey"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set my selected about-me chips (AR-20)",
+        "description": "Replaces the caller's whole chip selection - at most 3, and every id must be an active chip.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "chipIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 3,
+                    "description": "Replaces your whole chip selection - at most 3 (settings, not schema-fixed)."
+                  }
+                },
+                "required": [
+                  "chipIds"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The caller's new chip selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          "iconKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "example": "piggy-bank"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "iconKey"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Too many chips, or one isn't currently active",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Pick at most 3 chips"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/users/{userId}/public-profile": {
+      "get": {
+        "summary": "Get a learner's public Arena profile (AR-20)",
+        "description": "Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe display name (first name + last initial, never a full name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class or `bio` - `users.bio` stays private to its owner forever.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The learner's public profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "firstName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "Aarav"
+                        },
+                        "lastInitial": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "example": "S",
+                          "description": "Kid-safe display name is always firstName + lastInitial - never a full name or photo."
+                        },
+                        "level": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 4
+                        },
+                        "rankTitle": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "badges": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ]
+                              },
+                              "description": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ]
+                              },
+                              "iconKey": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "description",
+                              "iconKey"
+                            ]
+                          }
+                        },
+                        "chips": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "name": {
+                                "type": "object",
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ]
+                              },
+                              "iconKey": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "example": "piggy-bank"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "iconKey"
+                            ]
+                          },
+                          "description": "Preset chips this learner picked - never free text (docs/ARCHITECTURE.md D36)."
+                        },
+                        "weekXp": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 1240
+                        },
+                        "streak": {
+                          "type": "object",
+                          "properties": {
+                            "current": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 4
+                            },
+                            "longest": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 12
+                            }
+                          },
+                          "required": [
+                            "current",
+                            "longest"
+                          ]
+                        },
+                        "quizAccuracyPct": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100,
+                          "example": 82
+                        },
+                        "currentWorld": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "title": {
+                              "type": "object",
+                              "properties": {
+                                "en": {
+                                  "type": "string"
+                                },
+                                "hi": {
+                                  "type": "string"
+                                },
+                                "hx": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "en",
+                                "hi",
+                                "hx"
+                              ]
+                            },
+                            "completedLessons": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 6
+                            },
+                            "totalLessons": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "example": 40
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "title",
+                            "completedLessons",
+                            "totalLessons"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "firstName",
+                        "lastInitial",
+                        "level",
+                        "rankTitle",
+                        "badges",
+                        "chips",
+                        "weekXp",
+                        "streak",
+                        "quizAccuracyPct",
+                        "currentWorld"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Learner not found",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "Learner not found"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current": {
+      "get": {
+        "summary": "Get the current Monthly Competition (AR-14)",
+        "description": "The competition hero card: name, instrument, virtual capital (a non-convertible sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands and rules text. Null when no competition is currently published and within its window - the app should show an empty state, not an error. Live LTP/% change isn't included here - use GET /trade/instruments/{symbol} for that.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current competition, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "name": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "instrumentId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "virtualCapitalPaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 10000000,
+                          "description": "₹1,00,000 in paise - a sandbox balance, never V Money (docs/ARCHITECTURE.md D57)."
+                        },
+                        "windowStart": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "windowEnd": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "daysLeft": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 12
+                        },
+                        "prizes": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rankFrom": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "rankTo": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "vmAmount": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 5000
+                              },
+                              "badgeId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "rankFrom",
+                              "rankTo",
+                              "vmAmount",
+                              "badgeId"
+                            ]
+                          }
+                        },
+                        "rules": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "playersCount": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "example": 340
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "instrumentId",
+                        "virtualCapitalPaise",
+                        "windowStart",
+                        "windowEnd",
+                        "daysLeft",
+                        "prizes",
+                        "rules",
+                        "playersCount"
+                      ],
+                      "description": "Null when no competition is currently published and within its window."
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/enter": {
+      "post": {
+        "summary": "Enter the current Monthly Competition (AR-14)",
+        "description": "Creates the caller's entry, seeded with the competition's virtual capital (never V Money - docs/ARCHITECTURE.md D57). Calling this again after already entering just returns the existing entry, not an error. Requires trading to already be unlocked, and only accepts entries within the first part of the competition's window (docs/ARCHITECTURE.md D59, settings_kv-tunable) - closes a late-entry-lucky-trade gap.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's competition entry (new or existing)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "competitionId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "cashPaise": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "qtyHeld": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "enteredAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "competitionId",
+                        "cashPaise",
+                        "qtyHeld",
+                        "enteredAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or trading isn't unlocked yet",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Trading is locked until you clear more worlds"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active competition right now",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No active competition right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The entry window for this competition has closed",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "COMPETITION_ENTRY_CLOSED",
+                    "message": "Entry for this competition has closed"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/trades": {
+      "post": {
+        "summary": "Place a trade inside the current Monthly Competition (AR-14)",
+        "description": "MARKET-only, whole shares, against the competition's single fixed instrument and the caller's own isolated entry - never the real order book, `holdings` or `vmoney_ledger` (docs/ARCHITECTURE.md D57). Requires an Idempotency-Key header, same convention as real orders. Rejected the same way a real order is for market/symbol halts, a paused feed, a closed market, or a stale/unavailable price (never a different, looser price path for the sandbox) - plus a competition-specific max-trades limit (settings_kv, default 10).",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per trade attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per trade attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {
+                "side": "buy",
+                "qty": 5
+              },
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "buy",
+                      "sell"
+                    ]
+                  },
+                  "qty": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5,
+                    "description": "Whole shares only."
+                  }
+                },
+                "required": [
+                  "side",
+                  "qty"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The trade (filled, or replayed from an identical earlier request)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "side": {
+                          "type": "string",
+                          "enum": [
+                            "buy",
+                            "sell"
+                          ]
+                        },
+                        "qty": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "fillPricePaise": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0
+                        },
+                        "realizedPnlPaise": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "filledAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        "replayed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "side",
+                        "qty",
+                        "fillPricePaise",
+                        "realizedPnlPaise",
+                        "filledAt",
+                        "replayed"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input, or a missing Idempotency-Key header",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Idempotency-Key header is required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or the caller hasn't entered this competition",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Enter the competition before trading in it"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active competition right now",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No active competition right now"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Market/symbol halted, feed paused, market closed, price stale/unavailable, the max-trades limit reached, or insufficient cash/holdings",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "COMPETITION_MAX_TRADES_REACHED",
+                    "message": "You've reached the 10-trade limit for this competition"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many trade attempts, or the rate limiter couldn't be reached (fails closed)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/me": {
+      "get": {
+        "summary": "Get my status in the current Monthly Competition (AR-15)",
+        "description": "The \"You\" rank card - live rank/ROI% among every entrant, computed the instant it's requested (never a cached snapshot - a competition is a single ongoing event, not a recurring weekly cycle like Arena leagues). `entered: false` if the caller hasn't entered yet; `data: null` if there's no active competition at all right now. ROI% is computed against the FULL starting capital, never just the deployed cost basis.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's competition status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "entered": {
+                              "type": "boolean",
+                              "enum": [
+                                false
+                              ]
+                            }
+                          },
+                          "required": [
+                            "entered"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "entered": {
+                              "type": "boolean",
+                              "enum": [
+                                true
+                              ]
+                            },
+                            "rank": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "example": 42
+                            },
+                            "poolSize": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "example": 340
+                            },
+                            "roiPctBasisPoints": {
+                              "type": "integer",
+                              "example": 823,
+                              "description": "ROI% x 100 (823 = 8.23%). Computed against the FULL starting capital, never just the deployed cost basis."
+                            },
+                            "tradeCount": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "cashPaise": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "qtyHeld": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "entered",
+                            "rank",
+                            "poolSize",
+                            "roiPctBasisPoints",
+                            "tradeCount",
+                            "cashPaise",
+                            "qtyHeld"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Null when there's no active competition at all right now."
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/arena/competitions/current/leaderboard": {
+      "get": {
+        "summary": "Get the current Monthly Competition's ranked board (AR-16)",
+        "description": "Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The current competition's leaderboard, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "rank": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0
+                              },
+                              "userId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "firstName": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "lastInitial": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              },
+                              "roiPctBasisPoints": {
+                                "type": "integer"
+                              },
+                              "isSelf": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": [
+                              "rank",
+                              "userId",
+                              "firstName",
+                              "lastInitial",
+                              "roiPctBasisPoints",
+                              "isSelf"
+                            ]
+                          }
+                        },
+                        "poolSize": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "rows",
+                        "poolSize"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }

@@ -207,7 +207,8 @@ const USER_ROW = {
   language: "en" as const,
   theme: "dark" as const,
   bio: null,
-  preferences: { sound: true, haptics: true, dataSaver: false },
+  state: null,
+  preferences: { sound: true, haptics: true, dataSaver: false, cheersEnabled: true },
   clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
   deletedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -225,7 +226,8 @@ describe("getMe", () => {
       language: "en",
       theme: "dark",
       bio: null,
-      preferences: { sound: true, haptics: true, dataSaver: false },
+      state: null,
+      preferences: { sound: true, haptics: true, dataSaver: false, cheersEnabled: true },
     });
   });
 });
@@ -263,8 +265,18 @@ describe("updateMe", () => {
     expect(result.bio).toBe("Saving up!");
   });
 
+  it("persists a state update (Arena's state-scope leaderboard, never shown on any profile)", async () => {
+    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, state: "Maharashtra" });
+    mockLogActivity.mockResolvedValueOnce(undefined);
+
+    const result = await updateMe(USER_ROW, { state: "Maharashtra" }, META);
+
+    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { state: "Maharashtra" });
+    expect(result.state).toBe("Maharashtra");
+  });
+
   it("persists a whole-object preferences update", async () => {
-    const preferences = { sound: false, haptics: false, dataSaver: true };
+    const preferences = { sound: false, haptics: false, dataSaver: true, cheersEnabled: false };
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, preferences });
     mockLogActivity.mockResolvedValueOnce(undefined);
 

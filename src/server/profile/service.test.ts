@@ -33,6 +33,11 @@ vi.mock("@/server/quiz-attempts/repo", () => ({
   getQuizAccuracyTotalsForUser: (userId: unknown) => mockGetQuizAccuracyTotalsForUser(userId),
 }));
 
+const mockGetMyArenaRankSummary = vi.fn();
+vi.mock("@/server/arena/service", () => ({
+  getMyArenaRankSummary: (user: unknown) => mockGetMyArenaRankSummary(user),
+}));
+
 import { getProfileOverview } from "./service";
 
 const USER: Parameters<typeof getProfileOverview>[0] = {
@@ -54,6 +59,7 @@ beforeEach(() => {
   mockListLessonCompletionTimestampsForUser.mockResolvedValue([]);
   mockCountPublishedLessons.mockResolvedValue(0);
   mockGetQuizAccuracyTotalsForUser.mockResolvedValue({ correct: 0, total: 0 });
+  mockGetMyArenaRankSummary.mockResolvedValue({ world: null, stateOrIndia: null, global: null });
 });
 
 describe("getProfileOverview", () => {
@@ -79,6 +85,8 @@ describe("getProfileOverview", () => {
       xpIntoLevel: 0,
       xpToNextLevel: 300,
       rankTitle: null,
+      percentile: null,
+      rankDeltaCells: { world: null, stateOrIndia: null, global: null },
       streak: { current: 0, longest: 0, freezesLeft: 2 },
       lessons: { completed: 0, total: 0, pct: 0 },
       quizAccuracyPct: null,
@@ -221,5 +229,53 @@ describe("getProfileOverview", () => {
       USER.id,
       new Date("2026-09-17T12:00:00.000Z"),
     );
+  });
+
+  it("Phase 6 Checkpoint 6: derives the headline percentile from the Global rank-delta cell", async () => {
+    mockGetLevelInfo.mockResolvedValueOnce({
+      level: 1,
+      totalXp: 0,
+      currentLevelStartXp: 0,
+      nextLevelStartXp: 300,
+      xpIntoLevel: 0,
+      xpToNextLevel: 300,
+    });
+    mockGetRankTitleForLevel.mockResolvedValueOnce(null);
+    mockGetMyArenaRankSummary.mockResolvedValueOnce({
+      world: { scope: "world:w1", rank: 3, poolSize: 40, topPercentPct: 8, rankDelta: 2 },
+      stateOrIndia: null,
+      global: { scope: "global", rank: 186, poolSize: 2400, topPercentPct: 8, rankDelta: -5 },
+    });
+
+    const overview = await getProfileOverview(USER, AT);
+
+    expect(overview.percentile).toBe(8);
+    expect(overview.rankDeltaCells.global).toEqual({
+      scope: "global",
+      rank: 186,
+      poolSize: 2400,
+      topPercentPct: 8,
+      rankDelta: -5,
+    });
+    expect(overview.rankDeltaCells.stateOrIndia).toBeNull();
+    expect(mockGetMyArenaRankSummary).toHaveBeenCalledWith(USER);
+  });
+
+  it("percentile is null (not 0 or broken) before Arena has ever settled a week for this learner", async () => {
+    mockGetLevelInfo.mockResolvedValueOnce({
+      level: 1,
+      totalXp: 0,
+      currentLevelStartXp: 0,
+      nextLevelStartXp: 300,
+      xpIntoLevel: 0,
+      xpToNextLevel: 300,
+    });
+    mockGetRankTitleForLevel.mockResolvedValueOnce(null);
+    // beforeEach's default already returns all-null - this pins that case down explicitly.
+
+    const overview = await getProfileOverview(USER, AT);
+
+    expect(overview.percentile).toBeNull();
+    expect(overview.rankDeltaCells).toEqual({ world: null, stateOrIndia: null, global: null });
   });
 });

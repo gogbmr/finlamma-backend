@@ -37,10 +37,11 @@ registry.registerPath({
   path: "/api/v1/me",
   summary: "Update my preferences",
   description:
-    "Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile " +
-    "fields this API owns. Name, email and phone are Clerk-owned identity fields, changed " +
+    "Updates language, theme, bio, state and/or sound/haptics/data-saver preferences - the only " +
+    "profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed " +
     "through the app's account settings and synced in automatically by the Clerk webhook. " +
-    "`preferences` is replaced whole, not deep-merged.",
+    "`preferences` is replaced whole, not deep-merged. `state` is optional and used only to " +
+    "place the learner in Arena's state-scope leaderboard - it is never shown on any profile.",
   tags: ["Users"],
   security: [{ bearerAuth: [] }],
   request: {
@@ -60,7 +61,7 @@ registry.registerPath({
             error: {
               code: "VALIDATION_FAILED",
               message: "Request validation failed",
-              details: { _errors: ["Provide at least one of language, theme, bio or preferences"] },
+              details: { _errors: ["Provide at least one of language, theme, bio, state or preferences"] },
             },
           },
         },

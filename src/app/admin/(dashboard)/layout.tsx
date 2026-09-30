@@ -93,6 +93,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     settings: settingsManage,
     badges: economyManage,
     rewards: economyManage,
+    competitions: economyManage,
     coachNotes: coachNoteManage || coachNotePublish,
     instruments: instrumentManage,
     opsConsole: tradingOps,

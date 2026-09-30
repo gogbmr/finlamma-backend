@@ -6,6 +6,13 @@ import { ZodError } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
+import {
+  createAboutMeChipForAdmin,
+  deleteAboutMeChipForAdmin,
+  updateAboutMeChipForAdmin,
+  updateArenaLeagueSettingsForAdmin,
+} from "@/server/arena/service";
+import { AboutMeChipInputSchema, ArenaLeagueSettingsInputSchema } from "@/server/arena/schemas";
 import { DailyGoalsSettingsSchema } from "@/server/daily-goals/schemas";
 import { updateDailyGoalsSettings } from "@/server/daily-goals/service";
 import type { RewardActivityKind } from "@/server/economy/repo";
@@ -42,6 +49,43 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
     }
     throw err;
   }
+}
+
+export async function createAboutMeChipAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = AboutMeChipInputSchema.parse(input);
+    await createAboutMeChipForAdmin(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updateAboutMeChipAction(id: string, input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = AboutMeChipInputSchema.parse(input);
+    await updateAboutMeChipForAdmin(actor, id, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function deleteAboutMeChipAction(id: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    await deleteAboutMeChipForAdmin(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+// economy.manage, not settings.manage - this directly sets VM reward
+// amounts, same trust bar as reward_rules/the VM multiplier (D55).
+export async function updateArenaLeagueSettingsAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("economy.manage");
+    const parsed = ArenaLeagueSettingsInputSchema.parse(input);
+    await updateArenaLeagueSettingsForAdmin(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
 }
 
 export async function updateLessonFlowScoringAction(input: unknown): Promise<ActionResult> {

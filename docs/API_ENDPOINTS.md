@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.0.0) on 2026-09-28.
+> Generated from `openapi/openapi.json` (version 1.1.0) on 2026-09-30.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -100,6 +100,24 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
 - `POST /api/webhooks/clerk-staff` — Clerk user webhook (staff app)
 
+**Arena**
+
+- `GET /api/v1/arena/leaderboard` — Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)
+- `GET /api/v1/arena/worlds` — Get the Worlds leaderboard (AR-04/05)
+- `GET /api/v1/arena/worlds/{worldId}/leaderboard` — Get one world's own weekly leaderboard (AR-06)
+- `GET /api/v1/arena/activity` — Get the recent-activity ticker (AR-03)
+- `POST /api/v1/arena/cheers` — Cheer another learner (AR-12)
+- `GET /api/v1/me/arena/cheers` — Get my cheers-received summary (AR-12)
+- `GET /api/v1/arena/chips` — List the active about-me chip catalog (AR-20)
+- `GET /api/v1/me/arena/chips` — Get my selected about-me chips (AR-20)
+- `PUT /api/v1/me/arena/chips` — Set my selected about-me chips (AR-20)
+- `GET /api/v1/users/{userId}/public-profile` — Get a learner's public Arena profile (AR-20)
+- `GET /api/v1/arena/competitions/current` — Get the current Monthly Competition (AR-14)
+- `POST /api/v1/arena/competitions/current/enter` — Enter the current Monthly Competition (AR-14)
+- `POST /api/v1/arena/competitions/current/trades` — Place a trade inside the current Monthly Competition (AR-14)
+- `GET /api/v1/arena/competitions/current/me` — Get my status in the current Monthly Competition (AR-15)
+- `GET /api/v1/arena/competitions/current/leaderboard` — Get the current Monthly Competition's ranked board (AR-16)
+
 ## System
 
 ### `GET /api/v1/health`
@@ -176,10 +194,12 @@ Returns the signed-in user's own profile.
     "language": "en",
     "theme": "dark",
     "bio": "Saving up for my first SIP!",
+    "state": "Maharashtra",
     "preferences": {
       "sound": true,
       "haptics": true,
-      "dataSaver": false
+      "dataSaver": false,
+      "cheersEnabled": true
     }
   }
 }
@@ -203,7 +223,7 @@ Returns the signed-in user's own profile.
 
 **Update my preferences**
 
-Updates language, theme, bio and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged.
+Updates language, theme, bio, state and/or sound/haptics/data-saver preferences - the only profile fields this API owns. Name, email and phone are Clerk-owned identity fields, changed through the app's account settings and synced in automatically by the Clerk webhook. `preferences` is replaced whole, not deep-merged. `state` is optional and used only to place the learner in Arena's state-scope leaderboard - it is never shown on any profile.
 
 **Auth:** bearerAuth
 
@@ -214,20 +234,24 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
 | `language` | string (en, hi, hx) | no | en (English), hi (Hindi) or hx (Hinglish). |
 | `theme` | string (dark, light) | no |  |
 | `bio` | string or null | no | Free-text, self-editable, private to the owner - never shown to any other learner. |
+| `state` | string or null (Andhra Pradesh, Arunachal Pradesh, Assam, Bihar, Chhattisgarh, Goa, Gujarat, Haryana, Himachal Pradesh, Jharkhand, Karnataka, Kerala, Madhya Pradesh, Maharashtra, Manipur, Meghalaya, Mizoram, Nagaland, Odisha, Punjab, Rajasthan, Sikkim, Tamil Nadu, Telangana, Tripura, Uttar Pradesh, Uttarakhand, West Bengal, Andaman and Nicobar Islands, Chandigarh, Dadra and Nagar Haveli and Daman and Diu, Delhi, Jammu and Kashmir, Ladakh, Lakshadweep, Puducherry, ) | no | Optional. Used only to place you in Arena's state-scope leaderboard - never shown on your or anyone else's public profile. |
 | `preferences` | object | no |  |
 | `preferences.sound` | boolean | yes | In-app sound effects on/off. |
 | `preferences.haptics` | boolean | yes | Haptic feedback on/off. |
 | `preferences.dataSaver` | boolean | yes | Serves lower-resolution lesson videos when on. |
+| `preferences.cheersEnabled` | boolean | yes | Off hides this learner's cheer button from every other learner's Arena view - no cheers can be sent to them while off. Never affects cheers they've already received. |
 
 ```json
 {
   "language": "en",
   "theme": "dark",
   "bio": "Saving up for my first SIP!",
+  "state": "Maharashtra",
   "preferences": {
     "sound": true,
     "haptics": true,
-    "dataSaver": false
+    "dataSaver": false,
+    "cheersEnabled": true
   }
 }
 ```
@@ -247,10 +271,12 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
     "language": "en",
     "theme": "dark",
     "bio": "Saving up for my first SIP!",
+    "state": "Maharashtra",
     "preferences": {
       "sound": true,
       "haptics": true,
-      "dataSaver": false
+      "dataSaver": false,
+      "cheersEnabled": true
     }
   }
 }
@@ -265,7 +291,7 @@ Updates language, theme, bio and/or sound/haptics/data-saver preferences - the o
     "message": "Request validation failed",
     "details": {
       "_errors": [
-        "Provide at least one of language, theme, bio or preferences"
+        "Provide at least one of language, theme, bio, state or preferences"
       ]
     }
   }
@@ -1661,7 +1687,7 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
 
 **Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)**
 
-Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, only self-progress is shown.
+Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).
 
 **Auth:** bearerAuth
 
@@ -1683,6 +1709,30 @@ Kid-safe identity (first name + last initial only - never a full name or photo, 
       "en": "string",
       "hi": "string",
       "hx": "string"
+    },
+    "percentile": 8,
+    "rankDeltaCells": {
+      "world": {
+        "scope": "global",
+        "rank": 186,
+        "poolSize": 2400,
+        "topPercentPct": 8,
+        "rankDelta": 14
+      },
+      "stateOrIndia": {
+        "scope": "global",
+        "rank": 186,
+        "poolSize": 2400,
+        "topPercentPct": 8,
+        "rankDelta": 14
+      },
+      "global": {
+        "scope": "global",
+        "rank": 186,
+        "poolSize": 2400,
+        "topPercentPct": 8,
+        "rankDelta": 14
+      }
     },
     "streak": {
       "current": 4,
@@ -2386,7 +2436,7 @@ The caller's full earn/spend ledger, newest first, cursor-paginated.
 
 **My weekly report card (PR-30/31/32/33)**
 
-The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, and whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.
+The current IST week's efficiency snapshot (null until the first Monday after signup has run), an 8-week efficiency-score trend, whether it's currently shared with a verified parent (docs/ARCHITECTURE.md D33), and PR-30's global Arena rank (null until the first weekly settlement has run). Coach notes are progress-only and never comparative.
 
 **Auth:** bearerAuth
 
@@ -2442,7 +2492,8 @@ The current IST week's efficiency snapshot (null until the first Monday after si
     "sharedWithParent": {
       "maskedEmail": "j***@gmail.com",
       "weeklyEmailOn": true
-    }
+    },
+    "globalRank": 186
   }
 }
 ```
@@ -4663,6 +4714,1068 @@ Called by Clerk on user.created and user.deleted for the STAFF Clerk application
     "code": "NOT_FOUND",
     "message": "Resource not found",
     "details": {}
+  }
+}
+```
+
+
+---
+
+## Arena
+
+### `GET /api/v1/arena/leaderboard`
+
+**Get the weekly Arena leaderboard for a scope (AR-05/06/07/09/10)**
+
+Ranks every learner by XP earned since Monday IST, for the requested scope. 'state' and 'world' are resolved from the caller's own profile (users.state / their current world) - there is no way to view another scope's raw pool directly. A thin scope (below settings_kv's arena_min_leaderboard_pool_size, default 20) either falls back to a broader scope (state -> india) or is returned with notEnoughPlayers: true (world/india/global, which have no broader fallback) - see docs/ARCHITECTURE.md's Phase 6 kickoff decision. Every XP credit behind this ranking is idempotent per (user, source) at the ledger level (D26), so replaying a lesson or quiz can never inflate a learner's weekly total.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `scope` | query | string (world, state, india, global) | yes | Which leaderboard to view (FEATURE_MAP AR-07). 'world' is the caller's own current world team; 'state' uses the caller's own users.state if set. A thin state pool transparently falls back to 'india' (see fallbackApplied on the response). |
+
+**Responses**
+
+- **200** — The requested (or fallback) scope's weekly leaderboard
+
+```json
+{
+  "data": {
+    "requestedScope": "state:Maharashtra",
+    "scope": "india",
+    "fallbackApplied": true,
+    "notEnoughPlayers": false,
+    "weekStartDate": "2026-09-28",
+    "poolSize": 214,
+    "rows": [
+      {
+        "rank": 1,
+        "userId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+        "firstName": "Aarav",
+        "lastInitial": "S",
+        "xp": 2710,
+        "isSelf": false,
+        "zone": "promote",
+        "rankDelta": 3
+      }
+    ],
+    "self": {
+      "rank": 0,
+      "xp": 0,
+      "rankDelta": 3
+    }
+  }
+}
+```
+
+- **400** — Invalid or missing scope query parameter
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "scope must be one of world, state, india, global"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/worlds`
+
+**Get the Worlds leaderboard (AR-04/05)**
+
+Every currently-populated world, ranked by total weekly XP earned by learners currently attributed to it (their furthest world with a completed lesson) - includes xpPerMember so a small world can compete on average, week-over-week deltaPct, and a 7-day daily sparkline.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The current Worlds leaderboard
+
+```json
+{
+  "data": {
+    "weekStartDate": "2026-09-28",
+    "worlds": [
+      {
+        "worldId": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+        "title": {
+          "en": "Money World",
+          "hi": "मनी वर्ल्ड",
+          "hx": "Money World"
+        },
+        "xp": 48210,
+        "memberCount": 214,
+        "xpPerMember": 225,
+        "deltaPct": 21,
+        "sparkline": [
+          {
+            "date": "2026-09-22",
+            "xp": 0
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/worlds/{worldId}/leaderboard`
+
+**Get one world's own weekly leaderboard (AR-06)**
+
+Drilling into a specific world tapped from GET /arena/worlds - not necessarily the caller's own current world. Same shape, privacy floor and self-row handling as GET /arena/leaderboard (a thin world has no broader scope to fall back to, so it reports notEnoughPlayers instead).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `worldId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — That world's weekly leaderboard
+
+```json
+{
+  "data": {
+    "requestedScope": "state:Maharashtra",
+    "scope": "india",
+    "fallbackApplied": true,
+    "notEnoughPlayers": false,
+    "weekStartDate": "2026-09-28",
+    "poolSize": 214,
+    "rows": [
+      {
+        "rank": 1,
+        "userId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+        "firstName": "Aarav",
+        "lastInitial": "S",
+        "xp": 2710,
+        "isSelf": false,
+        "zone": "promote",
+        "rankDelta": 3
+      }
+    ],
+    "self": {
+      "rank": 0,
+      "xp": 0,
+      "rankDelta": 3
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/activity`
+
+**Get the recent-activity ticker (AR-03)**
+
+The most recent real XP credits app-wide, newest first, kid-safe display name only.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Recent activity
+
+```json
+{
+  "data": {
+    "items": [
+      {
+        "firstName": "Meera",
+        "lastInitial": "K",
+        "amount": 80,
+        "createdAt": "2026-09-28T10:12:00.000Z"
+      }
+    ]
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/arena/cheers`
+
+**Cheer another learner (AR-12)**
+
+Sends a cheer, worth a fixed amount of XP (settings_kv, default 5) to the receiver. One cheer per sender-receiver pair per IST day - repeating the same day is a successful no-op, never a second credit. A daily total cap on how much XP a receiver can bank from cheers (settings_kv) may reduce or zero xpAwarded even on a fresh cheer. Fails if the receiver has turned off cheersEnabled (PATCH /me's preferences) - never shows another learner's identity, only whether the cheer itself succeeded.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `receiverId` | string | yes |  |
+
+```json
+{
+  "receiverId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+}
+```
+
+**Responses**
+
+- **200** — The cheer was processed (possibly a no-op replay, possibly capped)
+
+```json
+{
+  "data": {
+    "alreadyCheeredToday": false,
+    "xpAwarded": 5,
+    "dailyCapReached": false
+  }
+}
+```
+
+- **400** — Invalid request, or cheering yourself
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "You can't cheer yourself"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — Receiver not found
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Learner not found"
+  }
+}
+```
+
+- **409** — The receiver has turned off cheersEnabled
+
+```json
+{
+  "error": {
+    "code": "CHEER_RECEIVER_OPTED_OUT",
+    "message": "This learner isn't receiving cheers right now"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/arena/cheers`
+
+**Get my cheers-received summary (AR-12)**
+
+An aggregate-only weekly count of cheers received - docs/ARCHITECTURE.md D53: sender identity is never shown, in any form, not even a partial breakdown.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's cheers-received summary
+
+```json
+{
+  "data": {
+    "receivedThisWeek": 12
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/chips`
+
+**List the active about-me chip catalog (AR-20)**
+
+The admin-managed preset chips a learner can pick for their public profile - never free text (docs/ARCHITECTURE.md D36).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Active chips
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "iconKey": "piggy-bank"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/arena/chips`
+
+**Get my selected about-me chips (AR-20)**
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's currently-selected chips
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "iconKey": "piggy-bank"
+    }
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `PUT /api/v1/me/arena/chips`
+
+**Set my selected about-me chips (AR-20)**
+
+Replaces the caller's whole chip selection - at most 3, and every id must be an active chip.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `chipIds` | array<string> | yes | Replaces your whole chip selection - at most 3 (settings, not schema-fixed). |
+
+```json
+{
+  "chipIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ]
+}
+```
+
+**Responses**
+
+- **200** — The caller's new chip selection
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "iconKey": "piggy-bank"
+    }
+  ]
+}
+```
+
+- **400** — Too many chips, or one isn't currently active
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Pick at most 3 chips"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/users/{userId}/public-profile`
+
+**Get a learner's public Arena profile (AR-20)**
+
+Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe display name (first name + last initial, never a full name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class or `bio` - `users.bio` stays private to its owner forever.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `userId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — The learner's public profile
+
+```json
+{
+  "data": {
+    "firstName": "Aarav",
+    "lastInitial": "S",
+    "level": 4,
+    "rankTitle": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "badges": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "name": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "description": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "iconKey": "string"
+      }
+    ],
+    "chips": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "name": {
+          "en": "string",
+          "hi": "string",
+          "hx": "string"
+        },
+        "iconKey": "piggy-bank"
+      }
+    ],
+    "weekXp": 1240,
+    "streak": {
+      "current": 4,
+      "longest": 12
+    },
+    "quizAccuracyPct": 82,
+    "currentWorld": {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "title": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      },
+      "completedLessons": 6,
+      "totalLessons": 40
+    }
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — Learner not found
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Learner not found"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current`
+
+**Get the current Monthly Competition (AR-14)**
+
+The competition hero card: name, instrument, virtual capital (a non-convertible sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands and rules text. Null when no competition is currently published and within its window - the app should show an empty state, not an error. Live LTP/% change isn't included here - use GET /trade/instruments/{symbol} for that.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The current competition, or null
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "name": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "instrumentId": "00000000-0000-0000-0000-000000000000",
+    "virtualCapitalPaise": 10000000,
+    "windowStart": "2026-01-01T00:00:00.000Z",
+    "windowEnd": "2026-01-01T00:00:00.000Z",
+    "daysLeft": 12,
+    "prizes": [
+      {
+        "rankFrom": 0,
+        "rankTo": 0,
+        "vmAmount": 0,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      }
+    ],
+    "rules": {
+      "en": "string",
+      "hi": "string",
+      "hx": "string"
+    },
+    "playersCount": 340
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/arena/competitions/current/enter`
+
+**Enter the current Monthly Competition (AR-14)**
+
+Creates the caller's entry, seeded with the competition's virtual capital (never V Money - docs/ARCHITECTURE.md D57). Calling this again after already entering just returns the existing entry, not an error. Requires trading to already be unlocked, and only accepts entries within the first part of the competition's window (docs/ARCHITECTURE.md D59, settings_kv-tunable) - closes a late-entry-lucky-trade gap.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's competition entry (new or existing)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "competitionId": "00000000-0000-0000-0000-000000000000",
+    "cashPaise": 0,
+    "qtyHeld": 0,
+    "enteredAt": "2026-01-01T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or trading isn't unlocked yet
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Trading is locked until you clear more worlds"
+  }
+}
+```
+
+- **404** — No active competition right now
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No active competition right now"
+  }
+}
+```
+
+- **409** — The entry window for this competition has closed
+
+```json
+{
+  "error": {
+    "code": "COMPETITION_ENTRY_CLOSED",
+    "message": "Entry for this competition has closed"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/arena/competitions/current/trades`
+
+**Place a trade inside the current Monthly Competition (AR-14)**
+
+MARKET-only, whole shares, against the competition's single fixed instrument and the caller's own isolated entry - never the real order book, `holdings` or `vmoney_ledger` (docs/ARCHITECTURE.md D57). Requires an Idempotency-Key header, same convention as real orders. Rejected the same way a real order is for market/symbol halts, a paused feed, a closed market, or a stale/unavailable price (never a different, looser price path for the sandbox) - plus a competition-specific max-trades limit (settings_kv, default 10).
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `Idempotency-Key` | header | string | yes | Client-generated, unique per trade attempt. |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `side` | string (buy, sell) | yes |  |
+| `qty` | integer | yes | Whole shares only. |
+
+```json
+{
+  "side": "buy",
+  "qty": 5
+}
+```
+
+**Responses**
+
+- **200** — The trade (filled, or replayed from an identical earlier request)
+
+```json
+{
+  "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
+    "side": "buy",
+    "qty": 0,
+    "fillPricePaise": 0,
+    "realizedPnlPaise": 0,
+    "filledAt": "2026-01-01T00:00:00.000Z",
+    "replayed": true
+  }
+}
+```
+
+- **400** — Invalid input, or a missing Idempotency-Key header
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Idempotency-Key header is required"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or the caller hasn't entered this competition
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Enter the competition before trading in it"
+  }
+}
+```
+
+- **404** — No active competition right now
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No active competition right now"
+  }
+}
+```
+
+- **409** — Market/symbol halted, feed paused, market closed, price stale/unavailable, the max-trades limit reached, or insufficient cash/holdings
+
+```json
+{
+  "error": {
+    "code": "COMPETITION_MAX_TRADES_REACHED",
+    "message": "You've reached the 10-trade limit for this competition"
+  }
+}
+```
+
+- **429** — Too many trade attempts, or the rate limiter couldn't be reached (fails closed)
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many order attempts - slow down and try again shortly"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current/me`
+
+**Get my status in the current Monthly Competition (AR-15)**
+
+The "You" rank card - live rank/ROI% among every entrant, computed the instant it's requested (never a cached snapshot - a competition is a single ongoing event, not a recurring weekly cycle like Arena leagues). `entered: false` if the caller hasn't entered yet; `data: null` if there's no active competition at all right now. ROI% is computed against the FULL starting capital, never just the deployed cost basis.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's competition status
+
+```json
+{
+  "data": {
+    "entered": false
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current/leaderboard`
+
+**Get the current Monthly Competition's ranked board (AR-16)**
+
+Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The current competition's leaderboard, or null
+
+```json
+{
+  "data": {
+    "rows": [
+      {
+        "rank": 0,
+        "userId": "00000000-0000-0000-0000-000000000000",
+        "firstName": "string",
+        "lastInitial": "string",
+        "roiPctBasisPoints": 0,
+        "isSelf": true
+      }
+    ],
+    "poolSize": 0
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

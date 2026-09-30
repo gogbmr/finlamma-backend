@@ -68,6 +68,20 @@ import "../src/app/api/v1/pulse-check/[attemptId]/finish/route";
 import "../src/app/api/v1/pulse-check/[attemptId]/result/route";
 import "../src/app/api/webhooks/clerk/route";
 import "../src/app/api/webhooks/clerk-staff/route";
+import "../src/app/api/v1/arena/leaderboard/route";
+import "../src/app/api/v1/arena/worlds/route";
+import "../src/app/api/v1/arena/worlds/[worldId]/leaderboard/route";
+import "../src/app/api/v1/arena/activity/route";
+import "../src/app/api/v1/arena/cheers/route";
+import "../src/app/api/v1/me/arena/cheers/route";
+import "../src/app/api/v1/arena/chips/route";
+import "../src/app/api/v1/me/arena/chips/route";
+import "../src/app/api/v1/users/[userId]/public-profile/route";
+import "../src/app/api/v1/arena/competitions/current/route";
+import "../src/app/api/v1/arena/competitions/current/enter/route";
+import "../src/app/api/v1/arena/competitions/current/trades/route";
+import "../src/app/api/v1/arena/competitions/current/me/route";
+import "../src/app/api/v1/arena/competitions/current/leaderboard/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 
@@ -75,7 +89,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "1.0.0",
+    version: "1.1.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

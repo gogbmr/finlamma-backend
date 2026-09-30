@@ -53,7 +53,7 @@ type CreditInput = {
 // silently no-ops rather than erroring. .returning() comes back empty on a
 // conflict, which is how the caller tells "this credited for real" apart
 // from "already credited, nothing to do".
-async function insertXpEventIfNew(txDb: DbOrTx, input: CreditInput & { amount: number }) {
+export async function insertXpEventIfNew(txDb: DbOrTx, input: CreditInput & { amount: number }) {
   const [row] = await txDb
     .insert(xpEvents)
     .values(input)

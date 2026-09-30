@@ -38,3 +38,14 @@ paths: "src/server/ledger/**, src/server/xp/**, src/server/trading/**, src/serve
   virtual currency (not paise-scaled) - confirm the paise-per-VM conversion for trading capital
   with the user before Phase 4 and record it in `docs/ARCHITECTURE.md`.
 - All arithmetic on integers; use `decimal.js` only for display-side division/percentages.
+- **Every function called from inside a `db.transaction(async (tx) => ...)` callback must accept
+  a `DbOrTx` parameter, and the call site must pass `tx` - never let it silently default to the
+  module-level `db`.** A stray `db` call inside an open transaction isn't just a style slip: it
+  reads/writes outside whatever row lock that transaction took, so the invariant the lock exists
+  to serialize (a balance check, a max-trades cap, ...) ends up enforced by accident, not by the
+  guarantee the lock is supposed to provide. Under PGlite (tests) this class of bug self-deadlocks
+  outright - see D46 (`getLatestNav`) and D60 (`countTradesForEntry`) in `docs/ARCHITECTURE.md`,
+  the same bug caught twice in two different domains. Before adding a new read/write function that
+  will ever be called from inside a money-moving transaction, give it the `txDb: DbOrTx = db`
+  shape every other such function in this codebase already uses, and pass `tx` at every call site
+  inside that transaction.

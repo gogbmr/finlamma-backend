@@ -1,5 +1,6 @@
 import type { users } from "@/db/schema";
 import { istDateString } from "@/lib/ist-date";
+import { getMyArenaRankSummary } from "@/server/arena/service";
 import { getLevelInfo } from "@/server/leveling/service";
 import { countCompletedLessonsForUser, listLessonCompletionTimestampsForUser } from "@/server/lesson-progress/repo";
 import { countPublishedLessons } from "@/server/lessons/repo";
@@ -29,12 +30,15 @@ function buildActivityDotCalendar(completionTimestamps: Date[], at: Date, days: 
 // last initial, per CLAUDE.md rule 10 - never a photo, never a full last
 // name), level/XP-progress, the rank title that level currently qualifies
 // for, the learning streak, lesson-completion progress, quiz accuracy and a
-// 7-day activity dot calendar. Percentile/rank is deliberately omitted -
-// deferred to Phase 6, once Arena's weekly leaderboard snapshot exists to
-// read it from (docs/FEATURE_MAP.md's PR-03).
+// 7-day activity dot calendar. Percentile (PR-01) and the three rank-delta
+// cells (PR-03) read from Arena's last weekly settlement
+// (src/server/arena/service.ts's getMyArenaRankSummary) - each is null,
+// cleanly, whenever there's genuinely nothing to report (no settlement yet,
+// a scope below the privacy floor, or no XP that week), never a fabricated
+// 0 or a broken partial state.
 export async function getProfileOverview(user: UserRow, at: Date = new Date()) {
   const since = new Date(at.getTime() - (ACTIVITY_DOT_CALENDAR_DAYS - 1) * 24 * 60 * 60 * 1000);
-  const [levelInfo, streakStats, completedLessons, totalLessons, quizAccuracy, recentCompletions] =
+  const [levelInfo, streakStats, completedLessons, totalLessons, quizAccuracy, recentCompletions, rankSummary] =
     await Promise.all([
       getLevelInfo(user.id),
       getStreakStats(user.id, at),
@@ -42,6 +46,7 @@ export async function getProfileOverview(user: UserRow, at: Date = new Date()) {
       countPublishedLessons(),
       getQuizAccuracyTotalsForUser(user.id),
       listLessonCompletionTimestampsForUser(user.id, since),
+      getMyArenaRankSummary(user),
     ]);
   const rankTitleRow = await getRankTitleForLevel(levelInfo.level);
 
@@ -54,6 +59,11 @@ export async function getProfileOverview(user: UserRow, at: Date = new Date()) {
     xpIntoLevel: levelInfo.xpIntoLevel,
     xpToNextLevel: levelInfo.xpToNextLevel,
     rankTitle: rankTitleRow?.title ?? null,
+    // PR-01's headline stat - the Global scope's "top N%", or null if Arena
+    // hasn't settled a week for this learner yet.
+    percentile: rankSummary.global?.topPercentPct ?? null,
+    // PR-03's three rank-delta cells.
+    rankDeltaCells: rankSummary,
     streak: {
       current: streakStats.learning.current,
       longest: streakStats.learning.longest,

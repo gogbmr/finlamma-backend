@@ -11,8 +11,9 @@ registry.registerPath({
   summary: "My weekly report card (PR-30/31/32/33)",
   description:
     "The current IST week's efficiency snapshot (null until the first Monday after signup has " +
-    "run), an 8-week efficiency-score trend, and whether it's currently shared with a verified " +
-    "parent (docs/ARCHITECTURE.md D33). Coach notes are progress-only and never comparative.",
+    "run), an 8-week efficiency-score trend, whether it's currently shared with a verified " +
+    "parent (docs/ARCHITECTURE.md D33), and PR-30's global Arena rank (null until the first " +
+    "weekly settlement has run). Coach notes are progress-only and never comparative.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {

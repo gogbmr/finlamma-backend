@@ -1,7 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { badges, userBadges } from "@/db/schema";
-import { insertVmoneyLedgerEntryIfNew } from "@/server/economy/repo";
+import { insertVmoneyLedgerEntryIfNew, type DbOrTx } from "@/server/economy/repo";
 import type { CreateBadgeDraftInput, UpdateBadgeDraftInput } from "./schemas";
 
 export async function listPublishedBadges() {
@@ -67,8 +67,15 @@ export async function listUserBadgesForUser(userId: string) {
 // guarantee (D26-style: insert, treat a conflict as "already awarded"), not
 // an application-level "already has it?" check, which would be a TOCTOU
 // race under concurrent evaluation calls for the same user.
-export async function insertUserBadgeIfAbsent(userId: string, badgeId: string) {
-  const [row] = await db
+// Accepts an optional transaction handle (D46's "any function reading/writing
+// inside a transaction must take a DbOrTx, never silently default to the
+// module db" lesson) - Phase 6 Checkpoint 3's league settlement
+// (src/server/arena/service.ts) awards the crest badge inside the same
+// transaction as its VM credit and settlement-row insert, so this can't be
+// a separate, non-atomic write the way the badge-evaluation caller below
+// doesn't need to worry about.
+export async function insertUserBadgeIfAbsent(userId: string, badgeId: string, txDb: DbOrTx = db) {
+  const [row] = await txDb
     .insert(userBadges)
     .values({ userId, badgeId })
     .onConflictDoNothing({ target: [userBadges.userId, userBadges.badgeId] })

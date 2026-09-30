@@ -20,6 +20,7 @@ function toMeResponse(user: UserRow) {
     language: user.language,
     theme: user.theme,
     bio: user.bio,
+    state: user.state,
     preferences: user.preferences,
   };
 }

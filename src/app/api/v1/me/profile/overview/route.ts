@@ -15,9 +15,10 @@ registry.registerPath({
     "CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title " +
     "the caller's current level currently qualifies for (admin-editable rank_titles table, or " +
     "null if none applies yet), the learning streak, lesson-completion progress, quiz " +
-    "accuracy and a 7-day activity dot calendar. Percentile rank is omitted until Phase 6 " +
-    "ships Arena's weekly leaderboard snapshot (docs/FEATURE_MAP.md PR-03) - before that, " +
-    "only self-progress is shown.",
+    "accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` " +
+    "(World/State-or-India/Global) read from Arena's last weekly settlement - each is null, " +
+    "cleanly, whenever there's nothing to report (no settlement yet, a scope below the " +
+    "privacy floor, or no XP that week).",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {

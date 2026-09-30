@@ -70,6 +70,25 @@ const ActivityDotSchema = z.object({
   active: z.boolean().openapi({ example: true }),
 });
 
+// PR-03 (Phase 6 Checkpoint 6): one scope's rank as of Arena's last weekly
+// settlement, or null if there's nothing to report yet (never settled, the
+// scope was below the privacy floor that week, or no XP that week).
+const ScopeRankInfoSchema = z
+  .object({
+    scope: z.string().openapi({ example: "global" }),
+    rank: z.number().int().positive().openapi({ example: 186 }),
+    poolSize: z.number().int().positive().openapi({ example: 2400 }),
+    topPercentPct: z.number().int().min(1).max(100).openapi({
+      example: 8,
+      description: "\"Top N%\" - smaller is better. Never 0.",
+    }),
+    rankDelta: z.number().int().nullable().openapi({
+      example: 14,
+      description: "Positive = moved toward rank 1 since last week. Null if there's no prior week to compare.",
+    }),
+  })
+  .nullable();
+
 export const ProfileOverviewResponseSchema = z.object({
   data: z.object({
     firstName: z.string().nullable().openapi({ example: "Aarav" }),
@@ -80,6 +99,21 @@ export const ProfileOverviewResponseSchema = z.object({
     xpIntoLevel: z.number().int().nonnegative().openapi({ example: 300 }),
     xpToNextLevel: z.number().int().nonnegative().openapi({ example: 200 }),
     rankTitle: RankTitleRefSchema,
+    percentile: z.number().int().min(1).max(100).nullable().openapi({
+      example: 8,
+      description:
+        "PR-01: \"top N%\" from Arena's Global scope, last weekly settlement. Null until the " +
+        "first settlement has run for this learner.",
+    }),
+    rankDeltaCells: z.object({
+      world: ScopeRankInfoSchema,
+      stateOrIndia: ScopeRankInfoSchema,
+      global: ScopeRankInfoSchema,
+    }).openapi({
+      description:
+        "PR-03's three rank-delta cells. Each is independently null when there's nothing to " +
+        "report for that scope - never a fabricated 0.",
+    }),
     streak: StreakSummarySchema,
     lessons: LessonsProgressSchema,
     quizAccuracyPct: z.number().int().min(0).max(100).nullable().openapi({

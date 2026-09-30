@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_USER_PREFERENCES, languageEnum, themeEnum } from "@/db/schema";
 import { registry } from "@/lib/openapi";
+import { IndianStateSchema } from "@/server/shared/schemas";
 
 const LanguageSchema = z.enum(languageEnum.enumValues).openapi({
   example: "en",
@@ -17,6 +18,12 @@ const PreferencesSchema = z
     dataSaver: z.boolean().openapi({
       example: false,
       description: "Serves lower-resolution lesson videos when on.",
+    }),
+    cheersEnabled: z.boolean().openapi({
+      example: true,
+      description:
+        "Off hides this learner's cheer button from every other learner's Arena view - no " +
+        "cheers can be sent to them while off. Never affects cheers they've already received.",
     }),
   })
   .openapi({ example: DEFAULT_USER_PREFERENCES });
@@ -41,6 +48,17 @@ const BioSchema = z
     description: "Free-text, self-editable, private to the owner - never shown to any other learner.",
   });
 
+// Optional (docs/PRODUCT_SPEC.md §3, decided): used only to place the
+// learner in Arena's state-scope leaderboard. Never returned by, or
+// readable from, any endpoint another learner can see - not even Arena's
+// public player profile.
+const StateSchema = IndianStateSchema.nullable().openapi({
+  example: "Maharashtra",
+  description:
+    "Optional. Used only to place you in Arena's state-scope leaderboard - never shown on " +
+    "your or anyone else's public profile.",
+});
+
 export const MeDataSchema = registry.register(
   "Me",
   z.object({
@@ -55,6 +73,7 @@ export const MeDataSchema = registry.register(
     language: LanguageSchema,
     theme: ThemeSchema,
     bio: BioSchema,
+    state: StateSchema,
     preferences: PreferencesSchema,
   }),
 );
@@ -79,6 +98,7 @@ export const UpdateMeRequestSchema = registry.register(
       language: LanguageSchema.optional(),
       theme: ThemeSchema.optional(),
       bio: BioSchema.optional(),
+      state: StateSchema.optional(),
       preferences: PreferencesSchema.optional(),
     })
     .refine(
@@ -86,8 +106,9 @@ export const UpdateMeRequestSchema = registry.register(
         v.language !== undefined ||
         v.theme !== undefined ||
         v.bio !== undefined ||
+        v.state !== undefined ||
         v.preferences !== undefined,
-      { message: "Provide at least one of language, theme, bio or preferences" },
+      { message: "Provide at least one of language, theme, bio, state or preferences" },
     ),
 );
 

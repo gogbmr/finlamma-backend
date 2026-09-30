@@ -14,8 +14,12 @@ export type BadgeCriteriaEvaluator = (userId: string) => Promise<number>;
 // criteria types don't exist yet (those domains aren't built) - a "Trading"/
 // "News" CATEGORY badge (the display taxonomy) can still exist today using
 // one of these three criteria types; it just can't use a trading/news
-// criteria type until Phase 4/5 add one.
-export const BADGE_CRITERIA_EVALUATORS: Record<BadgeCriteria["type"], BadgeCriteriaEvaluator> = {
+// criteria type until Phase 4/5 add one. `Partial` (not a full Record) is
+// deliberate: "external" (docs/ARCHITECTURE.md D55) has no evaluator by
+// design - src/server/badges/service.ts's getMyBadges already falls back to
+// 0 progress when a type has none, which is exactly right for a badge only
+// external code ever awards.
+export const BADGE_CRITERIA_EVALUATORS: Partial<Record<BadgeCriteria["type"], BadgeCriteriaEvaluator>> = {
   lessons_completed: (userId) => countCompletedLessonsForUser(userId),
 
   streak_days: async (userId) => {

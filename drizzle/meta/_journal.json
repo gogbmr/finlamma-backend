@@ -274,6 +274,34 @@
       "when": 1790606220902,
       "tag": "0038_massive_pete_wisdom",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1790608856338,
+      "tag": "0039_square_wind_dancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790609256574,
+      "tag": "0040_careless_black_widow",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1790661001984,
+      "tag": "0041_lonely_hammerhead",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1790672729031,
+      "tag": "0042_short_christian_walker",
+      "breakpoints": true
     }
   ]
 }

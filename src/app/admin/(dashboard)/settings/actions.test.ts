@@ -61,6 +61,21 @@ vi.mock("@/server/rank-titles/service", () => ({
     mockDeleteRankTitleForAdmin(actor, id, meta),
 }));
 
+const mockCreateAboutMeChipForAdmin = vi.fn();
+const mockUpdateAboutMeChipForAdmin = vi.fn();
+const mockDeleteAboutMeChipForAdmin = vi.fn();
+const mockUpdateArenaLeagueSettingsForAdmin = vi.fn();
+vi.mock("@/server/arena/service", () => ({
+  createAboutMeChipForAdmin: (actor: unknown, input: unknown, meta: unknown) =>
+    mockCreateAboutMeChipForAdmin(actor, input, meta),
+  updateAboutMeChipForAdmin: (actor: unknown, id: unknown, input: unknown, meta: unknown) =>
+    mockUpdateAboutMeChipForAdmin(actor, id, input, meta),
+  deleteAboutMeChipForAdmin: (actor: unknown, id: unknown, meta: unknown) =>
+    mockDeleteAboutMeChipForAdmin(actor, id, meta),
+  updateArenaLeagueSettingsForAdmin: (actor: unknown, input: unknown, meta: unknown) =>
+    mockUpdateArenaLeagueSettingsForAdmin(actor, input, meta),
+}));
+
 const mockCreateTopicForAdmin = vi.fn();
 const mockUpdateTopicForAdmin = vi.fn();
 vi.mock("@/server/topics/service", () => ({
@@ -71,13 +86,17 @@ vi.mock("@/server/topics/service", () => ({
 }));
 
 import {
+  createAboutMeChipAction,
   createRankTitleAction,
+  deleteAboutMeChipAction,
   deleteRankTitleAction,
+  updateAboutMeChipAction,
   updateDailyGoalsSettingsAction,
   updateLessonFlowScoringAction,
   updateLevelCurveSettingsAction,
   updateRankTitleAction,
   updateRewardRuleAction,
+  updateArenaLeagueSettingsAction,
   updateStreaksSettingsAction,
   updateVmIssuanceMultiplierAction,
   createTopicAction,
@@ -128,6 +147,24 @@ describe("wrong role is rejected", () => {
     expect(mockUpdateVmIssuanceMultiplier).not.toHaveBeenCalled();
   });
 
+  it("updateArenaLeagueSettingsAction: requires economy.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: economy.manage"),
+    );
+
+    const result = await updateArenaLeagueSettingsAction({
+      promoteVmReward: 500,
+      safeVmReward: 0,
+      weeklyVmCap: 500,
+      cheerWeeklySenderReceiverCap: 15,
+      crestBadgeId: null,
+    });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
+    expect(mockUpdateArenaLeagueSettingsForAdmin).not.toHaveBeenCalled();
+  });
+
   it("updateRewardRuleAction: requires economy.manage", async () => {
     mockRequireStaff.mockRejectedValueOnce(
       new AppError("FORBIDDEN", "Missing permission: economy.manage"),
@@ -166,6 +203,17 @@ describe("wrong role is rejected", () => {
     expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
     expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
     expect(mockUpdateLevelCurveSettings).not.toHaveBeenCalled();
+  });
+
+  it("createAboutMeChipAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+    );
+
+    const result = await createAboutMeChipAction({ name: { en: "x", hi: "x", hx: "x" }, active: true });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockCreateAboutMeChipForAdmin).not.toHaveBeenCalled();
   });
 
   it("createRankTitleAction: requires settings.manage", async () => {
@@ -252,6 +300,36 @@ describe("happy path", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateLessonFlowScoringSettings).not.toHaveBeenCalled();
+  });
+
+  it("updateArenaLeagueSettingsAction updates and revalidates", async () => {
+    const input = {
+      promoteVmReward: 600,
+      safeVmReward: 0,
+      weeklyVmCap: 600,
+      cheerWeeklySenderReceiverCap: 20,
+      crestBadgeId: "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+    };
+    mockUpdateArenaLeagueSettingsForAdmin.mockResolvedValueOnce(input);
+
+    const result = await updateArenaLeagueSettingsAction(input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdateArenaLeagueSettingsForAdmin).toHaveBeenCalledWith(ACTOR, input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("updateArenaLeagueSettingsAction rejects a negative reward without calling the service", async () => {
+    const result = await updateArenaLeagueSettingsAction({
+      promoteVmReward: -1,
+      safeVmReward: 0,
+      weeklyVmCap: 500,
+      cheerWeeklySenderReceiverCap: 15,
+      crestBadgeId: null,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockUpdateArenaLeagueSettingsForAdmin).not.toHaveBeenCalled();
   });
 
   it("updateVmIssuanceMultiplierAction updates and revalidates", async () => {
@@ -385,6 +463,58 @@ describe("happy path", () => {
 
     expect(result.ok).toBe(false);
     expect(mockUpdateLevelCurveSettings).not.toHaveBeenCalled();
+  });
+
+  it("createAboutMeChipAction creates and revalidates", async () => {
+    const input = { name: { en: "Saver", hi: "x", hx: "x" }, iconKey: "piggy-bank", active: true };
+    mockCreateAboutMeChipForAdmin.mockResolvedValueOnce({ id: "c1", ...input });
+
+    const result = await createAboutMeChipAction(input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockCreateAboutMeChipForAdmin).toHaveBeenCalledWith(ACTOR, input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("createAboutMeChipAction rejects a blank language without calling the service", async () => {
+    const result = await createAboutMeChipAction({ name: { en: "", hi: "x", hx: "x" }, active: true });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreateAboutMeChipForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("updateAboutMeChipAction updates and revalidates", async () => {
+    const input = { name: { en: "Trader", hi: "x", hx: "x" }, active: false };
+    mockUpdateAboutMeChipForAdmin.mockResolvedValueOnce({ id: "c1", ...input });
+
+    const result = await updateAboutMeChipAction("c1", input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdateAboutMeChipForAdmin).toHaveBeenCalledWith(ACTOR, "c1", input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("deleteAboutMeChipAction deletes and revalidates", async () => {
+    mockDeleteAboutMeChipForAdmin.mockResolvedValueOnce(undefined);
+
+    const result = await deleteAboutMeChipAction("c1");
+
+    expect(result).toEqual({ ok: true });
+    expect(mockDeleteAboutMeChipForAdmin).toHaveBeenCalledWith(ACTOR, "c1", expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("deleteAboutMeChipAction surfaces a CONFLICT from a chip still in use", async () => {
+    mockDeleteAboutMeChipForAdmin.mockRejectedValueOnce(
+      new AppError("CONFLICT", "This chip is selected by at least one learner - turn it off instead"),
+    );
+
+    const result = await deleteAboutMeChipAction("c1");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "This chip is selected by at least one learner - turn it off instead",
+    });
   });
 
   it("createRankTitleAction creates and revalidates", async () => {

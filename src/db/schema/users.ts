@@ -8,11 +8,22 @@ export const themeEnum = pgEnum("theme", ["dark", "light"]);
 // LocalizedText - Settings' sound/haptics/data-saver toggles (SET-08/09/10)
 // have no independent lifecycle, versioning or query need of their own, so a
 // jsonb blob avoids three narrow columns for values nothing ever queries by.
-export type UserPreferences = { sound: boolean; haptics: boolean; dataSaver: boolean };
+// `cheersEnabled` (Phase 6, docs/ARCHITECTURE.md D53) joined this blob later
+// than the other three - an existing row's stored jsonb predates the key and
+// simply won't have it, so every reader treats a missing key as `true`
+// (opt-out is the explicit `false`, never the absent case), never assuming
+// the key exists.
+export type UserPreferences = {
+  sound: boolean;
+  haptics: boolean;
+  dataSaver: boolean;
+  cheersEnabled: boolean;
+};
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
   sound: true,
   haptics: true,
   dataSaver: false,
+  cheersEnabled: true,
 };
 
 // One row per Clerk identity. Clerk supports email, phone, Google, Apple and
@@ -48,6 +59,16 @@ export const users = pgTable("users", {
   // projection is first-name + last-initial only, per CLAUDE.md rule 10 -
   // bio is a Settings/account-page field, not a social one).
   bio: text("bio"),
+  // Optional, self-editable (PATCH /me, same as bio/language/theme) - Phase 6
+  // Arena's state-scope leaderboard (docs/PRODUCT_SPEC.md §3, FEATURE_MAP
+  // AR-07) is the ONLY thing that ever reads this column. Never serialized
+  // into any Arena response or public profile - it's read server-side only,
+  // to bucket which state-scope pool a learner's own row belongs to. A
+  // plain-language explanation of why it's asked belongs wherever the app
+  // collects it, per the founder's decision. See docs/ARCHITECTURE.md's
+  // Phase 6 kickoff decision for the state-scope privacy floor this column
+  // exists to feed.
+  state: text("state"),
   preferences: jsonb("preferences").$type<UserPreferences>().default(DEFAULT_USER_PREFERENCES).notNull(),
   // Clerk's own updated_at for the last change we applied, so the Clerk
   // webhook can ignore an out-of-order/stale redelivery instead of
