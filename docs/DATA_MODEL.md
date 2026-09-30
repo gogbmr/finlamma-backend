@@ -372,7 +372,9 @@ skill for the full idempotency/reversal design)
 - `push_tokens` (user_id, expo_push_token unique, platform ios|android, last_seen_at — one row per
   device; a token moving accounts on reinstall is reassigned via onConflictDoUpdate, never
   duplicated), `notification_prefs` (user_id unique, enabled — SET-07's single on/off toggle,
-  quiet_hours jsonb {startHourIst,endHourIst} nullable override of `settings_kv`'s global default),
+  quiet_hours jsonb {startHourIst,endHourIst} nullable override of `settings_kv`'s global default,
+  disabled_categories jsonb NotificationKind[] — per-kind opt-out layered on top of `enabled`,
+  Phase 7 Checkpoint 6 addition beyond FEATURE_MAP's original single-toggle scope),
   `notifications` (user_id, kind enum: streak_risk|boss_battle|market_news|session_goal|
   cheer_received|league_rank_change, title/body jsonb {en,hi,hx}, data jsonb — loose per-kind
   deep-link payload, read_at nullable; WH-20's 30-day auto-expiry is a retention job querying

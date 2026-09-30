@@ -30,26 +30,13 @@ export const pushTokens = pgTable(
 // off" (that's the separate `enabled` flag below).
 export type NotificationQuietHours = { startHourIst: number; endHourIst: number };
 
-// One row per user. `enabled` is SET-07's single on/off root toggle
-// (FEATURE_MAP - v1 has no per-notification-kind granularity). Row is
-// created lazily on first read/write (service layer), same as other
-// one-row-per-user preference tables in this codebase - a missing row
-// means "defaults for everything", not "notifications off".
-export const notificationPrefs = pgTable("notification_prefs", {
-  ...idAndTimestamps(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" })
-    .unique(),
-  enabled: boolean("enabled").default(true).notNull(),
-  quietHours: jsonb("quiet_hours").$type<NotificationQuietHours | null>(),
-}).enableRLS();
-
 // WH-21's observed trigger types, plus cheer_received (docs/ROADMAP.md:285-286
 // - Arena cheers already award +5 XP but skipped the push because this
 // table didn't exist yet) and league_rank_change (WH-21's "rank-change
 // (Top 8%) celebration", fed by the existing weekly Arena league
-// settlement job).
+// settlement job). Declared above notificationPrefs (not below, where it
+// originally lived) so notificationPrefs.disabledCategories can reference
+// its element type.
 export const notificationKindEnum = pgEnum("notification_kind", [
   "streak_risk",
   "boss_battle",
@@ -58,6 +45,27 @@ export const notificationKindEnum = pgEnum("notification_kind", [
   "cheer_received",
   "league_rank_change",
 ]);
+export type NotificationKind = (typeof notificationKindEnum.enumValues)[number];
+
+// One row per user. `enabled` is SET-07's single on/off root toggle
+// (FEATURE_MAP - v1 has no per-notification-kind granularity in the
+// prototype). `disabledCategories` (Phase 7 Checkpoint 6 addition, beyond
+// FEATURE_MAP's original scope, per founder request) layers per-kind
+// opt-out on top: `enabled` is the master switch, a kind listed here is
+// additionally off even while `enabled` is true. Row is created lazily on
+// first read/write (service layer), same as other one-row-per-user
+// preference tables in this codebase - a missing row means "defaults for
+// everything" (enabled, no categories disabled), not "notifications off".
+export const notificationPrefs = pgTable("notification_prefs", {
+  ...idAndTimestamps(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" })
+    .unique(),
+  enabled: boolean("enabled").default(true).notNull(),
+  quietHours: jsonb("quiet_hours").$type<NotificationQuietHours | null>(),
+  disabledCategories: jsonb("disabled_categories").$type<NotificationKind[]>().default([]).notNull(),
+}).enableRLS();
 
 // WH-20: "notifications auto-expire after 30 days" - enforced by a
 // retention Inngest job querying createdAt, not a stored expiry column.

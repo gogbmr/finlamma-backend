@@ -316,6 +316,13 @@
       "when": 1790751617871,
       "tag": "0044_third_sersi",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1790753422821,
+      "tag": "0045_parched_tenebrous",
+      "breakpoints": true
     }
   ]
 }

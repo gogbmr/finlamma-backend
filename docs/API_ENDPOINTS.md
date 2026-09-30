@@ -125,6 +125,15 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/doubt-zone/threads/{id}/messages` — Send a message to the Doubt Zone AI mentor and stream its reply
 - `POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report` — Report a Doubt Zone AI reply
 
+**Notifications**
+
+- `POST /api/v1/me/push-token` — Register this device's Expo push token
+- `DELETE /api/v1/me/push-token` — Unregister this device's Expo push token
+- `GET /api/v1/me/notification-prefs` — Get my notification preferences (SET-07)
+- `PATCH /api/v1/me/notification-prefs` — Update my notification preferences
+- `GET /api/v1/me/notifications` — Get my notification feed (PR-29)
+- `POST /api/v1/me/notifications/mark-read` — Mark my notifications as read (PR-29)
+
 ## System
 
 ### `GET /api/v1/health`
@@ -156,6 +165,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "tradingUnlockWorldMissing": false,
     "tradingHalt": "ok",
     "market": "mock",
+    "push": "mock",
     "inngest": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
@@ -6115,6 +6125,304 @@ Flags an assistant message for staff review (doubt_zone.moderate) - same flagged
   "error": {
     "code": "NOT_FOUND",
     "message": "No message with this id in this thread"
+  }
+}
+```
+
+
+---
+
+## Notifications
+
+### `POST /api/v1/me/push-token`
+
+**Register this device's Expo push token**
+
+Idempotent - re-registering the same token (e.g. on every app open) just bumps its last-seen timestamp. A token already registered to a different account is reassigned to the caller, never duplicated.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `expoPushToken` | string | yes |  |
+| `platform` | string (ios, android) | yes |  |
+
+```json
+{
+  "expoPushToken": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+  "platform": "ios"
+}
+```
+
+**Responses**
+
+- **200** — Registered
+
+```json
+{
+  "registered": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `DELETE /api/v1/me/push-token`
+
+**Unregister this device's Expo push token**
+
+Idempotent - unregistering a token that isn't registered (or belongs to someone else) is a no-op.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `expoPushToken` | string | yes |  |
+
+```json
+{
+  "expoPushToken": "string"
+}
+```
+
+**Responses**
+
+- **200** — Unregistered
+
+```json
+{
+  "unregistered": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/notification-prefs`
+
+**Get my notification preferences (SET-07)**
+
+quietHours is always resolved - the caller's own override if set, else the admin-configured global default (settings_kv) - so the client never needs its own copy of the default.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's prefs
+
+```json
+{
+  "enabled": true,
+  "quietHours": {
+    "startHourIst": 0,
+    "endHourIst": 0
+  },
+  "disabledCategories": [
+    "streak_risk"
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `PATCH /api/v1/me/notification-prefs`
+
+**Update my notification preferences**
+
+Every field is optional - only what's provided changes. quietHours: null clears a personal override back to the global default.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | no |  |
+| `quietHours` | object or null | no |  |
+| `disabledCategories` | array<string> | no |  |
+
+```json
+{
+  "enabled": true,
+  "quietHours": {
+    "startHourIst": 0,
+    "endHourIst": 0
+  },
+  "disabledCategories": [
+    "streak_risk"
+  ]
+}
+```
+
+**Responses**
+
+- **200** — The updated prefs
+
+```json
+{
+  "enabled": true,
+  "quietHours": {
+    "startHourIst": 0,
+    "endHourIst": 0
+  },
+  "disabledCategories": [
+    "streak_risk"
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/notifications`
+
+**Get my notification feed (PR-29)**
+
+The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's notifications
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "kind": "streak_risk",
+      "title": "string",
+      "body": "string",
+      "data": {},
+      "readAt": "2026-01-01T00:00:00.000Z",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/notifications/mark-read`
+
+**Mark my notifications as read (PR-29)**
+
+ids omitted: marks every currently-unread notification as read ('mark all read'). ids given: marks only those, still scoped to the caller's own notifications - an id belonging to someone else is silently ignored, never an error.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ids` | array<string> | no |  |
+
+```json
+{
+  "ids": [
+    "00000000-0000-0000-0000-000000000000"
+  ]
+}
+```
+
+**Responses**
+
+- **200** — Marked
+
+```json
+{
+  "marked": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
   }
 }
 ```

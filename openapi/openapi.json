@@ -179,6 +179,16 @@
                 "example": "mock",
                 "description": "A non-fatal warning (never causes a 503): 'configured' means a real market-data vendor (currently Twelve Data) is in effect - TWELVEDATA_API_KEY is set (or MARKET_DATA_PROVIDER explicitly picked it). 'mock' means deterministic fixture prices are in effect - either no key is configured yet (docs/ARCHITECTURE.md D38/D39 - the founder is still confirming Twelve Data's NSE tier cost) or MARKET_DATA_PROVIDER=mock was set explicitly. 'unconfigured' means MARKET_DATA_PROVIDER=twelvedata was explicitly set but TWELVEDATA_API_KEY is missing - a real misconfiguration (explicitly wants live data but has no key), distinct from the intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's comment for why (avoids burning API credits on every health check)."
               },
+              "push": {
+                "type": "string",
+                "enum": [
+                  "configured",
+                  "mock",
+                  "unconfigured"
+                ],
+                "example": "mock",
+                "description": "A non-fatal warning (never causes a 503): 'configured' means a real push vendor (Expo) is in effect - EXPO_ACCESS_TOKEN is set (or PUSH_PROVIDER explicitly picked it). 'mock' means push sends are only logged, never actually delivered - either no token is configured yet (there's no mobile app to push to as of Phase 7) or PUSH_PROVIDER=mock was set explicitly. 'unconfigured' means PUSH_PROVIDER=expo was explicitly set but EXPO_ACCESS_TOKEN is missing - a real misconfiguration, distinct from the intentional 'mock' fallback. Never a live vendor call - see getPushProviderKind's comment."
+              },
               "inngest": {
                 "type": "string",
                 "enum": [
@@ -209,6 +219,7 @@
               "tradingUnlockWorldMissing",
               "tradingHalt",
               "market",
+              "push",
               "inngest",
               "timestamp"
             ]
@@ -3171,6 +3182,168 @@
         },
         "required": [
           "reported"
+        ]
+      },
+      "RegisterPushTokenResponse": {
+        "type": "object",
+        "properties": {
+          "registered": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "registered"
+        ]
+      },
+      "UnregisterPushTokenResponse": {
+        "type": "object",
+        "properties": {
+          "unregistered": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "unregistered"
+        ]
+      },
+      "NotificationPrefs": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "quietHours": {
+            "type": "object",
+            "properties": {
+              "startHourIst": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+              },
+              "endHourIst": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 23
+              }
+            },
+            "required": [
+              "startHourIst",
+              "endHourIst"
+            ]
+          },
+          "disabledCategories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "streak_risk",
+                "boss_battle",
+                "market_news",
+                "session_goal",
+                "cheer_received",
+                "league_rank_change"
+              ]
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "quietHours",
+          "disabledCategories"
+        ]
+      },
+      "Notification": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "streak_risk",
+              "boss_battle",
+              "market_news",
+              "session_goal",
+              "cheer_received",
+              "league_rank_change"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "data": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": {}
+          },
+          "readAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "body",
+          "data",
+          "readAt",
+          "createdAt"
+        ]
+      },
+      "NotificationsListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "MarkNotificationsReadResponse": {
+        "type": "object",
+        "properties": {
+          "marked": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "marked"
         ]
       },
       "NewsStoryPreview": {
@@ -13648,6 +13821,404 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No message with this id in this thread"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/push-token": {
+      "post": {
+        "summary": "Register this device's Expo push token",
+        "description": "Idempotent - re-registering the same token (e.g. on every app open) just bumps its last-seen timestamp. A token already registered to a different account is reassigned to the caller, never duplicated.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expoPushToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "example": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android"
+                    ]
+                  }
+                },
+                "required": [
+                  "expoPushToken",
+                  "platform"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterPushTokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unregister this device's Expo push token",
+        "description": "Idempotent - unregistering a token that isn't registered (or belongs to someone else) is a no-op.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expoPushToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "expoPushToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unregistered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnregisterPushTokenResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notification-prefs": {
+      "get": {
+        "summary": "Get my notification preferences (SET-07)",
+        "description": "quietHours is always resolved - the caller's own override if set, else the admin-configured global default (settings_kv) - so the client never needs its own copy of the default.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's prefs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update my notification preferences",
+        "description": "Every field is optional - only what's provided changes. quietHours: null clears a personal override back to the global default.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "quietHours": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "startHourIst": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      },
+                      "endHourIst": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
+                      }
+                    },
+                    "required": [
+                      "startHourIst",
+                      "endHourIst"
+                    ]
+                  },
+                  "disabledCategories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "streak_risk",
+                        "boss_battle",
+                        "market_news",
+                        "session_goal",
+                        "cheer_received",
+                        "league_rank_change"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated prefs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPrefs"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notifications": {
+      "get": {
+        "summary": "Get my notification feed (PR-29)",
+        "description": "The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's notifications",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationsListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/notifications/mark-read": {
+      "post": {
+        "summary": "Mark my notifications as read (PR-29)",
+        "description": "ids omitted: marks every currently-unread notification as read ('mark all read'). ids given: marks only those, still scoped to the caller's own notifications - an id belonging to someone else is silently ignored, never an error.",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Marked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationsReadResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
                   }
                 },
                 "schema": {

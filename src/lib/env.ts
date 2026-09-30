@@ -157,6 +157,22 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL_FAST: z.string().optional(),
   ANTHROPIC_MODEL_SMART: z.string().optional(),
+
+  // Phase 7 - push notifications (Expo). Optional, same lazy pattern as
+  // TWELVEDATA_API_KEY above: src/server/notifications/provider.ts's
+  // getPushProviderKind() auto-picks "mock" (logs instead of sending) when
+  // this is absent and "expo" when it's present, so local dev/tests and any
+  // environment without an Expo account yet work with zero configuration -
+  // the mobile app doesn't exist yet as of Phase 7, so there's nothing to
+  // push to regardless. Not required for basic Expo push API calls (Expo
+  // only requires it for higher rate limits / enhanced security), but this
+  // codebase always sets it when a provider is "configured" rather than
+  // relying on Expo's unauthenticated path.
+  EXPO_ACCESS_TOKEN: z.string().optional(),
+  // Explicit override for which push provider src/server/notifications/
+  // provider.ts's getPushProvider() returns - same role as
+  // MARKET_DATA_PROVIDER above. Left unset in normal operation.
+  PUSH_PROVIDER: z.enum(["mock", "expo"]).optional(),
 });
 
 function loadEnv() {

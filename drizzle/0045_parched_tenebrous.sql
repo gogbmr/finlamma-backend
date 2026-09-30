@@ -1,0 +1,1 @@
+ALTER TABLE "notification_prefs" ADD COLUMN "disabled_categories" jsonb DEFAULT '[]'::jsonb NOT NULL;
