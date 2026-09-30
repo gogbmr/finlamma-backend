@@ -4,7 +4,7 @@
 // database (see @/db/client's NODE_ENV=test guard).
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { lessons, mentors, users, worlds } from "@/db/schema";
+import { lessons, mentors, roles, staffMembers, users, worlds } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -13,12 +13,15 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 const {
   findLessonThread,
   findStandaloneThread,
+  getMessageById,
   getThreadById,
   insertMessage,
   insertThread,
+  listFlaggedMessagesForReview,
   listMessagesPage,
   listRecentMessages,
   markMessageFlagged,
+  markMessageReviewed,
   touchThreadLastMessageAt,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
@@ -43,6 +46,18 @@ async function makeUser() {
     })
     .returning();
   return user;
+}
+
+async function makeStaff() {
+  const [role] = await db
+    .insert(roles)
+    .values({ key: uniqueKey("role"), name: "Test Role" })
+    .returning();
+  const [staff] = await db
+    .insert(staffMembers)
+    .values({ clerkUserId: uniqueClerkUserId("doubt-zone-repo-staff"), roleId: role.id })
+    .returning();
+  return staff;
 }
 
 async function makeMentor() {
@@ -228,5 +243,90 @@ describe("touchThreadLastMessageAt", () => {
 
     const updated = await getThreadById(thread.id);
     expect(updated!.lastMessageAt.getTime()).toBeGreaterThan(before);
+  });
+});
+
+describe("getMessageById", () => {
+  it("returns null for a nonexistent message", async () => {
+    expect(await getMessageById(randomUUID())).toBeNull();
+  });
+
+  it("returns the message row", async () => {
+    const user = await makeUser();
+    const mentor = await makeMentor();
+    const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
+    const message = await insertMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: "hi",
+      flagged: false,
+      flaggedReason: null,
+    });
+
+    expect(await getMessageById(message.id)).toMatchObject({ threadId: thread.id, role: "assistant" });
+  });
+});
+
+// listFlaggedMessagesForReview is a global (not thread-scoped) admin query,
+// and this file's earlier describe blocks (markMessageFlagged) also leave
+// flagged rows behind in the shared PGlite instance - assertions below
+// check "contains/excludes this specific row", never "equals exactly this
+// array", so they hold regardless of test execution order.
+describe("listFlaggedMessagesForReview / markMessageReviewed", () => {
+  it("only returns flagged messages (never an unflagged one), joined with the learner's display name and mentor name, never content", async () => {
+    const user = await makeUser();
+    const mentor = await makeMentor();
+    const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
+    const unflagged = await insertMessage({
+      threadId: thread.id,
+      role: "learner",
+      content: "ordinary",
+      flagged: false,
+      flaggedReason: null,
+    });
+    const flagged = await insertMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: "flagged content",
+      flagged: true,
+      flaggedReason: "learner_reported",
+    });
+
+    const rows = await listFlaggedMessagesForReview({ includeReviewed: true, limit: 500 });
+    const ids = rows.map((r) => r.id);
+
+    expect(ids).toContain(flagged.id);
+    expect(ids).not.toContain(unflagged.id);
+    const row = rows.find((r) => r.id === flagged.id);
+    expect(row).toMatchObject({
+      firstName: user.firstName,
+      lastInitial: user.lastInitial,
+      flaggedReason: "learner_reported",
+    });
+    expect(row!.mentorName).toEqual(mentor.name);
+    expect(row).not.toHaveProperty("content");
+  });
+
+  it("excludes a reviewed message by default, includes it with includeReviewed: true", async () => {
+    const user = await makeUser();
+    const mentor = await makeMentor();
+    const staff = await makeStaff();
+    const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
+    const flagged = await insertMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: "x",
+      flagged: true,
+      flaggedReason: "learner_reported",
+    });
+
+    await markMessageReviewed(flagged.id, staff.id);
+
+    const pending = await listFlaggedMessagesForReview({ includeReviewed: false, limit: 500 });
+    expect(pending.map((r) => r.id)).not.toContain(flagged.id);
+
+    const withReviewed = await listFlaggedMessagesForReview({ includeReviewed: true, limit: 500 });
+    const row = withReviewed.find((r) => r.id === flagged.id);
+    expect(row!.reviewedAt).not.toBeNull();
   });
 });

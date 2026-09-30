@@ -379,7 +379,10 @@ skill for the full idempotency/reversal design)
   created_at, not a stored column)
 - `doubt_threads` (user_id, mentor_id, lesson_id nullable — null for the standalone Doubt Zone entry
   point, set for an in-lesson `doubt_zone` node thread, last_message_at), `doubt_messages`
-  (thread_id, role learner|assistant, content, flagged, flagged_reason) — Phase 7's live AI mentor;
+  (thread_id, role learner|assistant, content, flagged, flagged_reason, reviewed_at, reviewed_by —
+  the last two track staff moderation-queue review independently of the flag itself: reviewing
+  never clears `flagged`/`flagged_reason`, which stay as the permanent record of what tripped) —
+  Phase 7's live AI mentor;
   the in-lesson "Doubt Zone" node in Phase 2b is scripted content (`lessons.content`), not these
   tables (see PRODUCT_SPEC.md §1). `flagged`/`flagged_reason` implement the Phase 7 kickoff's
   flagged-only staff-visibility decision (`docs/ARCHITECTURE.md`): full transcripts are never

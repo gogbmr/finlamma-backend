@@ -2,6 +2,7 @@ import { boolean, index, pgEnum, pgTable, text, timestamp, uuid } from "drizzle-
 import { idAndTimestamps } from "./_helpers";
 import { lessons } from "./lessons";
 import { mentors } from "./mentors";
+import { staffMembers } from "./staff";
 import { users } from "./users";
 
 // Phase 7's live "Ask Lamma AI" mentor (docs/ARCHITECTURE.md D6,
@@ -48,6 +49,16 @@ export const doubtMessages = pgTable(
     content: text("content").notNull(),
     flagged: boolean("flagged").default(false).notNull(),
     flaggedReason: text("flagged_reason"),
+    // Checkpoint 5's moderation queue (doubt_zone.moderate): a flagged
+    // message stays in the pending queue until a staff member reviews it.
+    // Reviewing never un-flags it (flagged/flaggedReason stay as the
+    // permanent record of what tripped) - reviewedAt/reviewedBy are purely
+    // "has a human looked at this yet", independent of the flag itself.
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by").references(() => staffMembers.id, { onDelete: "set null" }),
   },
-  (t) => [index("doubt_messages_thread_id_created_at_idx").on(t.threadId, t.createdAt)],
+  (t) => [
+    index("doubt_messages_thread_id_created_at_idx").on(t.threadId, t.createdAt),
+    index("doubt_messages_flagged_created_at_idx").on(t.flagged, t.createdAt),
+  ],
 ).enableRLS();

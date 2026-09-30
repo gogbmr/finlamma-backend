@@ -9,12 +9,15 @@ import { buildDoubtZoneSystemPrompt, type DoubtZoneLanguage } from "./prompt";
 import {
   findLessonThread,
   findStandaloneThread,
+  getMessageById,
   getThreadById,
   insertMessage,
   insertThread,
+  listFlaggedMessagesForReview,
   listMessagesPage,
   listRecentMessages,
   markMessageFlagged,
+  markMessageReviewed,
   touchThreadLastMessageAt,
 } from "./repo";
 import { streamDoubtZoneReply, type DoubtZoneChatMessage } from "./reply";
@@ -303,4 +306,96 @@ export async function streamReplyAndPersist(
     userAgent: meta.userAgent,
   });
   emit({ type: "done", messageId: assistantMessage.id, replaced: false });
+}
+
+// --- Report a bad reply (learner-facing) ---
+
+// A learner can only report an assistant reply in their own thread. Never
+// throws on a re-report of an already-flagged message (idempotent) - the
+// second report is still meaningful staff signal, so it's still logged,
+// just doesn't re-flip a flag that's already set.
+export async function reportMessage(
+  user: { id: string },
+  threadId: string,
+  messageId: string,
+  meta: RequestMeta,
+): Promise<void> {
+  const thread = await getThreadById(threadId);
+  if (!thread || thread.userId !== user.id) {
+    throw new AppError("NOT_FOUND", "No Doubt Zone thread with this id");
+  }
+  const message = await getMessageById(messageId);
+  if (!message || message.threadId !== threadId) {
+    throw new AppError("NOT_FOUND", "No message with this id in this thread");
+  }
+  if (message.role !== "assistant") {
+    throw new AppError("VALIDATION_FAILED", "Only an assistant reply can be reported");
+  }
+
+  if (!message.flagged) {
+    await markMessageFlagged(message.id, "learner_reported");
+  }
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "doubt_zone.message_reported",
+    targetType: "doubt_message",
+    targetId: message.id,
+    metadata: { threadId, alreadyFlagged: message.flagged },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+// --- Staff moderation queue (doubt_zone.moderate) ---
+
+// Metadata only (see repo's own doc comment) - never includes message
+// content. The queue defaults to pending-only (includeReviewed: false);
+// reviewing never un-flags a message.
+export async function listFlaggedMessagesForModeration(opts: { includeReviewed: boolean; limit: number }) {
+  return listFlaggedMessagesForReview(opts);
+}
+
+// The one path that reveals a flagged message's content to staff - always
+// logged (actor = the staff member, target = the message), same pattern as
+// src/server/onboarding/service.ts's revealParentContact for parent PII.
+// Never called from the queue's list render, only from an explicit staff
+// action.
+export async function revealFlaggedMessageContent(actor: { id: string }, messageId: string, meta: RequestMeta) {
+  const message = await getMessageById(messageId);
+  if (!message || !message.flagged) {
+    throw new AppError("NOT_FOUND", "No flagged message with this id");
+  }
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "doubt_zone.flagged_message_viewed",
+    targetType: "doubt_message",
+    targetId: message.id,
+    metadata: { threadId: message.threadId },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  return { content: message.content, role: message.role, flaggedReason: message.flaggedReason };
+}
+
+export async function markFlaggedMessageReviewed(actor: { id: string }, messageId: string, meta: RequestMeta) {
+  const message = await getMessageById(messageId);
+  if (!message || !message.flagged) {
+    throw new AppError("NOT_FOUND", "No flagged message with this id");
+  }
+
+  await markMessageReviewed(messageId, actor.id);
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "doubt_zone.flagged_message_reviewed",
+    targetType: "doubt_message",
+    targetId: message.id,
+    metadata: { threadId: message.threadId },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
 }

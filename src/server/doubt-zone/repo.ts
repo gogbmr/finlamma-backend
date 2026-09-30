@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { db } from "@/db/client";
-import { doubtMessages, doubtThreads } from "@/db/schema";
+import { doubtMessages, doubtThreads, mentors, users } from "@/db/schema";
 
 export async function getThreadById(id: string) {
   const [row] = await db.select().from(doubtThreads).where(eq(doubtThreads.id, id)).limit(1);
@@ -94,4 +94,46 @@ export async function insertMessage(input: {
 
 export async function markMessageFlagged(id: string, reason: string) {
   await db.update(doubtMessages).set({ flagged: true, flaggedReason: reason }).where(eq(doubtMessages.id, id));
+}
+
+export async function getMessageById(id: string) {
+  const [row] = await db.select().from(doubtMessages).where(eq(doubtMessages.id, id)).limit(1);
+  return row ?? null;
+}
+
+// --- Staff (admin, doubt_zone.moderate) ---
+
+// Metadata only - deliberately never selects `content`. Same
+// "list is metadata-only, a separate always-logged function reveals the
+// sensitive field" split as src/server/onboarding/repo.ts's
+// listConsentRecordsForReview / getParentContactForReview.
+export async function listFlaggedMessagesForReview(opts: { includeReviewed: boolean; limit: number }) {
+  const conditions = [eq(doubtMessages.flagged, true)];
+  if (!opts.includeReviewed) conditions.push(isNull(doubtMessages.reviewedAt));
+  return db
+    .select({
+      id: doubtMessages.id,
+      threadId: doubtMessages.threadId,
+      role: doubtMessages.role,
+      flaggedReason: doubtMessages.flaggedReason,
+      createdAt: doubtMessages.createdAt,
+      reviewedAt: doubtMessages.reviewedAt,
+      firstName: users.firstName,
+      lastInitial: users.lastInitial,
+      mentorName: mentors.name,
+    })
+    .from(doubtMessages)
+    .innerJoin(doubtThreads, eq(doubtThreads.id, doubtMessages.threadId))
+    .innerJoin(users, eq(users.id, doubtThreads.userId))
+    .innerJoin(mentors, eq(mentors.id, doubtThreads.mentorId))
+    .where(and(...conditions))
+    .orderBy(desc(doubtMessages.createdAt))
+    .limit(opts.limit);
+}
+
+export async function markMessageReviewed(id: string, staffId: string) {
+  await db
+    .update(doubtMessages)
+    .set({ reviewedAt: new Date(), reviewedBy: staffId })
+    .where(eq(doubtMessages.id, id));
 }

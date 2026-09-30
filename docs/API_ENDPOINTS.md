@@ -123,6 +123,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/doubt-zone/threads` — Open or resume a Doubt Zone AI thread (Phase 7 live 'Ask Lamma AI' mentor)
 - `GET /api/v1/doubt-zone/threads/{id}/messages` — Get a Doubt Zone thread's message history
 - `POST /api/v1/doubt-zone/threads/{id}/messages` — Send a message to the Doubt Zone AI mentor and stream its reply
+- `POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report` — Report a Doubt Zone AI reply
 
 ## System
 
@@ -6042,6 +6043,78 @@ The response body is always newline-delimited JSON (`application/x-ndjson`, one 
   "error": {
     "code": "SERVICE_UNAVAILABLE",
     "message": "Safety classifier call failed"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report`
+
+**Report a Doubt Zone AI reply**
+
+Flags an assistant message for staff review (doubt_zone.moderate) - same flagged-only visibility as a safety-classifier flag (docs/ARCHITECTURE.md's Phase 7 kickoff decisions). Idempotent: reporting an already-flagged message logs the report again but doesn't change anything else. Only the caller's own thread, and only an assistant-role message, can be reported.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | Thread id |
+| `messageId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — Reported
+
+```json
+{
+  "reported": true
+}
+```
+
+- **400** — The message isn't an assistant reply
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Only an assistant reply can be reported"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No thread/message with this id belonging to the caller
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No message with this id in this thread"
   }
 }
 ```

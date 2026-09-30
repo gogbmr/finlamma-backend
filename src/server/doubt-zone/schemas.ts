@@ -213,3 +213,13 @@ export const DoubtZoneStreamLineSchema = registry.register(
     }),
   ]),
 );
+
+// Checkpoint 5: report a bad assistant reply.
+export const ReportMessageParamsSchema = z.object({
+  id: z.string().uuid().openapi({ description: "Thread id" }),
+  messageId: z.string().uuid(),
+});
+export const ReportMessageResponseSchema = registry.register(
+  "DoubtZoneReportMessageResponse",
+  z.object({ reported: z.literal(true) }),
+);

@@ -22,12 +22,15 @@ vi.mock("@/server/worlds/repo", () => ({ getWorldById: (id: unknown) => mockGetW
 const mockRepo = {
   findLessonThread: vi.fn(),
   findStandaloneThread: vi.fn(),
+  getMessageById: vi.fn(),
   getThreadById: vi.fn(),
   insertMessage: vi.fn(),
   insertThread: vi.fn(),
+  listFlaggedMessagesForReview: vi.fn(),
   listMessagesPage: vi.fn(),
   listRecentMessages: vi.fn(),
   markMessageFlagged: vi.fn(),
+  markMessageReviewed: vi.fn(),
   touchThreadLastMessageAt: vi.fn(),
 };
 vi.mock("./repo", () => mockRepo);
@@ -49,7 +52,16 @@ vi.mock("./safety", () => ({
 const mockGetDoubtZoneSafetySettings = vi.fn();
 vi.mock("./settings", () => ({ getDoubtZoneSafetySettings: () => mockGetDoubtZoneSafetySettings() }));
 
-const { createOrGetThread, listThreadMessages, prepareMessage, streamReplyAndPersist } = await import("./service");
+const {
+  createOrGetThread,
+  listFlaggedMessagesForModeration,
+  listThreadMessages,
+  markFlaggedMessageReviewed,
+  prepareMessage,
+  reportMessage,
+  revealFlaggedMessageContent,
+  streamReplyAndPersist,
+} = await import("./service");
 
 const USER = { id: "user_1", language: "en" as const };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -301,5 +313,137 @@ describe("streamReplyAndPersist", () => {
       expect.objectContaining({ content: DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS.temporaryUnavailableMessage.en, flagged: false }),
     );
     expect(lines.at(-1)).toMatchObject({ type: "done", replaced: true });
+  });
+});
+
+describe("reportMessage", () => {
+  beforeEach(() => {
+    mockRepo.getThreadById.mockResolvedValue(THREAD);
+  });
+
+  it("404s when the thread belongs to a different user", async () => {
+    mockRepo.getThreadById.mockResolvedValueOnce({ ...THREAD, userId: "someone_else" });
+
+    await expect(reportMessage(USER, THREAD.id, "msg_1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("404s when the message doesn't belong to this thread", async () => {
+    mockRepo.getMessageById.mockResolvedValueOnce({
+      id: "msg_1",
+      threadId: "some_other_thread",
+      role: "assistant",
+      flagged: false,
+    });
+
+    await expect(reportMessage(USER, THREAD.id, "msg_1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("rejects reporting a learner's own message", async () => {
+    mockRepo.getMessageById.mockResolvedValueOnce({
+      id: "msg_1",
+      threadId: THREAD.id,
+      role: "learner",
+      flagged: false,
+    });
+
+    await expect(reportMessage(USER, THREAD.id, "msg_1", META)).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockRepo.markMessageFlagged).not.toHaveBeenCalled();
+  });
+
+  it("flags an unflagged assistant reply and logs it without message content", async () => {
+    mockRepo.getMessageById.mockResolvedValueOnce({
+      id: "msg_1",
+      threadId: THREAD.id,
+      role: "assistant",
+      flagged: false,
+    });
+
+    await reportMessage(USER, THREAD.id, "msg_1", META);
+
+    expect(mockRepo.markMessageFlagged).toHaveBeenCalledWith("msg_1", "learner_reported");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "doubt_zone.message_reported", metadata: { threadId: THREAD.id, alreadyFlagged: false } }),
+    );
+  });
+
+  it("is idempotent - re-reporting an already-flagged message still logs but doesn't re-flag", async () => {
+    mockRepo.getMessageById.mockResolvedValueOnce({
+      id: "msg_1",
+      threadId: THREAD.id,
+      role: "assistant",
+      flagged: true,
+    });
+
+    await reportMessage(USER, THREAD.id, "msg_1", META);
+
+    expect(mockRepo.markMessageFlagged).not.toHaveBeenCalled();
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { threadId: THREAD.id, alreadyFlagged: true } }),
+    );
+  });
+});
+
+describe("staff moderation queue", () => {
+  const ACTOR = { id: "staff_1" };
+
+  it("listFlaggedMessagesForModeration passes options straight through to the repo (metadata only)", async () => {
+    mockRepo.listFlaggedMessagesForReview.mockResolvedValueOnce([{ id: "m1" }]);
+
+    const result = await listFlaggedMessagesForModeration({ includeReviewed: true, limit: 50 });
+
+    expect(mockRepo.listFlaggedMessagesForReview).toHaveBeenCalledWith({ includeReviewed: true, limit: 50 });
+    expect(result).toEqual([{ id: "m1" }]);
+  });
+
+  describe("revealFlaggedMessageContent", () => {
+    it("404s for a message that isn't flagged", async () => {
+      mockRepo.getMessageById.mockResolvedValueOnce({ id: "m1", flagged: false });
+
+      await expect(revealFlaggedMessageContent(ACTOR, "m1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("returns the content and logs the reveal, every time", async () => {
+      mockRepo.getMessageById.mockResolvedValueOnce({
+        id: "m1",
+        threadId: "t1",
+        flagged: true,
+        content: "the actual flagged text",
+        role: "assistant",
+        flaggedReason: "learner_reported",
+      });
+
+      const result = await revealFlaggedMessageContent(ACTOR, "m1", META);
+
+      expect(result).toEqual({ content: "the actual flagged text", role: "assistant", flaggedReason: "learner_reported" });
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorType: "staff",
+          actorId: "staff_1",
+          action: "doubt_zone.flagged_message_viewed",
+          targetType: "doubt_message",
+          targetId: "m1",
+        }),
+      );
+    });
+  });
+
+  describe("markFlaggedMessageReviewed", () => {
+    it("404s for a message that isn't flagged", async () => {
+      mockRepo.getMessageById.mockResolvedValueOnce({ id: "m1", flagged: false });
+
+      await expect(markFlaggedMessageReviewed(ACTOR, "m1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(mockRepo.markMessageReviewed).not.toHaveBeenCalled();
+    });
+
+    it("marks reviewed and logs it", async () => {
+      mockRepo.getMessageById.mockResolvedValueOnce({ id: "m1", threadId: "t1", flagged: true });
+
+      await markFlaggedMessageReviewed(ACTOR, "m1", META);
+
+      expect(mockRepo.markMessageReviewed).toHaveBeenCalledWith("m1", "staff_1");
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "doubt_zone.flagged_message_reviewed", targetId: "m1" }),
+      );
+    });
   });
 });

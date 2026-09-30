@@ -309,10 +309,11 @@ own repo later, hosted on Railway.
 - [x] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
       node, and also the standalone Doubt Zone entry point (Checkpoints 1-4: schema, safety
-      classifier core, endpoints, in-lesson wiring confirmed/documented - FEATURE_MAP LF-15/SET-14).
+      classifier core, endpoints, in-lesson wiring confirmed/documented - FEATURE_MAP LF-15/SET-14;
+      Checkpoint 5: `POST .../messages/{messageId}/report` + `/admin/doubt-zone` moderation queue,
+      `doubt_zone.moderate`-gated, metadata-only list with an always-logged content reveal action).
       **AI behavior verified only against mocks so far, not a real model - see the BLOCKING
-      pre-launch item and `docs/STATUS.md`'s 2026-09-30 entry.** Report-a-reply + staff moderation
-      queue (Checkpoint 5) still open.
+      pre-launch item and `docs/STATUS.md`'s 2026-09-30 entry.**
 - [x] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
       publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
       affected parent inline during the admin publish Server Action). Pulled forward into

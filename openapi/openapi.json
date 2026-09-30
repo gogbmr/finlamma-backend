@@ -3159,6 +3159,20 @@
           }
         ]
       },
+      "DoubtZoneReportMessageResponse": {
+        "type": "object",
+        "properties": {
+          "reported": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "reported"
+        ]
+      },
       "NewsStoryPreview": {
         "type": "object",
         "properties": {
@@ -13522,6 +13536,118 @@
                   "error": {
                     "code": "SERVICE_UNAVAILABLE",
                     "message": "Safety classifier call failed"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/doubt-zone/threads/{id}/messages/{messageId}/report": {
+      "post": {
+        "summary": "Report a Doubt Zone AI reply",
+        "description": "Flags an assistant message for staff review (doubt_zone.moderate) - same flagged-only visibility as a safety-classifier flag (docs/ARCHITECTURE.md's Phase 7 kickoff decisions). Idempotent: reporting an already-flagged message logs the report again but doesn't change anything else. Only the caller's own thread, and only an assistant-role message, can be reported.",
+        "tags": [
+          "Doubt Zone"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Thread id"
+            },
+            "required": true,
+            "description": "Thread id",
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DoubtZoneReportMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The message isn't an assistant reply",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Only an assistant reply can be reported"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No thread/message with this id belonging to the caller",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No message with this id in this thread"
                   }
                 },
                 "schema": {
