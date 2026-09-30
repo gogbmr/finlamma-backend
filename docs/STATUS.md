@@ -1,5 +1,67 @@
 # Status
 
+## 2026-09-30 — `/phase-audit 7` complete. Eight findings fixed, branch pending `/publish-contract`
+
+Audited Phase 7 (Notifications & Doubt Zone) in full: both ROADMAP items plus the parent
+re-approval-email Inngest job, all 10 matching FEATURE_MAP rows (WH-18/19/20/21/23/24, PR-29,
+SET-07, SET-14, LF-15), code health, the Supabase database, the API surface, production, a
+dedicated security audit, and docs-vs-reality. Full method and evidence in the audit transcript;
+summary below.
+
+**Clean**: migrations (47/47 applied, zero drift), schema (every new table/column/constraint for
+`doubt_threads`/`doubt_messages`/`notifications`/`notification_prefs`/`push_tokens` matches
+`src/db/schema/*` exactly), RLS enabled with zero policies on all 69 public tables, zero
+WARN/ERROR-level Supabase advisors, `pnpm typecheck`/`pnpm lint` clean, all 10 FEATURE_MAP rows
+have real evidence, production health OK with `version` matching `origin/main` exactly (Phase 7
+correctly not live yet), IDOR protection explicitly unit-tested, no raw SQL anywhere, no secrets
+logged. `pnpm build` could not be verified locally (sandbox has no network path to Supabase for
+static-page prerendering - not a Phase 7 code issue; the next real Vercel build is the true check).
+
+**Eight issues found and fixed same day** (from the security-auditor subagent plus a docs-reality
+pass):
+1. **[Medium] Doubt Zone moderation list showed the safety classifier's free-text reason**
+   (which can paraphrase/quote a learner's own words) to any `doubt_zone.moderate` staff member on
+   page load, with no `logActivity` call - unlike the content reveal, which was already correctly
+   logged. Fixed: `doubt_messages.flagged_category` (additive migration) is a new coarse,
+   never-free-text enum shown in the list; the classifier's actual `flagged_reason` text now lives
+   behind the same logged reveal action as message content (D64).
+2. **[Medium] A classifier outage left the learner's message flagged: false forever** -
+   indistinguishable from a message the classifier actually cleared, so it never reached the
+   moderation queue even if it happened to be a real signal. Fixed: a classifier failure now flags
+   the message `classifier_unavailable` before re-throwing the same `SERVICE_UNAVAILABLE` error to
+   the client.
+3. **[docs]** `docs/ARCHITECTURE.md`'s decisions table had zero Phase 7 entries despite several
+   real architectural calls made this phase. Fixed: D63-D65 record the safety classifier design,
+   flagged-only moderation, and the push-provider/notification-audience choices.
+4. **[docs]** `openapi.json`'s `info.version` was still `1.1.0` (Phases 5+6's catch-up bump) and
+   `openapi/CHANGELOG.md` had no Phase 7 entry, despite the contract itself being current (ad-hoc
+   `pnpm contract` runs kept it accurate) - the exact incident pattern `CLAUDE.md` already warns
+   about. **The user runs `/publish-contract` themselves** (it's `disable-model-invocation` - I
+   cannot trigger it) before this branch merges.
+5. **[Low]** `flagOnAnySignal` covered all three safety categories under one toggle - if ever
+   switched off, it would have silently stopped the deterministic crisis redirect for
+   `self_harm_or_suicide`/`abuse_or_neglect`, not just the intentionally fuzzier
+   `other_wellbeing_concern` bucket. Fixed: the two highest-severity categories now always flag,
+   regardless of the toggle.
+6. **[Low]** A push token reassignment (the same Expo token string submitted by a different
+   account) happened silently, with no audit trail. Fixed: `notifications.push_token_reassigned`
+   is now logged (old/new user id only, never the token value).
+7. **[Low]** `DELETE /me/push-token` was the one endpoint missing `requireFullAccess`, inconsistent
+   with every sibling route (not exploitable - it can only ever remove the caller's own token).
+   Fixed for consistency.
+8. **[docs]** The pre-launch checklist's unindexed-FK/unused-index advisor counts were stale
+   (25/25, last counted at Phase 4). Updated to the current 40/49, and added a new BLOCKING item:
+   define who holds `doubt_zone.moderate` and write a policy for handling flagged safety content
+   involving minors - the technical side is built, the human process behind it is not.
+
+Re-verified after fixes: `pnpm typecheck` (0 errors), `pnpm lint` (0 errors, 3 pre-existing
+warnings), `pnpm test` (216 files, 2188 tests, all passing).
+
+**Ready for merge to `main` once the user runs `/publish-contract`** and sets
+`INNGEST_SIGNING_KEY`/`INNGEST_EVENT_KEY` in Vercel (production currently reports
+`inngest: unconfigured` - without this, none of Phase 7's four new notification cron jobs, or any
+existing Inngest job, will actually run once merged).
+
 ## 2026-09-30 — Phase 7 Doubt Zone AI: built and unit-tested, NOT yet verified against a real model
 
 Checkpoints 1-3 (schema, safety classifier core, streaming endpoints) are built with the safety
