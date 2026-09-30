@@ -184,6 +184,15 @@ own security schemes, so the document covers the whole backend.
 - Small steps: one endpoint or feature at a time, with tests, then commit with a clear message.
 - After finishing a feature: run `pnpm typecheck && pnpm lint && pnpm test`, then `pnpm contract`
   if the API changed, and tick the item in `docs/ROADMAP.md`.
+- **Run `/publish-contract` before every phase merge to `main`, even if `pnpm contract` was
+  already run ad hoc during the phase.** An ad-hoc `pnpm contract` run keeps `openapi.json`/
+  `docs/API_ENDPOINTS.md` accurate for that one commit, but only `/publish-contract` bumps
+  `info.version` and writes the `openapi/CHANGELOG.md` entry — skip it and the contract silently
+  drifts out of sync with its own version history. (Incident: Phases 5 and 6 both shipped their
+  endpoints via ad-hoc `pnpm contract` runs bundled into feature commits and never went through
+  `/publish-contract` before merging — `info.version` sat stale at `1.0.0` and
+  `openapi/CHANGELOG.md` had no record of either phase's endpoints ever existing, until a single
+  catch-up publish had to cover two phases' worth of history at once.)
 - Use the `code-reviewer` subagent before committing larger changes and `security-auditor`
   for anything touching auth, permissions, money or trading.
 - If you make an architectural decision, append it to the decisions table in `docs/ARCHITECTURE.md`.
