@@ -346,12 +346,14 @@ own repo later, hosted on Railway.
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future
       feature that surfaces one learner's content to another.
-- [ ] **Review the 25 unindexed-foreign-key and 25 unused-index Supabase advisor findings**
+- [ ] **Review the 40 unindexed-foreign-key and 49 unused-index Supabase advisor findings**
       (`INFO` level, first flagged by the Phase 2b audit at 8/15, `docs/STATUS.md`; recount as of
-      the `/phase-audit 4` run, 2026-09-27, now at 25/25 as Phase 3/4 added more tables/FKs) - low-
+      the `/phase-audit 7` run, 2026-09-30, now at 40/49 as later phases - most recently Phase 7's
+      `doubt_threads`/`doubt_messages`/`notifications`/`push_tokens` - added more tables/FKs) - low-
       traffic pre-launch noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
-      `question_answers.question_id` have no covering index), but worth a real pass once query
-      patterns and data volume are closer to production before launch.
+      `question_answers.question_id`, `doubt_messages.reviewed_by`, `doubt_threads.lesson_id` have no
+      covering index), but worth a real pass once query patterns and data volume are closer to
+      production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
       questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`)
       — the seed/draft copy written during development (e.g. `scripts/seed-mentors.ts`'s
@@ -381,6 +383,16 @@ own repo later, hosted on Railway.
       classifier, advice-language circuit breaker) is verified only against mocked model responses
       in the automated test suite - the real model has never actually been run against these
       prompts. See `docs/STATUS.md`'s Phase 7 entry.
+- [ ] **BLOCKING: define who holds `doubt_zone.moderate`, and write a policy for handling flagged
+      safety content involving minors** (`/phase-audit 7`, 2026-09-30). The flagged-only design
+      (`docs/ARCHITECTURE.md`) means a small number of trusted staff can see a flagged message's
+      actual content and the classifier's reasoning - right now that's whoever holds `super_admin`
+      or `user_manager`, seeded by default, with no written guidance for what a staff member is
+      actually supposed to DO on finding a genuine self-harm/abuse signal (escalate to whom, how
+      fast, is a parent ever contacted, is this logged/reported anywhere outside the app). The
+      technical side (fail-closed classification, always-logged reveal, deterministic redirect
+      copy) is built; the human process behind it is not, and that gap matters as much as the code
+      for a feature that talks to minors about their wellbeing.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence

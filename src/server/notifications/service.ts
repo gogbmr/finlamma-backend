@@ -32,7 +32,11 @@ export async function registerPushToken(
   input: RegisterPushTokenInput,
   meta: RequestMeta,
 ): Promise<void> {
-  await upsertPushToken({ userId: user.id, expoPushToken: input.expoPushToken, platform: input.platform });
+  const { previousUserId } = await upsertPushToken({
+    userId: user.id,
+    expoPushToken: input.expoPushToken,
+    platform: input.platform,
+  });
   await logActivity({
     actorType: "user",
     actorId: user.id,
@@ -43,6 +47,24 @@ export async function registerPushToken(
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+  // /phase-audit 7 finding: a token belonging to a different account just
+  // got silently reassigned to this one (e.g. the same physical token
+  // string was resubmitted by someone else - could be a legitimate
+  // reinstall-onto-a-different-account, or could be a leaked token). Never
+  // logs the token value itself, only which two accounts were involved, so
+  // this is traceable without adding a new way to leak the token.
+  if (previousUserId) {
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "notifications.push_token_reassigned",
+      targetType: "push_token",
+      targetId: null,
+      metadata: { previousUserId, newUserId: user.id, platform: input.platform },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
 }
 
 export async function unregisterPushToken(

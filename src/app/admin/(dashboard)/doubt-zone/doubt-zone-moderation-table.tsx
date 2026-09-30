@@ -8,24 +8,53 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { markReviewedAction, revealFlaggedMessageAction } from "./actions";
 
+type FlaggedCategory =
+  | "self_harm_or_suicide"
+  | "abuse_or_neglect"
+  | "other_wellbeing_concern"
+  | "classifier_unavailable"
+  | "learner_reported"
+  | "advice_language";
+
 type Row = {
   id: string;
   threadId: string;
   role: "learner" | "assistant";
-  flaggedReason: string | null;
+  flaggedCategory: FlaggedCategory | null;
   createdAt: string;
   reviewedAt: string | null;
   displayName: string;
   mentorName: string;
 };
 
+// A short, human label for the list's own "Flag category" column - the
+// category alone (never the classifier's free-text reason, which stays
+// behind the logged reveal below - /phase-audit 7).
+const CATEGORY_LABEL: Record<FlaggedCategory, string> = {
+  self_harm_or_suicide: "Self-harm / suicide",
+  abuse_or_neglect: "Abuse / neglect",
+  other_wellbeing_concern: "Wellbeing concern",
+  classifier_unavailable: "Safety check failed",
+  learner_reported: "Learner reported",
+  advice_language: "Advice-like language",
+};
+
+type Revealed = { content: string; flaggedReason: string | null };
+
 function RevealCell({ messageId }: { messageId: string }) {
   const [isPending, startTransition] = useTransition();
-  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<Revealed | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   if (revealed !== null) {
-    return <p className="max-w-md text-xs whitespace-pre-wrap text-foreground/80">{revealed}</p>;
+    return (
+      <div className="max-w-md space-y-1">
+        <p className="text-xs whitespace-pre-wrap text-foreground/80">{revealed.content}</p>
+        {revealed.flaggedReason && (
+          <p className="text-xs whitespace-pre-wrap text-muted-foreground">Reason: {revealed.flaggedReason}</p>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -38,7 +67,7 @@ function RevealCell({ messageId }: { messageId: string }) {
         onClick={() => {
           startTransition(async () => {
             const result = await revealFlaggedMessageAction(messageId);
-            if (result.ok) setRevealed(result.content);
+            if (result.ok) setRevealed({ content: result.content, flaggedReason: result.flaggedReason });
             else setError(result.error);
           });
         }}
@@ -72,7 +101,7 @@ export function DoubtZoneModerationTable({ rows: initialRows }: { rows: Row[] })
           <TableHead>Learner</TableHead>
           <TableHead>Mentor</TableHead>
           <TableHead>Role</TableHead>
-          <TableHead>Flag reason</TableHead>
+          <TableHead>Flag category</TableHead>
           <TableHead>Flagged at</TableHead>
           <TableHead>Message</TableHead>
           <TableHead>Status</TableHead>
@@ -84,7 +113,9 @@ export function DoubtZoneModerationTable({ rows: initialRows }: { rows: Row[] })
             <TableCell>{row.displayName}</TableCell>
             <TableCell>{row.mentorName}</TableCell>
             <TableCell className="text-xs text-muted-foreground">{row.role}</TableCell>
-            <TableCell className="max-w-xs text-xs text-muted-foreground">{row.flaggedReason ?? "—"}</TableCell>
+            <TableCell className="max-w-xs text-xs text-muted-foreground">
+              {row.flaggedCategory ? CATEGORY_LABEL[row.flaggedCategory] : "—"}
+            </TableCell>
             <TableCell className="text-xs text-muted-foreground">
               {new Date(row.createdAt).toLocaleString()}
             </TableCell>

@@ -330,6 +330,13 @@
       "when": 1790761804547,
       "tag": "0046_mighty_silver_surfer",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1790768126739,
+      "tag": "0047_striped_shiva",
+      "breakpoints": true
     }
   ]
 }

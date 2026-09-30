@@ -106,17 +106,24 @@ export async function classifyMessageSafety(messageText: string): Promise<Safety
   return parsed.data;
 }
 
-// The flagOnAnySignal setting's actual gate (src/server/doubt-zone/schemas.ts):
-// true (the default) flags on any non-"none" category with no confidence
-// cutoff - there is no confidence field in the classification at all today,
-// by design, since a confidence-weighted threshold is exactly the kind of
-// knob that could accidentally suppress a real signal. If this is ever
-// loosened, it happens here, in one place the whole flagging decision
-// funnels through.
+// The flagOnAnySignal setting's actual gate (src/server/doubt-zone/schemas.ts).
+// /phase-audit 7 finding: self_harm_or_suicide and abuse_or_neglect ALWAYS
+// flag (and so always get the deterministic crisis redirect), regardless of
+// flagOnAnySignal - a single settings.manage-gated toggle must never be able
+// to switch off a crisis response. The toggle only ever controls the
+// intentionally fuzzier other_wellbeing_concern bucket (true, the default,
+// flags it too with no confidence cutoff - there is no confidence field in
+// the classification at all today, by design, since a confidence-weighted
+// threshold is exactly the kind of knob that could accidentally suppress a
+// real signal). If this is ever loosened further, it happens here, in one
+// place the whole flagging decision funnels through.
 export function isFlaggableSafetyCategory(
   classification: SafetyClassification,
   flagOnAnySignal: boolean,
 ): boolean {
   if (classification.category === "none") return false;
+  if (classification.category === "self_harm_or_suicide" || classification.category === "abuse_or_neglect") {
+    return true;
+  }
   return flagOnAnySignal;
 }

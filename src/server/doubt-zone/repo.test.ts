@@ -202,7 +202,7 @@ describe("insertMessage / listRecentMessages / listMessagesPage", () => {
 });
 
 describe("markMessageFlagged", () => {
-  it("sets flagged and flaggedReason on the target message only", async () => {
+  it("sets flagged, flaggedCategory and flaggedReason on the target message only", async () => {
     const user = await makeUser();
     const mentor = await makeMentor();
     const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
@@ -221,13 +221,33 @@ describe("markMessageFlagged", () => {
       flaggedReason: null,
     });
 
-    await markMessageFlagged(target.id, "safety_classifier:self_harm_or_suicide:test reason");
+    await markMessageFlagged(target.id, "self_harm_or_suicide", "test reason");
 
     const [flagged, untouched] = await listMessagesPage(thread.id, { limit: 10 });
     const byId = new Map([flagged, untouched].map((m) => [m!.id, m!]));
     expect(byId.get(target.id)?.flagged).toBe(true);
-    expect(byId.get(target.id)?.flaggedReason).toBe("safety_classifier:self_harm_or_suicide:test reason");
+    expect(byId.get(target.id)?.flaggedCategory).toBe("self_harm_or_suicide");
+    expect(byId.get(target.id)?.flaggedReason).toBe("test reason");
     expect(byId.get(other.id)?.flagged).toBe(false);
+  });
+
+  it("defaults reason to null when omitted", async () => {
+    const user = await makeUser();
+    const mentor = await makeMentor();
+    const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
+    const target = await insertMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: "x",
+      flagged: false,
+      flaggedReason: null,
+    });
+
+    await markMessageFlagged(target.id, "learner_reported");
+
+    const [row] = await listMessagesPage(thread.id, { limit: 10 });
+    expect(row?.flaggedCategory).toBe("learner_reported");
+    expect(row?.flaggedReason).toBeNull();
   });
 });
 
@@ -289,7 +309,8 @@ describe("listFlaggedMessagesForReview / markMessageReviewed", () => {
       role: "assistant",
       content: "flagged content",
       flagged: true,
-      flaggedReason: "learner_reported",
+      flaggedCategory: "learner_reported",
+      flaggedReason: "some sensitive detail that must never appear in the list",
     });
 
     const rows = await listFlaggedMessagesForReview({ includeReviewed: true, limit: 500 });
@@ -301,10 +322,11 @@ describe("listFlaggedMessagesForReview / markMessageReviewed", () => {
     expect(row).toMatchObject({
       firstName: user.firstName,
       lastInitial: user.lastInitial,
-      flaggedReason: "learner_reported",
+      flaggedCategory: "learner_reported",
     });
     expect(row!.mentorName).toEqual(mentor.name);
     expect(row).not.toHaveProperty("content");
+    expect(row).not.toHaveProperty("flaggedReason"); // /phase-audit 7: never in the list view
   });
 
   it("excludes a reviewed message by default, includes it with includeReviewed: true", async () => {
@@ -317,7 +339,8 @@ describe("listFlaggedMessagesForReview / markMessageReviewed", () => {
       role: "assistant",
       content: "x",
       flagged: true,
-      flaggedReason: "learner_reported",
+      flaggedCategory: "learner_reported",
+      flaggedReason: null,
     });
 
     await markMessageReviewed(flagged.id, staff.id);

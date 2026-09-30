@@ -73,18 +73,31 @@ describe("push tokens", () => {
     expect(tokens[0]!.platform).toBe("ios");
   });
 
-  it("reassigns an existing token to a new user rather than duplicating it", async () => {
+  it("reassigns an existing token to a new user rather than duplicating it, and reports the previous owner", async () => {
     const userA = await makeUser();
     const userB = await makeUser();
     const token = `ExponentPushToken[${randomUUID()}]`;
 
-    await upsertPushToken({ userId: userA.id, expoPushToken: token, platform: "ios" });
-    await upsertPushToken({ userId: userB.id, expoPushToken: token, platform: "android" });
+    const first = await upsertPushToken({ userId: userA.id, expoPushToken: token, platform: "ios" });
+    expect(first.previousUserId).toBeNull(); // brand new token - nobody to reassign from
+
+    const second = await upsertPushToken({ userId: userB.id, expoPushToken: token, platform: "android" });
+    expect(second.previousUserId).toBe(userA.id);
 
     expect(await listPushTokensForUser(userA.id)).toEqual([]);
     const tokensB = await listPushTokensForUser(userB.id);
     expect(tokensB).toHaveLength(1);
     expect(tokensB[0]!.platform).toBe("android");
+  });
+
+  it("previousUserId is null when the same user re-registers their own token", async () => {
+    const user = await makeUser();
+    const token = `ExponentPushToken[${randomUUID()}]`;
+    await upsertPushToken({ userId: user.id, expoPushToken: token, platform: "ios" });
+
+    const result = await upsertPushToken({ userId: user.id, expoPushToken: token, platform: "ios" });
+
+    expect(result.previousUserId).toBeNull();
   });
 
   it("deletePushTokenByValue only deletes the caller's own token", async () => {
@@ -105,7 +118,7 @@ describe("push tokens", () => {
   it("deletePushTokenById removes it regardless of owner (used to prune invalid tokens)", async () => {
     const user = await makeUser();
     const token = `ExponentPushToken[${randomUUID()}]`;
-    const row = await upsertPushToken({ userId: user.id, expoPushToken: token, platform: "ios" });
+    const { row } = await upsertPushToken({ userId: user.id, expoPushToken: token, platform: "ios" });
 
     await deletePushTokenById(row.id);
 

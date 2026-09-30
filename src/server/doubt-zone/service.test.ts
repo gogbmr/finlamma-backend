@@ -213,6 +213,21 @@ describe("prepareMessage", () => {
     expect(mockStreamDoubtZoneReply).not.toHaveBeenCalled();
   });
 
+  it("/phase-audit 7: a classifier failure still flags the learner message (classifier_unavailable) so it reaches the moderation queue, before re-throwing", async () => {
+    mockClassifyMessageSafety.mockRejectedValueOnce(
+      Object.assign(new Error("classifier down"), { code: "SERVICE_UNAVAILABLE" }),
+    );
+
+    await expect(prepareMessage(USER, THREAD.id, "hi", META)).rejects.toThrow("classifier down");
+
+    expect(mockRepo.markMessageFlagged).toHaveBeenCalledWith("learner_msg", "classifier_unavailable");
+    const loggedAction = mockLogActivity.mock.calls.find(
+      (c) => c[0].action === "doubt_zone.message_flagged_classifier_unavailable",
+    );
+    expect(loggedAction).toBeTruthy();
+    expect(loggedAction![0]).toMatchObject({ targetType: "doubt_message", targetId: "learner_msg" });
+  });
+
   it("flagged: persists the redirect, marks the learner message flagged, logs without message content, never calls the reply model", async () => {
     mockClassifyMessageSafety.mockResolvedValueOnce({ category: "self_harm_or_suicide", reason: "mentions wanting to disappear" });
 
@@ -224,7 +239,8 @@ describe("prepareMessage", () => {
     }
     expect(mockRepo.markMessageFlagged).toHaveBeenCalledWith(
       "learner_msg",
-      expect.stringContaining("safety_classifier:self_harm_or_suicide"),
+      "self_harm_or_suicide",
+      "mentions wanting to disappear",
     );
     expect(mockRepo.touchThreadLastMessageAt).toHaveBeenCalledWith(THREAD.id);
     const loggedMetadata = mockLogActivity.mock.calls.find(

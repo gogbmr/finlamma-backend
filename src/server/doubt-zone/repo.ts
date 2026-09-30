@@ -1,6 +1,6 @@
 import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { db } from "@/db/client";
-import { doubtMessages, doubtThreads, mentors, users } from "@/db/schema";
+import { doubtMessages, doubtThreads, mentors, users, type DoubtMessageFlagCategory } from "@/db/schema";
 
 export async function getThreadById(id: string) {
   const [row] = await db.select().from(doubtThreads).where(eq(doubtThreads.id, id)).limit(1);
@@ -77,6 +77,7 @@ export async function insertMessage(input: {
   role: "learner" | "assistant";
   content: string;
   flagged: boolean;
+  flaggedCategory?: DoubtMessageFlagCategory | null;
   flaggedReason: string | null;
 }) {
   const [row] = await db
@@ -86,14 +87,28 @@ export async function insertMessage(input: {
       role: input.role,
       content: input.content,
       flagged: input.flagged,
+      flaggedCategory: input.flaggedCategory ?? null,
       flaggedReason: input.flaggedReason,
     })
     .returning();
   return row;
 }
 
-export async function markMessageFlagged(id: string, reason: string) {
-  await db.update(doubtMessages).set({ flagged: true, flaggedReason: reason }).where(eq(doubtMessages.id, id));
+// category is the coarse, list-safe label (never free text - see
+// doubtMessageFlagCategoryEnum's own doc comment); reason is optional free
+// text (a classifier-written explanation, which can paraphrase/quote the
+// learner's own words) that's stored but NEVER selected by
+// listFlaggedMessagesForReview below - only revealFlaggedMessageContent's
+// logged reveal returns it.
+export async function markMessageFlagged(
+  id: string,
+  category: DoubtMessageFlagCategory,
+  reason: string | null = null,
+) {
+  await db
+    .update(doubtMessages)
+    .set({ flagged: true, flaggedCategory: category, flaggedReason: reason })
+    .where(eq(doubtMessages.id, id));
 }
 
 export async function getMessageById(id: string) {
@@ -103,9 +118,14 @@ export async function getMessageById(id: string) {
 
 // --- Staff (admin, doubt_zone.moderate) ---
 
-// Metadata only - deliberately never selects `content`. Same
-// "list is metadata-only, a separate always-logged function reveals the
-// sensitive field" split as src/server/onboarding/repo.ts's
+// Metadata only - deliberately never selects `content` OR `flaggedReason`
+// (/phase-audit 7 finding: flaggedReason can be a classifier-written
+// paraphrase/quote of the learner's own words, which is exactly the kind
+// of sensitive content the flagged-only design means to gate behind a
+// logged reveal, not show on every page load). flaggedCategory is the
+// coarse, never-free-text label safe enough for triage in the list itself.
+// Same "list is metadata-only, a separate always-logged function reveals
+// the sensitive fields" split as src/server/onboarding/repo.ts's
 // listConsentRecordsForReview / getParentContactForReview.
 export async function listFlaggedMessagesForReview(opts: { includeReviewed: boolean; limit: number }) {
   const conditions = [eq(doubtMessages.flagged, true)];
@@ -115,7 +135,7 @@ export async function listFlaggedMessagesForReview(opts: { includeReviewed: bool
       id: doubtMessages.id,
       threadId: doubtMessages.threadId,
       role: doubtMessages.role,
-      flaggedReason: doubtMessages.flaggedReason,
+      flaggedCategory: doubtMessages.flaggedCategory,
       createdAt: doubtMessages.createdAt,
       reviewedAt: doubtMessages.reviewedAt,
       firstName: users.firstName,

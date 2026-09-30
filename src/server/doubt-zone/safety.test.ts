@@ -81,7 +81,12 @@ describe("isFlaggableSafetyCategory", () => {
     expect(isFlaggableSafetyCategory({ category: "other_wellbeing_concern", reason: "x" }, true)).toBe(true);
   });
 
-  it("does not flag a real category when flagOnAnySignal is false", () => {
-    expect(isFlaggableSafetyCategory({ category: "abuse_or_neglect", reason: "x" }, false)).toBe(false);
+  it("does not flag the fuzzy other_wellbeing_concern bucket when flagOnAnySignal is false", () => {
+    expect(isFlaggableSafetyCategory({ category: "other_wellbeing_concern", reason: "x" }, false)).toBe(false);
+  });
+
+  it("/phase-audit 7: self_harm_or_suicide and abuse_or_neglect ALWAYS flag, even with flagOnAnySignal false - the toggle can never switch off a crisis redirect", () => {
+    expect(isFlaggableSafetyCategory({ category: "self_harm_or_suicide", reason: "x" }, false)).toBe(true);
+    expect(isFlaggableSafetyCategory({ category: "abuse_or_neglect", reason: "x" }, false)).toBe(true);
   });
 });

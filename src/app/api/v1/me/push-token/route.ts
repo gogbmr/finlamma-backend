@@ -74,11 +74,27 @@ registry.registerPath({
         },
       },
     },
+    403: {
+      description: "Onboarding, parental consent or legal acceptance is incomplete",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "FORBIDDEN", message: "Complete onboarding before using this feature" } },
+        },
+      },
+    },
   },
 });
 
+// /phase-audit 7: requireFullAccess added for consistency with every
+// sibling Doubt Zone/notifications route (it was previously the one
+// inconsistency in an otherwise uniform gate) - not exploitable either way
+// since this can only ever remove the caller's own token, but there's no
+// reason for this one endpoint to be reachable before onboarding
+// completes when nothing else in this app is.
 export const DELETE = withErrors(async (req: Request) => {
   const user = await requireUser(req);
+  await requireFullAccess(user);
   const body = UnregisterPushTokenInputSchema.parse(await req.json());
   await unregisterPushToken({ id: user.id }, body.expoPushToken, requestMeta(req.headers));
   return ok({ unregistered: true as const });

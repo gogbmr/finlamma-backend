@@ -17,11 +17,21 @@ export async function getUserLanguageForNotifications(userId: string) {
 // One row per token, reassigned to whichever user most recently registered
 // it (a reinstall/different sign-in on the same device gets a fresh Expo
 // token anyway, but this keeps a stale reassignment impossible either way).
+// Returns `previousUserId` (the owner before this call, if the token
+// already existed and belonged to someone else) so the caller
+// (src/server/notifications/service.ts) can log a reassignment - never the
+// token value itself, only the two user ids - /phase-audit 7 finding.
 export async function upsertPushToken(input: {
   userId: string;
   expoPushToken: string;
   platform: "ios" | "android";
-}) {
+}): Promise<{ row: typeof pushTokens.$inferSelect; previousUserId: string | null }> {
+  const [existing] = await db
+    .select({ userId: pushTokens.userId })
+    .from(pushTokens)
+    .where(eq(pushTokens.expoPushToken, input.expoPushToken))
+    .limit(1);
+
   const [row] = await db
     .insert(pushTokens)
     .values({ userId: input.userId, expoPushToken: input.expoPushToken, platform: input.platform })
@@ -30,7 +40,8 @@ export async function upsertPushToken(input: {
       set: { userId: input.userId, platform: input.platform, lastSeenAt: new Date() },
     })
     .returning();
-  return row;
+
+  return { row: row!, previousUserId: existing && existing.userId !== input.userId ? existing.userId : null };
 }
 
 export async function deletePushTokenByValue(userId: string, expoPushToken: string) {

@@ -171,11 +171,37 @@ export async function prepareMessage(
     flaggedReason: null,
   });
 
-  const classification = await classifyMessageSafety(content);
+  // /phase-audit 7 finding: classifyMessageSafety fails closed (throws)
+  // when the classifier itself can't run - which correctly stops any AI
+  // reply, but previously left the already-inserted learner message
+  // sitting as flagged: false forever, indistinguishable from a message
+  // the classifier actually cleared. A genuine outage now still flags the
+  // message (category "classifier_unavailable") so a human looks at it,
+  // before the SERVICE_UNAVAILABLE error is re-thrown to the client
+  // exactly as before.
+  let classification: Awaited<ReturnType<typeof classifyMessageSafety>>;
+  try {
+    classification = await classifyMessageSafety(content);
+  } catch (err) {
+    await markMessageFlagged(learnerMessage.id, "classifier_unavailable");
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "doubt_zone.message_flagged_classifier_unavailable",
+      targetType: "doubt_message",
+      targetId: learnerMessage.id,
+      metadata: { threadId },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+    throw err;
+  }
   if (isFlaggableSafetyCategory(classification, settings.flagOnAnySignal)) {
+    // Safe: isFlaggableSafetyCategory already excludes "none" above.
     await markMessageFlagged(
       learnerMessage.id,
-      `safety_classifier:${classification.category}:${classification.reason}`,
+      classification.category as Exclude<typeof classification.category, "none">,
+      classification.reason,
     );
     const replacementText = settings.safetyRedirectMessage[user.language];
     const assistantMessage = await insertMessage({
@@ -270,7 +296,8 @@ export async function streamReplyAndPersist(
       role: "assistant",
       content: replacementText,
       flagged: true,
-      flaggedReason: `output_filter:advice_language:${outcome.matchedPhrases.join(",")}`,
+      flaggedCategory: "advice_language",
+      flaggedReason: outcome.matchedPhrases.join(","),
     });
     await touchThreadLastMessageAt(threadId);
     await logActivity({

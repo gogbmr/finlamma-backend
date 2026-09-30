@@ -41,7 +41,7 @@ export default async function DoubtZoneModerationPage({
           id: r.id,
           threadId: r.threadId,
           role: r.role,
-          flaggedReason: r.flaggedReason,
+          flaggedCategory: r.flaggedCategory,
           createdAt: r.createdAt.toISOString(),
           reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
           displayName: r.lastInitial ? `${r.firstName ?? "—"} ${r.lastInitial}.` : (r.firstName ?? "—"),

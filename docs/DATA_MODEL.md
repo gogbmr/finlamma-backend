@@ -383,16 +383,21 @@ skill for the full idempotency/reversal design)
   created_at, not a stored column)
 - `doubt_threads` (user_id, mentor_id, lesson_id nullable — null for the standalone Doubt Zone entry
   point, set for an in-lesson `doubt_zone` node thread, last_message_at), `doubt_messages`
-  (thread_id, role learner|assistant, content, flagged, flagged_reason, reviewed_at, reviewed_by —
+  (thread_id, role learner|assistant, content, flagged, flagged_category enum:
+  self_harm_or_suicide|abuse_or_neglect|other_wellbeing_concern|classifier_unavailable|
+  learner_reported|advice_language, flagged_reason nullable free text, reviewed_at, reviewed_by —
   the last two track staff moderation-queue review independently of the flag itself: reviewing
-  never clears `flagged`/`flagged_reason`, which stay as the permanent record of what tripped) —
-  Phase 7's live AI mentor;
+  never clears `flagged`/`flagged_category`/`flagged_reason`, which stay as the permanent record of
+  what tripped) — Phase 7's live AI mentor;
   the in-lesson "Doubt Zone" node in Phase 2b is scripted content (`lessons.content`), not these
-  tables (see PRODUCT_SPEC.md §1). `flagged`/`flagged_reason` implement the Phase 7 kickoff's
-  flagged-only staff-visibility decision (`docs/ARCHITECTURE.md`): full transcripts are never
-  staff-browsable; a message is visible only once the safety classifier trips on it or a learner
-  reports it, gated by the new `doubt_zone.moderate` permission and logged like every staff view of
-  sensitive data
+  tables (see PRODUCT_SPEC.md §1). `flagged`/`flagged_category`/`flagged_reason` implement the
+  Phase 7 kickoff's flagged-only staff-visibility decision (`docs/ARCHITECTURE.md` D63/D64): full
+  transcripts are never staff-browsable; a message is visible only once the safety classifier trips
+  on it (or fails to run at all - `classifier_unavailable`), the output-filter circuit breaker cuts
+  a reply, or a learner reports it, gated by the `doubt_zone.moderate` permission. The moderation
+  LIST shows only `flagged_category` (coarse, never free text); `flagged_reason` (which can
+  paraphrase/quote what the learner wrote) is only ever returned by the same logged reveal action
+  as `content` (`/phase-audit 7` finding, D64)
 
 **Monetisation**
 - `entitlements` (user_id, entitlement, source revenuecat|razorpay, expires_at, raw)

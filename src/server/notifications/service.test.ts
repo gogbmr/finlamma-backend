@@ -47,6 +47,7 @@ const BODY = { en: "B en", hi: "B hi", hx: "B hx" };
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetNotificationsSettings.mockResolvedValue(DEFAULT_NOTIFICATIONS_SETTINGS);
+  mockRepo.upsertPushToken.mockResolvedValue({ row: {}, previousUserId: null });
 });
 
 describe("isWithinQuietHours", () => {
@@ -81,6 +82,27 @@ describe("registerPushToken / unregisterPushToken", () => {
     });
     const loggedMetadata = mockLogActivity.mock.calls[0]![0].metadata;
     expect(JSON.stringify(loggedMetadata)).not.toContain("secret");
+    // Only one registration this call - no reassignment happened.
+    expect(mockLogActivity).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "notifications.push_token_reassigned" }),
+    );
+  });
+
+  it("/phase-audit 7: logs a reassignment (old/new user id, never the token) when the token belonged to someone else", async () => {
+    mockRepo.upsertPushToken.mockResolvedValueOnce({ row: {}, previousUserId: "someone_else" });
+
+    await registerPushToken(USER, { expoPushToken: "ExponentPushToken[secret]", platform: "ios" }, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "notifications.push_token_reassigned",
+        metadata: { previousUserId: "someone_else", newUserId: "user_1", platform: "ios" },
+      }),
+    );
+    const reassignCall = mockLogActivity.mock.calls.find(
+      (c) => c[0].action === "notifications.push_token_reassigned",
+    );
+    expect(JSON.stringify(reassignCall![0])).not.toContain("secret");
   });
 
   it("unregisters", async () => {

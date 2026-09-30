@@ -70,6 +70,15 @@ describe("DELETE /api/v1/me/push-token", () => {
     expect(res.status).toBe(401);
   });
 
+  it("/phase-audit 7: returns 403 when full access is required and missing, for consistency with every sibling route", async () => {
+    mockRequireFullAccess.mockRejectedValueOnce(new AppError("FORBIDDEN", "nope"));
+
+    const res = await DELETE(deleteRequest({ expoPushToken: "ExponentPushToken[x]" }));
+
+    expect(res.status).toBe(403);
+    expect(mockUnregisterPushToken).not.toHaveBeenCalled();
+  });
+
   it("unregisters and returns 200", async () => {
     const res = await DELETE(deleteRequest({ expoPushToken: "ExponentPushToken[x]" }));
 
