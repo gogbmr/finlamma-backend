@@ -2,6 +2,81 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-09-30 — v1.1.0
+
+Minor bump: purely additive, 25 new operations plus new fields on 2 existing endpoints, nothing
+removed and nothing changed incompatibly since v1.0.0. **This entry covers two full phases at
+once** - Phase 5 (news & Pulse Check) and Phase 6 (Arena & the Monthly Competition) were both
+built and their endpoints added to `openapi.json`/`docs/API_ENDPOINTS.md` via ad-hoc `pnpm
+contract` runs bundled into their own feature commits, but neither ever went through
+`/publish-contract` or got a changelog entry until now - so this is the first record of either
+phase's endpoints existing, even though they've been live in the committed contract for a while.
+
+**News (Phase 5 Checkpoints 1-3, `docs/ARCHITECTURE.md` D50)**
+- `GET /api/v1/news/feed` — the published news feed, AI-drafted then staff-published, never raw
+  AI output shown to a learner.
+- `GET /api/v1/news/{id}` — one story's full detail.
+- `POST /api/v1/news/{id}/read` — marks a story read; the server validates dwell time against a
+  real minimum computed from the story's own word count, never trusting a client-reported value.
+- `GET /api/v1/news/desk-picks` — staff-curated highlights, entirely separate from the AI pipeline.
+
+**Pulse Check (Phase 5 Checkpoint 4, D51)**
+- `GET /api/v1/pulse-check/current`, `POST /api/v1/pulse-check/start` — today's meta and
+  start/resume an attempt.
+- `POST /api/v1/pulse-check/{attemptId}/steps/{n}/serve`, `.../answer` — server-timed, idempotent
+  question serving and grading, same no-answer-leak-before-grading design as lesson quizzes.
+- `POST /api/v1/pulse-check/{attemptId}/finish` — finishes the attempt and credits V Money only
+  (never XP), bounded by a daily cap after the global VM multiplier is applied once.
+- `GET /api/v1/pulse-check/{attemptId}/result` — a finished attempt's result.
+
+**Arena (Phase 6 Checkpoints 1-6, D52-D56/D60/D61)**
+- `GET /api/v1/arena/leaderboard` — the weekly leaderboard for a scope (World/State/India/Global).
+  Kid-safe fields only (first name + last initial, never a full name, email, DOB or state on
+  anyone else's row). Each row reports `rank`, `xp`, `zone` (promote/safe visible on any row,
+  demote visible only on the viewer's own row, D54) and `rankDelta` (this week's move vs. last
+  week's settled rank, null when there's nothing to compare). A thin scope transparently falls
+  back to a broader one, or reports `notEnoughPlayers`, per the privacy floor (D52) - a scope
+  below the floor never settles or pays out, not just hides from display.
+- `GET /api/v1/arena/worlds` — the Worlds leaderboard (weekly XP, member count, 7-day sparkline).
+- `GET /api/v1/arena/worlds/{worldId}/leaderboard` — one world's own leaderboard, same shape.
+- `GET /api/v1/arena/activity` — a live-feeling recent-activity ticker.
+- `POST /api/v1/arena/cheers`, `GET /api/v1/me/arena/cheers` — send a cheer (+XP, one per
+  recipient per sender per day, a daily cap and a weekly per-sender-receiver cap, both enforced
+  server-side under a row lock so concurrent cheers from different senders can never push a
+  receiver's daily total past the cap - D53/D56/D61) and see your own aggregate weekly count
+  (sender identity never shown to the receiver).
+- `GET /api/v1/arena/chips`, `GET`/`PUT /api/v1/me/arena/chips` — the admin-managed "about me"
+  chip catalog and a learner's own selection (capped at 3) - preset chips only, never free text.
+- `GET /api/v1/users/{userId}/public-profile` — a learner's public Arena profile: name, level,
+  rank title, badges, chips, week XP, streak, quiz accuracy, current world progress. No trading
+  performance figure is shown here by design, not omission - a minor's ROI on a page other
+  learners can open would invite unhealthy skill comparison rather than learning.
+
+**Monthly Competition (Phase 6 Checkpoint 7, D57-D59)**
+- `GET /api/v1/arena/competitions/current` — the current competition's metadata, virtual capital
+  (a non-convertible sandbox balance, never V Money), prize bands and rules.
+- `POST /api/v1/arena/competitions/current/enter` — enter it, seeded with the competition's own
+  virtual capital.
+- `POST /api/v1/arena/competitions/current/trades` — place a MARKET trade inside it. Same
+  Idempotency-Key/no-client-price/rate-limit rules as a real stock order, but against an isolated
+  sandbox table pair that never touches `vmoney_ledger` - only the prize at settlement ever
+  creates real VM, and that's regression-tested directly against the database.
+- `GET /api/v1/arena/competitions/current/me` — the caller's live rank/ROI in the competition.
+- `GET /api/v1/arena/competitions/current/leaderboard` — the competition's ranked board, ROI%
+  computed against the full starting capital (not just deployed capital), same kid-safe fields.
+
+**Existing endpoints, additive changes only**
+- `GET /api/v1/me/profile/overview` — gained `percentile` and `rankDeltaCells` (World /
+  State-or-India / Global), read from the last weekly settlement; each cell is cleanly omitted
+  (never a fabricated 0) when the scope never settled or the learner had no rank that week.
+- `GET /api/v1/me/report-card` — gained `globalRank`, same settlement-backed source and the same
+  clean-omission rule.
+
+Not yet in the contract: Arena's admin-only endpoints (league settings, competition management)
+are Server Actions per D16, intentionally outside this contract. Row expansion on the Players
+ladder and the Competition leaderboard (best trade, win rate, avg hold time, quiz accuracy per
+row) is a documented fast-follow, not built yet.
+
 ## 2026-09-27 — v1.0.0
 
 Major bump: 15 new operations, but also a **breaking change** on 3 existing endpoints - the first
