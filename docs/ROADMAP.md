@@ -353,6 +353,16 @@ own repo later, hosted on Railway.
       investment advice" reminder as help text, but neither is a substitute for a real review -
       the heuristic only catches a fixed phrase list and can't verify tone/intent. Re-run this
       check any time an instrument's about/tip copy changes after launch, not just once.
+- [ ] **BLOCKING: verify Doubt Zone crisis helpline numbers with a current official source, and
+      confirm the wording with someone qualified** (Phase 7 kickoff decision, `docs/ARCHITECTURE.md`).
+      `settings_kv` key `doubt_zone_safety` seeds Childline India (1098), KIRAN mental health
+      (1800-599-0019 / 14416) and NCPCR SAMVEDNA (1800-121-2830), checked against wcd.gov.in and PIB
+      press releases on 2026-09-30 - but Childline 1098 is actively being merged into the police
+      emergency line 112 state-by-state, so this is a live-moving target, not a one-time check. The
+      seeded redirect/disclosure copy is marked DRAFT and must not go live as-is: get it read by
+      someone qualified (a counsellor, child-safety professional, or similar) before launch, and
+      re-verify the numbers themselves close to the actual launch date, not just once during
+      development.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence

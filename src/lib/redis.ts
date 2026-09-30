@@ -175,6 +175,21 @@ export const SIP_CREATE_RATE_LIMIT: RateLimitConfig = {
   prefix: "ratelimit:sip-create",
 };
 
+// Doubt Zone (Phase 7) - a burst guard on top of the daily message caps
+// (settings_kv "doubt_zone_safety", built dynamically at the call site
+// with checkRateLimit's generic config since those caps are admin-tunable
+// numbers, not fixed constants like this one). Always failOpen: false -
+// every message triggers a real Anthropic API call (a safety classify call
+// plus, unless flagged, a full reply call), so this is cost-bearing the
+// same way trade/order placement is. 8 messages/60s per user is generous
+// for a real back-and-forth conversation while stopping a scripted loop
+// from running up the API bill.
+export const DOUBT_ZONE_MESSAGE_RATE_LIMIT: RateLimitConfig = {
+  requests: 8,
+  window: "60 s",
+  prefix: "ratelimit:doubt-zone-message",
+};
+
 // Generic read-through JSON cache, used by src/server/market/cache.ts to
 // avoid calling the market-data vendor (rate-limited, credit-metered) on
 // every request. Always fails OPEN like the rate limiter above - a cache is

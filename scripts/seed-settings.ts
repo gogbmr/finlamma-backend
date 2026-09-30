@@ -10,6 +10,10 @@ import { db } from "../src/db/client";
 import { settingsKv } from "../src/db/schema";
 import { DAILY_GOALS_SETTINGS_KEY, DEFAULT_DAILY_GOALS } from "../src/server/daily-goals/schemas";
 import {
+  DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS,
+  DOUBT_ZONE_SAFETY_SETTINGS_KEY,
+} from "../src/server/doubt-zone/schemas";
+import {
   DEFAULT_VM_ISSUANCE_MULTIPLIER,
   VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,
 } from "../src/server/economy/schemas";
@@ -60,6 +64,16 @@ const SETTINGS = [
       "Daily goal meter (PR-09): which goal types are active and their targets. Evaluators live " +
       "in code (src/server/daily-goals/evaluators.ts) - this only controls which of them run. " +
       "Editable only by super_admin (settings.manage), logged.",
+  },
+  {
+    key: DOUBT_ZONE_SAFETY_SETTINGS_KEY,
+    value: DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS,
+    description:
+      "Doubt Zone AI safety settings: crisis helpline redirect text, advice-language fallback, " +
+      "thread disclosure copy, safety-classifier sensitivity, and daily message caps. The seeded " +
+      "helpline copy is a DRAFT pending founder + qualified-person review (docs/ROADMAP.md " +
+      "pre-launch checklist) - do not treat it as launch-ready. See docs/ARCHITECTURE.md's Phase " +
+      "7 kickoff decisions. Editable only by super_admin (settings.manage), logged.",
   },
 ] as const;
 
