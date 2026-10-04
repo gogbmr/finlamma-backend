@@ -1,7 +1,18 @@
 import { logActivity } from "@/lib/activity-log";
 import { logInternalError } from "@/lib/http";
-import { findUserById, recordWebhookEventIfNew, upsertEntitlement } from "./repo";
-import { ENTITLEMENT_KEYS, type EntitlementKey, RevenueCatWebhookPayloadSchema } from "./schemas";
+import { getSettingJson } from "@/lib/settings";
+import { isMinor } from "@/server/onboarding/service";
+import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { countLeadingClearedWorlds } from "@/server/worlds/service";
+import { findUserById, getEntitlementsForUser, recordWebhookEventIfNew, upsertEntitlement } from "./repo";
+import {
+  ADS_SETTINGS_KEY,
+  AdsSettingsSchema,
+  DEFAULT_ADS_SETTINGS,
+  ENTITLEMENT_KEYS,
+  type EntitlementKey,
+  RevenueCatWebhookPayloadSchema,
+} from "./schemas";
 
 const KNOWN_ENTITLEMENT_IDS = new Set<string>(ENTITLEMENT_KEYS);
 
@@ -60,4 +71,59 @@ export async function processRevenueCatWebhookEvent(rawPayload: unknown): Promis
     targetId: user.id,
     metadata: { entitlement: entitlementId, eventType: event.type, eventId: event.id },
   });
+}
+
+// Falls back to DEFAULT_ADS_SETTINGS if the row hasn't been seeded, or a
+// stored value no longer matches the current shape - same "never hard-fail
+// a learner's request over a settings_kv shape drift" reasoning
+// getLessonFlowScoringSettings already follows.
+export async function getAdsSettings() {
+  const raw = await getSettingJson(ADS_SETTINGS_KEY);
+  if (raw === null) return DEFAULT_ADS_SETTINGS;
+  const parsed = AdsSettingsSchema.safeParse(raw);
+  return parsed.success ? parsed.data : DEFAULT_ADS_SETTINGS;
+}
+
+// docs/ARCHITECTURE.md D66/D67: both the ad-personalization cutoff and the
+// subscribe-eligibility gate use this exact same under-18 line, and both
+// fail closed - a missing dateOfBirth (never self-correctable by the
+// learner once set, but can simply not exist yet, e.g. mid-onboarding) is
+// treated as a minor, never as an adult. One shared check so the two
+// policies can never drift apart on what "unknown age" means.
+export function treatAsMinorForMonetisation(dateOfBirth: string | null): boolean {
+  if (!dateOfBirth) return true;
+  return isMinor(dateOfBirth);
+}
+
+export async function getMyMonetisationStatus(user: { id: string; dateOfBirth: string | null }) {
+  const [rows, adsSettings, scoringSettings] = await Promise.all([
+    getEntitlementsForUser(user.id),
+    getAdsSettings(),
+    getLessonFlowScoringSettings(),
+  ]);
+
+  const now = new Date();
+  const shapedEntitlements = rows.map((row) => ({
+    entitlement: row.entitlement,
+    source: row.source,
+    active: row.expiresAt === null || row.expiresAt > now,
+    expiresAt: row.expiresAt ? row.expiresAt.toISOString() : null,
+  }));
+  const hasActiveAdFree = shapedEntitlements.some((e) => e.entitlement === "ad_free" && e.active);
+
+  const { worldsToGo } = await countLeadingClearedWorlds(
+    user.id,
+    adsSettings.adsEnabledAfterWorldPosition,
+    scoringSettings.bossQuizPassMarkPct,
+  );
+  const pastAdsWorldGate = worldsToGo === 0;
+
+  const treatAsMinor = treatAsMinorForMonetisation(user.dateOfBirth);
+
+  return {
+    entitlements: shapedEntitlements,
+    showAds: pastAdsWorldGate && !hasActiveAdFree,
+    nonPersonalizedAdsRequired: treatAsMinor,
+    canSubscribe: !treatAsMinor,
+  };
 }

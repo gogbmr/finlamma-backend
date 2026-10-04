@@ -136,6 +136,10 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `POST /api/v1/me/notifications/mark-read` — Mark my notifications as read (PR-29)
 - `GET /api/v1/me/notifications/unread-count` — Get my unread notification count (WH-18)
 
+**Monetisation**
+
+- `GET /api/v1/me/entitlements` — Get my entitlements and ad/subscription eligibility
+
 ## System
 
 ### `GET /api/v1/health`
@@ -6538,6 +6542,50 @@ Backs the bell icon's badge count - a dedicated endpoint rather than a query fla
 ```json
 {
   "count": 0
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+## Monetisation
+
+### `GET /api/v1/me/entitlements`
+
+**Get my entitlements and ad/subscription eligibility**
+
+Returns the caller's current entitlements (e.g. ad_free), whether ads should show right now (World 3 cleared and not ad-free), whether ad requests must be tagged non-personalized/child-directed (docs/ARCHITECTURE.md D66 - under-18 or unknown age, fails closed to the strict treatment), and whether the subscribe purchase path may be offered at all (D67 - false for a known-or-unknown-age minor; a parent must subscribe from their own device/account, never the child's).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's entitlements and ad/subscription eligibility
+
+```json
+{
+  "entitlements": [
+    {
+      "entitlement": "ad_free",
+      "source": "revenuecat",
+      "active": true,
+      "expiresAt": "2026-11-04T00:00:00.000Z"
+    }
+  ],
+  "showAds": true,
+  "nonPersonalizedAdsRequired": true,
+  "canSubscribe": true
 }
 ```
 

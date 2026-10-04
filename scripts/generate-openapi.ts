@@ -91,6 +91,7 @@ import "../src/app/api/v1/me/notifications/route";
 import "../src/app/api/v1/me/notifications/mark-read/route";
 import "../src/app/api/v1/me/notifications/unread-count/route";
 import "../src/app/api/webhooks/revenuecat/route";
+import "../src/app/api/v1/me/entitlements/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 

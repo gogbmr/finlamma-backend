@@ -3358,6 +3358,69 @@
           "marked"
         ]
       },
+      "MyEntitlementsResponse": {
+        "type": "object",
+        "properties": {
+          "entitlements": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "entitlement": {
+                  "type": "string",
+                  "enum": [
+                    "ad_free"
+                  ],
+                  "example": "ad_free"
+                },
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "revenuecat",
+                    "razorpay"
+                  ],
+                  "example": "revenuecat"
+                },
+                "active": {
+                  "type": "boolean",
+                  "description": "true if expiresAt is null (never-expiring) or still in the future"
+                },
+                "expiresAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "example": "2026-11-04T00:00:00.000Z"
+                }
+              },
+              "required": [
+                "entitlement",
+                "source",
+                "active",
+                "expiresAt"
+              ]
+            }
+          },
+          "showAds": {
+            "type": "boolean",
+            "description": "Whether the client should mount/show ads right now"
+          },
+          "nonPersonalizedAdsRequired": {
+            "type": "boolean",
+            "description": "docs/ARCHITECTURE.md D66: true for an under-18 account, or one with no date of birth on file (age unknown always fails closed to the strict treatment) - every ad request must be tagged non-personalized/child-directed, never the permissive default."
+          },
+          "canSubscribe": {
+            "type": "boolean",
+            "description": "docs/ARCHITECTURE.md D67: false for a known-or-unknown-age minor - the subscribe purchase path must not be offered to this account at all; a parent must subscribe from their own device/account."
+          }
+        },
+        "required": [
+          "entitlements",
+          "showAds",
+          "nonPersonalizedAdsRequired",
+          "canSubscribe"
+        ]
+      },
       "RevenueCatWebhookResponse": {
         "type": "object",
         "properties": {
@@ -14420,6 +14483,48 @@
             "description": "Webhook signing secret not configured",
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/entitlements": {
+      "get": {
+        "summary": "Get my entitlements and ad/subscription eligibility",
+        "description": "Returns the caller's current entitlements (e.g. ad_free), whether ads should show right now (World 3 cleared and not ad-free), whether ad requests must be tagged non-personalized/child-directed (docs/ARCHITECTURE.md D66 - under-18 or unknown age, fails closed to the strict treatment), and whether the subscribe purchase path may be offered at all (D67 - false for a known-or-unknown-age minor; a parent must subscribe from their own device/account, never the child's).",
+        "tags": [
+          "Monetisation"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's entitlements and ad/subscription eligibility",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyEntitlementsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }

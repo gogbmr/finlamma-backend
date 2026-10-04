@@ -17,6 +17,7 @@ import {
   DEFAULT_VM_ISSUANCE_MULTIPLIER,
   VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,
 } from "../src/server/economy/schemas";
+import { ADS_SETTINGS_KEY, DEFAULT_ADS_SETTINGS } from "../src/server/monetisation/schemas";
 import {
   DEFAULT_NOTIFICATIONS_SETTINGS,
   NOTIFICATIONS_SETTINGS_KEY,
@@ -86,6 +87,13 @@ const SETTINGS = [
       "Notification defaults: quiet hours window (kid-safe - no push overnight unless a learner " +
       "overrides it) and feed retention days (WH-20). Editable only by super_admin " +
       "(settings.manage), logged.",
+  },
+  {
+    key: ADS_SETTINGS_KEY,
+    value: DEFAULT_ADS_SETTINGS,
+    description:
+      "Phase 8: which world position (1-based, sequential-clear) a learner must pass before " +
+      "ads start showing, for a non-ad-free account. See docs/ROADMAP.md Phase 8.",
   },
 ] as const;
 

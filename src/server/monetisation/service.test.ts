@@ -6,14 +6,33 @@ vi.mock("@/lib/activity-log", () => ({ logActivity: (input: unknown) => mockLogA
 const mockLogInternalError = vi.fn();
 vi.mock("@/lib/http", () => ({ logInternalError: (id: string, err: unknown) => mockLogInternalError(id, err) }));
 
+const mockGetSettingJson = vi.fn();
+vi.mock("@/lib/settings", () => ({ getSettingJson: (key: string) => mockGetSettingJson(key) }));
+
+const mockIsMinor = vi.fn();
+vi.mock("@/server/onboarding/service", () => ({ isMinor: (dob: string) => mockIsMinor(dob) }));
+
+const mockGetLessonFlowScoringSettings = vi.fn();
+vi.mock("@/server/settings/service", () => ({
+  getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
+}));
+
+const mockCountLeadingClearedWorlds = vi.fn();
+vi.mock("@/server/worlds/service", () => ({
+  countLeadingClearedWorlds: (userId: string, position: number, passMark: number) =>
+    mockCountLeadingClearedWorlds(userId, position, passMark),
+}));
+
 const mockRepo = {
   findUserById: vi.fn(),
+  getEntitlementsForUser: vi.fn(),
   recordWebhookEventIfNew: vi.fn(),
   upsertEntitlement: vi.fn(),
 };
 vi.mock("./repo", () => mockRepo);
 
-const { processRevenueCatWebhookEvent } = await import("./service");
+const { getMyMonetisationStatus, processRevenueCatWebhookEvent, treatAsMinorForMonetisation } =
+  await import("./service");
 
 const USER = { id: "user-1" };
 
@@ -108,5 +127,98 @@ describe("processRevenueCatWebhookEvent", () => {
     expect(mockRepo.upsertEntitlement).toHaveBeenCalledWith(
       expect.objectContaining({ expiresAt: null }),
     );
+  });
+});
+
+describe("treatAsMinorForMonetisation", () => {
+  it("fails closed to true when dateOfBirth is missing (docs/ARCHITECTURE.md D66)", () => {
+    expect(treatAsMinorForMonetisation(null)).toBe(true);
+    expect(mockIsMinor).not.toHaveBeenCalled();
+  });
+
+  it("delegates to isMinor when dateOfBirth is present", () => {
+    mockIsMinor.mockReturnValueOnce(false);
+    expect(treatAsMinorForMonetisation("2000-01-01")).toBe(false);
+    expect(mockIsMinor).toHaveBeenCalledWith("2000-01-01");
+  });
+});
+
+describe("getMyMonetisationStatus", () => {
+  beforeEach(() => {
+    mockGetSettingJson.mockResolvedValue(null); // falls back to DEFAULT_ADS_SETTINGS (position 3)
+    mockGetLessonFlowScoringSettings.mockResolvedValue({ bossQuizPassMarkPct: 60 });
+    mockRepo.getEntitlementsForUser.mockResolvedValue([]);
+    mockCountLeadingClearedWorlds.mockResolvedValue({ cleared: 0, worldsToGo: 3 });
+    mockIsMinor.mockReturnValue(true);
+  });
+
+  it("shows no ads before the configured world position is cleared, even with no entitlement", async () => {
+    mockCountLeadingClearedWorlds.mockResolvedValueOnce({ cleared: 1, worldsToGo: 2 });
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2000-01-01" });
+
+    expect(result.showAds).toBe(false);
+  });
+
+  it("shows ads once the world position is cleared and there's no active ad_free entitlement", async () => {
+    mockCountLeadingClearedWorlds.mockResolvedValueOnce({ cleared: 3, worldsToGo: 0 });
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2000-01-01" });
+
+    expect(result.showAds).toBe(true);
+  });
+
+  it("never shows ads to a user with an active ad_free entitlement, even past the world gate", async () => {
+    mockCountLeadingClearedWorlds.mockResolvedValueOnce({ cleared: 3, worldsToGo: 0 });
+    const future = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30);
+    mockRepo.getEntitlementsForUser.mockResolvedValueOnce([
+      { entitlement: "ad_free", source: "revenuecat", expiresAt: future, raw: {} },
+    ]);
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2000-01-01" });
+
+    expect(result.showAds).toBe(false);
+    expect(result.entitlements).toEqual([
+      { entitlement: "ad_free", source: "revenuecat", active: true, expiresAt: future.toISOString() },
+    ]);
+  });
+
+  it("shows ads again once a stored ad_free entitlement has expired, past the world gate", async () => {
+    mockCountLeadingClearedWorlds.mockResolvedValueOnce({ cleared: 3, worldsToGo: 0 });
+    const past = new Date(Date.now() - 1000 * 60 * 60 * 24);
+    mockRepo.getEntitlementsForUser.mockResolvedValueOnce([
+      { entitlement: "ad_free", source: "revenuecat", expiresAt: past, raw: {} },
+    ]);
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2000-01-01" });
+
+    expect(result.showAds).toBe(true);
+    expect(result.entitlements[0]?.active).toBe(false);
+  });
+
+  it("requires non-personalized ads and blocks subscribing for a minor", async () => {
+    mockIsMinor.mockReturnValueOnce(true);
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2015-01-01" });
+
+    expect(result.nonPersonalizedAdsRequired).toBe(true);
+    expect(result.canSubscribe).toBe(false);
+  });
+
+  it("allows personalized ads and subscribing for a confirmed adult", async () => {
+    mockIsMinor.mockReturnValueOnce(false);
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "1990-01-01" });
+
+    expect(result.nonPersonalizedAdsRequired).toBe(false);
+    expect(result.canSubscribe).toBe(true);
+  });
+
+  it("fails closed (non-personalized, can't subscribe) when dateOfBirth is missing", async () => {
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: null });
+
+    expect(mockIsMinor).not.toHaveBeenCalled();
+    expect(result.nonPersonalizedAdsRequired).toBe(true);
+    expect(result.canSubscribe).toBe(false);
   });
 });
