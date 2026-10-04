@@ -354,6 +354,11 @@ own repo later, hosted on Railway.
       already happened - someone has to actually contact the parent and issue the refund (via
       RevenueCat's dashboard/API or the store directly). Not automated by design; needs a written
       process before this is discovered live for the first time.
+- [ ] **Seed `ads_config` in production `settings_kv`** (Phase 8) - deliberately not done at
+      merge time since `getAdsSettings()`'s code fallback (`DEFAULT_ADS_SETTINGS`, position 3) is
+      identical to what seeding would insert, so there's no functional gap today; seeding only
+      matters once staff actually want to tune the ad-start world position from `/admin/settings`
+      instead of a code change. See `docs/STATUS.md`'s 2026-10-04 merge entry.
 - [ ] **Confirm no learner-authored free text is ever rendered to another learner** (D36,
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future
