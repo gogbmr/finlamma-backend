@@ -342,6 +342,11 @@ own repo later, hosted on Railway.
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Legal review of subscriptions and ads in a minor-directed app** (Apple/Google policy,
+      India's DPDP, Google Play Families Policy) - see `docs/ARCHITECTURE.md` D66/D67 (Phase 8
+      kickoff): the under-18 non-personalized-ads line and the server-side block on minors
+      purchasing subscriptions are this codebase's own calls, not something that can be
+      self-certified against store policy or law without outside review.
 - [ ] **Confirm no learner-authored free text is ever rendered to another learner** (D36,
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future

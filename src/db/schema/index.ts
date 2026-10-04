@@ -29,3 +29,4 @@ export * from "./arena";
 export * from "./competitions";
 export * from "./notifications";
 export * from "./doubt_zone";
+export * from "./monetisation";
