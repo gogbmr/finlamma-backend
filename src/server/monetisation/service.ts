@@ -1,3 +1,4 @@
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { logInternalError } from "@/lib/http";
 import { getSettingJson } from "@/lib/settings";
@@ -172,6 +173,13 @@ export async function processRevenueCatWebhookEvent(rawPayload: unknown): Promis
     targetId: user.id,
     metadata: { entitlement: entitlementId, eventType: event.type, eventId: event.id },
   });
+
+  // docs/ARCHITECTURE.md D69 - revenue funnel's anchor event. Gated to the
+  // actual first-purchase event types, not every RENEWAL/CANCELLATION/
+  // EXPIRATION update that also upserts this same row.
+  if (event.type === "INITIAL_PURCHASE" || event.type === "NON_RENEWING_PURCHASE") {
+    captureEvent(user.id, "entitlement_purchased", { entitlement: entitlementId });
+  }
 }
 
 // Falls back to DEFAULT_ADS_SETTINGS if the row hasn't been seeded, or a

@@ -1,3 +1,4 @@
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
 import { daysBetweenIstDates, istDateString } from "@/lib/ist-date";
@@ -61,7 +62,22 @@ export async function updateStreaksSettings(
 export async function recordLearningActivity(userId: string, at: Date = new Date()) {
   const settings = await getStreaksSettings();
   const todayIst = istDateString(at);
-  return recordStreakActivity(userId, "learning", todayIst, settings.streakFreezesPerMonth);
+  const result = await recordStreakActivity(userId, "learning", todayIst, settings.streakFreezesPerMonth);
+  reportStreakBrokenIfAny(userId, result);
+  return result;
+}
+
+// docs/ARCHITECTURE.md D69 - shared by both scopes below. Bucketed, not the
+// exact day count, same "no finer than needed" rule the other event
+// properties follow.
+function reportStreakBrokenIfAny(
+  userId: string,
+  result: { brokeStreak: boolean; previousCurrent: number },
+): void {
+  if (!result.brokeStreak) return;
+  const bucket =
+    result.previousCurrent < 7 ? "short" : result.previousCurrent < 30 ? "medium" : "long";
+  captureEvent(userId, "streak_broken", { previousStreakBucket: bucket });
 }
 
 // The "pulse_check" scope's first (and, until now, only) real caller -
@@ -73,7 +89,9 @@ export async function recordLearningActivity(userId: string, at: Date = new Date
 export async function recordPulseCheckActivity(userId: string, at: Date = new Date()) {
   const settings = await getStreaksSettings();
   const todayIst = istDateString(at);
-  return recordStreakActivity(userId, "pulse_check", todayIst, settings.streakFreezesPerMonth);
+  const result = await recordStreakActivity(userId, "pulse_check", todayIst, settings.streakFreezesPerMonth);
+  reportStreakBrokenIfAny(userId, result);
+  return result;
 }
 
 // There's no midnight job: the stored row only ever advances when the user

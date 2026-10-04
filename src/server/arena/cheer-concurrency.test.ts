@@ -36,6 +36,10 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 // would otherwise pull in @/server/notifications/provider -> @/lib/env
 // unmocked in this real-DB integration test).
 vi.mock("@/server/notifications/service", () => ({ notifyUser: () => Promise.resolve() }));
+// Same reasoning as the notifyUser mock above - sendCheer's new
+// captureEvent call (docs/ARCHITECTURE.md D69) would otherwise pull in the
+// real @/lib/analytics -> @/lib/env unmocked here too.
+vi.mock("@/lib/analytics", () => ({ captureEvent: () => {} }));
 
 const { sendCheer } = await import("./service");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };

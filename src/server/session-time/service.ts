@@ -1,3 +1,4 @@
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
@@ -33,6 +34,11 @@ export async function recordSessionTime(
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+  // DAU/WAU/MAU base unit (docs/ARCHITECTURE.md D69) - this is the only
+  // session-boundary signal the backend has (a client-reported session-end
+  // ping), used as the proxy for "a session happened" rather than a true
+  // session-start event.
+  captureEvent(user.id, "session_started");
   return { todaySeconds: row.seconds };
 }
 

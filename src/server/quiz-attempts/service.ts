@@ -1,3 +1,4 @@
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import { logInternalError } from "@/lib/http";
@@ -319,12 +320,22 @@ export async function submitAnswer(
         successful,
         meta,
       );
+      // docs/ARCHITECTURE.md D69: fires on every successful completion
+      // (first pass or a retry), `isFirstPass` keyed off the same
+      // `credited` idempotency flag the reward ledger already uses.
+      if (successful) {
+        captureEvent(user.id, "lesson_completed", { lessonKind: lesson.kind, isFirstPass: credited });
+      }
+      if (lesson.kind === "boss_quiz") {
+        captureEvent(user.id, successful ? "boss_quiz_passed" : "boss_quiz_failed");
+      }
       // WH-16/PR-36-38: passing a Boss Quiz IS "world complete" (D24, the
       // same signal world-unlock reads) - issue that world's certificate.
       // Best-effort and isolated: a certificate-issuance failure must never
       // surface as a failed lesson-answer response, since the learner's XP/
       // VM credit above already succeeded.
       if (lesson.kind === "boss_quiz" && successful) {
+        captureEvent(user.id, "world_completed");
         try {
           await issueCertificateIfEligible(user, lesson.worldId, accuracyPct, meta);
         } catch (err) {

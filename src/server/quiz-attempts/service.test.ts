@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// submitAnswer's captureEvent calls (docs/ARCHITECTURE.md D69) would
+// otherwise pull in the real @/lib/analytics -> @/lib/env unmocked here.
+vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
+
 const mockGetPublishedLesson = vi.fn();
 vi.mock("@/server/lessons/repo", () => ({
   getPublishedLesson: (id: unknown) => mockGetPublishedLesson(id),

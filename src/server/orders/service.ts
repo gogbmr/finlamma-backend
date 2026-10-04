@@ -1,3 +1,4 @@
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
@@ -103,6 +104,14 @@ export async function placeOrder(
         },
         ip: meta.ip,
         userAgent: meta.userAgent,
+      });
+      // docs/ARCHITECTURE.md D69 - deliberately coarse (sector, not symbol
+      // or qty): enough to see trading engagement without logging a
+      // minor's specific position size to a third party.
+      captureEvent(user.id, "trade_order_placed", {
+        side: input.side,
+        status: result.status,
+        sector: instrument.sector,
       });
       return shapeOrder(result.order, instrument.symbol, false);
     }

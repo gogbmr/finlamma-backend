@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// recordSessionTime's captureEvent call (docs/ARCHITECTURE.md D69) would
+// otherwise pull in the real @/lib/analytics -> @/lib/env unmocked here.
+vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
+
 const mockAddSessionSeconds = vi.fn();
 const mockGetSessionSecondsForDate = vi.fn();
 vi.mock("./repo", () => ({

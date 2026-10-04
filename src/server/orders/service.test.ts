@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// placeOrder's captureEvent call (docs/ARCHITECTURE.md D69) would otherwise
+// pull in the real @/lib/analytics -> @/lib/env unmocked here.
+vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
+
 const mockGetInstrumentBySymbol = vi.fn();
 vi.mock("@/server/trading/repo", () => ({
   getInstrumentBySymbol: (symbol: unknown) => mockGetInstrumentBySymbol(symbol),
