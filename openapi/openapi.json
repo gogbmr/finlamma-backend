@@ -189,6 +189,17 @@
                 "example": "mock",
                 "description": "A non-fatal warning (never causes a 503): 'configured' means a real push vendor (Expo) is in effect - EXPO_ACCESS_TOKEN is set (or PUSH_PROVIDER explicitly picked it). 'mock' means push sends are only logged, never actually delivered - either no token is configured yet (there's no mobile app to push to as of Phase 7) or PUSH_PROVIDER=mock was set explicitly. 'unconfigured' means PUSH_PROVIDER=expo was explicitly set but EXPO_ACCESS_TOKEN is missing - a real misconfiguration, distinct from the intentional 'mock' fallback. Never a live vendor call - see getPushProviderKind's comment."
               },
+              "appUrl": {
+                "type": "string",
+                "enum": [
+                  "ok",
+                  "localhost",
+                  "empty",
+                  "mismatched_host"
+                ],
+                "example": "ok",
+                "description": "A non-fatal warning (never causes a 503): APP_URL feeds every parent-consent/withdraw/re-approval email link (src/server/onboarding/service.ts) and this deployment's own metadataBase/robots.txt/sitemap.xml - a wrong value silently breaks all of them with nothing else catching it (the exact gap found at Phase 9 production verification, 2026-10-04). 'empty' means APP_URL couldn't be parsed to a hostname at all. 'localhost' means it's still pointed at the local-dev placeholder from .env.example. 'mismatched_host' means this is a real Vercel deployment and APP_URL's hostname doesn't match the host Vercel actually deployed to (VERCEL_PROJECT_PRODUCTION_URL in production, VERCEL_URL in preview) - e.g. a stale custom-domain value left over from before a domain change. Config-only, no network call."
+              },
               "inngest": {
                 "type": "string",
                 "enum": [
@@ -220,6 +231,7 @@
               "tradingHalt",
               "market",
               "push",
+              "appUrl",
               "inngest",
               "timestamp"
             ]

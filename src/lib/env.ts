@@ -21,6 +21,21 @@ const envSchema = z.object({
   // actually live doesn't require the Vercel dashboard - see
   // docs/STATUS.md's Phase 2a audit for why this was added.
   VERCEL_GIT_COMMIT_SHA: z.string().optional(),
+  // Also set automatically by Vercel, never manually - the actual host this
+  // deployment is reachable at (production domain, or that one preview's
+  // unique host), no protocol. Used only by GET /api/v1/health's appUrl
+  // check (src/app/api/v1/health/route.ts) to catch APP_URL pointing
+  // somewhere else entirely (e.g. still the localhost placeholder from
+  // .env.example) - the exact gap that let every parent-consent email link
+  // silently point at localhost with nothing catching it.
+  VERCEL_URL: z.string().optional(),
+  // Also set automatically by Vercel, production deployments only - the
+  // stable production domain, unlike VERCEL_URL which is per-deployment.
+  // Preferred over VERCEL_URL for the appUrl check specifically when
+  // VERCEL_ENV is "production", since VERCEL_URL there would otherwise be
+  // this specific deployment's own unique alias, not the canonical domain
+  // APP_URL should actually match.
+  VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
   APP_URL: z.string().url(),
 
   // Supabase Postgres: pooled connection for the app at runtime, direct
