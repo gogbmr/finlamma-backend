@@ -174,13 +174,29 @@ const envSchema = z.object({
   // MARKET_DATA_PROVIDER above. Left unset in normal operation.
   PUSH_PROVIDER: z.enum(["mock", "expo"]).optional(),
 
-  // Phase 8 (docs/ARCHITECTURE.md D10) - RevenueCat webhook HMAC signing
-  // secret, same lazy-fail-until-configured pattern as the other webhook
-  // secrets above: src/lib/revenuecat-webhook.ts fails closed (503) if a
-  // delivery arrives before this is set, rather than the app failing to
-  // boot. Generated in the RevenueCat dashboard (Integrations > Webhooks),
-  // not something we invent ourselves.
+  // Phase 8 (docs/ARCHITECTURE.md D10) - RevenueCat supports two different,
+  // independently-configured webhook auth mechanisms on the same endpoint
+  // (see src/lib/revenuecat-webhook.ts's comment for the doc citations):
+  // HMAC signing (an explicit opt-in "for stronger verification" toggle) or
+  // a plain shared Authorization header value (what RevenueCat's own basic
+  // webhook setup page walks through by default). Which one a real
+  // deployment ends up using is a dashboard choice made when registering
+  // the webhook, not something this codebase can assume - set whichever ONE
+  // of these matches what you actually enabled; the verifier checks
+  // whichever header the request carries against whichever secret is
+  // configured, so either one working is sufficient. Same lazy-fail-until-
+  // configured pattern as the other webhook secrets above: the route fails
+  // closed (503) if a delivery arrives before either is set.
   REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
+  REVENUECAT_WEBHOOK_AUTH_HEADER: z.string().optional(),
+  // Checkpoint 4's reconciliation job (src/server/monetisation/provider.ts)
+  // - a v1 Secret API key (https://www.revenuecat.com/docs/api-v1), used to
+  // re-fetch a subscriber's canonical entitlement state directly, so a
+  // missed/delayed webhook self-heals. Optional, same lazy-mock-until-
+  // configured pattern as TWELVEDATA_API_KEY/EXPO_ACCESS_TOKEN above - the
+  // job runs against MockRevenueCatProvider (reports no entitlements,
+  // harmless) until this is set.
+  REVENUECAT_SECRET_API_KEY: z.string().optional(),
 });
 
 function loadEnv() {

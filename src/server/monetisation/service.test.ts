@@ -26,13 +26,21 @@ vi.mock("@/server/worlds/service", () => ({
 const mockRepo = {
   findUserById: vi.fn(),
   getEntitlementsForUser: vi.fn(),
+  listEntitlementsNearExpiry: vi.fn(),
   recordWebhookEventIfNew: vi.fn(),
   upsertEntitlement: vi.fn(),
 };
 vi.mock("./repo", () => mockRepo);
 
-const { getMyMonetisationStatus, processRevenueCatWebhookEvent, treatAsMinorForMonetisation } =
-  await import("./service");
+const mockGetRevenueCatProvider = vi.fn();
+vi.mock("./provider", () => ({ getRevenueCatProvider: () => mockGetRevenueCatProvider() }));
+
+const {
+  getMyMonetisationStatus,
+  processRevenueCatWebhookEvent,
+  reconcileEntitlementsNearExpiry,
+  treatAsMinorForMonetisation,
+} = await import("./service");
 
 const USER = { id: "user-1" };
 
@@ -220,5 +228,100 @@ describe("getMyMonetisationStatus", () => {
     expect(mockIsMinor).not.toHaveBeenCalled();
     expect(result.nonPersonalizedAdsRequired).toBe(true);
     expect(result.canSubscribe).toBe(false);
+  });
+});
+
+describe("reconcileEntitlementsNearExpiry", () => {
+  const mockProvider = { getSubscriberEntitlements: vi.fn() };
+
+  beforeEach(() => {
+    mockProvider.getSubscriberEntitlements.mockReset();
+    mockGetRevenueCatProvider.mockReturnValue(mockProvider);
+  });
+
+  it("does nothing when no rows are near expiry", async () => {
+    mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([]);
+
+    const result = await reconcileEntitlementsNearExpiry();
+
+    expect(result).toEqual({ checked: 0, updated: 0 });
+    expect(mockProvider.getSubscriberEntitlements).not.toHaveBeenCalled();
+  });
+
+  it("leaves a row untouched when RevenueCat's live state already matches", async () => {
+    const expiresAt = new Date("2026-01-05T00:00:00Z");
+    mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+      { userId: "user-1", entitlement: "ad_free", expiresAt },
+    ]);
+    mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt }]);
+
+    const result = await reconcileEntitlementsNearExpiry();
+
+    expect(result).toEqual({ checked: 1, updated: 0 });
+    expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  it("updates a row when RevenueCat reports a renewal our webhook missed", async () => {
+    const stale = new Date("2026-01-05T00:00:00Z");
+    const renewed = new Date("2026-02-05T00:00:00Z");
+    mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+      { userId: "user-1", entitlement: "ad_free", expiresAt: stale },
+    ]);
+    mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: renewed }]);
+
+    const result = await reconcileEntitlementsNearExpiry();
+
+    expect(result).toEqual({ checked: 1, updated: 1 });
+    expect(mockRepo.upsertEntitlement).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user-1", entitlement: "ad_free", source: "revenuecat", expiresAt: renewed }),
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "monetisation.entitlement_reconciled", targetId: "user-1" }),
+    );
+  });
+
+  it("logs and continues past a row RevenueCat no longer reports at all", async () => {
+    mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+      { userId: "user-1", entitlement: "ad_free", expiresAt: new Date("2026-01-05T00:00:00Z") },
+    ]);
+    mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([]);
+
+    const result = await reconcileEntitlementsNearExpiry();
+
+    expect(result).toEqual({ checked: 1, updated: 0 });
+    expect(mockLogInternalError).toHaveBeenCalledWith(
+      "revenuecat_reconciliation_entitlement_missing",
+      expect.anything(),
+    );
+    expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  it("logs a failed lookup and keeps processing the rest of the batch", async () => {
+    mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+      { userId: "user-1", entitlement: "ad_free", expiresAt: new Date("2026-01-05T00:00:00Z") },
+      { userId: "user-2", entitlement: "ad_free", expiresAt: new Date("2026-01-06T00:00:00Z") },
+    ]);
+    mockProvider.getSubscriberEntitlements
+      .mockRejectedValueOnce(new Error("RevenueCat API down"))
+      .mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: new Date("2026-03-01T00:00:00Z") }]);
+
+    const result = await reconcileEntitlementsNearExpiry();
+
+    expect(result).toEqual({ checked: 2, updated: 1 });
+    expect(mockLogInternalError).toHaveBeenCalledWith("revenuecat_reconciliation_fetch_failed", expect.anything());
+    expect(mockRepo.upsertEntitlement).toHaveBeenCalledTimes(1);
+    expect(mockRepo.upsertEntitlement).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-2" }));
+  });
+
+  it("treats a both-null expiresAt (never-expiring on both sides) as already in sync", async () => {
+    mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+      { userId: "user-1", entitlement: "ad_free", expiresAt: null },
+    ]);
+    mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: null }]);
+
+    const result = await reconcileEntitlementsNearExpiry();
+
+    expect(result).toEqual({ checked: 1, updated: 0 });
+    expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
   });
 });

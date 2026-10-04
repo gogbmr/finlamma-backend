@@ -4748,7 +4748,7 @@ Called by Clerk on user.created and user.deleted for the STAFF Clerk application
 
 **RevenueCat subscription webhook**
 
-Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). Authenticated by an HMAC signature in the X-RevenueCat-Webhook-Signature header, verified against REVENUECAT_WEBHOOK_SECRET - configured as this endpoint's signing secret in the RevenueCat dashboard, not by a user or staff session.
+Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). RevenueCat supports two independently-configured auth mechanisms for the same webhook endpoint, and this route accepts either: an HMAC signature in X-RevenueCat-Webhook-Signature (verified against REVENUECAT_WEBHOOK_SECRET - an explicit 'enable HMAC signing' opt-in in the dashboard), or a plain shared value in the Authorization header (verified against REVENUECAT_WEBHOOK_AUTH_HEADER - what RevenueCat's basic webhook setup configures by default). Configured in the RevenueCat dashboard, not by a user or staff session.
 
 **Auth:** none
 
@@ -4756,7 +4756,8 @@ Called by RevenueCat (not the app or the mobile client) when a subscriber's enti
 
 | Name | In | Type | Required | Description |
 |---|---|---|---|---|
-| `x-revenuecat-webhook-signature` | header | string | yes | t=<unix_timestamp>,v1=<hmac_sha256_hex> |
+| `x-revenuecat-webhook-signature` | header | string | no | HMAC path: t=<unix_timestamp>,v1=<hmac_sha256_hex> |
+| `authorization` | header | string | no | Shared-header path: the plain configured auth header value |
 
 **Request body**
 
@@ -4809,7 +4810,7 @@ Called by RevenueCat (not the app or the mobile client) when a subscriber's enti
 }
 ```
 
-- **503** — Webhook signing secret not configured
+- **503** — Neither webhook secret is configured
 
 ```json
 {

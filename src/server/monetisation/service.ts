@@ -4,7 +4,14 @@ import { getSettingJson } from "@/lib/settings";
 import { isMinor } from "@/server/onboarding/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { countLeadingClearedWorlds } from "@/server/worlds/service";
-import { findUserById, getEntitlementsForUser, recordWebhookEventIfNew, upsertEntitlement } from "./repo";
+import { getRevenueCatProvider } from "./provider";
+import {
+  findUserById,
+  getEntitlementsForUser,
+  listEntitlementsNearExpiry,
+  recordWebhookEventIfNew,
+  upsertEntitlement,
+} from "./repo";
 import {
   ADS_SETTINGS_KEY,
   AdsSettingsSchema,
@@ -13,6 +20,15 @@ import {
   type EntitlementKey,
   RevenueCatWebhookPayloadSchema,
 } from "./schemas";
+
+// Checkpoint 4: the reconciliation job's scope - a RevenueCat-sourced
+// entitlement whose expiresAt falls within this window around "now" gets a
+// live RevenueCat lookup. 7 days back catches a renewal whose webhook was
+// missed within the last week; 2 days ahead gives an about-to-expire row a
+// second chance before its expiry actually takes effect, in case the
+// RENEWAL webhook is delayed.
+const RECONCILIATION_LOOKBACK_DAYS = 7;
+const RECONCILIATION_LOOKAHEAD_DAYS = 2;
 
 const KNOWN_ENTITLEMENT_IDS = new Set<string>(ENTITLEMENT_KEYS);
 
@@ -126,4 +142,71 @@ export async function getMyMonetisationStatus(user: { id: string; dateOfBirth: s
     nonPersonalizedAdsRequired: treatAsMinor,
     canSubscribe: !treatAsMinor,
   };
+}
+
+// Daily Inngest job (src/inngest/functions/revenuecat-entitlement-
+// reconciliation.ts). A webhook can be missed, delayed, or (rarely)
+// redelivered out of an order our upsert-in-place model can't detect on
+// its own - this re-fetches RevenueCat's own canonical state for every row
+// within RECONCILIATION_LOOKBACK/LOOKAHEAD_DAYS of its expiry, so a missed
+// webhook self-heals within a day instead of leaving stale ad-free status
+// indefinitely. One bad lookup (a transient RevenueCat API error) never
+// aborts the rest of the batch - logged and skipped, picked up again on
+// the next run.
+export async function reconcileEntitlementsNearExpiry(): Promise<{ checked: number; updated: number }> {
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - RECONCILIATION_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const windowEnd = new Date(now.getTime() + RECONCILIATION_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+
+  const rows = await listEntitlementsNearExpiry(windowStart, windowEnd);
+  const provider = getRevenueCatProvider();
+
+  let updated = 0;
+  for (const row of rows) {
+    let liveEntitlements;
+    try {
+      liveEntitlements = await provider.getSubscriberEntitlements(row.userId);
+    } catch (err) {
+      logInternalError("revenuecat_reconciliation_fetch_failed", err);
+      continue;
+    }
+
+    const live = liveEntitlements.find((e) => e.entitlement === row.entitlement);
+    if (!live) {
+      // RevenueCat no longer reports this entitlement for this user at all
+      // - possible app_user_id mismatch, or a genuinely stale local row.
+      // Logged for visibility, left untouched rather than guessed at.
+      logInternalError(
+        "revenuecat_reconciliation_entitlement_missing",
+        new Error("RevenueCat reports no record of this entitlement for this user"),
+      );
+      continue;
+    }
+
+    const currentExpiresAtMs = row.expiresAt?.getTime() ?? null;
+    const liveExpiresAtMs = live.expiresAt?.getTime() ?? null;
+    if (currentExpiresAtMs === liveExpiresAtMs) continue; // already in sync, no write needed
+
+    await upsertEntitlement({
+      userId: row.userId,
+      entitlement: row.entitlement,
+      source: "revenuecat",
+      expiresAt: live.expiresAt,
+      raw: { reconciledAt: now.toISOString(), previousExpiresAt: row.expiresAt?.toISOString() ?? null },
+    });
+    await logActivity({
+      actorType: "system",
+      action: "monetisation.entitlement_reconciled",
+      targetType: "entitlements",
+      targetId: row.userId,
+      metadata: {
+        entitlement: row.entitlement,
+        previousExpiresAt: row.expiresAt?.toISOString() ?? null,
+        newExpiresAt: live.expiresAt?.toISOString() ?? null,
+      },
+    });
+    updated++;
+  }
+
+  return { checked: rows.length, updated };
 }

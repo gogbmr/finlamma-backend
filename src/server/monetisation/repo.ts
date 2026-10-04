@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { db } from "@/db/client";
 import { entitlements, users, webhookEvents } from "@/db/schema";
 import type { EntitlementKey } from "./schemas";
@@ -46,4 +46,24 @@ export async function upsertEntitlement(input: {
 
 export async function getEntitlementsForUser(userId: string) {
   return db.select().from(entitlements).where(eq(entitlements.userId, userId));
+}
+
+// Checkpoint 4's reconciliation job scope: RevenueCat-sourced rows whose
+// expiresAt falls inside [windowStart, windowEnd] - a never-expiring row
+// (expiresAt null) is excluded entirely, since there's nothing a missed
+// webhook could have gotten wrong about it. Rows far from their expiry
+// (just renewed, or expired long ago and never renewed) are correctly
+// settled already and don't need a live RevenueCat lookup.
+export async function listEntitlementsNearExpiry(windowStart: Date, windowEnd: Date) {
+  return db
+    .select()
+    .from(entitlements)
+    .where(
+      and(
+        eq(entitlements.source, "revenuecat"),
+        isNotNull(entitlements.expiresAt),
+        gte(entitlements.expiresAt, windowStart),
+        lte(entitlements.expiresAt, windowEnd),
+      ),
+    );
 }

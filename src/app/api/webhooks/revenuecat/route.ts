@@ -17,16 +17,24 @@ registry.registerPath({
   description:
     "Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement " +
     "state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps " +
-    "our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). Authenticated by an " +
-    "HMAC signature in the X-RevenueCat-Webhook-Signature header, verified against " +
-    "REVENUECAT_WEBHOOK_SECRET - configured as this endpoint's signing secret in the " +
-    "RevenueCat dashboard, not by a user or staff session.",
+    "our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). RevenueCat supports " +
+    "two independently-configured auth mechanisms for the same webhook endpoint, and this route " +
+    "accepts either: an HMAC signature in X-RevenueCat-Webhook-Signature (verified against " +
+    "REVENUECAT_WEBHOOK_SECRET - an explicit 'enable HMAC signing' opt-in in the dashboard), or " +
+    "a plain shared value in the Authorization header (verified against " +
+    "REVENUECAT_WEBHOOK_AUTH_HEADER - what RevenueCat's basic webhook setup configures by " +
+    "default). Configured in the RevenueCat dashboard, not by a user or staff session.",
   tags: ["Webhooks"],
   request: {
     headers: z.object({
       "x-revenuecat-webhook-signature": z
         .string()
-        .openapi({ description: "t=<unix_timestamp>,v1=<hmac_sha256_hex>" }),
+        .optional()
+        .openapi({ description: "HMAC path: t=<unix_timestamp>,v1=<hmac_sha256_hex>" }),
+      authorization: z
+        .string()
+        .optional()
+        .openapi({ description: "Shared-header path: the plain configured auth header value" }),
     }),
     body: {
       content: {
@@ -55,14 +63,17 @@ registry.registerPath({
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     503: {
-      description: "Webhook signing secret not configured",
+      description: "Neither webhook secret is configured",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
 });
 
 export const POST = withErrors(async (req: Request) => {
-  const payload = await verifyRevenueCatWebhook(req, env.REVENUECAT_WEBHOOK_SECRET);
+  const payload = await verifyRevenueCatWebhook(req, {
+    hmacSigningSecret: env.REVENUECAT_WEBHOOK_SECRET,
+    authHeaderValue: env.REVENUECAT_WEBHOOK_AUTH_HEADER,
+  });
   await processRevenueCatWebhookEvent(payload);
   return ok({ received: true as const });
 });

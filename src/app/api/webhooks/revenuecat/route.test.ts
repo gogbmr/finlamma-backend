@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
-const mockEnv = vi.hoisted(() => ({ REVENUECAT_WEBHOOK_SECRET: "secret" as string | undefined }));
+const mockEnv = vi.hoisted(() => ({
+  REVENUECAT_WEBHOOK_SECRET: "secret" as string | undefined,
+  REVENUECAT_WEBHOOK_AUTH_HEADER: undefined as string | undefined,
+}));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
 const mockVerify = vi.fn();
@@ -47,6 +50,10 @@ describe("POST /api/webhooks/revenuecat", () => {
     const res = await POST(makeRequest(JSON.stringify(evt)));
 
     expect(res.status).toBe(200);
+    expect(mockVerify).toHaveBeenCalledWith(expect.anything(), {
+      hmacSigningSecret: "secret",
+      authHeaderValue: undefined,
+    });
     expect(mockProcess).toHaveBeenCalledWith(evt);
     const body = await res.json();
     expect(body.data.received).toBe(true);

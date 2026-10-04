@@ -9,6 +9,7 @@ import { newsDraftJob } from "./news-draft";
 import { newsIngestJob } from "./news-ingest";
 import { newsNotificationBroadcastJob } from "./news-notification-broadcast";
 import { notificationsRetentionJob } from "./notifications-retention";
+import { revenuecatEntitlementReconciliationJob } from "./revenuecat-entitlement-reconciliation";
 import { sessionGoalNotificationsJob } from "./session-goal-notifications";
 import { sipExecutionJob } from "./sip-execution";
 import { streakRiskNotificationsJob } from "./streak-risk-notifications";
@@ -32,4 +33,5 @@ export const functions = [
   streakRiskNotificationsJob,
   sessionGoalNotificationsJob,
   notificationsRetentionJob,
+  revenuecatEntitlementReconciliationJob,
 ];

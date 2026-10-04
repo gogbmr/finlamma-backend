@@ -14388,7 +14388,7 @@
     "/api/webhooks/revenuecat": {
       "post": {
         "summary": "RevenueCat subscription webhook",
-        "description": "Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). Authenticated by an HMAC signature in the X-RevenueCat-Webhook-Signature header, verified against REVENUECAT_WEBHOOK_SECRET - configured as this endpoint's signing secret in the RevenueCat dashboard, not by a user or staff session.",
+        "description": "Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). RevenueCat supports two independently-configured auth mechanisms for the same webhook endpoint, and this route accepts either: an HMAC signature in X-RevenueCat-Webhook-Signature (verified against REVENUECAT_WEBHOOK_SECRET - an explicit 'enable HMAC signing' opt-in in the dashboard), or a plain shared value in the Authorization header (verified against REVENUECAT_WEBHOOK_AUTH_HEADER - what RevenueCat's basic webhook setup configures by default). Configured in the RevenueCat dashboard, not by a user or staff session.",
         "tags": [
           "Webhooks"
         ],
@@ -14396,11 +14396,21 @@
           {
             "schema": {
               "type": "string",
-              "description": "t=<unix_timestamp>,v1=<hmac_sha256_hex>"
+              "description": "HMAC path: t=<unix_timestamp>,v1=<hmac_sha256_hex>"
             },
-            "required": true,
-            "description": "t=<unix_timestamp>,v1=<hmac_sha256_hex>",
+            "required": false,
+            "description": "HMAC path: t=<unix_timestamp>,v1=<hmac_sha256_hex>",
             "name": "x-revenuecat-webhook-signature",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Shared-header path: the plain configured auth header value"
+            },
+            "required": false,
+            "description": "Shared-header path: the plain configured auth header value",
+            "name": "authorization",
             "in": "header"
           }
         ],
@@ -14480,7 +14490,7 @@
             }
           },
           "503": {
-            "description": "Webhook signing secret not configured",
+            "description": "Neither webhook secret is configured",
             "content": {
               "application/json": {
                 "schema": {
