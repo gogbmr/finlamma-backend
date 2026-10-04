@@ -334,8 +334,8 @@ own repo later, hosted on Railway.
       finishes the anonymize step for it.
 
 ## Phase 8 — Monetisation
-- [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
-- [ ] Ad eligibility flag (World 3 completed and not ad-free)
+- [x] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
+- [x] Ad eligibility flag (World 3 completed and not ad-free)
 
 ## Phase 9 — Analytics & homepage
 - [ ] Admin analytics dashboards (users, retention, lessons, trading, news, revenue)
