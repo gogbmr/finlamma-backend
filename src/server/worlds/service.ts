@@ -535,33 +535,47 @@ export async function isTradingUnlocked(userId: string): Promise<boolean> {
   return progress.unlocked;
 }
 
-// TR-57 (docs/FEATURE_MAP.md): explore mode's order-pad lock shows a
-// progress message ("N worlds to go"), not just a bare locked/unlocked
-// flag - this is what computes that N. Sequential unlock (D23/D24) means
-// "worlds cleared toward the trading-unlock position" is just how many
+// Shared by any position-based "N worlds cleared in a row" gate - trading
+// unlock (D25) below and Phase 8's ad-eligibility gate
+// (src/server/monetisation/service.ts) both reduce to the same question,
+// just against a different settings_kv position. Sequential unlock (D23/
+// D24) means "worlds cleared toward the gate's position" is just how many
 // LEADING worlds (from position 1) have been passed consecutively - the
 // first uncleared one is always the next one the learner is working on, so
 // counting stops there rather than counting total cleared worlds anywhere
 // in the list (which could overcount if unlock rules ever changed).
-export async function getTradingUnlockProgress(
+export async function countLeadingClearedWorlds(
   userId: string,
-): Promise<{ unlocked: boolean; worldsToGo: number }> {
-  const settings = await getLessonFlowScoringSettings();
-  const position = settings.tradingUnlockAfterWorldPosition;
-
+  position: number,
+  bossQuizPassMarkPct: number,
+): Promise<{ cleared: number; worldsToGo: number }> {
   const publishedWorlds = await listPublishedWorlds();
   if (publishedWorlds.length < position) {
     // Content gap (see GET /api/v1/health's tradingUnlockWorldMissing) -
-    // can never unlock yet regardless of the learner's own progress.
-    return { unlocked: false, worldsToGo: position };
+    // can never clear this gate yet regardless of the learner's own progress.
+    return { cleared: 0, worldsToGo: position };
   }
 
-  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct);
+  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, bossQuizPassMarkPct);
   let cleared = 0;
   for (let i = 0; i < position; i++) {
     if (!clearedWorldIds.has(publishedWorlds[i]!.id)) break;
     cleared++;
   }
-  const worldsToGo = Math.max(0, position - cleared);
+  return { cleared, worldsToGo: Math.max(0, position - cleared) };
+}
+
+// TR-57 (docs/FEATURE_MAP.md): explore mode's order-pad lock shows a
+// progress message ("N worlds to go"), not just a bare locked/unlocked flag
+// - this is what computes that N.
+export async function getTradingUnlockProgress(
+  userId: string,
+): Promise<{ unlocked: boolean; worldsToGo: number }> {
+  const settings = await getLessonFlowScoringSettings();
+  const { worldsToGo } = await countLeadingClearedWorlds(
+    userId,
+    settings.tradingUnlockAfterWorldPosition,
+    settings.bossQuizPassMarkPct,
+  );
   return { unlocked: worldsToGo === 0, worldsToGo };
 }

@@ -82,8 +82,20 @@ function todayUtc(): string {
 // birthday. Both sides are plain calendar dates (no timezone in
 // `dateOfBirth`), so UTC field comparisons are the correct, unambiguous way
 // to do this regardless of the server's local timezone.
+//
+// Fails closed (treats an unparseable date as a minor) rather than letting
+// an Invalid Date silently resolve the wrong way - `new Date("garbage...")`
+// produces NaN throughout the arithmetic below, and `NaN < 18` is `false`
+// in JS, which would otherwise report "not a minor" for exactly the input
+// where age genuinely can't be determined. Every real call site today
+// (onboarding's z.iso.date()-validated input, users.dateOfBirth's Postgres
+// `date` column type, or an explicit truthy-guard before calling this)
+// already prevents an invalid value from reaching here - this guard exists
+// so that stays true even if a future caller's input isn't pre-validated
+// the same way (`/phase-audit 8` finding).
 export function isMinor(dateOfBirth: string): boolean {
   const dob = new Date(`${dateOfBirth}T00:00:00Z`);
+  if (Number.isNaN(dob.getTime())) return true;
   const now = new Date();
   let age = now.getUTCFullYear() - dob.getUTCFullYear();
   const hadBirthdayThisYear =

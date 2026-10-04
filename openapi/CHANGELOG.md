@@ -2,6 +2,38 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-04 — v1.3.0
+
+Minor bump: purely additive, 2 new operations plus 2 new schemas, nothing removed and nothing
+changed incompatibly since v1.2.0. Covers Phase 8 (Monetisation). As with earlier phases, these
+endpoints were already built and committed via ad-hoc `pnpm contract` runs across Phase 8's
+checkpoints — this is the first changelog record of them and the first version bump since v1.2.0.
+
+**Entitlements & RevenueCat (`docs/ARCHITECTURE.md` D10, D66-D68)**
+- `POST /api/webhooks/revenuecat` — RevenueCat's subscription webhook. Keeps the `entitlements`
+  table (`ad_free` status) in sync with purchase/renewal/cancellation/expiration/billing-issue
+  events. Accepts either of RevenueCat's two independently-configured auth mechanisms (HMAC
+  signature or a plain shared Authorization header — whichever one is enabled in the dashboard),
+  deduped by RevenueCat's own event id so a retried delivery is a no-op.
+- `GET /api/v1/me/entitlements` — the caller's current entitlements, plus two policy flags: ads
+  only show after the configured World position is cleared and there's no active `ad_free`
+  entitlement; `nonPersonalizedAdsRequired` and `canSubscribe` are both `false`-for-permissive,
+  `true`/`false`-fails-closed for anyone under 18 *or* with no date of birth on file at all — age
+  unknown is always treated as the stricter case, never the looser one.
+
+**Not a shape change, but worth recording here since it changed what this endpoint actually
+does**: a `/phase-audit 8` review found the webhook originally had no age check at all before
+granting an entitlement — contradicting the "server-side blocked for a known-minor account"
+guarantee this phase was built to deliver. Fixed same day (see `docs/STATUS.md`'s 2026-10-04
+entry and `docs/ARCHITECTURE.md` D68): the webhook and the daily reconciliation job both now
+refuse to grant/extend an entitlement for a known-or-unknown-age minor, recording the attempt for
+staff follow-up instead. The webhook's stored `entitlements.raw` is now an explicit allowlist
+(event id/type/timestamp/store) rather than the full RevenueCat payload, and a genuinely
+out-of-order event delivery is now detected and ignored rather than silently applied. None of this
+changed the request/response shape beyond two new optional request fields
+(`event_timestamp_ms`, `store`) that already existed in RevenueCat's real payload and are now
+just explicitly documented.
+
 ## 2026-10-04 — v1.2.0
 
 Minor bump: purely additive, 8 new operations plus one new documented response on an existing

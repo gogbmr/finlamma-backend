@@ -59,6 +59,7 @@ vi.mock("@/server/onboarding/repo", () => ({
 vi.mock("@/server/onboarding/service", () => ({
   isMinor: (dateOfBirth: string) => {
     const dob = new Date(`${dateOfBirth}T00:00:00Z`);
+    if (Number.isNaN(dob.getTime())) return true; // fails closed, same as the real isMinor (/phase-audit 8)
     const now = new Date();
     let age = now.getUTCFullYear() - dob.getUTCFullYear();
     const hadBirthdayThisYear =

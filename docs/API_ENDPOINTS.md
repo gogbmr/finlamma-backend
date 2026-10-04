@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.2.0) on 2026-10-04.
+> Generated from `openapi/openapi.json` (version 1.3.0) on 2026-10-04.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -99,6 +99,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
 - `POST /api/webhooks/clerk-staff` — Clerk user webhook (staff app)
+- `POST /api/webhooks/revenuecat` — RevenueCat subscription webhook
 
 **Arena**
 
@@ -134,6 +135,10 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/notifications` — Get my notification feed (PR-29)
 - `POST /api/v1/me/notifications/mark-read` — Mark my notifications as read (PR-29)
 - `GET /api/v1/me/notifications/unread-count` — Get my unread notification count (WH-18)
+
+**Monetisation**
+
+- `GET /api/v1/me/entitlements` — Get my entitlements and ad/subscription eligibility
 
 ## System
 
@@ -4739,6 +4744,91 @@ Called by Clerk on user.created and user.deleted for the STAFF Clerk application
 
 ---
 
+### `POST /api/webhooks/revenuecat`
+
+**RevenueCat subscription webhook**
+
+Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). RevenueCat supports two independently-configured auth mechanisms for the same webhook endpoint, and this route accepts either: an HMAC signature in X-RevenueCat-Webhook-Signature (verified against REVENUECAT_WEBHOOK_SECRET - an explicit 'enable HMAC signing' opt-in in the dashboard), or a plain shared value in the Authorization header (verified against REVENUECAT_WEBHOOK_AUTH_HEADER - what RevenueCat's basic webhook setup configures by default). Configured in the RevenueCat dashboard, not by a user or staff session.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `x-revenuecat-webhook-signature` | header | string | no | HMAC path: t=<unix_timestamp>,v1=<hmac_sha256_hex> |
+| `authorization` | header | string | no | Shared-header path: the plain configured auth header value |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `api_version` | string | no |  |
+| `event` | object | yes |  |
+| `event.id` | string | yes |  |
+| `event.type` | string | yes |  |
+| `event.app_user_id` | string | yes | Our internal users.id |
+| `event.event_timestamp_ms` | number | no | Backs the out-of-order-delivery guard |
+| `event.expiration_at_ms` | number or null | no |  |
+| `event.entitlement_ids` | array<string> | no |  |
+| `event.store` | string | no |  |
+
+```json
+{
+  "api_version": "string",
+  "event": {
+    "id": "12345678-1234-1234-1234-123456789012",
+    "type": "RENEWAL",
+    "app_user_id": "string",
+    "event_timestamp_ms": 0,
+    "expiration_at_ms": 0,
+    "entitlement_ids": [
+      "ad_free"
+    ],
+    "store": "APP_STORE"
+  }
+}
+```
+
+**Responses**
+
+- **200** — Event processed (or a type/entitlement we don't act on)
+
+```json
+{
+  "data": {
+    "received": true
+  }
+}
+```
+
+- **400** — Missing/invalid signature
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+- **503** — Neither webhook secret is configured
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+
+---
+
 ## Arena
 
 ### `GET /api/v1/arena/leaderboard`
@@ -6457,6 +6547,50 @@ Backs the bell icon's badge count - a dedicated endpoint rather than a query fla
 ```json
 {
   "count": 0
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+## Monetisation
+
+### `GET /api/v1/me/entitlements`
+
+**Get my entitlements and ad/subscription eligibility**
+
+Returns the caller's current entitlements (e.g. ad_free), whether ads should show right now (World 3 cleared and not ad-free), whether ad requests must be tagged non-personalized/child-directed (docs/ARCHITECTURE.md D66 - under-18 or unknown age, fails closed to the strict treatment), and whether the subscribe purchase path may be offered at all (D67 - false for a known-or-unknown-age minor; a parent must subscribe from their own device/account, never the child's).
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's entitlements and ad/subscription eligibility
+
+```json
+{
+  "entitlements": [
+    {
+      "entitlement": "ad_free",
+      "source": "revenuecat",
+      "active": true,
+      "expiresAt": "2026-11-04T00:00:00.000Z"
+    }
+  ],
+  "showAds": true,
+  "nonPersonalizedAdsRequired": true,
+  "canSubscribe": true
 }
 ```
 

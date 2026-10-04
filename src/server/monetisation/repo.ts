@@ -1,0 +1,81 @@
+import { and, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { db } from "@/db/client";
+import { entitlements, users, webhookEvents } from "@/db/schema";
+import type { EntitlementKey } from "./schemas";
+
+// RevenueCat makes no ordering or single-delivery guarantee, and retries
+// reuse the same event id - this IS the entire replay guard (there's no
+// clerkUpdatedAt-style staleness field on `entitlements` to additionally
+// lean on, unlike the Clerk webhook). Returns false if this exact
+// (source, eventId) was already recorded.
+export async function recordWebhookEventIfNew(
+  source: "revenuecat",
+  eventId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .insert(webhookEvents)
+    .values({ source, eventId })
+    .onConflictDoNothing({ target: [webhookEvents.source, webhookEvents.eventId] })
+    .returning();
+  return row !== undefined;
+}
+
+export async function findUserById(userId: string) {
+  const [row] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  return row ?? null;
+}
+
+// Current-state upsert, keyed on (userId, entitlement) - never a history
+// row, same reasoning as parentContacts/consentRecords elsewhere in this
+// codebase.
+export async function upsertEntitlement(input: {
+  userId: string;
+  entitlement: EntitlementKey;
+  source: "revenuecat" | "razorpay";
+  expiresAt: Date | null;
+  raw: Record<string, unknown>;
+}): Promise<void> {
+  await db
+    .insert(entitlements)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [entitlements.userId, entitlements.entitlement],
+      set: { source: input.source, expiresAt: input.expiresAt, raw: input.raw },
+    });
+}
+
+export async function getEntitlementsForUser(userId: string) {
+  return db.select().from(entitlements).where(eq(entitlements.userId, userId));
+}
+
+// Single-row read for the webhook's out-of-order-delivery guard (service.ts)
+// - needs the CURRENT stored state for this exact (userId, entitlement)
+// before deciding whether an incoming event is stale.
+export async function getEntitlement(userId: string, entitlement: EntitlementKey) {
+  const [row] = await db
+    .select()
+    .from(entitlements)
+    .where(and(eq(entitlements.userId, userId), eq(entitlements.entitlement, entitlement)))
+    .limit(1);
+  return row ?? null;
+}
+
+// Checkpoint 4's reconciliation job scope: RevenueCat-sourced rows whose
+// expiresAt falls inside [windowStart, windowEnd] - a never-expiring row
+// (expiresAt null) is excluded entirely, since there's nothing a missed
+// webhook could have gotten wrong about it. Rows far from their expiry
+// (just renewed, or expired long ago and never renewed) are correctly
+// settled already and don't need a live RevenueCat lookup.
+export async function listEntitlementsNearExpiry(windowStart: Date, windowEnd: Date) {
+  return db
+    .select()
+    .from(entitlements)
+    .where(
+      and(
+        eq(entitlements.source, "revenuecat"),
+        isNotNull(entitlements.expiresAt),
+        gte(entitlements.expiresAt, windowStart),
+        lte(entitlements.expiresAt, windowEnd),
+      ),
+    );
+}

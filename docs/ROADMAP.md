@@ -334,14 +334,26 @@ own repo later, hosted on Railway.
       finishes the anonymize step for it.
 
 ## Phase 8 — Monetisation
-- [ ] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
-- [ ] Ad eligibility flag (World 3 completed and not ad-free)
+- [x] RevenueCat webhook → `entitlements`; `GET /me/entitlements`
+- [x] Ad eligibility flag (World 3 completed and not ad-free)
 
 ## Phase 9 — Analytics & homepage
 - [ ] Admin analytics dashboards (users, retention, lessons, trading, news, revenue)
 - [ ] Public homepage, privacy policy, terms, risk disclosure pages
 
 ## Pre-launch checklist
+- [ ] **Legal review of subscriptions and ads in a minor-directed app** (Apple/Google policy,
+      India's DPDP, Google Play Families Policy) - see `docs/ARCHITECTURE.md` D66/D67 (Phase 8
+      kickoff): the under-18 non-personalized-ads line and the server-side block on minors
+      purchasing subscriptions are this codebase's own calls, not something that can be
+      self-certified against store policy or law without outside review.
+- [ ] **Define the refund and parent-contact process for a purchase made on a minor's account**
+      (`docs/ARCHITECTURE.md` D68, `/phase-audit 8`): the backend refuses to grant an entitlement
+      to a known-or-unknown-age minor and records the attempt (`monetisation.minor_purchase_blocked`
+      in the activity log) for staff to find, but it cannot itself undo a store-level charge that
+      already happened - someone has to actually contact the parent and issue the refund (via
+      RevenueCat's dashboard/API or the store directly). Not automated by design; needs a written
+      process before this is discovered live for the first time.
 - [ ] **Confirm no learner-authored free text is ever rendered to another learner** (D36,
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future

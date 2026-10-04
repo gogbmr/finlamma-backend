@@ -90,6 +90,8 @@ import "../src/app/api/v1/me/notification-prefs/route";
 import "../src/app/api/v1/me/notifications/route";
 import "../src/app/api/v1/me/notifications/mark-read/route";
 import "../src/app/api/v1/me/notifications/unread-count/route";
+import "../src/app/api/webhooks/revenuecat/route";
+import "../src/app/api/v1/me/entitlements/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 
@@ -97,7 +99,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "1.2.0",
+    version: "1.3.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

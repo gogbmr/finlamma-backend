@@ -337,6 +337,13 @@
       "when": 1790768126739,
       "tag": "0047_striped_shiva",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791094677116,
+      "tag": "0048_wooden_black_queen",
+      "breakpoints": true
     }
   ]
 }
