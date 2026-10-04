@@ -7,7 +7,11 @@ import { limitOrderEodCancelJob } from "./limit-order-eod-cancel";
 import { limitOrderMatchingJob } from "./limit-order-matching";
 import { newsDraftJob } from "./news-draft";
 import { newsIngestJob } from "./news-ingest";
+import { newsNotificationBroadcastJob } from "./news-notification-broadcast";
+import { notificationsRetentionJob } from "./notifications-retention";
+import { sessionGoalNotificationsJob } from "./session-goal-notifications";
 import { sipExecutionJob } from "./sip-execution";
+import { streakRiskNotificationsJob } from "./streak-risk-notifications";
 import { weeklyReportCardJob } from "./weekly-report-card";
 
 // Every Inngest function the app registers, imported here so
@@ -24,4 +28,8 @@ export const functions = [
   arenaWorldXpRollupJob,
   arenaLeagueSettlementJob,
   competitionSettlementJob,
+  newsNotificationBroadcastJob,
+  streakRiskNotificationsJob,
+  sessionGoalNotificationsJob,
+  notificationsRetentionJob,
 ];

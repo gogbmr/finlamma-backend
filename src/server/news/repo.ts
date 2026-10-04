@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNull, like, lt, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, like, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { activityLogs, newsDeskPicks, newsRaw, newsReads, newsStories, questions } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
@@ -264,4 +264,36 @@ export async function listRecentNewsEvents(limit: number) {
     .where(like(activityLogs.action, "news.%"))
     .orderBy(desc(activityLogs.createdAt))
     .limit(limit);
+}
+
+// --- Phase 7: market_news push notification broadcast ---
+
+// Published stories the broadcast job (src/inngest/functions/
+// news-notification-broadcast.ts) hasn't fanned out yet. Oldest-published-
+// first and limited so one run never tries to notify an unbounded backlog
+// at once (e.g. after this feature first ships, with months of
+// already-published stories that predate notifiedAt existing at all).
+export async function listPublishedStoriesPendingNotification(limit: number) {
+  return db
+    .select()
+    .from(newsStories)
+    .where(and(eq(newsStories.status, "published"), isNull(newsStories.notifiedAt)))
+    .orderBy(newsStories.publishedAt)
+    .limit(limit);
+}
+
+export async function markStoryNotified(id: string) {
+  await db.update(newsStories).set({ notifiedAt: new Date() }).where(eq(newsStories.id, id));
+}
+
+// The broadcast audience: learners who read at least one story in the last
+// `sinceDate`..now window - engaged readers only, never every registered
+// account, so a learner who's never opened News Desk doesn't get pushed at
+// unbounded volume the first time this job runs.
+export async function listRecentlyEngagedNewsReaderIds(sinceDate: Date): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ userId: newsReads.userId })
+    .from(newsReads)
+    .where(gte(newsReads.readAt, sinceDate));
+  return rows.map((r) => r.userId);
 }

@@ -82,6 +82,14 @@ import "../src/app/api/v1/arena/competitions/current/enter/route";
 import "../src/app/api/v1/arena/competitions/current/trades/route";
 import "../src/app/api/v1/arena/competitions/current/me/route";
 import "../src/app/api/v1/arena/competitions/current/leaderboard/route";
+import "../src/app/api/v1/doubt-zone/threads/route";
+import "../src/app/api/v1/doubt-zone/threads/[id]/messages/route";
+import "../src/app/api/v1/doubt-zone/threads/[id]/messages/[messageId]/report/route";
+import "../src/app/api/v1/me/push-token/route";
+import "../src/app/api/v1/me/notification-prefs/route";
+import "../src/app/api/v1/me/notifications/route";
+import "../src/app/api/v1/me/notifications/mark-read/route";
+import "../src/app/api/v1/me/notifications/unread-count/route";
 
 const generator = new OpenApiGeneratorV31(registry.definitions);
 
@@ -89,7 +97,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "1.1.0",
+    version: "1.2.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

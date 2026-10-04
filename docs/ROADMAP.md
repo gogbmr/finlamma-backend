@@ -305,10 +305,20 @@ own repo later, hosted on Railway.
       time per entrant) — same documented fast-follow precedent as AR-10 above, not blocking.
 
 ## Phase 7 — Notifications & Doubt Zone
-- [ ] Expo push tokens, notification preferences, streak/boss/news jobs
-- [ ] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
+- [x] Expo push tokens, notification preferences, streak/boss/news jobs - push provider behind
+      an adapter (mock/Expo, mirroring src/server/market/provider.ts's Twelve Data pattern, no
+      Expo account needed to build/test - see `GET /api/v1/health`'s `push` field), all 6
+      notification kinds wired (streak_risk/boss_battle/market_news/session_goal/cheer_received/
+      league_rank_change), quiet hours + per-category opt-out, 30-day retention job. See
+      FEATURE_MAP WH-18 through WH-24, PR-29, SET-07.
+- [x] Doubt Zone: streaming AI mentor endpoint with rate limits and minors-appropriate safety
       rules — this is the live upgrade of Phase 2b's scripted in-lesson "Doubt Zone"/"Lamma AI"
-      node, and also the standalone Doubt Zone entry point
+      node, and also the standalone Doubt Zone entry point (Checkpoints 1-4: schema, safety
+      classifier core, endpoints, in-lesson wiring confirmed/documented - FEATURE_MAP LF-15/SET-14;
+      Checkpoint 5: `POST .../messages/{messageId}/report` + `/admin/doubt-zone` moderation queue,
+      `doubt_zone.moderate`-gated, metadata-only list with an always-logged content reveal action).
+      **AI behavior verified only against mocks so far, not a real model - see the BLOCKING
+      pre-launch item and `docs/STATUS.md`'s 2026-09-30 entry.**
 - [x] Move bulk parent re-approval emails to an Inngest job, since the synchronous send on
       publish won't scale (Phase 2a's `notifyAffectedMinorsForReapproval` currently emails every
       affected parent inline during the admin publish Server Action). Pulled forward into
@@ -336,12 +346,14 @@ own repo later, hosted on Railway.
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future
       feature that surfaces one learner's content to another.
-- [ ] **Review the 25 unindexed-foreign-key and 25 unused-index Supabase advisor findings**
+- [ ] **Review the 40 unindexed-foreign-key and 49 unused-index Supabase advisor findings**
       (`INFO` level, first flagged by the Phase 2b audit at 8/15, `docs/STATUS.md`; recount as of
-      the `/phase-audit 4` run, 2026-09-27, now at 25/25 as Phase 3/4 added more tables/FKs) - low-
+      the `/phase-audit 7` run, 2026-09-30, now at 40/49 as later phases - most recently Phase 7's
+      `doubt_threads`/`doubt_messages`/`notifications`/`push_tokens` - added more tables/FKs) - low-
       traffic pre-launch noise today (e.g. `legal_documents.published_by`, `quiz_attempts.lesson_id`,
-      `question_answers.question_id` have no covering index), but worth a real pass once query
-      patterns and data volume are closer to production before launch.
+      `question_answers.question_id`, `doubt_messages.reviewed_by`, `doubt_threads.lesson_id` have no
+      covering index), but worth a real pass once query patterns and data volume are closer to
+      production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
       questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`)
       — the seed/draft copy written during development (e.g. `scripts/seed-mentors.ts`'s
@@ -353,6 +365,34 @@ own repo later, hosted on Railway.
       investment advice" reminder as help text, but neither is a substitute for a real review -
       the heuristic only catches a fixed phrase list and can't verify tone/intent. Re-run this
       check any time an instrument's about/tip copy changes after launch, not just once.
+- [ ] **BLOCKING: verify Doubt Zone crisis helpline numbers with a current official source, and
+      confirm the wording with someone qualified** (Phase 7 kickoff decision, `docs/ARCHITECTURE.md`).
+      `settings_kv` key `doubt_zone_safety` seeds Childline India (1098), KIRAN mental health
+      (1800-599-0019 / 14416) and NCPCR SAMVEDNA (1800-121-2830), checked against wcd.gov.in and PIB
+      press releases on 2026-09-30 - but Childline 1098 is actively being merged into the police
+      emergency line 112 state-by-state, so this is a live-moving target, not a one-time check. The
+      seeded redirect/disclosure copy is marked DRAFT and must not go live as-is: get it read by
+      someone qualified (a counsellor, child-safety professional, or similar) before launch, and
+      re-verify the numbers themselves close to the actual launch date, not just once during
+      development.
+- [ ] **BLOCKING: run live Doubt Zone probes with a real `ANTHROPIC_API_KEY` and review the actual
+      responses in all three languages before launch** - a normal finance question, a direct advice
+      request ("should I buy X"), an off-topic question, a safety probe worded the way a teenager
+      plausibly would, a prompt-extraction/jailbreak attempt, and a message containing personal
+      details (name/school). As of 2026-09-30, Phase 7's AI behavior (system prompt, safety
+      classifier, advice-language circuit breaker) is verified only against mocked model responses
+      in the automated test suite - the real model has never actually been run against these
+      prompts. See `docs/STATUS.md`'s Phase 7 entry.
+- [ ] **BLOCKING: define who holds `doubt_zone.moderate`, and write a policy for handling flagged
+      safety content involving minors** (`/phase-audit 7`, 2026-09-30). The flagged-only design
+      (`docs/ARCHITECTURE.md`) means a small number of trusted staff can see a flagged message's
+      actual content and the classifier's reasoning - right now that's whoever holds `super_admin`
+      or `user_manager`, seeded by default, with no written guidance for what a staff member is
+      actually supposed to DO on finding a genuine self-harm/abuse signal (escalate to whom, how
+      fast, is a parent ever contacted, is this logged/reported anywhere outside the app). The
+      technical side (fail-closed classification, always-logged reveal, deterministic redirect
+      copy) is built; the human process behind it is not, and that gap matters as much as the code
+      for a feature that talks to minors about their wellbeing.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence

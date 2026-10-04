@@ -83,11 +83,20 @@ export type QuizLikeContent = z.infer<typeof QuizLikeContentSchema>;
 // mentor persona the script was written in the voice of, fixed at
 // authoring time (see docs/ARCHITECTURE.md D19 for what happens if the
 // world's mentor changes later - a computed editor warning, not a
-// migration). Swappable for Phase 7: the node stays `kind: "doubt_zone"`
-// with this same content shape (chips keep working as suggested-question
-// shortcuts even with a live model behind them); only the *runtime
-// resolver* changes from "look up chip.reply" to "call the AI mentor",
-// which is Phase 7's concern, not this schema's.
+// migration). RESOLVED in Phase 7: the node stays `kind: "doubt_zone"` with
+// this exact content shape unchanged - chips still work as suggested-
+// question shortcuts, and `educationalOnlyNote` is still shown. The
+// *runtime resolver* the comment above used to say was "Phase 7's concern"
+// is `POST /api/v1/doubt-zone/threads` with `{ lessonId }`
+// (src/server/doubt-zone/service.ts's createOrGetThread /
+// resolveMentorAndLessonContext): it derives the live thread's mentor from
+// `worlds.mentorId` (the real FK, D25's single source of truth), never from
+// this content's own `mentorKey` - so a stale `mentorKey` (the D19 editor
+// warning above) only ever misleads the *old scripted preview*, never the
+// live conversation. Tapping a chip now sends `chipLabel` as a real message
+// to `POST .../messages` instead of returning `reply` locally - `reply`
+// stays in the content purely as an editor preview of the old scripted
+// behavior, no longer read by the live app.
 // chipLabel/reply/educationalOnlyNote are plain LocalizedTextSchema (no
 // .openapi() call directly on it) - matching every other content schema in
 // this file (SceneSchema's title/caption/mascotLine, etc.). Calling

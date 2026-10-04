@@ -9,7 +9,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { addSessionSeconds, getSessionSecondsForDate } = await import("./repo");
+const { addSessionSeconds, getSessionSecondsForDate, listUserIdsActiveOnDate } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 afterAll(async () => {
@@ -62,5 +62,25 @@ describe("addSessionSeconds / getSessionSecondsForDate", () => {
     const user = await makeUser();
 
     expect(await getSessionSecondsForDate(user.id, "2026-01-01")).toBe(0);
+  });
+});
+
+describe("listUserIdsActiveOnDate", () => {
+  it("returns distinct users with a ping on the given date, never a different date", async () => {
+    const userA = await makeUser();
+    const userB = await makeUser();
+    const userC = await makeUser();
+    await addSessionSeconds(userA.id, "2026-09-26", 100);
+    await addSessionSeconds(userA.id, "2026-09-26", 50); // second ping same day - still one entry
+    await addSessionSeconds(userB.id, "2026-09-26", 200);
+    await addSessionSeconds(userC.id, "2026-09-25", 200); // different day
+
+    const result = await listUserIdsActiveOnDate("2026-09-26");
+
+    expect(result.sort()).toEqual([userA.id, userB.id].sort());
+  });
+
+  it("returns an empty array for a date with no activity", async () => {
+    expect(await listUserIdsActiveOnDate("2020-01-01")).toEqual([]);
   });
 });

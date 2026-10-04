@@ -16,6 +16,8 @@ import { getStreakStats } from "@/server/streaks/service";
 import { getMyBadges } from "@/server/badges/service";
 import { insertUserBadgeIfAbsent } from "@/server/badges/repo";
 import { isUniqueViolation } from "@/lib/db-errors";
+import { NOTIFICATION_COPY } from "@/server/notifications/copy";
+import { notifyUser } from "@/server/notifications/service";
 import { INDIAN_STATES } from "@/server/shared/schemas";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import type { AboutMeChipInput, ArenaLeagueSettingsInput } from "./schemas";
@@ -442,6 +444,17 @@ export async function sendCheer(
     userAgent: meta.userAgent,
   });
 
+  // docs/ROADMAP.md's Phase 6 note: cheers already awarded XP but skipped
+  // the push because notifications infra didn't exist yet - closed here.
+  // Fires whenever a NEW cheer landed (not a same-day duplicate), even if
+  // the daily XP cap zeroed the actual award - the social signal is real
+  // either way. Never names the sender (D53). Always awaited (never
+  // fire-and-forget) - a Vercel serverless invocation isn't guaranteed to
+  // keep running background work after the response is sent, and
+  // notifyUser itself never throws (see its own doc comment), so awaiting
+  // it costs correctness nothing.
+  await notifyUser(receiverId, "cheer_received", NOTIFICATION_COPY.cheer_received);
+
   return { alreadyCheeredToday: false, xpAwarded: result.xpAwarded, dailyCapReached: result.dailyCapReached };
 }
 
@@ -800,7 +813,17 @@ export async function settleArenaLeaguesForWeek(): Promise<{
       }
       return true;
     });
-    if (paid) usersSettled++;
+    if (paid) {
+      usersSettled++;
+      // Only the promote zone - never safe/demote, so this notification is
+      // always a celebration, never a comparison a learner could feel bad
+      // about (Phase 7 kickoff decision). Only fires for a NEW settlement
+      // (`paid`), never a retried/idempotent replay of an already-settled
+      // week.
+      if (best.zone === "promote") {
+        await notifyUser(userId, "league_rank_change", NOTIFICATION_COPY.league_rank_change);
+      }
+    }
   }
 
   return { weekStartDate, scopesSettled, usersSettled };

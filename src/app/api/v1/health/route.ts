@@ -9,6 +9,7 @@ import { checkRedisReachable } from "@/lib/redis";
 import { LEGAL_DOCUMENT_TYPES, listPublishedDocuments } from "@/server/legal/repo";
 import { listPublishedLessonsByWorldId } from "@/server/lessons/repo";
 import { getMarketDataProviderKind } from "@/server/market/provider";
+import { getPushProviderKind } from "@/server/notifications/provider";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { getOrCreateMarketControls } from "@/server/trading/repo";
 import { listPublishedWorlds } from "@/server/worlds/repo";
@@ -126,6 +127,17 @@ const HealthDataSchema = z.object({
       "intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's " +
       "comment for why (avoids burning API credits on every health check).",
   }),
+  push: z.enum(["configured", "mock", "unconfigured"]).openapi({
+    example: "mock",
+    description:
+      "A non-fatal warning (never causes a 503): 'configured' means a real push vendor " +
+      "(Expo) is in effect - EXPO_ACCESS_TOKEN is set (or PUSH_PROVIDER explicitly picked it). " +
+      "'mock' means push sends are only logged, never actually delivered - either no token is " +
+      "configured yet (there's no mobile app to push to as of Phase 7) or PUSH_PROVIDER=mock was " +
+      "set explicitly. 'unconfigured' means PUSH_PROVIDER=expo was explicitly set but " +
+      "EXPO_ACCESS_TOKEN is missing - a real misconfiguration, distinct from the intentional " +
+      "'mock' fallback. Never a live vendor call - see getPushProviderKind's comment.",
+  }),
   inngest: z.enum(["ok", "unconfigured"]).openapi({
     example: "ok",
     description:
@@ -179,6 +191,13 @@ function clerkInstanceHost(publishableKey: string): string | null {
 function checkMarketDataProvider(): "configured" | "mock" | "unconfigured" {
   if (env.MARKET_DATA_PROVIDER === "twelvedata" && !env.TWELVEDATA_API_KEY) return "unconfigured";
   return getMarketDataProviderKind() === "twelvedata" ? "configured" : "mock";
+}
+
+// Same shape/reasoning as checkMarketDataProvider - config-only, no live
+// vendor call.
+function checkPushProvider(): "configured" | "mock" | "unconfigured" {
+  if (env.PUSH_PROVIDER === "expo" && !env.EXPO_ACCESS_TOKEN) return "unconfigured";
+  return getPushProviderKind() === "expo" ? "configured" : "mock";
 }
 
 function checkStorageConfigured(): "ok" | "missing" {
@@ -406,6 +425,7 @@ export const GET = withErrors(async () => {
     storage: checkStorageConfigured(),
     relaySecret: env.RELAY_SHARED_SECRET ? ("ok" as const) : ("missing" as const),
     market: checkMarketDataProvider(),
+    push: checkPushProvider(),
     redis,
     worldsMissingBossQuiz,
     tradingUnlockWorldMissing,

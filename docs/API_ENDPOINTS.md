@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.1.0) on 2026-09-30.
+> Generated from `openapi/openapi.json` (version 1.2.0) on 2026-10-04.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -118,6 +118,23 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/arena/competitions/current/me` — Get my status in the current Monthly Competition (AR-15)
 - `GET /api/v1/arena/competitions/current/leaderboard` — Get the current Monthly Competition's ranked board (AR-16)
 
+**Doubt Zone**
+
+- `POST /api/v1/doubt-zone/threads` — Open or resume a Doubt Zone AI thread (Phase 7 live 'Ask Lamma AI' mentor)
+- `GET /api/v1/doubt-zone/threads/{id}/messages` — Get a Doubt Zone thread's message history
+- `POST /api/v1/doubt-zone/threads/{id}/messages` — Send a message to the Doubt Zone AI mentor and stream its reply
+- `POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report` — Report a Doubt Zone AI reply
+
+**Notifications**
+
+- `POST /api/v1/me/push-token` — Register this device's Expo push token
+- `DELETE /api/v1/me/push-token` — Unregister this device's Expo push token
+- `GET /api/v1/me/notification-prefs` — Get my notification preferences (SET-07)
+- `PATCH /api/v1/me/notification-prefs` — Update my notification preferences
+- `GET /api/v1/me/notifications` — Get my notification feed (PR-29)
+- `POST /api/v1/me/notifications/mark-read` — Mark my notifications as read (PR-29)
+- `GET /api/v1/me/notifications/unread-count` — Get my unread notification count (WH-18)
+
 ## System
 
 ### `GET /api/v1/health`
@@ -149,6 +166,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
     "tradingUnlockWorldMissing": false,
     "tradingHalt": "ok",
     "market": "mock",
+    "push": "mock",
     "inngest": "ok",
     "timestamp": "2026-01-01T00:00:00.000Z"
   }
@@ -5776,6 +5794,679 @@ Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd o
   "error": {
     "code": "FORBIDDEN",
     "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+## Doubt Zone
+
+### `POST /api/v1/doubt-zone/threads`
+
+**Open or resume a Doubt Zone AI thread (Phase 7 live 'Ask Lamma AI' mentor)**
+
+Idempotent by (learner, context): passing the same lessonId (or, for the standalone entry point, the same mentorId with no lessonId) returns the existing thread rather than creating a new one. lessonId set derives the mentor from that lesson's world server-side (never trusted from the client); lessonId omitted requires mentorId, since the client already knows which mentor it's showing. disclosureMessage is the upfront, non-scary notice - this is an AI, not a person, can't give investment advice, and a flagged message may be reviewed by a Finlamma team member - already resolved to the caller's own language.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `lessonId` | string | no | Open from an in-lesson Doubt Zone node. |
+| `mentorId` | string | no | Required when lessonId is omitted (the standalone Doubt Zone entry point). |
+
+```json
+{
+  "lessonId": "00000000-0000-0000-0000-000000000000",
+  "mentorId": "00000000-0000-0000-0000-000000000000"
+}
+```
+
+**Responses**
+
+- **201** — The (possibly pre-existing) thread
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "mentorId": "00000000-0000-0000-0000-000000000000",
+  "lessonId": "00000000-0000-0000-0000-000000000000",
+  "disclosureMessage": "string"
+}
+```
+
+- **400** — mentorId missing when lessonId is omitted
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "mentorId is required when lessonId is omitted"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published lesson/mentor with the given id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published mentor with this id"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/doubt-zone/threads/{id}/messages`
+
+**Get a Doubt Zone thread's message history**
+
+The caller's own thread only, newest first, cursor-paginated.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of this thread's messages
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "role": "learner",
+      "content": "string",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No thread with this id belonging to the caller
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Doubt Zone thread with this id"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/doubt-zone/threads/{id}/messages`
+
+**Send a message to the Doubt Zone AI mentor and stream its reply**
+
+The response body is always newline-delimited JSON (`application/x-ndjson`, one compact JSON object per line matching DoubtZoneStreamLine), never a single JSON object - even when the safety classifier or the advice-language output filter replaces the reply, since that still arrives as a single 'done' line on the same stream, not a different response shape. Every message runs through a safety classifier BEFORE the AI ever sees it, biased heavily toward flagging when uncertain (docs/ARCHITECTURE.md's Phase 7 kickoff decisions) - a flagged message gets a fixed, settings_kv-driven safety redirect instead of a normal reply, and is queued for staff review (doubt_zone.moderate). The AI never receives the learner's name, age, email, phone, state, school or any other identifying detail - only language, the mentor's persona, and (when opened from a lesson) that lesson's own public topic.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes |  |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `content` | string | yes |  |
+
+```json
+{
+  "content": "What is a mutual fund?"
+}
+```
+
+**Responses**
+
+- **200** — A newline-delimited stream of DoubtZoneStreamLine objects: zero or more 'delta' lines followed by exactly one 'done' line. When 'done'.replaced is true, discard any accumulated 'delta' text and show replacementText instead.
+
+```json
+{
+  "type": "delta",
+  "text": "string"
+}
+```
+
+- **400** — Message is empty or too long
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Request validation failed"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No thread with this id belonging to the caller
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No Doubt Zone thread with this id"
+  }
+}
+```
+
+- **429** — Burst, daily-per-learner, or global daily message cap exceeded
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many messages - slow down and try again shortly"
+  }
+}
+```
+
+- **503** — The safety classifier or the AI model is not configured / unavailable
+
+```json
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Safety classifier call failed"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report`
+
+**Report a Doubt Zone AI reply**
+
+Flags an assistant message for staff review (doubt_zone.moderate) - same flagged-only visibility as a safety-classifier flag (docs/ARCHITECTURE.md's Phase 7 kickoff decisions). Idempotent: reporting an already-flagged message logs the report again but doesn't change anything else. Only the caller's own thread, and only an assistant-role message, can be reported.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | Thread id |
+| `messageId` | path | string | yes |  |
+
+**Responses**
+
+- **200** — Reported
+
+```json
+{
+  "reported": true
+}
+```
+
+- **400** — The message isn't an assistant reply
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Only an assistant reply can be reported"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No thread/message with this id belonging to the caller
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No message with this id in this thread"
+  }
+}
+```
+
+
+---
+
+## Notifications
+
+### `POST /api/v1/me/push-token`
+
+**Register this device's Expo push token**
+
+Idempotent - re-registering the same token (e.g. on every app open) just bumps its last-seen timestamp. A token already registered to a different account is reassigned to the caller, never duplicated.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `expoPushToken` | string | yes |  |
+| `platform` | string (ios, android) | yes |  |
+
+```json
+{
+  "expoPushToken": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
+  "platform": "ios"
+}
+```
+
+**Responses**
+
+- **200** — Registered
+
+```json
+{
+  "registered": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `DELETE /api/v1/me/push-token`
+
+**Unregister this device's Expo push token**
+
+Idempotent - unregistering a token that isn't registered (or belongs to someone else) is a no-op.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `expoPushToken` | string | yes |  |
+
+```json
+{
+  "expoPushToken": "string"
+}
+```
+
+**Responses**
+
+- **200** — Unregistered
+
+```json
+{
+  "unregistered": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/notification-prefs`
+
+**Get my notification preferences (SET-07)**
+
+quietHours is always resolved - the caller's own override if set, else the admin-configured global default (settings_kv) - so the client never needs its own copy of the default.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's prefs
+
+```json
+{
+  "enabled": true,
+  "quietHours": {
+    "startHourIst": 0,
+    "endHourIst": 0
+  },
+  "disabledCategories": [
+    "streak_risk"
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `PATCH /api/v1/me/notification-prefs`
+
+**Update my notification preferences**
+
+Every field is optional - only what's provided changes. quietHours: null clears a personal override back to the global default.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | no |  |
+| `quietHours` | object or null | no |  |
+| `disabledCategories` | array<string> | no |  |
+
+```json
+{
+  "enabled": true,
+  "quietHours": {
+    "startHourIst": 0,
+    "endHourIst": 0
+  },
+  "disabledCategories": [
+    "streak_risk"
+  ]
+}
+```
+
+**Responses**
+
+- **200** — The updated prefs
+
+```json
+{
+  "enabled": true,
+  "quietHours": {
+    "startHourIst": 0,
+    "endHourIst": 0
+  },
+  "disabledCategories": [
+    "streak_risk"
+  ]
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/notifications`
+
+**Get my notification feed (PR-29)**
+
+The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's notifications
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "kind": "streak_risk",
+      "title": "string",
+      "body": "string",
+      "data": {},
+      "readAt": "2026-01-01T00:00:00.000Z",
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/notifications/mark-read`
+
+**Mark my notifications as read (PR-29)**
+
+ids omitted: marks every currently-unread notification as read ('mark all read'). ids given: marks only those, still scoped to the caller's own notifications - an id belonging to someone else is silently ignored, never an error.
+
+**Auth:** bearerAuth
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ids` | array<string> | no |  |
+
+```json
+{
+  "ids": [
+    "00000000-0000-0000-0000-000000000000"
+  ]
+}
+```
+
+**Responses**
+
+- **200** — Marked
+
+```json
+{
+  "marked": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/notifications/unread-count`
+
+**Get my unread notification count (WH-18)**
+
+Backs the bell icon's badge count - a dedicated endpoint rather than a query flag on the feed list, so the client can poll it cheaply without paging through notifications.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's unread count
+
+```json
+{
+  "count": 0
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
   }
 }
 ```

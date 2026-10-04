@@ -14,7 +14,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { getStreak, recordStreakActivity } = await import("./repo");
+const { getStreak, listAtRiskLearningStreaks, recordStreakActivity } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 afterAll(async () => {
@@ -206,5 +206,44 @@ describe("recordStreakActivity", () => {
     const resultB = await recordStreakActivity(userB.id, "learning", "2026-01-05", FREEZES);
 
     expect(resultB.current).toBe(1); // A's activity never touched B's streak
+  });
+});
+
+describe("listAtRiskLearningStreaks", () => {
+  it("includes a learner whose last activity was yesterday and streak is active", async () => {
+    const user = await makeUser();
+    await recordStreakActivity(user.id, "learning", "2026-01-05", FREEZES);
+
+    const result = await listAtRiskLearningStreaks("2026-01-05");
+
+    expect(result.map((r) => r.userId)).toContain(user.id);
+  });
+
+  it("excludes a learner who already acted today (lastActiveDateIst is today, not yesterday)", async () => {
+    const user = await makeUser();
+    await recordStreakActivity(user.id, "learning", "2026-01-05", FREEZES);
+    await recordStreakActivity(user.id, "learning", "2026-01-06", FREEZES); // today
+
+    const result = await listAtRiskLearningStreaks("2026-01-05"); // yesterday relative to "today" = 01-06
+
+    expect(result.map((r) => r.userId)).not.toContain(user.id);
+  });
+
+  it("excludes a streak that already broke (current reset to 0 is impossible here, but a stale lastActiveDateIst further back than yesterday never matches)", async () => {
+    const user = await makeUser();
+    await recordStreakActivity(user.id, "learning", "2026-01-01", FREEZES); // long past, streak since broken in practice
+
+    const result = await listAtRiskLearningStreaks("2026-01-05"); // "yesterday" the job is checking for
+
+    expect(result.map((r) => r.userId)).not.toContain(user.id);
+  });
+
+  it("excludes a pulse_check-scope streak, even with a matching date", async () => {
+    const user = await makeUser();
+    await recordStreakActivity(user.id, "pulse_check", "2026-01-05", FREEZES);
+
+    const result = await listAtRiskLearningStreaks("2026-01-05");
+
+    expect(result.map((r) => r.userId)).not.toContain(user.id);
   });
 });

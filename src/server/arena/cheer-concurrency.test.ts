@@ -30,6 +30,13 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
+// Phase 7's cheer_received notification call in sendCheer - mocked out here
+// the same way arena/service.test.ts does, since this file's job is proving
+// the concurrency fix, not exercising the notifications pipeline (which
+// would otherwise pull in @/server/notifications/provider -> @/lib/env
+// unmocked in this real-DB integration test).
+vi.mock("@/server/notifications/service", () => ({ notifyUser: () => Promise.resolve() }));
+
 const { sendCheer } = await import("./service");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 

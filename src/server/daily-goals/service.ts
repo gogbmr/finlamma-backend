@@ -1,6 +1,10 @@
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
+import { istDateStartUtc, istDateString } from "@/lib/ist-date";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
+import { NOTIFICATION_COPY } from "@/server/notifications/copy";
+import { hasBeenNotifiedSince, notifyUser } from "@/server/notifications/service";
+import { listUserIdsActiveOnDate } from "@/server/session-time/repo";
 import { DAILY_GOAL_EVALUATORS } from "./evaluators";
 import { DAILY_GOALS_SETTINGS_KEY, DailyGoalsSettingsSchema, DEFAULT_DAILY_GOALS, type DailyGoalsSettings } from "./schemas";
 
@@ -63,4 +67,33 @@ export async function getMyDailyGoals(userId: string, at: Date = new Date()) {
       };
     }),
   );
+}
+
+// Phase 7's session_goal push notification (src/inngest/functions/
+// session-goal-notifications.ts). Daily goals have no discrete "completed"
+// event anywhere to hook (they're computed live on every read, see
+// getMyDailyGoals above) - this is a periodic re-check instead: for every
+// learner active today (listUserIdsActiveOnDate - an imperfect but
+// practical proxy, see that function's own doc comment), re-evaluate their
+// goals and notify the first time any of them is complete, deduped via
+// hasBeenNotifiedSince so a learner who stays completed all day (or the
+// job runs more than once) is never notified twice in one IST day.
+export async function notifyLearnersWithCompletedDailyGoal(at: Date = new Date()): Promise<{ notified: number }> {
+  const todayIst = istDateString(at);
+  const todayStartUtc = istDateStartUtc(at);
+  const activeUserIds = await listUserIdsActiveOnDate(todayIst);
+
+  let notified = 0;
+  for (const userId of activeUserIds) {
+    const alreadyNotified = await hasBeenNotifiedSince(userId, "session_goal", todayStartUtc);
+    if (alreadyNotified) continue;
+
+    const goals = await getMyDailyGoals(userId, at);
+    if (goals.length === 0 || !goals.some((g) => g.completed)) continue;
+
+    await notifyUser(userId, "session_goal", NOTIFICATION_COPY.session_goal);
+    notified++;
+  }
+
+  return { notified };
 }

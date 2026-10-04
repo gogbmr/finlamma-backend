@@ -315,7 +315,9 @@ skill for the full idempotency/reversal design)
   {en,hi,hx}, jargon jsonb {term,explanation}, outlet, source_url, quality_grade A|B|C
   (auto-heuristic, `src/server/news/grading.ts`, staff-overridable via quality_grade_override),
   advice_like_warnings jsonb — the existing instrument-tip guardrail reused against AI drafts,
-  status draft|published|hidden) — AI-drafted (Anthropic, via a forced tool-use call), always a
+  status draft|published|hidden, notified_at nullable — Phase 7's market_news push broadcast job
+  sets this once a published story has been fanned out, so a retried/rescheduled run never
+  notifies the same story twice) — AI-drafted (Anthropic, via a forced tool-use call), always a
   draft until a staff member with `news.publish` toggles it live (CLAUDE.md rule 11)
 - `news_editions` (date UNIQUE, question_ids jsonb array, published) — one per IST calendar day,
   built lazily on first Pulse Check request from a random selection of published,
@@ -369,9 +371,33 @@ skill for the full idempotency/reversal design)
   `user_about_me_chips` (user_id, chip_id — a learner's selection, capped at 3, replaced whole each
   edit, unique on (user_id, chip_id)) — AR-20's public-profile chips, never free text
   (`docs/ARCHITECTURE.md` D36)
-- `push_tokens`, `notification_prefs`, `notifications`
-- `doubt_threads`, `doubt_messages` — Phase 7's live AI mentor; the in-lesson "Doubt Zone" node in
-  Phase 2b is scripted content (`lessons.content`), not these tables (see PRODUCT_SPEC.md §1)
+- `push_tokens` (user_id, expo_push_token unique, platform ios|android, last_seen_at — one row per
+  device; a token moving accounts on reinstall is reassigned via onConflictDoUpdate, never
+  duplicated), `notification_prefs` (user_id unique, enabled — SET-07's single on/off toggle,
+  quiet_hours jsonb {startHourIst,endHourIst} nullable override of `settings_kv`'s global default,
+  disabled_categories jsonb NotificationKind[] — per-kind opt-out layered on top of `enabled`,
+  Phase 7 Checkpoint 6 addition beyond FEATURE_MAP's original single-toggle scope),
+  `notifications` (user_id, kind enum: streak_risk|boss_battle|market_news|session_goal|
+  cheer_received|league_rank_change, title/body jsonb {en,hi,hx}, data jsonb — loose per-kind
+  deep-link payload, read_at nullable; WH-20's 30-day auto-expiry is a retention job querying
+  created_at, not a stored column)
+- `doubt_threads` (user_id, mentor_id, lesson_id nullable — null for the standalone Doubt Zone entry
+  point, set for an in-lesson `doubt_zone` node thread, last_message_at), `doubt_messages`
+  (thread_id, role learner|assistant, content, flagged, flagged_category enum:
+  self_harm_or_suicide|abuse_or_neglect|other_wellbeing_concern|classifier_unavailable|
+  learner_reported|advice_language, flagged_reason nullable free text, reviewed_at, reviewed_by —
+  the last two track staff moderation-queue review independently of the flag itself: reviewing
+  never clears `flagged`/`flagged_category`/`flagged_reason`, which stay as the permanent record of
+  what tripped) — Phase 7's live AI mentor;
+  the in-lesson "Doubt Zone" node in Phase 2b is scripted content (`lessons.content`), not these
+  tables (see PRODUCT_SPEC.md §1). `flagged`/`flagged_category`/`flagged_reason` implement the
+  Phase 7 kickoff's flagged-only staff-visibility decision (`docs/ARCHITECTURE.md` D63/D64): full
+  transcripts are never staff-browsable; a message is visible only once the safety classifier trips
+  on it (or fails to run at all - `classifier_unavailable`), the output-filter circuit breaker cuts
+  a reply, or a learner reports it, gated by the `doubt_zone.moderate` permission. The moderation
+  LIST shows only `flagged_category` (coarse, never free text); `flagged_reason` (which can
+  paraphrase/quote what the learner wrote) is only ever returned by the same logged reveal action
+  as `content` (`/phase-audit 7` finding, D64)
 
 **Monetisation**
 - `entitlements` (user_id, entitlement, source revenuecat|razorpay, expires_at, raw)

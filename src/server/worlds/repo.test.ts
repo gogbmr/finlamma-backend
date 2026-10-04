@@ -16,6 +16,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   deleteWorldRow,
+  getNextPublishedWorldByOrder,
   getWorldById,
   hotfixWorldRow,
   insertDraftWorld,
@@ -304,6 +305,30 @@ describe("listPublishedWorldsByMentorId", () => {
     const result = await listPublishedWorldsByMentorId(mentor.id);
 
     expect(result).toEqual([]);
+  });
+});
+
+describe("getNextPublishedWorldByOrder", () => {
+  it("returns the next published world by position, skipping an unpublished one in between", async () => {
+    const mentor = await makeMentor();
+    const w1 = await insertDraftWorld(await draftInput({ mentorId: mentor.id }));
+    await publishWorldRow(w1.id, staffId);
+    const w2Draft = await insertDraftWorld(await draftInput({ mentorId: mentor.id, order: w1.order + 1 })); // never published
+    const w3 = await insertDraftWorld(await draftInput({ mentorId: mentor.id, order: w1.order + 2 }));
+    await publishWorldRow(w3.id, staffId);
+    void w2Draft;
+
+    const result = await getNextPublishedWorldByOrder(w1.order);
+
+    expect(result?.id).toBe(w3.id);
+  });
+
+  it("returns null when the given world is the last published one", async () => {
+    const mentor = await makeMentor();
+    const w1 = await insertDraftWorld(await draftInput({ mentorId: mentor.id }));
+    await publishWorldRow(w1.id, staffId);
+
+    expect(await getNextPublishedWorldByOrder(w1.order)).toBeNull();
   });
 });
 

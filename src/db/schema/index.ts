@@ -27,3 +27,5 @@ export * from "./news";
 export * from "./pulse_check";
 export * from "./arena";
 export * from "./competitions";
+export * from "./notifications";
+export * from "./doubt_zone";

@@ -127,6 +127,11 @@ vi.mock("@/lib/settings", () => ({
     mockSetSettingJson(key, value, description),
 }));
 
+const mockNotifyUser = vi.fn();
+vi.mock("@/server/notifications/service", () => ({
+  notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
+}));
+
 import {
   createAboutMeChipForAdmin,
   deleteAboutMeChipForAdmin,
@@ -396,9 +401,10 @@ describe("sendCheer", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "arena.cheer_sent", actorId: "u1", targetId: "u2" }),
     );
+    expect(mockNotifyUser).toHaveBeenCalledWith("u2", "cheer_received", expect.anything());
   });
 
-  it("is a no-op (no additional credit) when already cheered today", async () => {
+  it("is a no-op (no additional credit, no notification) when already cheered today", async () => {
     mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null, preferences: { cheersEnabled: true } });
     mockInsertCheerIfNew.mockResolvedValueOnce(null); // conflict - already cheered today
 
@@ -407,6 +413,7 @@ describe("sendCheer", () => {
     expect(result).toEqual({ alreadyCheeredToday: true, xpAwarded: 0, dailyCapReached: false });
     expect(mockInsertXpEventIfNew).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
+    expect(mockNotifyUser).not.toHaveBeenCalled();
   });
 
   it("clamps the award to what remains of the receiver's daily cap", async () => {
@@ -696,6 +703,8 @@ describe("settleArenaLeaguesForWeek", () => {
     );
     expect(mockInsertVmoneyLedgerEntryIfNew).toHaveBeenCalledTimes(1); // u2 (demote) gets none
     expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+    expect(mockNotifyUser).toHaveBeenCalledWith("u1", "league_rank_change", expect.anything()); // promote only
+    expect(mockNotifyUser).not.toHaveBeenCalledWith("u2", expect.anything(), expect.anything()); // never demote
   });
 
   it("D55: pays only the single best zone across scopes, never summed", async () => {
@@ -778,6 +787,7 @@ describe("settleArenaLeaguesForWeek", () => {
     expect(result.usersSettled).toBe(0);
     expect(mockInsertVmoneyLedgerEntryIfNew).not.toHaveBeenCalled();
     expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+    expect(mockNotifyUser).not.toHaveBeenCalled();
   });
 
   it("D55: safe zone pays 0 VM by default but still records a settlement row", async () => {
@@ -806,6 +816,7 @@ describe("settleArenaLeaguesForWeek", () => {
       expect.anything(),
       expect.objectContaining({ userId: "u2" }),
     );
+    expect(mockNotifyUser).not.toHaveBeenCalledWith("u2", expect.anything(), expect.anything()); // safe zone, not promote
   });
 
   it("awards the configured crest badge for a promote-zone payout, inside the same transaction", async () => {

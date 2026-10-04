@@ -1,0 +1,2 @@
+CREATE TYPE "public"."doubt_message_flag_category" AS ENUM('self_harm_or_suicide', 'abuse_or_neglect', 'other_wellbeing_concern', 'classifier_unavailable', 'learner_reported', 'advice_language');--> statement-breakpoint
+ALTER TABLE "doubt_messages" ADD COLUMN "flagged_category" "doubt_message_flag_category";

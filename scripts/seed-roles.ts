@@ -57,6 +57,13 @@ const PERMISSIONS = [
       "Every view of a parent's contact details is logged.",
   },
   {
+    key: "doubt_zone.moderate",
+    description:
+      "View and act on flagged Doubt Zone AI messages only - a message the safety classifier " +
+      "flagged, or one a learner reported. Full, unflagged conversation transcripts are never " +
+      "browsable by staff (Phase 7 kickoff decision, docs/ARCHITECTURE.md). Every view is logged.",
+  },
+  {
     key: "mentor.manage",
     description:
       "Create mentors and edit a mentor's draft fields (name, bio, persona, art). " +
@@ -188,8 +195,9 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "trading.ops",
     "news.manage",
     "news.publish",
+    "doubt_zone.moderate",
   ],
-  user_manager: ["consent.view"],
+  user_manager: ["consent.view", "doubt_zone.moderate"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage", "news.manage"],
   content_publisher: [
     "mentor.publish",

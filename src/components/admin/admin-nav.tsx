@@ -4,6 +4,7 @@ import {
   Award,
   BookOpen,
   FileText,
+  Flag,
   Gauge,
   Gift,
   Globe2,
@@ -35,6 +36,7 @@ export type AdminNavVisibility = {
   questions: boolean;
   mentors: boolean;
   consent: boolean;
+  doubtZoneModeration: boolean;
   staff: boolean;
   activityLog: boolean;
   legal: boolean;
@@ -71,6 +73,12 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
       label: "People",
       items: [
         { href: "/admin/consent", label: "Consent", icon: ShieldCheck, visible: v.consent },
+        {
+          href: "/admin/doubt-zone",
+          label: "Doubt Zone",
+          icon: Flag,
+          visible: v.doubtZoneModeration,
+        },
         { href: "/admin/staff", label: "Staff", icon: Users, visible: v.staff },
         { href: "/admin/activity-log", label: "Activity Log", icon: ScrollText, visible: v.activityLog },
       ],

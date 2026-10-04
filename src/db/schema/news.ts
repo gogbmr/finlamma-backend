@@ -91,6 +91,12 @@ export const newsStories = pgTable(
     status: newsStoryStatusEnum("status").default("draft").notNull(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishedBy: uuid("published_by").references(() => staffMembers.id, { onDelete: "set null" }),
+    // Phase 7's market_news push notification: set once the broadcast
+    // Inngest job (src/inngest/functions/news-notification-broadcast.ts)
+    // has fanned this story out, so a retried/rescheduled run never
+    // notifies the same story twice. Null for every story published
+    // before Phase 7 existed and for any story never published.
+    notifiedAt: timestamp("notified_at", { withTimezone: true }),
   },
   (t) => [
     index("news_stories_status_idx").on(t.status),
