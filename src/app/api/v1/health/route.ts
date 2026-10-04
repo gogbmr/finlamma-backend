@@ -138,6 +138,20 @@ const HealthDataSchema = z.object({
       "EXPO_ACCESS_TOKEN is missing - a real misconfiguration, distinct from the intentional " +
       "'mock' fallback. Never a live vendor call - see getPushProviderKind's comment.",
   }),
+  appUrl: z.enum(["ok", "localhost", "empty", "mismatched_host"]).openapi({
+    example: "ok",
+    description:
+      "A non-fatal warning (never causes a 503): APP_URL feeds every parent-consent/withdraw/" +
+      "re-approval email link (src/server/onboarding/service.ts) and this deployment's own " +
+      "metadataBase/robots.txt/sitemap.xml - a wrong value silently breaks all of them with " +
+      "nothing else catching it (the exact gap found at Phase 9 production verification, " +
+      "2026-10-04). 'empty' means APP_URL couldn't be parsed to a hostname at all. 'localhost' " +
+      "means it's still pointed at the local-dev placeholder from .env.example. " +
+      "'mismatched_host' means this is a real Vercel deployment and APP_URL's hostname doesn't " +
+      "match the host Vercel actually deployed to (VERCEL_PROJECT_PRODUCTION_URL in production, " +
+      "VERCEL_URL in preview) - e.g. a stale custom-domain value left over from before a domain " +
+      "change. Config-only, no network call.",
+  }),
   inngest: z.enum(["ok", "unconfigured"]).openapi({
     example: "ok",
     description:
@@ -226,6 +240,38 @@ function checkClerkKeysNotSwapped(): "ok" | "swapped" | "unconfigured" {
   if (!staffHost || !consumerHost) return "unconfigured";
 
   return staffHost === consumerHost ? "swapped" : "ok";
+}
+
+// Config-only, no network call. Non-fatal (never a 503) like every other
+// warning field here - deliberately, since a wrong APP_URL doesn't make the
+// API itself unhealthy, it silently breaks every consent/withdraw/
+// re-approval email link and this deployment's own metadataBase/robots.txt/
+// sitemap.xml instead, with nothing else catching it until a human happens
+// to click a real link or inspect generated page output (which is exactly
+// how this was first found - Phase 9 production verification, 2026-10-04).
+function checkAppUrl(): "ok" | "localhost" | "empty" | "mismatched_host" {
+  let hostname: string;
+  try {
+    hostname = new URL(env.APP_URL).hostname;
+  } catch {
+    return "empty";
+  }
+  if (!hostname) return "empty";
+  if (hostname === "localhost" || hostname === "127.0.0.1") return "localhost";
+
+  // Only a real Vercel deployment has a known expected host to compare
+  // against - local dev's APP_URL legitimately IS localhost (already
+  // caught above), and there's nothing to verify it against otherwise.
+  if (!env.VERCEL_ENV) return "ok";
+
+  const expectedHost =
+    env.VERCEL_ENV === "production" ? env.VERCEL_PROJECT_PRODUCTION_URL : env.VERCEL_URL;
+  // Fails open (same as every other config-only check here) if Vercel
+  // hasn't surfaced the expected host either - this field exists to catch
+  // APP_URL being wrong, not to require a second var just to confirm it's right.
+  if (!expectedHost) return "ok";
+
+  return hostname === expectedHost ? "ok" : "mismatched_host";
 }
 
 type MigrationsCheck = {
@@ -430,6 +476,7 @@ export const GET = withErrors(async () => {
     worldsMissingBossQuiz,
     tradingUnlockWorldMissing,
     tradingHalt,
+    appUrl: checkAppUrl(),
     inngest,
     timestamp: new Date().toISOString(),
   });

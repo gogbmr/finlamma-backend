@@ -28,6 +28,9 @@ const mockEnv = vi.hoisted(() => ({
   VERCEL_ENV: undefined as string | undefined,
   TWELVEDATA_API_KEY: undefined as string | undefined,
   MARKET_DATA_PROVIDER: undefined as "mock" | "twelvedata" | undefined,
+  APP_URL: "https://finlamma-backend-rho.vercel.app",
+  VERCEL_URL: undefined as string | undefined,
+  VERCEL_PROJECT_PRODUCTION_URL: undefined as string | undefined,
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
@@ -111,6 +114,11 @@ beforeEach(() => {
   // No global halt by default - existing tests below don't need to know
   // about the tradingHalt warning field at all.
   mockGetOrCreateMarketControls.mockReset().mockResolvedValue({ globalHalt: false });
+  // A real, non-localhost URL by default - existing tests below don't need
+  // to know about the appUrl warning field at all.
+  mockEnv.APP_URL = "https://finlamma-backend-rho.vercel.app";
+  mockEnv.VERCEL_URL = undefined;
+  mockEnv.VERCEL_PROJECT_PRODUCTION_URL = undefined;
 });
 
 // The route calls db.execute() twice: once for the `select 1` ping, once
@@ -146,6 +154,7 @@ describe("GET /api/v1/health", () => {
     expect(body.data.redis).toBe("ok");
     expect(body.data.worldsMissingBossQuiz).toEqual([]);
     expect(body.data.inngest).toBe("ok");
+    expect(body.data.appUrl).toBe("ok");
     expect(typeof body.data.timestamp).toBe("string");
   });
 
@@ -525,6 +534,92 @@ describe("GET /api/v1/health", () => {
 
       expect(res.status).toBe(200);
       expect((await res.json()).data.tradingUnlockWorldMissing).toBe(false);
+    });
+  });
+
+  describe("appUrl", () => {
+    it("reports 'localhost' (not a 503) when APP_URL is still the local-dev placeholder", async () => {
+      mockEnv.APP_URL = "http://localhost:3000";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.appUrl).toBe("localhost");
+    });
+
+    it("reports 'localhost' for the 127.0.0.1 form too", async () => {
+      mockEnv.APP_URL = "http://127.0.0.1:3000";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.appUrl).toBe("localhost");
+    });
+
+    it("reports 'empty' (not a 503) when APP_URL can't be parsed to a hostname at all", async () => {
+      mockEnv.APP_URL = "not-a-url";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200);
+      expect((await res.json()).data.appUrl).toBe("empty");
+    });
+
+    it("reports 'ok' outside Vercel even with no expected host to compare against", async () => {
+      mockEnv.APP_URL = "https://finlamma-backend-rho.vercel.app";
+      mockEnv.VERCEL_ENV = undefined;
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.appUrl).toBe("ok");
+    });
+
+    it("reports 'mismatched_host' in production when APP_URL's host doesn't match VERCEL_PROJECT_PRODUCTION_URL", async () => {
+      mockEnv.VERCEL_ENV = "production";
+      mockEnv.VERCEL_PROJECT_PRODUCTION_URL = "finlamma-backend-rho.vercel.app";
+      mockEnv.APP_URL = "https://some-stale-custom-domain.example.com";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect(res.status).toBe(200); // non-fatal, never a 503
+      expect((await res.json()).data.appUrl).toBe("mismatched_host");
+    });
+
+    it("reports 'ok' in production when APP_URL's host matches VERCEL_PROJECT_PRODUCTION_URL", async () => {
+      mockEnv.VERCEL_ENV = "production";
+      mockEnv.VERCEL_PROJECT_PRODUCTION_URL = "finlamma-backend-rho.vercel.app";
+      mockEnv.APP_URL = "https://finlamma-backend-rho.vercel.app";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.appUrl).toBe("ok");
+    });
+
+    it("compares against VERCEL_URL (not VERCEL_PROJECT_PRODUCTION_URL) on a preview deployment", async () => {
+      mockEnv.VERCEL_ENV = "preview";
+      mockEnv.VERCEL_URL = "finlamma-backend-git-feature-abc123.vercel.app";
+      mockEnv.APP_URL = "https://finlamma-backend-rho.vercel.app"; // production's own URL, wrong for this preview
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.appUrl).toBe("mismatched_host");
+    });
+
+    it("fails open to 'ok' on Vercel when the expected host itself isn't available to compare against", async () => {
+      mockEnv.VERCEL_ENV = "production";
+      mockEnv.VERCEL_PROJECT_PRODUCTION_URL = undefined;
+      mockEnv.APP_URL = "https://finlamma-backend-rho.vercel.app";
+      mockHealthyDb();
+
+      const res = await GET();
+
+      expect((await res.json()).data.appUrl).toBe("ok");
     });
   });
 });
