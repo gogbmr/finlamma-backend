@@ -2,6 +2,25 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-04 — v1.4.0
+
+Minor bump: purely additive, 1 new operation, nothing removed and nothing changed incompatibly
+since v1.3.0. Covers Phase 9 (Analytics & homepage). As with earlier phases, this endpoint was
+already built and committed via ad-hoc `pnpm contract` runs across Phase 9's checkpoints and its
+post-merge audit fix — this is the first changelog record of it and the first version bump since
+v1.3.0 (the merge itself landed without `/publish-contract` being run; this entry closes that gap).
+
+**Analytics (`docs/ARCHITECTURE.md` D69)**
+- `POST /api/track` — public, unauthenticated homepage analytics beacon. Forwards a fixed, closed
+  set of marketing-homepage events (`homepage_viewed`, `app_store_link_clicked`) to PostHog
+  server-side; no client ever holds a PostHog key. Rate-limited per IP. A post-merge audit fix
+  (2026-10-04) added a validation rule rejecting `platform` on any event other than
+  `app_store_link_clicked` — a 400, not a shape change.
+
+**Not a shape change, but worth recording here**: `POST /api/v1/me/legal/accept`'s behavior gained
+a `signup_completed` analytics event fired on the caller's actual limited→full-access transition
+(never on a routine re-accept) - no change to its request/response shape.
+
 ## 2026-10-04 — v1.3.0
 
 Minor bump: purely additive, 2 new operations plus 2 new schemas, nothing removed and nothing
