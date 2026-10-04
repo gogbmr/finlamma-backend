@@ -1,8 +1,22 @@
 import type { Metadata } from "next";
+import {
+  Ban,
+  BookOpen,
+  Coins,
+  Crown,
+  EyeOff,
+  GraduationCap,
+  LineChart,
+  ShieldCheck,
+  Sparkles,
+  Trophy,
+  UserCheck,
+} from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { AppStoreBadges } from "@/components/marketing/app-store-badges";
 import { HomepageAnalyticsBeacon } from "@/components/marketing/homepage-analytics-beacon";
+import { Reveal } from "@/components/marketing/reveal";
 import { listPublishedWorlds } from "@/server/worlds/repo";
 
 // Worlds are staff-created with no fixed count (D25, docs/ARCHITECTURE.md) -
@@ -32,11 +46,17 @@ export const metadata: Metadata = {
   },
 };
 
+const WHAT_ICONS = {
+  learn: BookOpen,
+  earn: Coins,
+  practice: ShieldCheck,
+};
+
 const HOW_IT_WORKS = [
-  { step: "Learn", desc: "Short video and text lessons, one idea at a time." },
-  { step: "Quiz", desc: "Server-timed quizzes check what stuck." },
-  { step: "Earn", desc: "Earn XP and virtual money (V Money) for progress." },
-  { step: "Simulate", desc: "Practice paper trading on real market data — zero real money at risk." },
+  { step: "Learn", desc: "Short video and text lessons, one idea at a time.", icon: BookOpen },
+  { step: "Quiz", desc: "Server-timed quizzes check what stuck.", icon: Trophy },
+  { step: "Earn", desc: "Earn XP and virtual money (V Money) for progress.", icon: Sparkles },
+  { step: "Simulate", desc: "Practice paper trading on real market data — zero real money at risk.", icon: LineChart },
 ];
 
 const FAQS = [
@@ -68,43 +88,67 @@ export default async function HomePage() {
   return (
     <div className="flex flex-1 flex-col">
       <HomepageAnalyticsBeacon />
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-2">
-            <Image src="/brand/fmark.png" alt="" width={28} height={38} priority />
-            <span className="text-lg font-bold text-brand-violet-900">FinLamma</span>
-          </div>
-          <span className="rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-            Coming soon
-          </span>
-        </div>
-      </header>
 
       <main className="flex-1">
-        {/* Hero */}
-        <section className="bg-marketing-deep-950 text-white">
-          <div className="mx-auto flex w-full max-w-6xl flex-col-reverse items-center gap-8 px-4 py-14 sm:px-6 md:flex-row md:gap-12 md:py-20">
+        {/* Hero - the energetic, teen-facing zone (D71 brief: marketing-deep
+            navy + gold are reserved for this zone only, never /admin). A
+            radial gold glow + two blurred colour blobs give it depth without
+            a background image to download; the mascot's float animation is
+            the only non-essential motion above the fold, deliberately - see
+            .mascot-float / prefers-reduced-motion in globals.css. The header
+            lives inside the hero (transparent, light logo) instead of a
+            separate white bar above it, so the page opens as one confident
+            scene instead of a strip of chrome then a banner. */}
+        <section className="relative overflow-hidden bg-marketing-deep-950 text-white">
+          <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6">
+            <div className="flex items-center gap-2">
+              <Image src="/brand/fmark-light.png" alt="" width={28} height={38} priority />
+              <span className="text-lg font-bold text-white">FinLamma</span>
+            </div>
+            <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-white/90">
+              Coming soon
+            </span>
+          </header>
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 50% 45% at 82% 15%, color-mix(in srgb, var(--marketing-gold) 30%, transparent), transparent)",
+            }}
+          />
+          <div
+            className="pointer-events-none absolute top-1/3 -left-24 h-72 w-72 rounded-full opacity-30 blur-3xl"
+            style={{ background: "var(--brand-violet-600)" }}
+          />
+          <div className="relative mx-auto flex w-full max-w-6xl flex-col-reverse items-center gap-10 px-4 pt-8 pb-16 sm:px-6 md:flex-row md:gap-12 md:pt-12 md:pb-24">
             <div className="flex-1 text-center md:text-left">
-              <h1 className="text-3xl leading-tight font-bold sm:text-4xl md:text-5xl">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-marketing-gold">
+                ✨ India&apos;s next generation of money-smart kids
+              </span>
+              <h1 className="mt-5 text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl md:text-6xl">
                 Learn Finance.
                 <br />
                 Build Freedom.
               </h1>
-              <p className="mt-4 max-w-md text-base text-white/80 sm:text-lg md:mx-0 mx-auto">
+              <p className="mx-auto mt-5 max-w-md text-base text-white/75 sm:text-lg md:mx-0">
                 Finlamma teaches Indian students real financial skills through bite-sized
                 lessons, quizzes, and paper trading practice on real market data — with virtual
                 money, not real money.
               </p>
               <AppStoreBadges />
             </div>
-            <div className="shrink-0">
+            <div className="relative shrink-0">
+              <div
+                className="pointer-events-none absolute inset-0 -z-10 rounded-full opacity-40 blur-3xl"
+                style={{ background: "var(--marketing-gold)" }}
+              />
               <Image
                 src="/brand/mascot-hero.png"
                 alt="Lamma, the Finlamma mascot, holding a stack of books"
                 width={450}
                 height={1242}
                 priority
-                className="h-64 w-auto sm:h-80 md:h-[28rem]"
+                className="mascot-float h-72 w-auto drop-shadow-2xl sm:h-96 md:h-128"
               />
             </div>
           </div>
@@ -112,49 +156,81 @@ export default async function HomePage() {
 
         {/* What is Finlamma */}
         <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 md:py-20">
-          <div className="mx-auto max-w-2xl text-center">
+          <Reveal className="mx-auto max-w-2xl text-center">
             <h2 className="text-2xl font-bold text-foreground sm:text-3xl">What is Finlamma?</h2>
             <p className="mt-3 text-muted-foreground">
               A gamified financial-literacy app that turns money lessons into a game — built for
               students, and safe for parents.
             </p>
-          </div>
+          </Reveal>
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {[
-              { title: "Learn by doing", desc: "Short lessons and quizzes across a series of worlds, from the basics of money to markets." },
-              { title: "Earn as you go", desc: "XP and virtual V Money reward progress — never real currency." },
-              { title: "Practice safely", desc: "Paper trading on real market data, with zero real money at risk." },
-            ].map((f) => (
-              <div key={f.title} className="rounded-xl border border-border bg-card p-6">
-                <h3 className="font-semibold text-foreground">{f.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{f.desc}</p>
-              </div>
+              { icon: WHAT_ICONS.learn, title: "Learn by doing", desc: "Short lessons and quizzes across a series of worlds, from the basics of money to markets." },
+              { icon: WHAT_ICONS.earn, title: "Earn as you go", desc: "XP and virtual V Money reward progress — never real currency." },
+              { icon: WHAT_ICONS.practice, title: "Practice safely", desc: "Paper trading on real market data, with zero real money at risk." },
+            ].map((f, i) => (
+              <Reveal key={f.title} delayMs={i * 100}>
+                <div className="h-full rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
+                    <f.icon className="h-5 w-5" aria-hidden />
+                  </div>
+                  <h3 className="mt-4 font-semibold text-foreground">{f.title}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{f.desc}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </section>
 
         {/* World journey - staff decide how many worlds exist (D25); this
-            renders whatever is currently published, in order. */}
+            renders whatever is currently published, in order. A connected
+            vertical path (node + line on the left, card to the right, same
+            on every breakpoint - a zigzag looked more "game map" in theory
+            but broke the one thing that actually sells the metaphor: the
+            line has to visibly touch every node) rather than a plain grid.
+            The last node gets the gold "boss" ring, matching the
+            prototype's own Boss Quiz framing. */}
         {publishedWorlds.length > 0 && (
-          <section className="bg-secondary/40 py-14 md:py-20">
-            <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-              <div className="mx-auto max-w-2xl text-center">
-                <h2 className="text-2xl font-bold text-foreground sm:text-3xl">The world journey</h2>
-                <p className="mt-3 text-muted-foreground">
+          <section className="relative overflow-hidden bg-marketing-deep-950 py-16 text-white md:py-24">
+            <div
+              className="pointer-events-none absolute top-0 right-0 h-96 w-96 rounded-full opacity-20 blur-3xl"
+              style={{ background: "var(--marketing-gold)" }}
+            />
+            <div className="relative mx-auto w-full max-w-xl px-4 sm:px-6">
+              <Reveal className="text-center">
+                <h2 className="text-2xl font-bold sm:text-3xl">The world journey</h2>
+                <p className="mt-3 text-white/70">
                   Every learner moves through the same worlds, in order — each one unlocked by
-                  passing the world before it.
+                  clearing the Boss Quiz before it.
                 </p>
-              </div>
-              <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {publishedWorlds.map((w, i) => (
-                  <li key={w.id} className="rounded-xl border border-border bg-card p-5">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
-                      {i + 1}
-                    </span>
-                    <h3 className="mt-3 font-semibold text-foreground">{w.title.en}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">{w.tagline.en}</p>
-                  </li>
-                ))}
+              </Reveal>
+              <ol className="relative mt-14">
+                <div
+                  aria-hidden
+                  className="absolute top-2 bottom-2 left-5 w-px bg-linear-to-b from-white/30 via-white/10 to-transparent"
+                />
+                {publishedWorlds.map((w, i) => {
+                  const isLast = i === publishedWorlds.length - 1;
+                  return (
+                    <Reveal key={w.id} delayMs={Math.min(i, 6) * 80}>
+                      <li className="relative mb-6 flex items-start gap-5 last:mb-0">
+                        <span
+                          className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+                            isLast
+                              ? "bg-marketing-gold text-marketing-deep-950 ring-4 ring-marketing-gold/25"
+                              : "bg-brand-violet-600 text-white ring-4 ring-brand-violet-600/25"
+                          }`}
+                        >
+                          {isLast ? <Crown className="h-4 w-4" aria-hidden /> : i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1 rounded-xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm">
+                          <h3 className="font-semibold text-white">{w.title.en}</h3>
+                          <p className="mt-1 text-sm text-white/65">{w.tagline.en}</p>
+                        </div>
+                      </li>
+                    </Reveal>
+                  );
+                })}
               </ol>
             </div>
           </section>
@@ -162,40 +238,56 @@ export default async function HomePage() {
 
         {/* How it works */}
         <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 md:py-20">
-          <div className="mx-auto max-w-2xl text-center">
+          <Reveal className="mx-auto max-w-2xl text-center">
             <h2 className="text-2xl font-bold text-foreground sm:text-3xl">How it works</h2>
-          </div>
+          </Reveal>
           <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {HOW_IT_WORKS.map((s, i) => (
-              <div key={s.step} className="relative rounded-xl border border-border bg-card p-6">
-                <span className="text-xs font-semibold tracking-wider text-primary uppercase">
-                  Step {i + 1}
-                </span>
-                <h3 className="mt-1 font-semibold text-foreground">{s.step}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{s.desc}</p>
-              </div>
+              <Reveal key={s.step} delayMs={i * 80}>
+                <div className="relative h-full rounded-2xl border border-border bg-card p-6 shadow-sm">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
+                    <s.icon className="h-5 w-5" aria-hidden />
+                  </div>
+                  <span className="mt-4 block text-xs font-semibold tracking-wider text-primary uppercase">
+                    Step {i + 1}
+                  </span>
+                  <h3 className="mt-1 font-semibold text-foreground">{s.step}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{s.desc}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </section>
 
-        {/* Safety & parents */}
-        <section className="bg-secondary/40 py-14 md:py-20">
+        {/* Safety & parents - the deliberately calm, credible zone. A hard
+            visual seam (top border + a plain background, no lavender tint,
+            no gold/navy) marks the tonal shift away from the energetic
+            sections above - parents reading this should feel like they've
+            turned a page, not scrolled further down the same poster. */}
+        <section className="border-t border-border bg-background py-20 md:py-28">
           <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-            <div className="mx-auto max-w-2xl text-center">
-              <h2 className="text-2xl font-bold text-foreground sm:text-3xl">Safety &amp; parents</h2>
+            <Reveal className="mx-auto max-w-2xl text-center">
+              <span className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+                For parents
+              </span>
+              <h2 className="mt-3 text-2xl font-bold text-foreground sm:text-3xl">
+                Built to be safe, by design
+              </h2>
               <p className="mt-3 text-muted-foreground">
-                Finlamma is built for minors, so safety comes first.
+                Finlamma is built for minors. Every decision below starts from that fact, not an
+                afterthought bolted on.
               </p>
-            </div>
-            <div className="mt-10 grid gap-6 sm:grid-cols-2">
+            </Reveal>
+            <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
               {[
-                { title: "Parental consent required", desc: "A parent must verify and consent before a minor can use Finlamma, and can withdraw that consent at any time." },
-                { title: "No real money, ever", desc: "All money in the app is virtual (V Money). Finlamma never touches real bank accounts or real trades." },
-                { title: "Educational only", desc: "Finlamma is for learning. Nothing in the app is personal investment advice." },
-                { title: "Kid-safe by design", desc: "No photos, no chat between users. Public profiles show only a first name and last initial." },
+                { icon: UserCheck, title: "Parental consent required", desc: "A parent must verify and consent before a minor can use Finlamma, and can withdraw that consent at any time." },
+                { icon: Ban, title: "No real money, ever", desc: "All money in the app is virtual (V Money). Finlamma never touches real bank accounts or real trades." },
+                { icon: GraduationCap, title: "Educational only", desc: "Finlamma is for learning. Nothing in the app, including the AI chat, is personal investment advice." },
+                { icon: EyeOff, title: "Kid-safe by design", desc: "No photos, no chat between users. Public profiles show only a first name and last initial." },
               ].map((f) => (
-                <div key={f.title} className="rounded-xl border border-border bg-card p-6">
-                  <h3 className="font-semibold text-foreground">{f.title}</h3>
+                <div key={f.title} className="bg-card p-7">
+                  <f.icon className="h-5 w-5 text-primary" aria-hidden />
+                  <h3 className="mt-4 font-semibold text-foreground">{f.title}</h3>
                   <p className="mt-2 text-sm text-muted-foreground">{f.desc}</p>
                 </div>
               ))}
@@ -205,45 +297,47 @@ export default async function HomePage() {
 
         {/* Languages */}
         <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 md:py-20">
-          <div className="mx-auto max-w-2xl text-center">
+          <Reveal className="mx-auto max-w-2xl text-center">
             <h2 className="text-2xl font-bold text-foreground sm:text-3xl">Learn your way</h2>
             <p className="mt-3 text-muted-foreground">Every lesson is available in three languages.</p>
-          </div>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            {["English", "Hindi", "Hinglish"].map((lang) => (
-              <span
-                key={lang}
-                className="rounded-full border border-border bg-card px-5 py-2 text-sm font-medium text-foreground"
-              >
-                {lang}
-              </span>
-            ))}
-          </div>
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+              {["English", "Hindi", "Hinglish"].map((lang) => (
+                <span
+                  key={lang}
+                  className="rounded-full border border-border bg-card px-5 py-2 text-sm font-medium text-foreground"
+                >
+                  {lang}
+                </span>
+              ))}
+            </div>
+          </Reveal>
         </section>
 
         {/* FAQ */}
         <section className="mx-auto w-full max-w-3xl px-4 py-14 sm:px-6 md:py-20">
-          <h2 className="text-center text-2xl font-bold text-foreground sm:text-3xl">
-            Frequently asked questions
-          </h2>
-          <div className="mt-8 space-y-3">
-            {FAQS.map((f) => (
-              <details
-                key={f.q}
-                className="group rounded-lg border border-border bg-card px-5 py-4 open:pb-4"
-              >
-                <summary className="cursor-pointer list-none font-medium text-foreground marker:content-none">
-                  <span className="flex items-center justify-between gap-4">
-                    {f.q}
-                    <span className="shrink-0 text-muted-foreground transition-transform group-open:rotate-45">
-                      +
+          <Reveal>
+            <h2 className="text-center text-2xl font-bold text-foreground sm:text-3xl">
+              Frequently asked questions
+            </h2>
+            <div className="mt-8 space-y-3">
+              {FAQS.map((f) => (
+                <details
+                  key={f.q}
+                  className="group rounded-lg border border-border bg-card px-5 py-4 open:pb-4"
+                >
+                  <summary className="cursor-pointer list-none font-medium text-foreground marker:content-none">
+                    <span className="flex items-center justify-between gap-4">
+                      {f.q}
+                      <span className="shrink-0 text-muted-foreground transition-transform group-open:rotate-45">
+                        +
+                      </span>
                     </span>
-                  </span>
-                </summary>
-                <p className="mt-3 text-sm text-muted-foreground">{f.a}</p>
-              </details>
-            ))}
-          </div>
+                  </summary>
+                  <p className="mt-3 text-sm text-muted-foreground">{f.a}</p>
+                </details>
+              ))}
+            </div>
+          </Reveal>
         </section>
       </main>
 

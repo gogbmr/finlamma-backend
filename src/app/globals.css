@@ -107,3 +107,44 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
+
+/* Marketing homepage motion (src/components/marketing/reveal.tsx) - scroll-
+   triggered fade/slide-up, and a slow idle float for the hero mascot.
+   @media (prefers-reduced-motion: reduce) turns both into an instant,
+   static state - real accessibility support, not just politeness, since a
+   vestibular-disorder visitor can get genuinely sick from motion like this. */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition:
+    opacity 0.6s ease-out,
+    transform 0.6s ease-out;
+}
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes mascot-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+.mascot-float {
+  animation: mascot-float 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .mascot-float {
+    animation: none;
+  }
+}
