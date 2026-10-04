@@ -54,24 +54,25 @@ export const DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS: DoubtZoneSafetySettings = {
   flagOnAnySignal: true,
   safetyRedirectMessage: {
     en:
-      "DRAFT - PENDING QUALIFIED REVIEW: That sounds like something important, and I want you to " +
-      "talk to someone who can really help - not me. Please tell a parent, guardian, or another " +
-      "adult you trust. You can also call Childline India, a free 24x7 helpline for children, at " +
-      "1098, or the KIRAN mental health helpline at 1800-599-0019 (also works as 14416). " +
-      "I'm here for money and finance questions whenever you're ready.",
+      "DRAFT - PENDING QUALIFIED REVIEW: That sounds like something important, and I want to make " +
+      "sure you get real help - not just from me. Please talk to a parent, guardian, or another " +
+      "adult you trust. Someone from our team may also read this, so we can make sure you're okay. " +
+      "You can also call Childline India (1098) or the KIRAN mental health helpline " +
+      "(1800-599-0019 / 14416) anytime. I'm always here for money and finance questions too.",
     hi:
-      "DRAFT - PENDING QUALIFIED REVIEW: Yeh baat important lagti hai, aur main chahta hoon ki aap " +
-      "kisi aise insaan se baat karein jo sach mein madad kar sake - main nahi. Kripya apne " +
-      "parents, guardian, ya kisi aur bharosemand adult ko batayein. Aap Childline India ko bhi " +
-      "1098 par (bachchon ke liye free 24x7 helpline) ya KIRAN mental health helpline ko " +
-      "1800-599-0019 (14416 bhi) par call kar sakte hain. Main paise aur finance ke sawaalon ke " +
-      "liye hamesha yahan hoon.",
+      "DRAFT - PENDING QUALIFIED REVIEW: Yeh baat important lagti hai, aur main chahta hoon ki aapko " +
+      "sach mein madad mile - sirf mujhse nahi. Kripya apne parents, guardian, ya kisi aur " +
+      "bharosemand adult ko batayein. Hamari team ka koi member bhi ise padh sakta hai, taaki hum " +
+      "yakeen kar sakein ki aap theek hain. Aap Childline India ko bhi 1098 par ya KIRAN mental " +
+      "health helpline ko 1800-599-0019 (14416 bhi) par kabhi bhi call kar sakte hain. Main paise " +
+      "aur finance ke sawaalon ke liye bhi hamesha yahan hoon.",
     hx:
-      "DRAFT - PENDING QUALIFIED REVIEW: Yeh baat important lagti hai, aur main chahta hoon ki tum " +
-      "kisi aise insaan se baat karo jo sach me help kar sake - main nahi. Please apne parents, " +
-      "guardian, ya kisi trusted adult ko batao. Tum Childline India ko 1098 par (bachchon ke liye " +
-      "free 24x7 helpline) ya KIRAN mental health helpline ko 1800-599-0019 (14416 bhi) par call " +
-      "kar sakte ho. Main money aur finance ke questions ke liye hamesha yahan hoon.",
+      "DRAFT - PENDING QUALIFIED REVIEW: Yeh baat important lagti hai, aur main chahta hoon ki tumhe " +
+      "real help mile - sirf mujhse nahi. Please apne parents, guardian, ya kisi trusted adult ko " +
+      "batao. Hamari team ka koi member bhi ise read kar sakta hai, taaki hum confirm kar sakein ki " +
+      "tum okay ho. Tum Childline India ko 1098 par ya KIRAN mental health helpline ko " +
+      "1800-599-0019 (14416 bhi) par anytime call kar sakte ho. Main money aur finance ke questions " +
+      "ke liye bhi hamesha yahan hoon.",
   },
   adviceLanguageFallbackMessage: {
     en:
