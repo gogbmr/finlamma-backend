@@ -1,5 +1,31 @@
 # Status
 
+## 2026-10-04 — Phase 8 merged to `main` (00c1dec), production verified
+
+Merge commit `00c1dec`. Vercel redeployed within the first poll after push. Verified directly
+against production (`curl`, not the earlier audit's limited tooling):
+
+- `GET /api/v1/health` — `version: "00c1dec"`, every field `ok` (`market`/`push` still `mock` -
+  no vendor keys configured yet, pre-existing and expected; `legalDocuments: "placeholder"` -
+  pre-existing, already a blocking pre-launch item, not new).
+- `GET /api/v1/me/entitlements` with no auth — `401`, not `404` (route is live, correctly gated).
+- `POST /api/webhooks/revenuecat` with an empty, unsigned body — `503 SERVICE_UNAVAILABLE`
+  ("RevenueCat webhook secret not configured"), not 500 or 200. This is the CORRECT fail-closed
+  behavior for right now, not a gap - neither `REVENUECAT_WEBHOOK_SECRET` nor
+  `REVENUECAT_WEBHOOK_AUTH_HEADER` is set in production (no RevenueCat account exists yet). Once
+  either is set, the same request will correctly return 400 instead.
+- `POST /api/webhooks/clerk` unsigned — `400 INVALID_SIGNATURE` ("Missing svix headers"), as before.
+- `GET /admin` signed out — `307` redirect to `/admin/sign-in`.
+- `GET /` homepage — `200`.
+- `GET /api/openapi.json` — `info.version: "1.3.0"`, matching the `/publish-contract` run.
+
+**`ads_config` is deliberately left unseeded in production** - `getAdsSettings()`'s code fallback
+(`DEFAULT_ADS_SETTINGS`, position 3) is identical to what the seed script would insert, so there
+is no functional difference either way. Rather than write to the production database for a
+cosmetic admin-dashboard convenience (seeing/editing the value in Settings instead of only in
+code) outside of a deliberate migration/seed step, this is now tracked as a pre-launch checklist
+item (`docs/ROADMAP.md`) instead of an immediate action.
+
 ## 2026-10-04 — `/phase-audit 8` complete. Four findings fixed (one Critical), branch pending `/publish-contract`
 
 Audited Phase 8 (Monetisation) in full: both ROADMAP items, FEATURE_MAP (zero rows assigned to
@@ -36,13 +62,12 @@ exactly.
    Zod schema, the Postgres `date` column type, or a truthy-check), but hardened to fail closed
    since it's a shared primitive used for consent gating too.
 
-**Two non-blocking NEEDS-USER items**: seed `ads_config` in production (`pnpm seed:settings` or
-the equivalent SQL - has a correct code fallback either way, so not urgent); verify
-`POST /api/webhooks/clerk`/`revenuecat` reject unsigned requests and `/admin` redirects
-signed-out visitors (the audit's own tooling couldn't issue authenticated POSTs or read raw HTTP
-status in this sandbox - exact `curl` commands given to the user).
+**Two non-blocking items left open at audit time, both resolved after merge** (see the entry
+above, dated the same day): the webhook/`/admin` production checks were verified directly once
+Phase 8 was live; `ads_config` was deliberately left unseeded (not an oversight) and moved to the
+pre-launch checklist instead of seeded ad hoc.
 
-**The user runs `/publish-contract` themselves** before this branch merges to `main`.
+**The user ran `/publish-contract` and merged** - see the entry above.
 
 ## 2026-09-30 — `/phase-audit 7` complete. Eight findings fixed, branch pending `/publish-contract`
 
