@@ -190,6 +190,24 @@ export const DOUBT_ZONE_MESSAGE_RATE_LIMIT: RateLimitConfig = {
   prefix: "ratelimit:doubt-zone-message",
 };
 
+// POST /api/track (docs/ARCHITECTURE.md D69) - the one deliberate exception
+// to this file's own "never IP for rate-limit decisions" rule above. That
+// rule is about not substituting a spoofable IP for a real per-user
+// identity when one already exists; this endpoint has no identity at all
+// (the public marketing homepage, no session/account), so IP is the only
+// signal available at all, used purely to raise the cost of a scripted
+// flood - never to make a fairness/auth decision about a specific learner.
+// Always failOpen: true (same as LESSON_STEP_RATE_LIMIT) - this is
+// telemetry, not money or an abuse-sensitive write, so an unconfigured/
+// unreachable Redis must never block the homepage. 20/60s per IP is
+// generous for a real visitor (one homepage_viewed, a couple of badge
+// taps) while still stopping a tight scripted loop.
+export const HOMEPAGE_TRACK_RATE_LIMIT: RateLimitConfig = {
+  requests: 20,
+  window: "60 s",
+  prefix: "ratelimit:homepage-track",
+};
+
 // Generic read-through JSON cache, used by src/server/market/cache.ts to
 // avoid calling the market-data vendor (rate-limited, credit-metered) on
 // every request. Always fails OPEN like the rate limiter above - a cache is

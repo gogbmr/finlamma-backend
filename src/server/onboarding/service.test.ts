@@ -26,6 +26,7 @@ const mockWithdrawConsentRecord = vi.fn();
 const mockListConsentRecordsForReview = vi.fn();
 const mockGetParentContactForReview = vi.fn();
 const mockGetUserFirstName = vi.fn();
+const mockGetUserDateOfBirth = vi.fn();
 const mockIsUserDeleted = vi.fn();
 const mockAnonymizeParentContact = vi.fn();
 const mockSetConsentRecordParentEmailHmac = vi.fn();
@@ -59,6 +60,7 @@ vi.mock("./repo", () => ({
     mockListConsentRecordsForReview(limit, includeDeleted),
   getParentContactForReview: (userId: unknown) => mockGetParentContactForReview(userId),
   getUserFirstName: (id: unknown) => mockGetUserFirstName(id),
+  getUserDateOfBirth: (id: unknown) => mockGetUserDateOfBirth(id),
   isUserDeleted: (userId: unknown) => mockIsUserDeleted(userId),
   anonymizeParentContact: (id: unknown) => mockAnonymizeParentContact(id),
   setConsentRecordParentEmailHmac: (userId: unknown, hmac: unknown) =>

@@ -75,7 +75,7 @@ export async function recordStreakActivity(
         .returning();
 
       if (created) {
-        return { ...created, extended: true };
+        return { ...created, extended: true, brokeStreak: false, previousCurrent: 0 };
       }
 
       const [winner] = await tx
@@ -90,7 +90,7 @@ export async function recordStreakActivity(
     }
 
     if (existing.lastActiveDateIst === todayIst) {
-      return { ...existing, extended: false };
+      return { ...existing, extended: false, brokeStreak: false, previousCurrent: existing.current };
     }
 
     // Lazy monthly reset: the first activity recorded in a new IST month
@@ -106,6 +106,12 @@ export async function recordStreakActivity(
 
     const gapDays = daysBetweenIstDates(existing.lastActiveDateIst, todayIst);
     const transition = computeStreakTransition(gapDays, freezesLeft);
+    // docs/ARCHITECTURE.md D69's streak_broken event needs to know, right
+    // where the break is actually decided, whether this activity is what
+    // just reset a real streak (current > 1) vs. starting fresh from an
+    // already-0/1 state (not a meaningful "break" to report).
+    const brokeStreak = transition.kind !== "extend" && existing.current > 1;
+    const previousCurrent = existing.current;
     let current: number;
     if (transition.kind === "extend") {
       // Either the normal consecutive-day case, or exactly one missed day
@@ -127,6 +133,6 @@ export async function recordStreakActivity(
       .set({ current, longest, lastActiveDateIst: todayIst, freezesLeft, freezesResetMonth })
       .where(eq(streaks.id, existing.id))
       .returning();
-    return { ...updated, extended: true };
+    return { ...updated, extended: true, brokeStreak, previousCurrent };
   });
 }

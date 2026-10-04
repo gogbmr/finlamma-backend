@@ -167,6 +167,14 @@ const PERMISSIONS = [
       "free-text reason. Same narrow trust bar as settings.manage/economy.manage - granted to " +
       "super_admin only, since a global halt affects every learner immediately.",
   },
+  {
+    key: "analytics.view",
+    description:
+      "View the admin analytics dashboards (users, retention, lessons, trading, news, " +
+      "revenue) - aggregate business-reporting queries against our own Postgres tables, never " +
+      "a single learner's individual activity. Same narrow trust bar as settings.manage - " +
+      "granted to super_admin only (docs/ARCHITECTURE.md D69).",
+  },
 ] as const;
 
 // Permissions granted to each role, by key. super_admin gets every
@@ -196,6 +204,7 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "news.manage",
     "news.publish",
     "doubt_zone.moderate",
+    "analytics.view",
   ],
   user_manager: ["consent.view", "doubt_zone.moderate"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage", "news.manage"],

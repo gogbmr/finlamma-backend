@@ -140,6 +140,10 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 
 - `GET /api/v1/me/entitlements` — Get my entitlements and ad/subscription eligibility
 
+**Analytics**
+
+- `POST /api/track` — Homepage analytics beacon (public, anonymous)
+
 ## System
 
 ### `GET /api/v1/health`
@@ -6601,6 +6605,68 @@ Returns the caller's current entitlements (e.g. ad_free), whether ads should sho
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+
+---
+
+## Analytics
+
+### `POST /api/track`
+
+**Homepage analytics beacon (public, anonymous)**
+
+Forwards a fixed, closed set of marketing-homepage events to PostHog server-side - no client ever holds a PostHog key (docs/ARCHITECTURE.md D69). Unauthenticated by design: the public marketing homepage has no account/session concept. distinct_id is a fresh random id per call, never derived from the visitor. Rate-limited per IP.
+
+**Auth:** none
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `event` | string (homepage_viewed, app_store_link_clicked) | yes | Fixed set of homepage marketing events - see docs/ARCHITECTURE.md D69. |
+| `platform` | string (ios, android) | no | Only present for app_store_link_clicked. |
+
+```json
+{
+  "event": "homepage_viewed",
+  "platform": "android"
+}
+```
+
+**Responses**
+
+- **200** — Event accepted (forwarding is fire-and-forget; this never reflects delivery)
+
+```json
+{
+  "data": {
+    "tracked": true
+  }
+}
+```
+
+- **400** — Invalid event name, or an unrecognized field in the request body
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+- **429** — Too many requests from this IP
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
   }
 }
 ```

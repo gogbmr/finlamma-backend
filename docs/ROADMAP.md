@@ -338,8 +338,22 @@ own repo later, hosted on Railway.
 - [x] Ad eligibility flag (World 3 completed and not ad-free)
 
 ## Phase 9 — Analytics & homepage
-- [ ] Admin analytics dashboards (users, retention, lessons, trading, news, revenue)
-- [ ] Public homepage, privacy policy, terms, risk disclosure pages
+- [x] Admin analytics dashboards (users, retention, lessons, trading, news, revenue) -
+      `/admin/analytics` (`analytics.view`, super_admin only), direct bounded Postgres
+      aggregates (`src/server/analytics`), cached 5 min. Trading/news tiles reuse the
+      Ops console's and Pulse Check's own already-bounded aggregates rather than
+      duplicating them. No query returns or is computed from a single learner's
+      identity - aggregate counts only.
+- [x] Public homepage, privacy policy, terms, risk disclosure pages - homepage (hero, world
+      journey, safety/parents, FAQ) and the three legal pages already existed from Phase 2b
+      Checkpoint 7/Phase 2a; this phase added `robots.txt`, `sitemap.ts`, `/contact`, and an
+      app-store-badges component ready for real store links once the app ships.
+- [x] Server-side PostHog analytics (`posthog-node`, EU-hosted, `POSTHOG_API_KEY`/
+      `POSTHOG_HOST` - no PostHog key or SDK ever reaches a browser) - 10 in-app events +
+      3 pre-consent onboarding-funnel events, all fire-and-forget, anonymized distinct_id,
+      no PII/session-recording/Doubt-Zone capture (docs/ARCHITECTURE.md D69/D70). The
+      homepage's own `POST /api/track` beacon is rate-limited per IP, strict-schema
+      (`.strict()`, closed enums only), and has no field that could carry PII.
 
 ## Pre-launch checklist
 - [ ] **Legal review of subscriptions and ads in a minor-directed app** (Apple/Google policy,
@@ -451,8 +465,25 @@ own repo later, hosted on Railway.
       launch, deferred until that provider/registration work is done
 - [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
       `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
-- [ ] Create PostHog project, add `NEXT_PUBLIC_POSTHOG_KEY`/`NEXT_PUBLIC_POSTHOG_HOST`, wire up
-      the `posthog-node` server client - deferred from Phase 0
+- [ ] Create PostHog project (EU region), add `POSTHOG_API_KEY`/`POSTHOG_HOST` - the
+      `posthog-node` server client (`src/lib/analytics.ts`) and every capture-site are already
+      built (Phase 9, docs/ARCHITECTURE.md D69) and no-op without these, so this is purely an
+      account-creation + env-var step, not a code dependency.
+- [ ] **Legal review: pre-consent onboarding-funnel analytics (docs/ARCHITECTURE.md D70).**
+      Finlamma sends anonymous (internal-UUID, no-PII) funnel events to PostHog for the
+      onboarding steps that happen BEFORE a minor's parental consent is recorded (date-of-birth
+      entered, consent requested, consent completed) - a deliberate founder decision to measure
+      signup drop-off, never used for targeting, but genuinely behavioural data about a minor
+      collected ahead of consent. Needs a written answer ready for a regulator or parent asking
+      about it, not a quiet default - see D70 for the full reasoning to review against.
+- [ ] **Close the English-only legal-pages vs. Hindi/Hinglish consent-pages inconsistency.**
+      The public consent/re-approval pages (`/consent/confirm`, `/consent/reapprove`) already
+      have a language switcher (en/hi/hx), but `/legal/[type]` (Terms/Privacy/Risk Disclosure)
+      renders `doc.content.en` only, hardcoded - a Hindi/Hinglish-reading parent or learner can
+      consent in their language but can never actually read the terms they're consenting to in
+      that same language. Flagged at Phase 9 kickoff (homepage review), not fixed then - it's a
+      pre-existing Phase 2a gap, not something Phase 9 asked for, so it's tracked here instead of
+      bundled into an unrelated phase's commit.
 - [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
       admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
       wasn't attempted in the sandbox this was built in over a slow connection

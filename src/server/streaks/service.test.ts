@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// recordLearningActivity/recordPulseCheckActivity's captureEvent call
+// (docs/ARCHITECTURE.md D69) would otherwise pull in the real
+// @/lib/analytics -> @/lib/env unmocked here.
+vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
+
 const mockGetSettingJson = vi.fn();
 const mockSetSettingJson = vi.fn();
 vi.mock("@/lib/settings", () => ({

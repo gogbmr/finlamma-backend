@@ -4,6 +4,7 @@ import { getNewsQuizGeneratorSettings } from "@/server/news/service";
 import { answerSchemaForFormat, type QuestionFormat } from "@/server/questions/schemas";
 import { getTopicById } from "@/server/topics/repo";
 import { recordPulseCheckActivity } from "@/server/streaks/service";
+import { captureEvent } from "@/lib/analytics";
 import { AppError } from "@/lib/errors";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import { logActivity } from "@/lib/activity-log";
@@ -419,6 +420,13 @@ export async function finishAttempt(user: { id: string }, attemptId: string, met
       metadata: { accuracyPct, rawVmEarnedPaise, totalVmAwardedPaise, dailyCapReached },
       ip: meta.ip,
       userAgent: meta.userAgent,
+    });
+    // docs/ARCHITECTURE.md D69 - bucketed to the nearest 10%, not the exact
+    // score, same "no finer than needed" rule the other event properties
+    // follow.
+    captureEvent(user.id, "pulse_check_finished", {
+      accuracyBucket: Math.round(accuracyPct / 10) * 10,
+      allCorrect,
     });
   }
 

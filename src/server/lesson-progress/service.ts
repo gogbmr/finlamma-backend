@@ -1,3 +1,4 @@
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
@@ -137,6 +138,10 @@ export async function completeUngradedLesson(user: { id: string }, lessonId: str
     true,
     meta,
   );
+  // docs/ARCHITECTURE.md D69 - same event src/server/quiz-attempts/service.ts
+  // fires for the other four lesson kinds, kept consistent across both
+  // completion paths.
+  captureEvent(user.id, "lesson_completed", { lessonKind: lesson.kind, isFirstPass: credited });
   // Badges: same best-effort/isolated reasoning as
   // src/server/quiz-attempts/service.ts's identical hook - a badge-
   // evaluation failure must never surface as a failed lesson-completion

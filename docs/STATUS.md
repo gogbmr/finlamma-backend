@@ -1,5 +1,40 @@
 # Status
 
+## 2026-10-04 — `/phase-audit 9` complete. Two Low findings, both fixed; branch pending `/publish-contract`
+
+Audited Phase 9 (Analytics & homepage) in full, with six focus areas the founder specified beyond
+the standard checklist: analytics privacy (no PII/free-text/DOB/email/state/Doubt-Zone content
+reachable, including the pre-consent onboarding-funnel events), `distinct_id`/`identify()`/session
+recording, never-blocks/fails-silently (including the `after()` scheduling path), `POST
+/api/track`'s hardening as a public endpoint, `/admin/analytics`'s query boundedness and
+non-identifying tiles, and `robots.txt`/`sitemap.ts` not exposing `/admin`/`/api`.
+
+**Clean**: all 3 ROADMAP items have real, tested code; migration journal (49 entries) matches
+`drizzle.__drizzle_migrations` exactly (Phase 9 added zero schema changes); RLS enabled with zero
+policies across all 71 `public` tables (`select count(*) from pg_policies` → 0); zero WARN-or-above
+Supabase advisors (the existing 40-unindexed-FK/49-unused-index INFO findings are unchanged,
+already tracked); `pnpm typecheck`/`pnpm lint`/`pnpm build` clean; `pnpm test` 229 files/2289 tests
+green, 0 skipped; OpenAPI contract regeneration produced a byte-identical diff; production (`main`,
+Phase 9 not yet merged) healthy, deployed commit (`4309612`) matches `origin/main` exactly, and
+`/api/track`/`/robots.txt` correctly 404 there (not yet deployed, as expected pre-merge). A
+dedicated security-auditor subagent pass over every analytics call site and the new admin
+dashboard found no Critical/High findings and independently confirmed `docs/ARCHITECTURE.md`
+D69/D70's stated privacy design actually matches the shipped code.
+
+**FEATURE_MAP correction**: NW-43 (News Desk's 7-day Pulse Check engagement chart) was marked "Not
+built" but is actually built - under Phase 5, via `getPulseCheckEngagement()` and
+`engagement-chart.tsx` - the row was just never updated at the time. Fixed in this audit.
+
+**Two Low findings, both fixed**:
+1. **`POST /api/track`'s IP-based rate limit fails open during a Redis outage/misconfiguration** -
+   already the deliberate, documented behavior (same `failOpen: true` posture as
+   `LESSON_STEP_RATE_LIMIT`), not a code defect, but per the founder's standing rule after D67/D68
+   (a decision's text must match reality, and an accepted tradeoff deserves the same paper trail a
+   bug fix gets) - recorded as D71 rather than left as an undocumented assumption.
+2. **`POST /api/track` accepted `platform` alongside `homepage_viewed`** (no security/PII impact -
+   `platform` is a closed two-value enum either way) - fixed with a `.refine()` on
+   `TrackRequestSchema` rejecting the combination; one new test.
+
 ## 2026-10-04 — Phase 8 merged to `main` (00c1dec), production verified
 
 Merge commit `00c1dec`. Vercel redeployed within the first poll after push. Verified directly

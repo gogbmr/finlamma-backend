@@ -46,6 +46,16 @@ export async function getUserFirstName(userId: string): Promise<string | null> {
   return row?.firstName ?? null;
 }
 
+// Used by confirmParentConsent/approveReapproval (docs/ARCHITECTURE.md D69)
+// to build the minimal MeUser-shaped object hasFullAccess() needs for its
+// before/after signup_completed check - these flows only have a bare
+// userId from the consent token, not the full authenticated user object a
+// route handler would already have.
+export async function getUserDateOfBirth(userId: string): Promise<string | null> {
+  const [row] = await db.select({ dateOfBirth: users.dateOfBirth }).from(users).where(eq(users.id, userId)).limit(1);
+  return row?.dateOfBirth ?? null;
+}
+
 // Account deletion (src/server/users/service.ts deleteMe()) soft-deletes
 // in place - it never removes the users row itself, so a stale consent/
 // decline/withdraw token's consent_records row survives untouched and

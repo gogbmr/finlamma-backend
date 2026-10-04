@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { istDateString, istWeekStartDate, istWeekStartUtc } from "@/lib/ist-date";
 import { getSettingJson, getSettingNumber, setSettingJson } from "@/lib/settings";
+import { captureEvent } from "@/lib/analytics";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
@@ -443,6 +444,10 @@ export async function sendCheer(
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // docs/ARCHITECTURE.md D69 - never names the receiver, same anonymity
+  // rule (D53) the notification below already follows.
+  captureEvent(sender.id, "arena_cheer_sent");
 
   // docs/ROADMAP.md's Phase 6 note: cheers already awarded XP but skipped
   // the push because notifications infra didn't exist yet - closed here.

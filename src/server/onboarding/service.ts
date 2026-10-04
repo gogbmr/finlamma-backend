@@ -4,6 +4,7 @@ import { ParentConsentConfirmedEmail } from "@/emails/parent-consent-confirmed";
 import { ParentConsentRequestEmail } from "@/emails/parent-consent-request";
 import { ParentConsentWithdrawnEmail } from "@/emails/parent-consent-withdrawn";
 import { ParentReapprovalRequestEmail } from "@/emails/parent-reapproval-request";
+import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
@@ -28,6 +29,7 @@ import {
   getParentContactByWeeklyReportUnsubscribeTokenHash,
   getParentContactForReview,
   getReapprovalRequestByTokenHash,
+  getUserDateOfBirth,
   getUserFirstName,
   isUserDeleted,
   listCandidatesForReapproval,
@@ -163,6 +165,11 @@ export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, m
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // Onboarding-funnel step (docs/ARCHITECTURE.md D69/D70) - setDateOfBirthOnce
+  // guarantees this only ever succeeds once per user, so this naturally
+  // fires once, like the other funnel steps.
+  captureEvent(user.id, "onboarding_dob_entered");
 
   const minor = isMinor(input.dateOfBirth);
   return { dateOfBirth: input.dateOfBirth, isMinor: minor, requiresParentConsent: minor };
@@ -302,6 +309,12 @@ export async function requestParentConsent(
     userAgent: meta.userAgent,
   });
 
+  // Onboarding-funnel step (docs/ARCHITECTURE.md D69/D70). Fires on every
+  // successful request, including a resend - funnel analysis in PostHog
+  // dedupes by distinct_id, so a resend doesn't distort "did this user ever
+  // reach this step."
+  captureEvent(user.id, "onboarding_consent_requested");
+
   return { status: "pending" as const, parentEmail };
 }
 
@@ -393,6 +406,21 @@ export async function confirmParentConsent(
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  // Onboarding-funnel step (docs/ARCHITECTURE.md D69/D70) - fires every
+  // time, independent of the signup_completed check below.
+  captureEvent(record.userId, "onboarding_consent_completed");
+
+  // `signup_completed`: this consent record was "pending" a moment ago
+  // (guarded above), so full access was definitely false before this call -
+  // it only needs an "after" check. Fires here only if the minor had
+  // ALREADY self-accepted (so this parent action is the one completing the
+  // transition); otherwise the self-accept route (POST /me/legal/accept)
+  // fires it later when that happens instead.
+  const dateOfBirth = await getUserDateOfBirth(record.userId);
+  if (dateOfBirth && (await hasFullAccess({ id: record.userId, dateOfBirth, email: null, firstName: null }))) {
+    captureEvent(record.userId, "signup_completed");
+  }
 
   // Additive-only: only ever turns the weekly-report opt-in ON when
   // requested, never off - parentContacts.weeklyReportOptIn already defaults
@@ -744,6 +772,21 @@ export async function requireFullAccess(user: MeUser): Promise<void> {
       "PARENT_REAPPROVAL_REQUIRED",
       "Your parent needs to approve the updated Terms, Privacy or Risk-disclosure before you can continue",
     );
+  }
+}
+
+// Boolean sibling of requireFullAccess, for a before/after check around
+// whichever action might be the one that completes onboarding (self-accept,
+// or - for a minor - their parent's consent/re-approval). Lets a call site
+// fire `signup_completed` (docs/ARCHITECTURE.md D69) exactly once, on the
+// actual limited->full transition, rather than on every requireFullAccess
+// call (which would fire it on nearly every authenticated request).
+export async function hasFullAccess(user: MeUser): Promise<boolean> {
+  try {
+    await requireFullAccess(user);
+    return true;
+  } catch {
+    return false;
   }
 }
 
