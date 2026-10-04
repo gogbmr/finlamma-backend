@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -13978,6 +13978,22 @@
                   "error": {
                     "code": "UNAUTHENTICATED",
                     "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
                   }
                 },
                 "schema": {

@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.1.0) on 2026-09-30.
+> Generated from `openapi/openapi.json` (version 1.2.0) on 2026-10-04.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -6229,6 +6229,17 @@ Idempotent - unregistering a token that isn't registered (or belongs to someone 
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```

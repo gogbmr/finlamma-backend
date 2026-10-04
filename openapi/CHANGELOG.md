@@ -2,6 +2,55 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-04 — v1.2.0
+
+Minor bump: purely additive, 8 new operations plus one new documented response on an existing
+endpoint, nothing removed and nothing changed incompatibly since v1.1.0. Covers Phase 7
+(notifications & Doubt Zone). As with the v1.1.0 entry, these endpoints were already built and
+committed to `openapi.json`/`docs/API_ENDPOINTS.md` via ad-hoc `pnpm contract` runs across Phase
+7's checkpoints — this is the first changelog record of them, and the first version bump since.
+
+**Doubt Zone (Checkpoints 1-5, `docs/ARCHITECTURE.md` D62-D64)**
+- `POST /api/v1/doubt-zone/threads` — start or resume the caller's one open thread with a mentor.
+  Every new thread opens with a fixed, three-language disclosure: this is an AI, not a person, it
+  can't give investment advice, and a flagged message may be reviewed by the Finlamma team.
+- `GET /api/v1/doubt-zone/threads/{id}/messages` — paginated message history for a thread the
+  caller owns.
+- `POST /api/v1/doubt-zone/threads/{id}/messages` — send a message; streams the reply back as
+  NDJSON (`delta` lines, then one `done` line). A dedicated safety classifier runs before the
+  learner's message ever reaches the reply model, biased toward false positives and failing
+  closed (never defaults to "safe" if the classifier call itself fails). A flagged message's
+  response is replaced with a fixed, `settings_kv`-sourced redirect (never model-generated, so
+  a helpline number is never at the mercy of a live model call) and the message is queued for
+  staff review; the full thread itself is never staff-browsable, only a flagged message is.
+- `POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report` — a learner can report a bad
+  reply to their own message, which also routes it into the same staff moderation queue.
+
+**Notifications (Checkpoints 6-7, D65)**
+- `POST /api/v1/me/push-token`, `DELETE /api/v1/me/push-token` — register/unregister an Expo push
+  token for the calling device. Re-registering a token already tied to a different account
+  reassigns it rather than duplicating it.
+- `GET`/`PATCH /api/v1/me/notification-prefs` — the caller's own notification settings: master
+  enabled toggle, per-category opt-out, and an optional quiet-hours window (IST).
+- `GET /api/v1/me/notifications` — the caller's in-app notification feed, cursor-paginated.
+- `POST /api/v1/me/notifications/mark-read` — mark one or more (or, with no ids, all) of the
+  caller's own notifications read.
+- `GET /api/v1/me/notifications/unread-count` — badge count for the caller.
+
+Six notification kinds (streak risk, boss battle available, market news, session goal reached,
+cheer received, league rank change) all funnel through one dispatcher that enforces the prefs
+above uniformly; quiet hours suppress only the push send, never the in-app feed row. No
+notification title or body ever includes a balance, a rank-shaming comparison, or anything about
+health/consent status.
+
+**Existing endpoint, additive change only**
+- `DELETE /api/v1/me/push-token` gained a documented `403 FORBIDDEN` response (onboarding/consent/
+  legal acceptance incomplete) — the handler already enforced this via `requireFullAccess`, the
+  contract just didn't document it until now.
+
+Not yet in the contract: the staff moderation queue and flagged-message reveal endpoints are
+admin-only Server Actions per D16, intentionally outside this contract.
+
 ## 2026-09-30 — v1.1.0
 
 Minor bump: purely additive, 25 new operations plus new fields on 2 existing endpoints, nothing
