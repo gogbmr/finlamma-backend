@@ -173,6 +173,14 @@ const envSchema = z.object({
   // provider.ts's getPushProvider() returns - same role as
   // MARKET_DATA_PROVIDER above. Left unset in normal operation.
   PUSH_PROVIDER: z.enum(["mock", "expo"]).optional(),
+
+  // Phase 8 (docs/ARCHITECTURE.md D10) - RevenueCat webhook HMAC signing
+  // secret, same lazy-fail-until-configured pattern as the other webhook
+  // secrets above: src/lib/revenuecat-webhook.ts fails closed (503) if a
+  // delivery arrives before this is set, rather than the app failing to
+  // boot. Generated in the RevenueCat dashboard (Integrations > Webhooks),
+  // not something we invent ourselves.
+  REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
 });
 
 function loadEnv() {

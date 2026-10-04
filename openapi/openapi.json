@@ -3358,6 +3358,28 @@
           "marked"
         ]
       },
+      "RevenueCatWebhookResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "received": {
+                "type": "boolean",
+                "enum": [
+                  true
+                ]
+              }
+            },
+            "required": [
+              "received"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "NewsStoryPreview": {
         "type": "object",
         "properties": {
@@ -14291,6 +14313,113 @@
                     "message": "Sign-in required"
                   }
                 },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/revenuecat": {
+      "post": {
+        "summary": "RevenueCat subscription webhook",
+        "description": "Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). Authenticated by an HMAC signature in the X-RevenueCat-Webhook-Signature header, verified against REVENUECAT_WEBHOOK_SECRET - configured as this endpoint's signing secret in the RevenueCat dashboard, not by a user or staff session.",
+        "tags": [
+          "Webhooks"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "t=<unix_timestamp>,v1=<hmac_sha256_hex>"
+            },
+            "required": true,
+            "description": "t=<unix_timestamp>,v1=<hmac_sha256_hex>",
+            "name": "x-revenuecat-webhook-signature",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "api_version": {
+                    "type": "string"
+                  },
+                  "event": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "example": "12345678-1234-1234-1234-123456789012"
+                      },
+                      "type": {
+                        "type": "string",
+                        "example": "RENEWAL"
+                      },
+                      "app_user_id": {
+                        "type": "string",
+                        "description": "Our internal users.id"
+                      },
+                      "expiration_at_ms": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "entitlement_ids": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        },
+                        "example": [
+                          "ad_free"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "app_user_id"
+                    ]
+                  }
+                },
+                "required": [
+                  "event"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event processed (or a type/entitlement we don't act on)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevenueCatWebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/invalid signature",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Webhook signing secret not configured",
+            "content": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }

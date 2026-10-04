@@ -99,6 +99,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 
 - `POST /api/webhooks/clerk` — Clerk user webhook (consumer app)
 - `POST /api/webhooks/clerk-staff` — Clerk user webhook (staff app)
+- `POST /api/webhooks/revenuecat` — RevenueCat subscription webhook
 
 **Arena**
 
@@ -4713,6 +4714,86 @@ Called by Clerk on user.created and user.deleted for the STAFF Clerk application
 ```
 
 - **400** — Missing/invalid svix signature
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+- **503** — Webhook signing secret not configured
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "Resource not found",
+    "details": {}
+  }
+}
+```
+
+
+---
+
+### `POST /api/webhooks/revenuecat`
+
+**RevenueCat subscription webhook**
+
+Called by RevenueCat (not the app or the mobile client) when a subscriber's entitlement state changes (purchase, renewal, cancellation, expiration, billing issue, ...) - keeps our `entitlements` table in sync (docs/ARCHITECTURE.md decision D10). Authenticated by an HMAC signature in the X-RevenueCat-Webhook-Signature header, verified against REVENUECAT_WEBHOOK_SECRET - configured as this endpoint's signing secret in the RevenueCat dashboard, not by a user or staff session.
+
+**Auth:** none
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `x-revenuecat-webhook-signature` | header | string | yes | t=<unix_timestamp>,v1=<hmac_sha256_hex> |
+
+**Request body**
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `api_version` | string | no |  |
+| `event` | object | yes |  |
+| `event.id` | string | yes |  |
+| `event.type` | string | yes |  |
+| `event.app_user_id` | string | yes | Our internal users.id |
+| `event.expiration_at_ms` | number or null | no |  |
+| `event.entitlement_ids` | array<string> | no |  |
+
+```json
+{
+  "api_version": "string",
+  "event": {
+    "id": "12345678-1234-1234-1234-123456789012",
+    "type": "RENEWAL",
+    "app_user_id": "string",
+    "expiration_at_ms": 0,
+    "entitlement_ids": [
+      "ad_free"
+    ]
+  }
+}
+```
+
+**Responses**
+
+- **200** — Event processed (or a type/entitlement we don't act on)
+
+```json
+{
+  "data": {
+    "received": true
+  }
+}
+```
+
+- **400** — Missing/invalid signature
 
 ```json
 {
