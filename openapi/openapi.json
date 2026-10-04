@@ -14555,7 +14555,7 @@
     "/api/track": {
       "post": {
         "summary": "Homepage analytics beacon (public, anonymous)",
-        "description": "Forwards a fixed, closed set of marketing-homepage events to PostHog server-side - no client ever holds a PostHog key (docs/ARCHITECTURE.md D69). Unauthenticated by design: the public marketing homepage has no account/session concept. distinct_id is a fresh random id per call, never derived from the visitor.",
+        "description": "Forwards a fixed, closed set of marketing-homepage events to PostHog server-side - no client ever holds a PostHog key (docs/ARCHITECTURE.md D69). Unauthenticated by design: the public marketing homepage has no account/session concept. distinct_id is a fresh random id per call, never derived from the visitor. Rate-limited per IP.",
         "tags": [
           "Analytics"
         ],
@@ -14586,7 +14586,8 @@
                 },
                 "required": [
                   "event"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -14622,9 +14623,25 @@
             }
           },
           "400": {
-            "description": "Invalid event name",
+            "description": "Invalid event name, or an unrecognized field in the request body",
             "content": {
               "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests from this IP",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RATE_LIMITED",
+                    "message": "Too many requests - slow down and try again shortly"
+                  }
+                },
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
                 }

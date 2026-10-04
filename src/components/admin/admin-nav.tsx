@@ -2,6 +2,7 @@
 
 import {
   Award,
+  BarChart3,
   BookOpen,
   FileText,
   Flag,
@@ -48,6 +49,7 @@ export type AdminNavVisibility = {
   opsConsole: boolean;
   newsDesk: boolean;
   competitions: boolean;
+  analytics: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -116,6 +118,10 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
     {
       label: "Settings",
       items: [{ href: "/admin/settings", label: "Settings", icon: Settings, visible: v.settings }],
+    },
+    {
+      label: "Analytics",
+      items: [{ href: "/admin/analytics", label: "Analytics", icon: BarChart3, visible: v.analytics }],
     },
   ]
     .map((group) => ({ ...group, items: group.items.filter((item) => item.visible) }))

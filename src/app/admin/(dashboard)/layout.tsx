@@ -57,6 +57,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     tradingOps,
     newsManage,
     newsPublish,
+    analyticsView,
     role,
   ] = await Promise.all([
     roleHasPermission(staff.roleId, "world.manage"),
@@ -80,6 +81,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     roleHasPermission(staff.roleId, "trading.ops"),
     roleHasPermission(staff.roleId, "news.manage"),
     roleHasPermission(staff.roleId, "news.publish"),
+    roleHasPermission(staff.roleId, "analytics.view"),
     getRoleById(staff.roleId),
   ]);
 
@@ -101,6 +103,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     instruments: instrumentManage,
     opsConsole: tradingOps,
     newsDesk: newsManage || newsPublish,
+    analytics: analyticsView,
   };
 
   // Persistent halt banner (docs/ARCHITECTURE.md D47, founder's requirement

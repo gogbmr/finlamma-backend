@@ -338,8 +338,22 @@ own repo later, hosted on Railway.
 - [x] Ad eligibility flag (World 3 completed and not ad-free)
 
 ## Phase 9 — Analytics & homepage
-- [ ] Admin analytics dashboards (users, retention, lessons, trading, news, revenue)
-- [ ] Public homepage, privacy policy, terms, risk disclosure pages
+- [x] Admin analytics dashboards (users, retention, lessons, trading, news, revenue) -
+      `/admin/analytics` (`analytics.view`, super_admin only), direct bounded Postgres
+      aggregates (`src/server/analytics`), cached 5 min. Trading/news tiles reuse the
+      Ops console's and Pulse Check's own already-bounded aggregates rather than
+      duplicating them. No query returns or is computed from a single learner's
+      identity - aggregate counts only.
+- [x] Public homepage, privacy policy, terms, risk disclosure pages - homepage (hero, world
+      journey, safety/parents, FAQ) and the three legal pages already existed from Phase 2b
+      Checkpoint 7/Phase 2a; this phase added `robots.txt`, `sitemap.ts`, `/contact`, and an
+      app-store-badges component ready for real store links once the app ships.
+- [x] Server-side PostHog analytics (`posthog-node`, EU-hosted, `POSTHOG_API_KEY`/
+      `POSTHOG_HOST` - no PostHog key or SDK ever reaches a browser) - 10 in-app events +
+      3 pre-consent onboarding-funnel events, all fire-and-forget, anonymized distinct_id,
+      no PII/session-recording/Doubt-Zone capture (docs/ARCHITECTURE.md D69/D70). The
+      homepage's own `POST /api/track` beacon is rate-limited per IP, strict-schema
+      (`.strict()`, closed enums only), and has no field that could carry PII.
 
 ## Pre-launch checklist
 - [ ] **Legal review of subscriptions and ads in a minor-directed app** (Apple/Google policy,

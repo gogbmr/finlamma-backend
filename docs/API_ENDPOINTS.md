@@ -6618,7 +6618,7 @@ Returns the caller's current entitlements (e.g. ad_free), whether ads should sho
 
 **Homepage analytics beacon (public, anonymous)**
 
-Forwards a fixed, closed set of marketing-homepage events to PostHog server-side - no client ever holds a PostHog key (docs/ARCHITECTURE.md D69). Unauthenticated by design: the public marketing homepage has no account/session concept. distinct_id is a fresh random id per call, never derived from the visitor.
+Forwards a fixed, closed set of marketing-homepage events to PostHog server-side - no client ever holds a PostHog key (docs/ARCHITECTURE.md D69). Unauthenticated by design: the public marketing homepage has no account/session concept. distinct_id is a fresh random id per call, never derived from the visitor. Rate-limited per IP.
 
 **Auth:** none
 
@@ -6648,7 +6648,7 @@ Forwards a fixed, closed set of marketing-homepage events to PostHog server-side
 }
 ```
 
-- **400** — Invalid event name
+- **400** — Invalid event name, or an unrecognized field in the request body
 
 ```json
 {
@@ -6656,6 +6656,17 @@ Forwards a fixed, closed set of marketing-homepage events to PostHog server-side
     "code": "NOT_FOUND",
     "message": "Resource not found",
     "details": {}
+  }
+}
+```
+
+- **429** — Too many requests from this IP
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Too many requests - slow down and try again shortly"
   }
 }
 ```
