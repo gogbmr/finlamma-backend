@@ -451,8 +451,25 @@ own repo later, hosted on Railway.
       launch, deferred until that provider/registration work is done
 - [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
       `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
-- [ ] Create PostHog project, add `NEXT_PUBLIC_POSTHOG_KEY`/`NEXT_PUBLIC_POSTHOG_HOST`, wire up
-      the `posthog-node` server client - deferred from Phase 0
+- [ ] Create PostHog project (EU region), add `POSTHOG_API_KEY`/`POSTHOG_HOST` - the
+      `posthog-node` server client (`src/lib/analytics.ts`) and every capture-site are already
+      built (Phase 9, docs/ARCHITECTURE.md D69) and no-op without these, so this is purely an
+      account-creation + env-var step, not a code dependency.
+- [ ] **Legal review: pre-consent onboarding-funnel analytics (docs/ARCHITECTURE.md D70).**
+      Finlamma sends anonymous (internal-UUID, no-PII) funnel events to PostHog for the
+      onboarding steps that happen BEFORE a minor's parental consent is recorded (date-of-birth
+      entered, consent requested, consent completed) - a deliberate founder decision to measure
+      signup drop-off, never used for targeting, but genuinely behavioural data about a minor
+      collected ahead of consent. Needs a written answer ready for a regulator or parent asking
+      about it, not a quiet default - see D70 for the full reasoning to review against.
+- [ ] **Close the English-only legal-pages vs. Hindi/Hinglish consent-pages inconsistency.**
+      The public consent/re-approval pages (`/consent/confirm`, `/consent/reapprove`) already
+      have a language switcher (en/hi/hx), but `/legal/[type]` (Terms/Privacy/Risk Disclosure)
+      renders `doc.content.en` only, hardcoded - a Hindi/Hinglish-reading parent or learner can
+      consent in their language but can never actually read the terms they're consenting to in
+      that same language. Flagged at Phase 9 kickoff (homepage review), not fixed then - it's a
+      pre-existing Phase 2a gap, not something Phase 9 asked for, so it's tracked here instead of
+      bundled into an unrelated phase's commit.
 - [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
       admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
       wasn't attempted in the sandbox this was built in over a slow connection

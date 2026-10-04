@@ -115,8 +115,12 @@ const envSchema = z.object({
 
   // Observability - optional until we set up accounts (see docs/ROADMAP.md).
   SENTRY_DSN: z.string().url().optional(),
-  NEXT_PUBLIC_POSTHOG_KEY: z.string().optional(),
-  NEXT_PUBLIC_POSTHOG_HOST: z.string().url().optional(),
+  // Phase 9 (docs/ARCHITECTURE.md D69) - server-side only (posthog-node),
+  // never NEXT_PUBLIC_*: every capture() call happens inside our own route
+  // handlers/service layer, never in a browser bundle, so this key must
+  // never be embedded client-side. src/lib/analytics.ts no-ops when unset.
+  POSTHOG_API_KEY: z.string().optional(),
+  POSTHOG_HOST: z.string().url().optional(),
 
   // Market data (Phase 4 Checkpoint 2, docs/ARCHITECTURE.md D38) - optional
   // until the founder confirms Twelve Data's NSE tier/cost

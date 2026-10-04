@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { AppStoreBadges } from "@/components/marketing/app-store-badges";
+import { HomepageAnalyticsBeacon } from "@/components/marketing/homepage-analytics-beacon";
 import { listPublishedWorlds } from "@/server/worlds/repo";
 
 // Worlds are staff-created with no fixed count (D25, docs/ARCHITECTURE.md) -
@@ -65,6 +67,7 @@ export default async function HomePage() {
 
   return (
     <div className="flex flex-1 flex-col">
+      <HomepageAnalyticsBeacon />
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <div className="flex items-center gap-2">
@@ -92,14 +95,7 @@ export default async function HomePage() {
                 lessons, quizzes, and paper trading practice on real market data — with virtual
                 money, not real money.
               </p>
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-3 md:justify-start">
-                <span className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium">
-                  Coming soon on Android
-                </span>
-                <span className="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium">
-                  Coming soon on iOS
-                </span>
-              </div>
+              <AppStoreBadges />
             </div>
             <div className="shrink-0">
               <Image
@@ -272,6 +268,9 @@ export default async function HomePage() {
             </Link>
             <Link href="/legal/risk_disclosure" className="text-muted-foreground hover:text-foreground">
               Risk Disclosure
+            </Link>
+            <Link href="/contact" className="text-muted-foreground hover:text-foreground">
+              Contact
             </Link>
           </nav>
         </div>
