@@ -360,7 +360,11 @@ own repo later, hosted on Railway.
       India's DPDP, Google Play Families Policy) - see `docs/ARCHITECTURE.md` D66/D67 (Phase 8
       kickoff): the under-18 non-personalized-ads line and the server-side block on minors
       purchasing subscriptions are this codebase's own calls, not something that can be
-      self-certified against store policy or law without outside review.
+      self-certified against store policy or law without outside review. **Treat this as a
+      product-risk item, not just a compliance task**: counsel could come back requiring a
+      different monetisation design for minors (e.g. narrower ad formats, a different
+      subscription-gating rule than D67's current one), not simply a copy/disclosure fix -
+      budget for a possible rework pass after the review, not just a sign-off.
 - [ ] **Define the refund and parent-contact process for a purchase made on a minor's account**
       (`docs/ARCHITECTURE.md` D68, `/phase-audit 8`): the backend refuses to grant an entitlement
       to a known-or-unknown-age minor and records the attempt (`monetisation.minor_purchase_blocked`
@@ -505,6 +509,11 @@ own repo later, hosted on Railway.
       all is permissible in this form - not yet reviewed by counsel. Same category of review as
       the existing instrument about/tip item above, but a separate item since the underlying
       question (can this exist in this shape at all) is more fundamental than a copy-tone check.
+      **Treat this as a product-risk item, not just a compliance task**: the review could
+      conclude the current design (fictional wrapper tracking a real scheme's NAV, D45) can't
+      ship as-is, which would mean redesigning the Funds feature itself (e.g. dropping the
+      real-NAV tracking, or the fictional-wrapper framing entirely), not a naming/disclosure
+      tweak - budget for that possibility, not just a sign-off.
 - [ ] Wire real alerting (Sentry or similar) for failed scheduled jobs - today a failed Inngest
       run (the AMFI NAV ingestion job, the SIP execution job, the LIMIT-matching/EOD-cancel jobs,
       the weekly report card) only shows up as a scrubbed log line (`logInternalError`) and in the
