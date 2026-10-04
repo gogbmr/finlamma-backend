@@ -1,5 +1,49 @@
 # Status
 
+## 2026-10-04 — `/phase-audit 8` complete. Four findings fixed (one Critical), branch pending `/publish-contract`
+
+Audited Phase 8 (Monetisation) in full: both ROADMAP items, FEATURE_MAP (zero rows assigned to
+Phase 8 - nothing to check there), code health, the Supabase database, the API surface,
+production, a dedicated security audit focused on the user's five specific asks, and
+docs-vs-reality.
+
+**Clean**: migration 0048 applied and matches `src/db/schema/monetisation.ts` exactly, RLS
+enabled with zero policies on `entitlements`/`webhook_events`, zero WARN-or-above Supabase
+advisors, `pnpm typecheck`/`pnpm lint`/`pnpm build` clean, `pnpm test` 224 files/2259 tests green,
+zero `vmoney_ledger`/`xp_events` references anywhere in this phase's code (confirmed by grep and
+independently by the security-auditor), webhook secrets/signatures never logged, production
+baseline (main, Phase 8 not yet merged) healthy with its deployed commit matching `origin/main`
+exactly.
+
+**Four issues found and fixed same day**:
+1. **[Critical] `processRevenueCatWebhookEvent` granted `ad_free` to any `app_user_id` with zero
+   age check** - `docs/ARCHITECTURE.md` D67's claim that "a minor's account can never successfully
+   complete a RevenueCat purchase flow" was not actually true in the shipped code; the only
+   enforcement that existed was the client-facing `canSubscribe` flag, which the webhook never
+   consulted. Fixed: both the webhook AND the daily reconciliation job now check
+   `treatAsMinorForMonetisation(user.dateOfBirth)` before any grant/extension, recording a blocked
+   attempt via the activity log (`monetisation.minor_purchase_blocked`, no payment data) for staff
+   follow-up. Recorded as D68; D67's text corrected to match reality.
+2. **[Medium] `entitlements.raw` stored RevenueCat's entire webhook event verbatim**, including
+   store transaction identifiers and potential subscriber-attribute PII. Fixed: persists only an
+   explicit allowlist (event id/type/timestamp/store) instead of the full passed-through object.
+3. **[Medium] No protection against two different webhook events for the same user arriving out of
+   order** - RevenueCat makes no delivery-order guarantee, and the schema didn't even capture its
+   `event_timestamp_ms` field. Fixed: captures that field and ignores a genuinely older event
+   rather than letting it regress already-applied newer state.
+4. **[Low, latent] `isMinor()` resolved to "not a minor" on an unparseable, non-empty date string**
+   (`NaN < 18` is `false` in JS) - unreachable today (every real call site already guards with a
+   Zod schema, the Postgres `date` column type, or a truthy-check), but hardened to fail closed
+   since it's a shared primitive used for consent gating too.
+
+**Two non-blocking NEEDS-USER items**: seed `ads_config` in production (`pnpm seed:settings` or
+the equivalent SQL - has a correct code fallback either way, so not urgent); verify
+`POST /api/webhooks/clerk`/`revenuecat` reject unsigned requests and `/admin` redirects
+signed-out visitors (the audit's own tooling couldn't issue authenticated POSTs or read raw HTTP
+status in this sandbox - exact `curl` commands given to the user).
+
+**The user runs `/publish-contract` themselves** before this branch merges to `main`.
+
 ## 2026-09-30 — `/phase-audit 7` complete. Eight findings fixed, branch pending `/publish-contract`
 
 Audited Phase 7 (Notifications & Doubt Zone) in full: both ROADMAP items plus the parent
