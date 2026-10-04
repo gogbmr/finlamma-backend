@@ -162,6 +162,11 @@ describe("isMinor", () => {
     const dob = new Date(Date.UTC(now.getUTCFullYear() - 18, now.getUTCMonth(), now.getUTCDate()));
     expect(isMinor(dob.toISOString().slice(0, 10))).toBe(false);
   });
+
+  it("fails closed (treats as a minor) on an unparseable date, rather than NaN arithmetic silently resolving to false (/phase-audit 8)", () => {
+    expect(isMinor("not-a-date")).toBe(true);
+    expect(isMinor("   ")).toBe(true);
+  });
 });
 
 describe("setDateOfBirth", () => {

@@ -45,8 +45,13 @@ registry.registerPath({
               id: z.string().openapi({ example: "12345678-1234-1234-1234-123456789012" }),
               type: z.string().openapi({ example: "RENEWAL" }),
               app_user_id: z.string().openapi({ description: "Our internal users.id" }),
+              event_timestamp_ms: z
+                .number()
+                .optional()
+                .openapi({ description: "Backs the out-of-order-delivery guard" }),
               expiration_at_ms: z.number().nullable().optional(),
               entitlement_ids: z.array(z.string()).optional().openapi({ example: ["ad_free"] }),
+              store: z.string().optional().openapi({ example: "APP_STORE" }),
             }),
           }),
         },

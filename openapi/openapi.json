@@ -14438,6 +14438,10 @@
                         "type": "string",
                         "description": "Our internal users.id"
                       },
+                      "event_timestamp_ms": {
+                        "type": "number",
+                        "description": "Backs the out-of-order-delivery guard"
+                      },
                       "expiration_at_ms": {
                         "type": [
                           "number",
@@ -14452,6 +14456,10 @@
                         "example": [
                           "ad_free"
                         ]
+                      },
+                      "store": {
+                        "type": "string",
+                        "example": "APP_STORE"
                       }
                     },
                     "required": [

@@ -4768,8 +4768,10 @@ Called by RevenueCat (not the app or the mobile client) when a subscriber's enti
 | `event.id` | string | yes |  |
 | `event.type` | string | yes |  |
 | `event.app_user_id` | string | yes | Our internal users.id |
+| `event.event_timestamp_ms` | number | no | Backs the out-of-order-delivery guard |
 | `event.expiration_at_ms` | number or null | no |  |
 | `event.entitlement_ids` | array<string> | no |  |
+| `event.store` | string | no |  |
 
 ```json
 {
@@ -4778,10 +4780,12 @@ Called by RevenueCat (not the app or the mobile client) when a subscriber's enti
     "id": "12345678-1234-1234-1234-123456789012",
     "type": "RENEWAL",
     "app_user_id": "string",
+    "event_timestamp_ms": 0,
     "expiration_at_ms": 0,
     "entitlement_ids": [
       "ad_free"
-    ]
+    ],
+    "store": "APP_STORE"
   }
 }
 ```

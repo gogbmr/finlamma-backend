@@ -25,6 +25,7 @@ vi.mock("@/server/worlds/service", () => ({
 
 const mockRepo = {
   findUserById: vi.fn(),
+  getEntitlement: vi.fn(),
   getEntitlementsForUser: vi.fn(),
   listEntitlementsNearExpiry: vi.fn(),
   recordWebhookEventIfNew: vi.fn(),
@@ -42,7 +43,12 @@ const {
   treatAsMinorForMonetisation,
 } = await import("./service");
 
-const USER = { id: "user-1" };
+// An adult by default - /phase-audit 8's Critical finding was that the
+// webhook granted entitlements with NO age check at all, so every "happy
+// path" test below now exercises that check too (via mockIsMinor's default
+// of `false`, set in the outer beforeEach) rather than bypassing it the way
+// a dateOfBirth-less fixture used to.
+const USER = { id: "user-1", dateOfBirth: "1990-01-01" };
 
 function makePayload(overrides: Record<string, unknown> = {}) {
   return {
@@ -51,8 +57,10 @@ function makePayload(overrides: Record<string, unknown> = {}) {
       id: "evt-1",
       type: "RENEWAL",
       app_user_id: USER.id,
+      event_timestamp_ms: 1699999999000,
       expiration_at_ms: 1700000000000,
       entitlement_ids: ["ad_free"],
+      store: "APP_STORE",
       ...overrides,
     },
   };
@@ -62,6 +70,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRepo.recordWebhookEventIfNew.mockResolvedValue(true);
   mockRepo.findUserById.mockResolvedValue(USER);
+  mockRepo.getEntitlement.mockResolvedValue(null); // no prior row - staleness check never fires
+  mockIsMinor.mockReturnValue(false); // adult by default
 });
 
 describe("processRevenueCatWebhookEvent", () => {
@@ -116,7 +126,9 @@ describe("processRevenueCatWebhookEvent", () => {
       entitlement: "ad_free",
       source: "revenuecat",
       expiresAt: new Date(1700000000000),
-      raw: expect.objectContaining({ id: "evt-1", type: "RENEWAL" }),
+      // Allowlisted shape only (/phase-audit 8 fix) - never the full event
+      // object (no price, no transaction/store ids, no subscriber attrs).
+      raw: { eventId: "evt-1", eventType: "RENEWAL", eventTimestampMs: 1699999999000, store: "APP_STORE" },
     });
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -135,6 +147,102 @@ describe("processRevenueCatWebhookEvent", () => {
     expect(mockRepo.upsertEntitlement).toHaveBeenCalledWith(
       expect.objectContaining({ expiresAt: null }),
     );
+  });
+
+  it("stores null eventTimestampMs/store when the event doesn't carry them", async () => {
+    await processRevenueCatWebhookEvent(makePayload({ event_timestamp_ms: undefined, store: undefined }));
+
+    expect(mockRepo.upsertEntitlement).toHaveBeenCalledWith(
+      expect.objectContaining({ raw: expect.objectContaining({ eventTimestampMs: null, store: null }) }),
+    );
+  });
+
+  describe("minor-blocking (docs/ARCHITECTURE.md D67, /phase-audit 8 Critical fix)", () => {
+    it("blocks the grant for a known-minor account, records the attempt, and never upserts", async () => {
+      mockIsMinor.mockReturnValueOnce(true);
+
+      await processRevenueCatWebhookEvent(makePayload());
+
+      expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+      expect(mockLogInternalError).toHaveBeenCalledWith(
+        "revenuecat_blocked_minor_entitlement",
+        expect.anything(),
+      );
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorType: "system",
+          action: "monetisation.minor_purchase_blocked",
+          targetType: "entitlements",
+          targetId: USER.id,
+          metadata: { entitlement: "ad_free", eventId: "evt-1", source: "webhook" },
+        }),
+      );
+      // Nothing payment-related in the recorded attempt - no price, no
+      // transaction id, no event type even.
+      const blockedCall = mockLogActivity.mock.calls.find(
+        (c) => c[0].action === "monetisation.minor_purchase_blocked",
+      );
+      expect(Object.keys(blockedCall![0].metadata)).toEqual(["entitlement", "eventId", "source"]);
+    });
+
+    it("blocks the grant when dateOfBirth is missing entirely - fails closed, never calls isMinor", async () => {
+      mockRepo.findUserById.mockResolvedValueOnce({ id: USER.id, dateOfBirth: null });
+
+      await processRevenueCatWebhookEvent(makePayload());
+
+      expect(mockIsMinor).not.toHaveBeenCalled();
+      expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "monetisation.minor_purchase_blocked" }),
+      );
+    });
+
+    it("a confirmed adult's grant proceeds normally (not every account is blocked)", async () => {
+      mockIsMinor.mockReturnValueOnce(false);
+
+      await processRevenueCatWebhookEvent(makePayload());
+
+      expect(mockRepo.upsertEntitlement).toHaveBeenCalled();
+      expect(mockLogActivity).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: "monetisation.minor_purchase_blocked" }),
+      );
+    });
+  });
+
+  describe("out-of-order delivery guard (/phase-audit 8 fix)", () => {
+    it("ignores an older event when a newer one is already stored, and never overwrites", async () => {
+      mockRepo.getEntitlement.mockResolvedValueOnce({
+        raw: { eventId: "evt-0", eventType: "RENEWAL", eventTimestampMs: 1800000000000, store: "APP_STORE" },
+      });
+
+      // Default payload's event_timestamp_ms (1699999999000) is older than
+      // the stored 1800000000000.
+      await processRevenueCatWebhookEvent(makePayload());
+
+      expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+      expect(mockLogInternalError).toHaveBeenCalledWith(
+        "revenuecat_webhook_stale_event_ignored",
+        expect.anything(),
+      );
+    });
+
+    it("applies a newer event over an older stored one normally", async () => {
+      mockRepo.getEntitlement.mockResolvedValueOnce({
+        raw: { eventId: "evt-0", eventType: "RENEWAL", eventTimestampMs: 1600000000000, store: "APP_STORE" },
+      });
+
+      await processRevenueCatWebhookEvent(makePayload());
+
+      expect(mockRepo.upsertEntitlement).toHaveBeenCalled();
+    });
+
+    it("never skips when either side is missing a timestamp to compare", async () => {
+      mockRepo.getEntitlement.mockResolvedValueOnce({ raw: { eventId: "evt-0", eventType: "RENEWAL" } });
+
+      await processRevenueCatWebhookEvent(makePayload({ event_timestamp_ms: undefined }));
+
+      expect(mockRepo.upsertEntitlement).toHaveBeenCalled();
+    });
   });
 });
 
@@ -323,5 +431,81 @@ describe("reconcileEntitlementsNearExpiry", () => {
 
     expect(result).toEqual({ checked: 1, updated: 0 });
     expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+  });
+
+  describe("minor-blocking (/phase-audit 8: \"don't let the second path reintroduce the hole\")", () => {
+    it("blocks a renewal for a known-minor account, records the attempt, and never upserts", async () => {
+      const stale = new Date("2026-01-05T00:00:00Z");
+      const renewed = new Date("2026-02-05T00:00:00Z");
+      mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+        { userId: "user-1", entitlement: "ad_free", expiresAt: stale },
+      ]);
+      mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: renewed }]);
+      mockRepo.findUserById.mockResolvedValueOnce({ id: "user-1", dateOfBirth: "2015-01-01" });
+      mockIsMinor.mockReturnValueOnce(true);
+
+      const result = await reconcileEntitlementsNearExpiry();
+
+      expect(result).toEqual({ checked: 1, updated: 0 });
+      expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "monetisation.minor_purchase_blocked",
+          targetId: "user-1",
+          metadata: { entitlement: "ad_free", eventId: null, source: "reconciliation" },
+        }),
+      );
+    });
+
+    it("blocks a renewal when the stored entitlement's user now has no dateOfBirth on file - fails closed", async () => {
+      const stale = new Date("2026-01-05T00:00:00Z");
+      const renewed = new Date("2026-02-05T00:00:00Z");
+      mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+        { userId: "user-1", entitlement: "ad_free", expiresAt: stale },
+      ]);
+      mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: renewed }]);
+      mockRepo.findUserById.mockResolvedValueOnce({ id: "user-1", dateOfBirth: null });
+
+      const result = await reconcileEntitlementsNearExpiry();
+
+      expect(mockIsMinor).not.toHaveBeenCalled();
+      expect(result).toEqual({ checked: 1, updated: 0 });
+      expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+    });
+
+    it("logs and skips a row whose user no longer exists, without crashing the batch", async () => {
+      const stale = new Date("2026-01-05T00:00:00Z");
+      const renewed = new Date("2026-02-05T00:00:00Z");
+      mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+        { userId: "user-1", entitlement: "ad_free", expiresAt: stale },
+      ]);
+      mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: renewed }]);
+      mockRepo.findUserById.mockResolvedValueOnce(null);
+
+      const result = await reconcileEntitlementsNearExpiry();
+
+      expect(result).toEqual({ checked: 1, updated: 0 });
+      expect(mockLogInternalError).toHaveBeenCalledWith(
+        "revenuecat_reconciliation_unknown_user",
+        expect.anything(),
+      );
+      expect(mockRepo.upsertEntitlement).not.toHaveBeenCalled();
+    });
+
+    it("still updates normally for a confirmed adult (the age check doesn't block everyone)", async () => {
+      const stale = new Date("2026-01-05T00:00:00Z");
+      const renewed = new Date("2026-02-05T00:00:00Z");
+      mockRepo.listEntitlementsNearExpiry.mockResolvedValueOnce([
+        { userId: "user-1", entitlement: "ad_free", expiresAt: stale },
+      ]);
+      mockProvider.getSubscriberEntitlements.mockResolvedValueOnce([{ entitlement: "ad_free", expiresAt: renewed }]);
+      mockRepo.findUserById.mockResolvedValueOnce({ id: "user-1", dateOfBirth: "1990-01-01" });
+      mockIsMinor.mockReturnValueOnce(false);
+
+      const result = await reconcileEntitlementsNearExpiry();
+
+      expect(result).toEqual({ checked: 1, updated: 1 });
+      expect(mockRepo.upsertEntitlement).toHaveBeenCalledWith(expect.objectContaining({ userId: "user-1" }));
+    });
   });
 });

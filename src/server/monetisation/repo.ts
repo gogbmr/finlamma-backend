@@ -48,6 +48,18 @@ export async function getEntitlementsForUser(userId: string) {
   return db.select().from(entitlements).where(eq(entitlements.userId, userId));
 }
 
+// Single-row read for the webhook's out-of-order-delivery guard (service.ts)
+// - needs the CURRENT stored state for this exact (userId, entitlement)
+// before deciding whether an incoming event is stale.
+export async function getEntitlement(userId: string, entitlement: EntitlementKey) {
+  const [row] = await db
+    .select()
+    .from(entitlements)
+    .where(and(eq(entitlements.userId, userId), eq(entitlements.entitlement, entitlement)))
+    .limit(1);
+  return row ?? null;
+}
+
 // Checkpoint 4's reconciliation job scope: RevenueCat-sourced rows whose
 // expiresAt falls inside [windowStart, windowEnd] - a never-expiring row
 // (expiresAt null) is excluded entirely, since there's nothing a missed

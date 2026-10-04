@@ -7,6 +7,7 @@ import { countLeadingClearedWorlds } from "@/server/worlds/service";
 import { getRevenueCatProvider } from "./provider";
 import {
   findUserById,
+  getEntitlement,
   getEntitlementsForUser,
   listEntitlementsNearExpiry,
   recordWebhookEventIfNew,
@@ -18,7 +19,9 @@ import {
   DEFAULT_ADS_SETTINGS,
   ENTITLEMENT_KEYS,
   type EntitlementKey,
+  type RevenueCatWebhookPayload,
   RevenueCatWebhookPayloadSchema,
+  type StoredEntitlementEventMetadata,
 } from "./schemas";
 
 // Checkpoint 4: the reconciliation job's scope - a RevenueCat-sourced
@@ -31,6 +34,49 @@ const RECONCILIATION_LOOKBACK_DAYS = 7;
 const RECONCILIATION_LOOKAHEAD_DAYS = 2;
 
 const KNOWN_ENTITLEMENT_IDS = new Set<string>(ENTITLEMENT_KEYS);
+
+// docs/ARCHITECTURE.md D67: never grant or extend an entitlement for a
+// known-or-unknown-age minor, from EITHER write path (the webhook, or the
+// reconciliation job) - `/phase-audit 8` found the webhook path had no age
+// check at all. The attempt is recorded (user, entitlement, which path,
+// and a webhook event id if there is one) via the append-only activity
+// log, deliberately excluding anything payment-related, so staff can find
+// and follow up on it (the activity log viewer already exists in /admin -
+// no new UI needed). A flagged case means a real store-level charge
+// already happened that this backend cannot itself reverse - refusing the
+// grant stops it from being silently legitimized, but someone still has to
+// follow up (see docs/ROADMAP.md's pre-launch checklist item on the
+// refund/parent-contact process).
+async function recordBlockedMinorEntitlementAttempt(input: {
+  userId: string;
+  entitlement: EntitlementKey;
+  eventId: string | null;
+  source: "webhook" | "reconciliation";
+}): Promise<void> {
+  logInternalError(
+    "revenuecat_blocked_minor_entitlement",
+    new Error(`Blocked an entitlement grant for a known-or-unknown-age minor account (${input.source})`),
+  );
+  await logActivity({
+    actorType: "system",
+    action: "monetisation.minor_purchase_blocked",
+    targetType: "entitlements",
+    targetId: input.userId,
+    metadata: { entitlement: input.entitlement, eventId: input.eventId, source: input.source },
+  });
+}
+
+// The allowlisted shape actually persisted into entitlements.raw - see
+// StoredEntitlementEventMetadata's comment (schemas.ts) for why this is
+// never the full passthrough event.
+function buildStoredEventMetadata(event: RevenueCatWebhookPayload["event"]): StoredEntitlementEventMetadata {
+  return {
+    eventId: event.id,
+    eventType: event.type,
+    eventTimestampMs: event.event_timestamp_ms ?? null,
+    store: event.store ?? null,
+  };
+}
 
 // The only webhook entry point for RevenueCat (src/app/api/webhooks/
 // revenuecat/route.ts). Deliberately never throws for anything short of a
@@ -72,12 +118,51 @@ export async function processRevenueCatWebhookEvent(rawPayload: unknown): Promis
     return;
   }
 
+  // D67 (`/phase-audit 8` finding): this check used to not exist at all -
+  // the webhook granted entitlements to any app_user_id with zero regard
+  // for age. Must run BEFORE the upsert, not after.
+  if (treatAsMinorForMonetisation(user.dateOfBirth)) {
+    await recordBlockedMinorEntitlementAttempt({
+      userId: user.id,
+      entitlement: entitlementId,
+      eventId: event.id,
+      source: "webhook",
+    });
+    return;
+  }
+
+  // Out-of-order-delivery guard: RevenueCat makes no delivery-order
+  // guarantee (`/phase-audit 8` finding - this previously didn't exist,
+  // and the schema didn't even capture event_timestamp_ms to build it
+  // from). A genuinely older event arriving after a newer one was already
+  // applied must never regress the stored state - e.g. a late RENEWAL
+  // reinstating access after a later EXPIRATION already correctly cleared
+  // it. Exact-replay (the same event id twice) is already handled above by
+  // recordWebhookEventIfNew; this catches a DIFFERENT, older event for the
+  // same (user, entitlement) arriving late.
+  const existing = await getEntitlement(user.id, entitlementId);
+  const existingTimestampMs =
+    existing?.raw && typeof existing.raw === "object" && "eventTimestampMs" in existing.raw
+      ? (existing.raw as StoredEntitlementEventMetadata).eventTimestampMs
+      : null;
+  if (
+    existingTimestampMs != null &&
+    event.event_timestamp_ms != null &&
+    event.event_timestamp_ms < existingTimestampMs
+  ) {
+    logInternalError(
+      "revenuecat_webhook_stale_event_ignored",
+      new Error("Ignored an out-of-order RevenueCat event older than the currently-stored state"),
+    );
+    return;
+  }
+
   await upsertEntitlement({
     userId: user.id,
     entitlement: entitlementId,
     source: "revenuecat",
     expiresAt: event.expiration_at_ms != null ? new Date(event.expiration_at_ms) : null,
-    raw: event as Record<string, unknown>,
+    raw: buildStoredEventMetadata(event),
   });
 
   await logActivity({
@@ -186,6 +271,29 @@ export async function reconcileEntitlementsNearExpiry(): Promise<{ checked: numb
     const currentExpiresAtMs = row.expiresAt?.getTime() ?? null;
     const liveExpiresAtMs = live.expiresAt?.getTime() ?? null;
     if (currentExpiresAtMs === liveExpiresAtMs) continue; // already in sync, no write needed
+
+    // D67 (`/phase-audit 8` finding, "don't let the second path reintroduce
+    // the hole"): the webhook path refuses to grant/extend access for a
+    // minor - reconciliation must refuse the exact same way before writing
+    // a renewed/extended expiresAt, e.g. if a user's dateOfBirth was
+    // corrected by staff after an entitlement already existed.
+    const user = await findUserById(row.userId);
+    if (!user) {
+      logInternalError(
+        "revenuecat_reconciliation_unknown_user",
+        new Error("No users row for a stored entitlement's userId"),
+      );
+      continue;
+    }
+    if (treatAsMinorForMonetisation(user.dateOfBirth)) {
+      await recordBlockedMinorEntitlementAttempt({
+        userId: row.userId,
+        entitlement: row.entitlement,
+        eventId: null,
+        source: "reconciliation",
+      });
+      continue;
+    }
 
     await upsertEntitlement({
       userId: row.userId,
