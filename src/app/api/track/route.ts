@@ -35,7 +35,15 @@ const TrackRequestSchema = z
       .optional()
       .openapi({ description: "Only present for app_store_link_clicked.", example: "android" }),
   })
-  .strict();
+  .strict()
+  // No security/PII impact either way (platform is a closed two-value enum,
+  // same as event) - this is tidiness, not a guard: `/phase-audit 9` flagged
+  // that a homepage_viewed carrying a platform value was silently accepted
+  // and would have been forwarded as a property on the wrong event.
+  .refine((v) => v.platform === undefined || v.event === "app_store_link_clicked", {
+    message: "platform is only valid with event: \"app_store_link_clicked\"",
+    path: ["platform"],
+  });
 
 registry.registerPath({
   method: "post",

@@ -93,4 +93,11 @@ describe("POST /api/track", () => {
 
     expect(res.status).toBe(200);
   });
+
+  it("rejects platform sent alongside an event other than app_store_link_clicked", async () => {
+    const res = await POST(makeRequest({ event: "homepage_viewed", platform: "android" }));
+
+    expect(res.status).toBe(400);
+    expect(mockCaptureEvent).not.toHaveBeenCalled();
+  });
 });
