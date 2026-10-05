@@ -2,13 +2,16 @@ import type { Metadata } from "next";
 import {
   Ban,
   BookOpen,
+  Clock,
   Coins,
   Crown,
   EyeOff,
+  Flame,
   GraduationCap,
   LineChart,
   ShieldCheck,
   Sparkles,
+  Star,
   Trophy,
   UserCheck,
 } from "lucide-react";
@@ -151,6 +154,46 @@ export default async function HomePage() {
                 className="mascot-float h-72 w-auto drop-shadow-2xl sm:h-96 md:h-128"
               />
             </div>
+          </div>
+        </section>
+
+        {/* Dashboard preview - an illustrative example of the in-app stat
+            strip (time/streak/V Money/XP), styled after the hologram-tile
+            look in the brand sheet. Explicitly labelled "illustrative" -
+            this is a product-UI preview, not a claim about any real
+            learner's numbers, a user count, or a rating. */}
+        <section className="bg-marketing-deep-900 py-14 text-white md:py-16">
+          <div className="mx-auto w-full max-w-4xl px-4 sm:px-6">
+            <Reveal className="text-center">
+              <h2 className="text-xl font-bold sm:text-2xl">Track everything that matters</h2>
+              <p className="mt-2 text-sm text-white/60">
+                A look at the in-app dashboard — illustrative preview, not a real learner&apos;s data.
+              </p>
+            </Reveal>
+            <Reveal delayMs={100}>
+              <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  { icon: Clock, value: "1h 25m", label: "Time today", ring: "#38bdf8" },
+                  { icon: Flame, value: "12", label: "Day streak", ring: "#fb7185" },
+                  { icon: Coins, value: "6.1k", label: "V Money", ring: "var(--marketing-gold)" },
+                  { icon: Star, value: "12.6k", label: "XP", ring: "var(--brand-violet-400)" },
+                ].map((stat) => (
+                  <div
+                    key={stat.label}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-4 text-center backdrop-blur-sm"
+                  >
+                    <div
+                      className="mx-auto flex h-11 w-11 items-center justify-center rounded-full"
+                      style={{ boxShadow: `inset 0 0 0 2px ${stat.ring}`, color: stat.ring }}
+                    >
+                      <stat.icon className="h-5 w-5" aria-hidden />
+                    </div>
+                    <p className="mt-3 font-mono text-xl font-bold">{stat.value}</p>
+                    <p className="text-xs tracking-wide text-white/50 uppercase">{stat.label}</p>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
           </div>
         </section>
 
