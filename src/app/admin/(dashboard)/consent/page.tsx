@@ -1,3 +1,4 @@
+import { ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
@@ -25,6 +26,7 @@ export default async function ConsentReviewPage({
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Consent" }]}
+        icon={ShieldCheck}
         title="Parental consent"
         description="Read-only status for every under-18 account's parental-consent request. This view cannot approve, deny or bypass consent - only the parent can, via their emailed link. Parent contact details are hidden by default; viewing them is logged. Deleted accounts are hidden by default and their contact details are never revealable."
       />

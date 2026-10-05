@@ -1,3 +1,4 @@
+import { Award } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
@@ -22,6 +23,7 @@ export default async function BadgesPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Badges" }]}
+        icon={Award}
         title="Badges"
         description="Badges pay V Money on unlock, once per learner, automatically evaluated after every real lesson credit. Publish is blocked until every en/hi/hx field is filled."
       />

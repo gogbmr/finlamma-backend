@@ -1,3 +1,4 @@
+import { BookOpen } from "lucide-react";
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
@@ -36,6 +37,7 @@ export default async function LessonsPage({
       <div className="space-y-4">
         <PageHeader
           breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Lessons" }]}
+          icon={BookOpen}
           title="Lessons"
         />
         <p className="text-sm text-muted-foreground">
@@ -62,6 +64,7 @@ export default async function LessonsPage({
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Lessons" }]}
+        icon={BookOpen}
         title="Lessons"
         description="Each world is a trail of up to 8 chapters x 5 steps. Publish is blocked until every en/hi/hx field (title, blurb, every localized field inside content) is filled, and until the lesson's world is itself published."
       />
