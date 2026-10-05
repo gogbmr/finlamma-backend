@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPublicDocument } from "@/server/legal/service";
+import { LegalDocumentClient } from "./legal-document-client";
 
 const TITLES = {
   terms: "Terms of Use",
@@ -39,20 +39,11 @@ export default async function LegalDocumentPage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-12 sm:px-6">
-      <Link href="/" className="text-sm font-medium text-primary hover:underline">
-        ← Back to Finlamma
-      </Link>
-      <h1 className="mt-4 text-2xl font-bold text-foreground">{TITLES[type]}</h1>
-      {doc.isPlaceholder && (
-        <p className="mt-3 rounded-md border border-status-draft-fg/30 bg-status-draft-bg px-3 py-2 text-sm text-status-draft-fg">
-          This is a placeholder document pending final legal review.
-        </p>
-      )}
-      <p className="mt-2 text-xs text-muted-foreground">Version {doc.version}</p>
-      <div className="mt-6 space-y-4 text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
-        {doc.content.en}
-      </div>
-    </div>
+    <LegalDocumentClient
+      type={type}
+      version={doc.version}
+      content={doc.content}
+      isPlaceholder={doc.isPlaceholder}
+    />
   );
 }

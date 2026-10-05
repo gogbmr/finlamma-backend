@@ -233,6 +233,34 @@ export const WEEKLY_REPORT_OPT_IN_COPY: Record<ConsentLang, WeeklyReportOptInCop
   },
 };
 
+// Shared with /legal/[type] (src/app/legal/[type]/legal-document-client.tsx)
+// - the same reasoning as every page above: a Hindi/Hinglish-reading parent
+// or learner should be able to actually read the Terms/Privacy/Risk
+// Disclosure text they're agreeing to, not just the consent flow around it.
+type LegalPageCopy = {
+  backLink: string;
+  versionLabel: (version: number) => string;
+  placeholderNotice: string;
+};
+
+export const LEGAL_PAGE_COPY: Record<ConsentLang, LegalPageCopy> = {
+  en: {
+    backLink: "← Back to Finlamma",
+    versionLabel: (version) => `Version ${version}`,
+    placeholderNotice: "This is a placeholder document pending final legal review.",
+  },
+  hi: {
+    backLink: "← Finlamma par vaapas jaayein",
+    versionLabel: (version) => `Version ${version}`,
+    placeholderNotice: "Yeh ek placeholder dastavez hai jo abhi final legal review ki prateeksha mein hai.",
+  },
+  hx: {
+    backLink: "← Finlamma par wapas jaayein",
+    versionLabel: (version) => `Version ${version}`,
+    placeholderNotice: "Yeh ek placeholder document hai jo abhi final legal review ka wait kar raha hai.",
+  },
+};
+
 type WithdrawCopy = {
   pageTitle: string;
   intro: (childFirstName: string) => string;
