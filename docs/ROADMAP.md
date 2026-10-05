@@ -390,9 +390,14 @@ own repo later, hosted on Railway.
       covering index), but worth a real pass once query patterns and data volume are closer to
       production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
-      questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`)
+      questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`,
+      **and the Terms/Privacy/Risk-disclosure `hi`/`hx` drafts in `scripts/seed-legal-documents.ts`**)
       — the seed/draft copy written during development (e.g. `scripts/seed-mentors.ts`'s
-      Hindi/Hinglish bios) is a best-effort approximation, not reviewed by a native speaker.
+      Hindi/Hinglish bios, and the legal-document translations) is a best-effort approximation, not
+      reviewed by a native speaker. The legal-document translations specifically need a reviewer who
+      can confirm the *legal meaning* survived translation, not just that the words are readable —
+      a mistranslation in a risk disclosure or consent-adjacent clause is a materially different risk
+      than one in a mentor bio.
 - [ ] **Legal/compliance review of every `instruments.about`/`instruments.tip` field for
       advice-like language** (target prices, "buy now", growth predictions, etc.) before launch.
       The admin editor shows a non-blocking keyword-heuristic warning while staff author this
