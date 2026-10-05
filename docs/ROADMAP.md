@@ -521,6 +521,14 @@ own repo later, hosted on Railway.
       (founder decision, Phase 4 Checkpoint 8) but a real gap once real learners depend on these
       jobs running - deferred from Phase 0's Sentry item above, called out again here since it's
       specifically the AMFI ingestion job's own failure mode that motivated re-flagging it.
+- [ ] **Re-test local dev admin auth after any Next/Clerk upgrade; remove the workaround note if
+      fixed upstream.** As of 2026-10-05, local `pnpm dev` returns 500 on every `/admin/*` route
+      with a misleading Clerk "middleware might be misplaced" error - a dev-only regression in
+      Next 16.3.5 + `@clerk/nextjs` 7.9.4, not a real file-placement problem (see `docs/STATUS.md`'s
+      2026-10-05 entry for the full diagnosis). `pnpm build && pnpm start` and the Vercel preview
+      both work correctly, so this was left as a documented limitation rather than chasing an
+      upstream fix pre-launch. Check this again the next time either package is upgraded, and
+      delete the workaround note in `CLAUDE.md`/`docs/STATUS.md` once a real fix lands.
 
 ## Later (non-blocking — no phase assigned)
 - [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's

@@ -1,5 +1,44 @@
 # Status
 
+## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement)
+
+While doing the `design-pass-homepage-admin` design pass, local `pnpm dev` started throwing on
+every `/admin/*` request: `Clerk: clerkMiddleware() was not run, your middleware or proxy file
+might be misplaced. Move your middleware or proxy file to ./src/middleware.ts.` The message is
+misleading - diagnosed in full before touching anything:
+
+- `middleware.ts` has always lived at the project root and this branch never touched it
+  (`git log main..HEAD -- middleware.ts` is empty). Root placement is explicitly valid per
+  Next.js's own docs even with a `src/app` directory.
+- Traced the message into `@clerk/nextjs`'s source (`fs/middleware-location.js`): whenever
+  `src/app` exists, Clerk's hint generator *always* suggests moving the file into `src/`,
+  regardless of whether root placement is actually the problem. It's a generic guess attached to
+  a different, real error ("Clerk can't find its auth-status header on this request"), not a
+  diagnosis.
+- Reproduced identically under `pnpm dev` (Turbopack) and `next dev --webpack` - rules out
+  Turbopack specifically. It's a `next dev` (dev server) problem in general.
+- `pnpm build && pnpm start` locally reproduces **correctly** - `/admin/ops` 307-redirects to
+  `/admin/sign-in` with a proper `x-clerk-auth-status: signed-out` header, exactly like
+  production. So this is a dev-vs-build split, not local-vs-deployed - the branch's Vercel preview
+  (which runs a production build) should be unaffected.
+- Tested, as a temporary and fully reverted experiment (not committed), whether Next 16's
+  `middleware.ts` → `proxy.ts` rename was the real cause: with *only* a `proxy.ts` present (same
+  content, `middleware.ts` moved aside), the exact same 500 reproduced. So renaming would not have
+  fixed it, and the working tree was restored to clean before concluding.
+
+**Decision**: leave this as a known, documented limitation rather than chase an upstream fix now -
+bumping Next/Clerk on a project with 2,298 passing tests to fix a local dev-only convenience isn't
+worth the risk. **Workaround**: use `pnpm build && pnpm start` locally when testing `/admin/*`, or
+review on the branch's Vercel preview. See `CLAUDE.md`'s Next.js breaking-changes note and the
+pre-launch checklist item to re-test this after any future Next/Clerk upgrade.
+
+**Separate, unrelated known issue hit during the same investigation**: killing a `next dev`
+process (e.g. via `taskkill`) can corrupt `.next/dev/types/*`, which then makes `pnpm build` fail
+its own TypeScript check with nonsense syntax errors ("Unterminated template literal") in
+generated route-type files, not real code. Fix: `rm -rf .next` before rebuilding. Already known
+from the design-pass session's earlier Turbopack-hang workaround; recorded here again since it
+resurfaced during this investigation.
+
 ## 2026-10-04 — `/phase-audit 9` complete. Two Low findings, both fixed; branch pending `/publish-contract`
 
 Audited Phase 9 (Analytics & homepage) in full, with six focus areas the founder specified beyond
