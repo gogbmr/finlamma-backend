@@ -57,31 +57,31 @@ const WHAT_ICONS = {
 
 const HOW_IT_WORKS = [
   { step: "Learn", desc: "Short video and text lessons, one idea at a time.", icon: BookOpen },
-  { step: "Quiz", desc: "Server-timed quizzes check what stuck.", icon: Trophy },
-  { step: "Earn", desc: "Earn XP and virtual money (V Money) for progress.", icon: Sparkles },
-  { step: "Simulate", desc: "Practice paper trading on real market data — zero real money at risk.", icon: LineChart },
+  { step: "Quiz", desc: "Timed quizzes check what stuck.", icon: Trophy },
+  { step: "Earn", desc: "Earn XP and V Money as you go.", icon: Sparkles },
+  { step: "Simulate", desc: "Paper trading on real market data. Zero real money at risk.", icon: LineChart },
 ];
 
 const FAQS = [
   {
     q: "Is real money involved?",
-    a: "No. Finlamma uses virtual money (V Money) only. Trading is simulated against real market data for practice, but no real money is ever deposited, traded, or withdrawn.",
+    a: "No. Finlamma only uses virtual money (V Money). Trading is simulated against real market data for practice. No real money is ever deposited, traded, or withdrawn.",
   },
   {
     q: "Is this investment advice?",
-    a: "No. Finlamma is an educational app. Nothing in the app, including the Doubt Zone chat, is personal investment advice.",
+    a: "No. Finlamma is an educational app. Nothing in it, including the AI chat, is personal investment advice.",
   },
   {
     q: "Do parents need to approve their child's account?",
-    a: "Yes. Finlamma requires parental consent before a minor can use the app, in line with India's data protection law (DPDP). A parent can withdraw consent at any time.",
+    a: "Yes. A parent has to give consent before a minor can use the app, in line with India's data protection law (DPDP). A parent can withdraw that consent at any time.",
   },
   {
     q: "What languages is Finlamma available in?",
-    a: "English, Hindi, and Hinglish, so lessons feel natural whichever way you think.",
+    a: "English, Hindi, and Hinglish.",
   },
   {
     q: "Is my child's data safe?",
-    a: "Finlamma is built kid-safe: no photos, no chat between users, and public profiles show only a first name and last initial.",
+    a: "There's no chat between users and no photos. Public profiles show only a first name and last initial.",
   },
 ];
 
@@ -126,7 +126,7 @@ export default async function HomePage() {
           <div className="relative mx-auto flex w-full max-w-6xl flex-col-reverse items-center gap-10 px-4 pt-8 pb-16 sm:px-6 md:flex-row md:gap-12 md:pt-12 md:pb-24">
             <div className="flex-1 text-center md:text-left">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium text-marketing-gold">
-                ✨ India&apos;s next generation of money-smart kids
+                A learning app for Indian school students
               </span>
               <h1 className="mt-5 text-4xl leading-[1.05] font-bold tracking-tight sm:text-5xl md:text-6xl">
                 Learn Finance.
@@ -134,9 +134,8 @@ export default async function HomePage() {
                 Build Freedom.
               </h1>
               <p className="mx-auto mt-5 max-w-md text-base text-white/75 sm:text-lg md:mx-0">
-                Finlamma teaches Indian students real financial skills through bite-sized
-                lessons, quizzes, and paper trading practice on real market data — with virtual
-                money, not real money.
+                Finlamma teaches financial skills through short lessons, quizzes, and paper
+                trading on real market data. The money in the app is virtual — never real.
               </p>
               <AppStoreBadges />
             </div>
@@ -165,9 +164,9 @@ export default async function HomePage() {
         <section className="bg-marketing-deep-900 py-14 text-white md:py-16">
           <div className="mx-auto w-full max-w-4xl px-4 sm:px-6">
             <Reveal className="text-center">
-              <h2 className="text-xl font-bold sm:text-2xl">Track everything that matters</h2>
+              <h2 className="text-xl font-bold sm:text-2xl">Inside the app</h2>
               <p className="mt-2 text-sm text-white/60">
-                A look at the in-app dashboard — illustrative preview, not a real learner&apos;s data.
+                Example numbers, not a real learner&apos;s data.
               </p>
             </Reveal>
             <Reveal delayMs={100}>
@@ -202,15 +201,15 @@ export default async function HomePage() {
           <Reveal className="mx-auto max-w-2xl text-center">
             <h2 className="text-2xl font-bold text-foreground sm:text-3xl">What is Finlamma?</h2>
             <p className="mt-3 text-muted-foreground">
-              A gamified financial-literacy app that turns money lessons into a game — built for
-              students, and safe for parents.
+              A financial-literacy app built as a game: lessons, quizzes, and practice trading,
+              all with virtual money.
             </p>
           </Reveal>
           <div className="mt-10 grid gap-6 sm:grid-cols-3">
             {[
               { icon: WHAT_ICONS.learn, title: "Learn by doing", desc: "Short lessons and quizzes across a series of worlds, from the basics of money to markets." },
-              { icon: WHAT_ICONS.earn, title: "Earn as you go", desc: "XP and virtual V Money reward progress — never real currency." },
-              { icon: WHAT_ICONS.practice, title: "Practice safely", desc: "Paper trading on real market data, with zero real money at risk." },
+              { icon: WHAT_ICONS.earn, title: "Earn as you go", desc: "XP and V Money reward progress. Neither is real currency." },
+              { icon: WHAT_ICONS.practice, title: "Practice safely", desc: "Paper trading on real market data. Zero real money at risk." },
             ].map((f, i) => (
               <Reveal key={f.title} delayMs={i * 100}>
                 <div className="h-full rounded-2xl border border-border bg-card p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-md">
@@ -243,8 +242,8 @@ export default async function HomePage() {
               <Reveal className="text-center">
                 <h2 className="text-2xl font-bold sm:text-3xl">The world journey</h2>
                 <p className="mt-3 text-white/70">
-                  Every learner moves through the same worlds, in order — each one unlocked by
-                  clearing the Boss Quiz before it.
+                  Every learner moves through the same worlds, in order. Clearing a world&apos;s Boss
+                  Quiz unlocks the next one.
                 </p>
               </Reveal>
               <ol className="relative mt-14">
@@ -314,19 +313,18 @@ export default async function HomePage() {
                 For parents
               </span>
               <h2 className="mt-3 text-2xl font-bold text-foreground sm:text-3xl">
-                Built to be safe, by design
+                A few things worth knowing
               </h2>
               <p className="mt-3 text-muted-foreground">
-                Finlamma is built for minors. Every decision below starts from that fact, not an
-                afterthought bolted on.
+                Finlamma is built for people under 18. That changes how a few things work.
               </p>
             </Reveal>
             <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
               {[
-                { icon: UserCheck, title: "Parental consent required", desc: "A parent must verify and consent before a minor can use Finlamma, and can withdraw that consent at any time." },
-                { icon: Ban, title: "No real money, ever", desc: "All money in the app is virtual (V Money). Finlamma never touches real bank accounts or real trades." },
-                { icon: GraduationCap, title: "Educational only", desc: "Finlamma is for learning. Nothing in the app, including the AI chat, is personal investment advice." },
-                { icon: EyeOff, title: "Kid-safe by design", desc: "No photos, no chat between users. Public profiles show only a first name and last initial." },
+                { icon: UserCheck, title: "Parental consent required", desc: "Before a minor can use Finlamma, a parent has to verify and give consent. A parent can withdraw that consent at any time, and the account stops working right away." },
+                { icon: Ban, title: "No real money, ever", desc: "XP, V Money, trades — all of it is virtual. Finlamma never connects to a bank account, and no real trade is ever placed." },
+                { icon: GraduationCap, title: "Educational only", desc: "The app teaches financial concepts. It doesn't tell anyone what to buy or sell — not students, not parents." },
+                { icon: EyeOff, title: "Kid-safe by design", desc: "No chat between users, no photos. If another student can see a name, it's a first name and last initial, nothing more." },
               ].map((f) => (
                 <div key={f.title} className="bg-card p-7">
                   <f.icon className="h-5 w-5 text-primary" aria-hidden />
@@ -341,8 +339,8 @@ export default async function HomePage() {
         {/* Languages */}
         <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6 md:py-20">
           <Reveal className="mx-auto max-w-2xl text-center">
-            <h2 className="text-2xl font-bold text-foreground sm:text-3xl">Learn your way</h2>
-            <p className="mt-3 text-muted-foreground">Every lesson is available in three languages.</p>
+            <h2 className="text-2xl font-bold text-foreground sm:text-3xl">Languages</h2>
+            <p className="mt-3 text-muted-foreground">Every lesson works in English, Hindi, and Hinglish.</p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               {["English", "Hindi", "Hinglish"].map((lang) => (
                 <span
