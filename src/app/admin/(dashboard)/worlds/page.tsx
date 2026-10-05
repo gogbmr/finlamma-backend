@@ -1,3 +1,4 @@
+import { Globe2 } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
@@ -50,6 +51,7 @@ export default async function WorldsPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Worlds" }]}
+        icon={Globe2}
         title="Worlds"
         description="Worlds a learner clears in sequential order - staff decide how many exist. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it. A world can only be deleted once it has no lessons."
       />

@@ -1,3 +1,4 @@
+import { Users } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
@@ -19,6 +20,7 @@ export default async function StaffPage() {
     <div className="space-y-8">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Staff" }]}
+        icon={Users}
         title="Staff"
         description="Manage who has access to this admin dashboard. Inviting someone sends them a Clerk invite email - they appear here automatically once they accept and sign up."
       />
