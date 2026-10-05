@@ -543,3 +543,8 @@ own repo later, hosted on Railway.
       timeline, drag-to-order question builder, etc.). Not launch-blocking — the JSON editor with
       human-readable validation, starter templates and a publish preview covers v1's authoring
       needs; revisit once content-team throughput becomes a bottleneck.
+- [ ] Consider matching the consent pages' language selection to the legal pages' persistence
+      (`/legal/[type]` remembers the chosen language via `localStorage`; `/consent/confirm`,
+      `/consent/reapprove`, `/consent/withdraw`, and `/consent/weekly-report/unsubscribe` are
+      plain `useState`, so they reset to English every visit). Low priority, and not worth
+      touching consent-flow code before the pre-launch legal review of that flow.
