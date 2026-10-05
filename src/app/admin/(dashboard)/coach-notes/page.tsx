@@ -1,3 +1,4 @@
+import { MessageSquareText } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
@@ -27,6 +28,7 @@ export default async function CoachNotesPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Coach Notes" }]}
+        icon={MessageSquareText}
         title="Coach note templates"
         description="One published template per category is picked at random to fill in a learner's weekly report card, with their own numbers substituted for the {{placeholders}}."
       />

@@ -1,3 +1,4 @@
+import { ScrollText } from "lucide-react";
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
@@ -40,6 +41,7 @@ export default async function ActivityLogPage({
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Activity Log" }]}
+        icon={ScrollText}
         title="Activity Log"
         description="Append-only record of staff and user actions. Nothing here can be edited or deleted."
       />

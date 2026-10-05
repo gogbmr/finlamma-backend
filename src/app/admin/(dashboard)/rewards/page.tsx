@@ -1,3 +1,4 @@
+import { Gift } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
@@ -23,6 +24,7 @@ export default async function RewardsPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Rewards" }]}
+        icon={Gift}
         title="Rewards"
         description="A learner can claim each reward at most once. Price is fixed and admin-set - never computed from the viewing learner's own balance. Publish is blocked until every en/hi/hx field is filled."
       />

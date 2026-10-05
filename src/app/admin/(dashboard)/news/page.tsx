@@ -1,6 +1,9 @@
+import { Newspaper, ScrollText } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/admin/empty-state";
 import { Forbidden } from "@/components/admin/forbidden";
+import { KpiTileGrid } from "@/components/admin/kpi-tile";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
@@ -44,6 +47,7 @@ export default async function NewsDeskPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "News Desk" }]}
+        icon={Newspaper}
         title="News Desk"
         description="ingest → simplify → quiz → publish. Every AI-drafted story is a draft until a staff member with news.publish toggles it live - nothing here reaches a learner automatically."
       />
@@ -59,27 +63,17 @@ export default async function NewsDeskPage() {
         </span>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Ingested</p>
-          <p className="mt-1 font-mono text-2xl font-bold text-foreground">{kpis.ingestedCount.toLocaleString("en-IN")}</p>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Published</p>
-          <p className="mt-1 font-mono text-2xl font-bold text-foreground">{kpis.publishedCount.toLocaleString("en-IN")}</p>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Draft / hidden</p>
-          <p className="mt-1 font-mono text-2xl font-bold text-foreground">
-            {kpis.draftCount.toLocaleString("en-IN")} / {kpis.hiddenCount.toLocaleString("en-IN")}
-          </p>
-        </div>
-        <div className="rounded-lg border border-border bg-card p-4">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">News source</p>
-          <p className="mt-1 text-sm font-semibold text-foreground">Mock (fixture data)</p>
-          <p className="text-xs text-muted-foreground">D50: no vendor licensed yet</p>
-        </div>
-      </div>
+      <KpiTileGrid
+        tiles={[
+          { label: "Ingested", value: kpis.ingestedCount.toLocaleString("en-IN") },
+          { label: "Published", value: kpis.publishedCount.toLocaleString("en-IN") },
+          {
+            label: "Draft / hidden",
+            value: `${kpis.draftCount.toLocaleString("en-IN")} / ${kpis.hiddenCount.toLocaleString("en-IN")}`,
+          },
+          { label: "News source", value: "Mock (fixture data)", hint: "D50: no vendor licensed yet" },
+        ]}
+      />
 
       <PipelineTable
         stories={stories.map((s) => ({
@@ -110,13 +104,17 @@ export default async function NewsDeskPage() {
       {canManageSettings && <QuizGeneratorSettingsEditor settings={quizSettings} />}
       {canManageSettings && <PulseCheckScoringEditor scoring={pulseCheckScoring} />}
 
-      <div className="space-y-2 rounded-lg border border-border bg-card p-4">
+      <div className="space-y-2 border-t border-border pt-6">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">Audit log</h2>
           <span className="text-xs text-muted-foreground">{recentEvents.length} recent events</span>
         </div>
         {recentEvents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No News Desk actions recorded yet.</p>
+          <EmptyState
+            icon={ScrollText}
+            title="No News Desk actions recorded yet"
+            description="Story drafts, publishes and setting changes will show up here as they happen."
+          />
         ) : (
           <ul className="space-y-1.5">
             {recentEvents.map((event) => (

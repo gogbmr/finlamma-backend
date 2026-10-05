@@ -48,6 +48,19 @@ pnpm contract       # regenerate openapi/openapi.json AND docs/API_ENDPOINTS.md
 ```
 Create these scripts in package.json during project setup if they don't exist.
 
+**Known limitation**: local `pnpm dev` returns 500 on every `/admin/*` route with a misleading
+Clerk "middleware might be misplaced" error - it's a dev-only regression in this Next 16.3.5 +
+`@clerk/nextjs` 7.9.4 combination, not a real file-placement problem (confirmed: `middleware.ts`
+at the project root is correct, and renaming it to `proxy.ts` doesn't help either - both tested
+and reverted). `pnpm build && pnpm start` works correctly, as does the Vercel preview. Use that
+workaround for any local admin testing until this is revisited. See `docs/STATUS.md` 2026-10-05
+for the full diagnosis, and the pre-launch checklist in `docs/ROADMAP.md` for the item to re-test
+this after any future Next/Clerk upgrade.
+
+Separately: killing a `next dev` process can corrupt `.next/dev/types/*`, which then makes `pnpm
+build` fail its own typecheck on generated (not real) code - fix is `rm -rf .next` before
+rebuilding.
+
 ## Folder structure
 ```
 src/
@@ -216,3 +229,13 @@ own security schemes, so the document covers the whole backend.
   Phases 5, 6, 8, 9 run as single phases.
 - Never wait for approval on something verifiable directly (tests, read-only DB checks,
   contract regeneration) — just verify it and report the result.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
