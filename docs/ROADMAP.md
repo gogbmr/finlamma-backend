@@ -390,9 +390,14 @@ own repo later, hosted on Railway.
       covering index), but worth a real pass once query patterns and data volume are closer to
       production before launch.
 - [ ] **Native-speaker review of all Hindi and Hinglish content** (mentors, worlds, lessons,
-      questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`)
+      questions, emails, consent pages, **instrument about/tip copy** — `scripts/seed-instruments.ts`,
+      **and the Terms/Privacy/Risk-disclosure `hi`/`hx` drafts in `scripts/seed-legal-documents.ts`**)
       — the seed/draft copy written during development (e.g. `scripts/seed-mentors.ts`'s
-      Hindi/Hinglish bios) is a best-effort approximation, not reviewed by a native speaker.
+      Hindi/Hinglish bios, and the legal-document translations) is a best-effort approximation, not
+      reviewed by a native speaker. The legal-document translations specifically need a reviewer who
+      can confirm the *legal meaning* survived translation, not just that the words are readable —
+      a mistranslation in a risk disclosure or consent-adjacent clause is a materially different risk
+      than one in a mentor bio.
 - [ ] **Legal/compliance review of every `instruments.about`/`instruments.tip` field for
       advice-like language** (target prices, "buy now", growth predictions, etc.) before launch.
       The admin editor shows a non-blocking keyword-heuristic warning while staff author this
@@ -480,14 +485,16 @@ own repo later, hosted on Railway.
       signup drop-off, never used for targeting, but genuinely behavioural data about a minor
       collected ahead of consent. Needs a written answer ready for a regulator or parent asking
       about it, not a quiet default - see D70 for the full reasoning to review against.
-- [ ] **Close the English-only legal-pages vs. Hindi/Hinglish consent-pages inconsistency.**
-      The public consent/re-approval pages (`/consent/confirm`, `/consent/reapprove`) already
-      have a language switcher (en/hi/hx), but `/legal/[type]` (Terms/Privacy/Risk Disclosure)
-      renders `doc.content.en` only, hardcoded - a Hindi/Hinglish-reading parent or learner can
-      consent in their language but can never actually read the terms they're consenting to in
-      that same language. Flagged at Phase 9 kickoff (homepage review), not fixed then - it's a
-      pre-existing Phase 2a gap, not something Phase 9 asked for, so it's tracked here instead of
-      bundled into an unrelated phase's commit.
+- [x] **Close the English-only legal-pages vs. Hindi/Hinglish consent-pages inconsistency.**
+      Fixed on `legal-and-contact-drafts`: `/legal/[type]` now has the same language switcher
+      (en/hi/hx) as `/consent/confirm`/`/consent/reapprove`, reusing the same `src/app/consent/copy.ts`
+      (`LANGUAGE_LABELS`, `ConsentLang`, `reapproveDocumentLabel`, plus a new `LEGAL_PAGE_COPY`
+      entry for the page's own chrome) rather than inventing a second switcher. Defaults to English;
+      the choice is remembered via `localStorage` (`finlamma_legal_lang`, read/write wrapped in
+      try/catch) - note this is new, since the consent pages themselves don't actually persist a
+      choice (plain `useState`, resets to English every visit) despite initially being described
+      that way when this fix was requested. The DRAFT placeholder banner renders unconditionally
+      regardless of which language is selected.
 - [ ] Set up Playwright and e2e tests for admin pages (`pnpm test:e2e`) - deferred from Phase 1's
       admin shell; needs browsers installed locally (`pnpm exec playwright install`), which
       wasn't attempted in the sandbox this was built in over a slow connection
@@ -536,3 +543,8 @@ own repo later, hosted on Railway.
       timeline, drag-to-order question builder, etc.). Not launch-blocking — the JSON editor with
       human-readable validation, starter templates and a publish preview covers v1's authoring
       needs; revisit once content-team throughput becomes a bottleneck.
+- [ ] Consider matching the consent pages' language selection to the legal pages' persistence
+      (`/legal/[type]` remembers the chosen language via `localStorage`; `/consent/confirm`,
+      `/consent/reapprove`, `/consent/withdraw`, and `/consent/weekly-report/unsubscribe` are
+      plain `useState`, so they reset to English every visit). Low priority, and not worth
+      touching consent-flow code before the pre-launch legal review of that flow.
