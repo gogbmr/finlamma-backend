@@ -61,6 +61,33 @@ merged): the dashboard layout's `getStaffMember()` call (the `auth()` call) and 
 silently hanging the full 300s. This does not fix the root cause - it exists so the next failure
 tells us exactly where the time goes.
 
+**Verified before considering this safe to merge (founder asked specifically whether a timeout
+could render a half-permissioned admin shell - it cannot, confirmed two ways):**
+- The two guarded calls' results (`staff`, and the 22 permission booleans + `role`) are only ever
+  assigned inside their respective `try` blocks; every render path that uses `visibility` sits
+  strictly after both `try` blocks complete successfully. A thrown/timed-out error returns a
+  dedicated `AdminShellFailure` panel immediately, before `visibility` is ever constructed - there
+  is no code path where some permissions are resolved and others aren't. TypeScript's control-flow
+  analysis independently confirms this (the permission variables are declared `let` with no
+  initial value and used after the `try` - `tsc --noEmit` would reject "used before assigned" if
+  the catch's early `return` didn't make that safe).
+- **Found and fixed a real gap while checking this**: `./error.tsx` does NOT catch an error thrown
+  by `./layout.tsx` in the same route segment - confirmed against this Next version's own bundled
+  docs (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md`: "It
+  does not wrap the `layout.js` ... in the same segment"). There's also no `src/app/admin/error.tsx`
+  or root `global-error.tsx`. So a bare `throw` from the timeout wrapper would NOT have hit the
+  existing styled "Something went wrong" panel - it would have fallen through to Next's generic
+  default error page, with the real diagnosis visible only in server logs, not to whoever's staring
+  at the hung page. Fixed by catching explicitly inside `DashboardLayout` itself and rendering a
+  dedicated `AdminShellFailure` panel (shows the actual timeout/error message, not a generic one -
+  safe since this is staff-only) rather than relying on an error boundary that couldn't reach it.
+- **Known, deliberate gap, matching the original scope (auth() + the permission `Promise.all`
+  only)**: `getMarketControls()` (the halt-banner read, below both guarded calls) is unwrapped and
+  already fails safe on *rejection* (`.catch(() => false)`), but a *hang* there specifically would
+  not be caught by this patch and would still run the full ~300s. Not fixed here since it wasn't
+  in the requested scope and is a separate, lower-probability read - flagged so it's a known
+  limitation, not a silent gap.
+
 ## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 
 While doing the `design-pass-homepage-admin` design pass, local `pnpm dev` started throwing on
