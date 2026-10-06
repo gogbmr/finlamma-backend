@@ -528,14 +528,18 @@ own repo later, hosted on Railway.
       (founder decision, Phase 4 Checkpoint 8) but a real gap once real learners depend on these
       jobs running - deferred from Phase 0's Sentry item above, called out again here since it's
       specifically the AMFI ingestion job's own failure mode that motivated re-flagging it.
-- [ ] **Re-test local dev admin auth after any Next/Clerk upgrade; remove the workaround note if
-      fixed upstream.** As of 2026-10-05, local `pnpm dev` returns 500 on every `/admin/*` route
-      with a misleading Clerk "middleware might be misplaced" error - a dev-only regression in
-      Next 16.3.5 + `@clerk/nextjs` 7.9.4, not a real file-placement problem (see `docs/STATUS.md`'s
-      2026-10-05 entry for the full diagnosis). `pnpm build && pnpm start` and the Vercel preview
-      both work correctly, so this was left as a documented limitation rather than chasing an
-      upstream fix pre-launch. Check this again the next time either package is upgraded, and
-      delete the workaround note in `CLAUDE.md`/`docs/STATUS.md` once a real fix lands.
+- [ ] **BLOCKING: fix the authenticated admin-path hang in production (Next 16.3.5 / `@clerk/nextjs`
+      7.9.4).** Not just a local dev-mode cosmetic issue as first believed (2026-10-05) - a real,
+      fresh-incognito-confirmed staff session hangs ~300s on every `/admin/(dashboard)/*` route in
+      production too (2026-10-06), since the earlier "build mode and the Vercel preview work
+      correctly" conclusion only ever tested a signed-out redirect, which can't prove
+      `clerkMiddleware()` actually ran. See `docs/STATUS.md`'s 2026-10-06 entry for the full
+      diagnosis, external research (likely tied to Next 16's `middleware.ts`→`proxy.ts` migration
+      being actively unstable upstream right now) and the recommended patch-version upgrade path.
+      **Whatever fix is attempted, re-verification must hit every `/admin/(dashboard)/*` route with
+      a real signed-in staff session, not just a signed-out redirect** - that blind spot is what let
+      this ship unnoticed in the first place. Delete the workaround notes in `CLAUDE.md`/
+      `docs/STATUS.md` once a real fix lands and is verified that way.
 
 ## Later (non-blocking — no phase assigned)
 - [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's

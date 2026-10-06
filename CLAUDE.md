@@ -48,14 +48,21 @@ pnpm contract       # regenerate openapi/openapi.json AND docs/API_ENDPOINTS.md
 ```
 Create these scripts in package.json during project setup if they don't exist.
 
-**Known limitation**: local `pnpm dev` returns 500 on every `/admin/*` route with a misleading
-Clerk "middleware might be misplaced" error - it's a dev-only regression in this Next 16.3.5 +
-`@clerk/nextjs` 7.9.4 combination, not a real file-placement problem (confirmed: `middleware.ts`
-at the project root is correct, and renaming it to `proxy.ts` doesn't help either - both tested
-and reverted). `pnpm build && pnpm start` works correctly, as does the Vercel preview. Use that
-workaround for any local admin testing until this is revisited. See `docs/STATUS.md` 2026-10-05
-for the full diagnosis, and the pre-launch checklist in `docs/ROADMAP.md` for the item to re-test
-this after any future Next/Clerk upgrade.
+**Known issue, NOT dev-only (corrected 2026-10-06)**: local `pnpm dev` returns 500 on every
+`/admin/*` route with a misleading Clerk "middleware might be misplaced" error, in this Next
+16.3.5 + `@clerk/nextjs` 7.9.4 combination (confirmed: `middleware.ts` at the project root is
+correct, and renaming it to `proxy.ts` doesn't help either - both tested and reverted). This was
+first believed to be dev-only because `pnpm build && pnpm start` and the Vercel preview correctly
+handle a *signed-out* request - but a real, authenticated staff session hangs for ~300s on every
+`/admin/(dashboard)/*` route in production too (confirmed 2026-10-06 with a fresh incognito
+sign-in). The signed-out test never actually proved `clerkMiddleware()` ran, since `auth()`
+resolves "no session" fast either way. There is currently **no working workaround** for testing
+the authenticated admin path, locally or in production - see `docs/STATUS.md` 2026-10-06 for the
+full diagnosis, external research (likely related to Next 16's `middleware.ts`→`proxy.ts`
+migration being actively unstable) and recommended patch-version upgrade path, and 2026-10-05 for
+the original dev-mode writeup this corrects. The pre-launch checklist in `docs/ROADMAP.md` has the
+item to re-verify this - with a real authenticated session, not just a signed-out redirect - after
+any Next/Clerk version change.
 
 Separately: killing a `next dev` process can corrupt `.next/dev/types/*`, which then makes `pnpm
 build` fail its own typecheck on generated (not real) code - fix is `rm -rf .next` before

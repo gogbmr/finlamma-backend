@@ -1,6 +1,94 @@
 # Status
 
-## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement)
+## 2026-10-06 — Production incident: authenticated `/admin/(dashboard)/*` hangs ~300s. Confirmed the SAME bug as 2026-10-05's "dev-mode" entry below, not a separate issue
+
+A real, fresh-incognito-confirmed signed-in staff session (so not a stale/corrupted cookie) hitting
+any `/admin/(dashboard)/*` route (e.g. `/admin/worlds`) hangs for ~300s (Vercel's serverless
+function max duration) and then shows the admin error boundary. Blocking: no content management,
+consent review, or Doubt Zone moderation is possible right now.
+
+**Investigated read-only, no changes made first:**
+- Diffed the entire shared admin path - `src/app/admin/layout.tsx`, `src/app/admin/(dashboard)/
+  layout.tsx`, `src/components/admin/admin-nav.tsx`, `src/lib/auth.ts`, `src/server/staff/repo.ts`,
+  `src/server/trading/service.ts`, `middleware.ts`, `src/db/client.ts` - between the last point
+  before `design-pass-homepage-admin` (`0f114cb`) and production (`eb58a5d`): **byte-for-byte
+  unchanged.** That design pass's only admin-touching changes are purely synchronous/presentational
+  (`PageHeader`'s new icon chip, the new `KpiTile` component, per-page icon props) - ruled out.
+- Live `curl` against production (read-only): `GET /api/v1/health` 200 in 9.2s (a cold start, not a
+  hang - it also does several DB reads); `GET /admin` signed out 307 in 1.3s; `GET /admin/sign-in`
+  200 in 0.6s; `GET /admin/ops` signed out 307 in 0.6s; `GET /admin/analytics` signed out 307 in
+  0.7s. **Every signed-out path is fast and healthy** - including the `(dashboard)/layout.tsx`
+  branch that calls `auth()` twice when there's no staff row, which proves `auth()` itself resolves
+  fine when there's no session cookie to validate.
+- **Conclusion: this isolates the hang to `auth()` resolving a REAL, valid session** - the one path
+  neither 2026-10-05's dev-mode investigation nor any prior phase's production verification (every
+  one of which only ever checked the signed-out 307 redirect) actually exercised. **This is the
+  same bug as the 2026-10-05 entry below, not two separate issues** - both are the authenticated /
+  real-middleware-execution path in this exact Next 16.3.5 + `@clerk/nextjs` 7.9.4 combination.
+  2026-10-05's "the Vercel preview should be unaffected" conclusion was wrong: a signed-out redirect
+  can't prove `clerkMiddleware()` ran at all, since `auth()` resolves "no session" fast either way.
+
+**External research (read-only, no upgrade performed):** Next 16's `middleware.ts` → `proxy.ts`
+migration is actively unstable as of this month. `vercel/next.js#93328`: Turbopack produces an
+**empty middleware-manifest** for `proxy.ts` on Windows (Next 16.2.4/16.3.0-canary.3) - the
+"proxy ran" response header simply never appears, which is mechanically exactly what Clerk's "was
+not run" check detects. `clerk/javascript#8302` (`auth.protect()` misredirects under Next 16's
+proxy) and `#9405` (a different Clerk/App-Router hang-after-redirect) show the same subsystem is
+broadly unsettled right now, though no single existing issue is a confirmed exact match for our
+precise symptom combination. `@clerk/nextjs` is pinned to exactly `7.9.4`; **`7.9.5` (one patch
+later) fixed "a cross-request credential leak in `clerkMiddleware()`"** - not confirmed as our bug,
+but hard evidence of a real correctness bug in that exact function immediately after our pinned
+version. Latest patch in range: `7.9.11`. `next` is pinned to `16.3.5`; latest patch is `16.3.8` -
+no changelog text confirms a specific middleware fix, but it's the same minor line as the active
+bug reports above.
+
+**Recommended path, not yet performed, pending the founder's decision:**
+1. Patch-bump `@clerk/nextjs` 7.9.4 → latest 7.x patch and `next` 16.3.5 → latest 16.3.x patch
+   (both in-range, no declared breaking API changes) - the lowest-risk first step.
+2. **Whatever is tried, re-verification must hit every `/admin/(dashboard)/*` route with a REAL
+   signed-in staff session, not just the signed-out redirect** - that blind spot is shared by this
+   incident, 2026-10-05's entry, and every prior phase audit's "admin redirect behavior correct"
+   check, none of which actually proved the authenticated path worked.
+3. Only if the hang survives the patch bumps: redo the `middleware.ts` → `proxy.ts` rename per
+   Clerk's exact documented migration (rename the exported function to `proxy`, not just the file -
+   2026-10-05's attempt only renamed the file, which may be why it reproduced identically).
+4. No evidence supports a Clerk v8 or Next 17 major jump as necessary or sufficient.
+
+**Mitigation shipped as diagnostics, not a fix**, on branch `admin-hang-instrumentation` (not yet
+merged): the dashboard layout's `getStaffMember()` call (the `auth()` call) and the 22-permission
+`Promise.all` are now wrapped in a 15s timeout with start/resolve/reject timing logged server-side
+(`[admin-shell] ...`), so the next occurrence fails fast with a clear logged message instead of
+silently hanging the full 300s. This does not fix the root cause - it exists so the next failure
+tells us exactly where the time goes.
+
+**Verified before considering this safe to merge (founder asked specifically whether a timeout
+could render a half-permissioned admin shell - it cannot, confirmed two ways):**
+- The two guarded calls' results (`staff`, and the 22 permission booleans + `role`) are only ever
+  assigned inside their respective `try` blocks; every render path that uses `visibility` sits
+  strictly after both `try` blocks complete successfully. A thrown/timed-out error returns a
+  dedicated `AdminShellFailure` panel immediately, before `visibility` is ever constructed - there
+  is no code path where some permissions are resolved and others aren't. TypeScript's control-flow
+  analysis independently confirms this (the permission variables are declared `let` with no
+  initial value and used after the `try` - `tsc --noEmit` would reject "used before assigned" if
+  the catch's early `return` didn't make that safe).
+- **Found and fixed a real gap while checking this**: `./error.tsx` does NOT catch an error thrown
+  by `./layout.tsx` in the same route segment - confirmed against this Next version's own bundled
+  docs (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/error.md`: "It
+  does not wrap the `layout.js` ... in the same segment"). There's also no `src/app/admin/error.tsx`
+  or root `global-error.tsx`. So a bare `throw` from the timeout wrapper would NOT have hit the
+  existing styled "Something went wrong" panel - it would have fallen through to Next's generic
+  default error page, with the real diagnosis visible only in server logs, not to whoever's staring
+  at the hung page. Fixed by catching explicitly inside `DashboardLayout` itself and rendering a
+  dedicated `AdminShellFailure` panel (shows the actual timeout/error message, not a generic one -
+  safe since this is staff-only) rather than relying on an error boundary that couldn't reach it.
+- **Known, deliberate gap, matching the original scope (auth() + the permission `Promise.all`
+  only)**: `getMarketControls()` (the halt-banner read, below both guarded calls) is unwrapped and
+  already fails safe on *rejection* (`.catch(() => false)`), but a *hang* there specifically would
+  not be caught by this patch and would still run the full ~300s. Not fixed here since it wasn't
+  in the requested scope and is a separate, lower-probability read - flagged so it's a known
+  limitation, not a silent gap.
+
+## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 
 While doing the `design-pass-homepage-admin` design pass, local `pnpm dev` started throwing on
 every `/admin/*` request: `Clerk: clerkMiddleware() was not run, your middleware or proxy file
@@ -21,6 +109,10 @@ misleading - diagnosed in full before touching anything:
   `/admin/sign-in` with a proper `x-clerk-auth-status: signed-out` header, exactly like
   production. So this is a dev-vs-build split, not local-vs-deployed - the branch's Vercel preview
   (which runs a production build) should be unaffected.
+  **Correction (2026-10-06): this conclusion was wrong.** Only the signed-out redirect was ever
+  tested here - a real authenticated staff session hangs in production too (see the entry above).
+  A signed-out request can't actually prove `clerkMiddleware()` ran, since `auth()` resolves "no
+  session" fast either way - this test was unfalsifiable for the thing it was meant to confirm.
 - Tested, as a temporary and fully reverted experiment (not committed), whether Next 16's
   `middleware.ts` → `proxy.ts` rename was the real cause: with *only* a `proxy.ts` present (same
   content, `middleware.ts` moved aside), the exact same 500 reproduced. So renaming would not have
