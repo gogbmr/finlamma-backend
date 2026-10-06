@@ -143,16 +143,69 @@ never resolving at all.** Investigated, read-only, before changing anything beyo
   signed-out redirects or unauthenticated API responses. It is plausible this exact code path has
   never actually run in production before this week.
 
-**Fixed, diagnostics only, not yet merged** (branch `admin-worlds-page-instrumentation`): split
+**Fixed, diagnostics only** (branch `admin-worlds-page-instrumentation`): split
 `getWorldEditorData()`/`getMentorEditorData()` (`src/server/worlds/service.ts`,
 `src/server/mentors/service.ts`) into separately-timed DB-list vs. per-row-presign steps, and the
 worlds page now times each of the two functions independently rather than as one combined
 `Promise.all`, so the next occurrence shows precisely which function, and which half of it (DB
-query vs. signed-URL generation vs. a specific row), the time is actually going into. If this
-confirms the S3 path, the likely fix is an explicit request timeout on the S3 client plus not
-re-presigning on every single list render (e.g. caching/deriving the URL once, or only on demand)
-- not implemented yet, pending this round's data, per the founder's explicit "one change at a
-time" instruction.
+query vs. signed-URL generation vs. a specific row), the time is actually going into.
+
+**Round 4 (same day): root cause confirmed - it's D13's transaction-pooler bug recurring at a
+higher concurrency than its fix was ever verified against, NOT S3.** The next production run's
+logs: `getWorldEditorData` resolved in 200ms (both its own steps fast); `getMentorEditorData`'s
+TWO internal queries (`listAllMentors`, `listAllWorlds`) both failed after the full 10s timeout,
+never resolving - and then a later reload's `getStaffMember (auth())` in the layout *also* failed
+after 15s, despite that exact call having succeeded earlier in the same investigation. That
+specific shape - one query succeeds, a concurrent pair from a DIFFERENT call hangs, and a
+previously-fast call later hangs too - is precisely connection-pool exhaustion, not a slow query.
+
+Confirmed three ways, read-only, before touching any pool or query code:
+1. **Live `pg_stat_activity` against production** (via the Supabase MCP tool) found a
+   `staff_members` lookup sitting at `state: active` but `wait_event_type: Client` /
+   `wait_event: ClientRead` for **8 minutes 34 seconds**. Postgres had already answered that query
+   and was simply waiting for the client to send its next message - which never came. This is
+   `src/db/client.ts`'s own documented D13 incident's exact client-side symptom, caught live.
+2. **A `pg_locks`/`pg_stat_activity` join for genuine blocking locks returned zero rows** - not a
+   lock, and not specific to the `mentors` table (`mentors`/`worlds`/`staff_members` have 3/7/2
+   rows respectively - far too small for a slow-query explanation regardless).
+3. **Reproduced directly against the real database** with a standalone script
+   (`scripts/verify-db-pool-3way.ts`, modeled on the existing `scripts/verify-db-pool.ts`/D13's
+   own repro): one query running alongside a `Promise.all` of two more (the worlds page's exact
+   shape - `getWorldEditorData`'s 1 query concurrent with `getMentorEditorData`'s internal pair) -
+   two of the three resolved in 68ms/530ms, the third hung for the full 15s timeout, every time.
+
+**Why it gets worse on repeated reloads (the founder's own observation, now explained)**: `db` in
+`src/db/client.ts` is instantiated once at module scope and persists across warm Vercel
+invocations. A wedged connection is never released - nothing times out a connection that's already
+established and simply waiting on a response that will never arrive - so each subsequent request
+hitting the same warm instance has fewer of the fixed `max: 2` connections actually available than
+the last, until even a single trivial query (the layout's own `getStaffMember()`) can't get a
+connection at all.
+
+**D13's own fix (`max: 2`) was only ever verified against a concurrent PAIR** - `scripts/
+verify-db-pool.ts` and `src/db/client.test.ts` both test exactly two concurrent queries. Nobody
+had reproduced three. Recorded as D72, with a correction appended to D13's own entry in
+`docs/ARCHITECTURE.md`, since D13's text asserted "max: 2 gives an accidental concurrent pair its
+own connection each" as settled - true for a pair, not for three.
+
+**Not yet fixed - two options, not yet chosen between, per the founder's "don't change pool
+settings blindly" instruction:**
+1. Raise `max` further (3, 4, or more). Bounded by Supavisor's own project-level pool size
+   (`Project Settings -> Database -> Connection pooling` in the Supabase dashboard) - this is NOT
+   visible from a SQL query against the database itself (the Supabase MCP tool's `execute_sql` and
+   `get_advisors` can't see Supavisor's own pooler configuration), only from the dashboard. Every
+   concurrent Vercel function instance gets its OWN `max: N` pool (module-scope per instance), so
+   raising `max` multiplies by however many instances run concurrently under real load - this needs
+   checking against Supavisor's actual ceiling before picking a number, not guessed.
+2. Restructure the affected call sites so no single request ever issues more than 2 truly
+   concurrent queries (e.g. make `getMentorEditorData`'s internal `Promise.all` sequential, or run
+   `getWorldEditorData`/`getMentorEditorData` sequentially in the page instead of via `Promise.all`).
+   Lower blast radius (doesn't touch the shared pool config, so no risk of hitting Supavisor's own
+   ceiling), but this exact pattern (more than one `Promise.all` nested or adjacent within a single
+   request) could exist elsewhere in the codebase and hasn't been audited for yet.
+`GET /api/v1/health`'s own multiple sequential-await DB checks (never more than 1-2 concurrent at
+once, confirmed by reading the route) are not at risk - consistent with it staying fast throughout
+this entire investigation.
 
 ## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 
