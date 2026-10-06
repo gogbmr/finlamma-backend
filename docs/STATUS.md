@@ -207,6 +207,51 @@ settings blindly" instruction:**
 once, confirmed by reading the route) are not at risk - consistent with it staying fast throughout
 this entire investigation.
 
+**Round 5 (same day): audited the rest of the codebase for the same pattern. This is NOT an
+isolated admin-page bug - it is pervasive, including on the app's highest-traffic consumer
+endpoints.** Read-only audit, nothing fixed. Worst cases found (concurrent Postgres-touching calls
+at peak, confirmed by reading each repo function, Redis-only calls excluded):
+- `src/server/analytics/service.ts` (admin dashboard summary) - **13 concurrent**, cache-gated
+  (only exposed once per TTL window, not every view).
+- `src/server/arena/service.ts` public player profile - **8 concurrent**, and a second call site
+  in the same file at 7.
+- `src/server/profile/service.ts` (`GET /me/profile/overview` - almost certainly the single
+  most-hit endpoint in the app) - **7 concurrent**.
+- `src/app/admin/(dashboard)/ops/page.tsx` - 6 at the page level, running alongside
+  `getOpsKpis()`'s own internal 4-way fan-out on a cache miss - compounds to ~8-9.
+- `src/app/admin/(dashboard)/news/page.tsx` - 7. `src/server/report-card/service.ts` - 6, plus
+  three more smaller (4-item) `Promise.all`s in the same file.
+- `src/server/portfolio/service.ts` (`GET /me/portfolio/summary`) - 5.
+- `src/server/worlds/service.ts`'s `getPublicWorlds` (`GET /api/v1/worlds` - every learner's home
+  screen) - 3. `src/app/admin/(dashboard)/lessons/page.tsx` - 3, the identical shape to the
+  confirmed worlds-page bug (a data-fetch call running alongside `getMentorEditorData`'s own
+  internal pair).
+- **Unbounded - grows with data, not fixed at "happens to be 3 today"**: `src/server/badges/
+  service.ts`'s per-badge progress evaluator (one call per published badge, could be dozens),
+  `src/server/report-card/service.ts`'s per-world lookup, `src/server/certificates/service.ts`'s
+  per-certificate lookup, `src/server/rewards/service.ts`'s per-claimed-reward lookup,
+  `src/server/funds/service.ts`'s `listPublicFunds` (one NAV lookup per fund, every call, no
+  cache), and `src/app/admin/(dashboard)/legal/page.tsx` (fixed at 3 document types, but each
+  iteration does 2 queries internally - up to 6, guaranteed on every single load).
+- Not fully traced (flagged, not confirmed): the news admin page's KPI/pipeline calls and a few
+  other nested service calls likely add further concurrency on top of what's listed - a fully
+  exhaustive trace would need more time than this pass budgeted.
+
+**This changes the shape of the fix.** "Restructure every call site to never exceed 2 concurrent
+queries" is not realistic at this scale (dozens of sites, up to 13-way concurrency) - raising
+`max` has to be the primary lever, sized well above 3, bounded by Supavisor's actual project pool
+size (not yet confirmed - needs the Supabase dashboard, not visible via SQL). And because this
+pattern recurs this widely, a future call site exceeding whatever `max` is chosen is a realistic
+"when," not "if" - making the connection-reclaim question (can a wedged connection ever be
+recovered automatically, see above) more than a theoretical nicety.
+
+**Regression test added** (`scripts/verify-db-pool.ts`, consolidated - the standalone
+`verify-db-pool-3way.ts` script from Round 4 was folded in rather than left as a second file):
+now tests a concurrent PAIR (D13) and a concurrent TRIPLE (D72) against the real pooler in one
+run. Confirmed still failing as expected at the current `max: 2` - re-run after any pool change to
+confirm it passes. `src/db/client.test.ts`'s static config assertion updated to cross-reference
+both decisions; its numeric floor is unchanged pending the chosen `max` value.
+
 ## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 
 While doing the `design-pass-homepage-admin` design pass, local `pnpm dev` started throwing on
