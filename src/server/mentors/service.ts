@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
+import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
@@ -81,8 +82,16 @@ function validateMentorForPublish(mentor: MentorRow): void {
 // query for every world plus an in-memory group-by, mirroring
 // src/server/worlds/service.ts's mentorKeyById() (the reverse lookup) -
 // avoids an N+1 query per mentor.
+// Diagnostic instrumentation (2026-10-06, see docs/STATUS.md): the other of
+// the two calls the worlds-page investigation narrowed the hang down to
+// (the other being getWorldEditorData) - split the DB listing from each
+// row's signed-URL generation for the same reason: so the next occurrence
+// shows which part it's actually in.
 export async function getMentorEditorData() {
-  const [rows, allWorlds] = await Promise.all([listAllMentors(), listAllWorlds()]);
+  const [rows, allWorlds] = await Promise.all([
+    withTimingAndTimeout("getMentorEditorData: listAllMentors (DB)", listAllMentors(), 10_000),
+    withTimingAndTimeout("getMentorEditorData: listAllWorlds (DB)", listAllWorlds(), 10_000),
+  ]);
   const worldsByMentorId = new Map<string, { id: string; title: LocalizedText; status: "draft" | "published" }[]>();
   for (const w of allWorlds) {
     const list = worldsByMentorId.get(w.mentorId) ?? [];
@@ -93,7 +102,13 @@ export async function getMentorEditorData() {
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
+      artUrl: row.artKey
+        ? await withTimingAndTimeout(
+            `getMentorEditorData: getSignedDownloadUrl(mentor=${row.id})`,
+            getSignedDownloadUrl(row.artKey),
+            10_000,
+          )
+        : null,
       usedByWorlds: worldsByMentorId.get(row.id) ?? [],
     })),
   );
