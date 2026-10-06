@@ -6,9 +6,21 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { KpiTileGrid } from "@/components/admin/kpi-tile";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
 import { roleHasPermission } from "@/server/staff/repo";
-import { getNewsAuditLogForAdmin, getNewsKpisForAdmin, getNewsPipelineForAdmin, getNewsQuizGeneratorSettings } from "@/server/news/service";
-import { getPulseCheckEngagement, getPulseCheckScoring } from "@/server/pulse-check/service";
+import {
+  getNewsAuditLogForAdmin,
+  getNewsKpisForAdmin,
+  getNewsPipelineForAdmin,
+  getNewsQuizGeneratorSettings,
+} from "@/server/news/service";
+import {
+  getPulseCheckEngagement,
+  getPulseCheckScoring,
+} from "@/server/pulse-check/service";
 import { listActiveTopicsForPicker } from "@/server/topics/service";
 import { EngagementChart } from "./engagement-chart";
 import { PipelineTable } from "./pipeline-table";
@@ -27,36 +39,56 @@ export default async function NewsDeskPage() {
     roleHasPermission(staff.roleId, "settings.manage"),
   ]);
   if (!canManage && !canPublish) {
-    return <Forbidden message="You don't have permission to use the News Desk." />;
+    return (
+      <Forbidden message="You don't have permission to use the News Desk." />
+    );
   }
 
-  const [kpis, stories, topics, quizSettings, pulseCheckScoring, engagement, recentEvents] = await Promise.all([
-    getNewsKpisForAdmin(),
-    getNewsPipelineForAdmin(),
-    listActiveTopicsForPicker(),
-    getNewsQuizGeneratorSettings(),
-    getPulseCheckScoring(),
-    getPulseCheckEngagement(),
-    getNewsAuditLogForAdmin(),
-  ]);
+  const [
+    kpis,
+    stories,
+    topics,
+    quizSettings,
+    pulseCheckScoring,
+    engagement,
+    recentEvents,
+  ] = await runWithConcurrencyLimit(
+    [
+      () => getNewsKpisForAdmin(),
+      () => getNewsPipelineForAdmin(),
+      () => listActiveTopicsForPicker(),
+      () => getNewsQuizGeneratorSettings(),
+      () => getPulseCheckScoring(),
+      () => getPulseCheckEngagement(),
+      () => getNewsAuditLogForAdmin(),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
 
   const pipelineStatusBadge =
-    kpis.draftCount === 0 && kpis.undraftedCount === 0 ? "PUBLISHED" : "PARTIAL";
+    kpis.draftCount === 0 && kpis.undraftedCount === 0
+      ? "PUBLISHED"
+      : "PARTIAL";
 
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "News Desk" }]}
+        breadcrumbs={[
+          { label: "Admin", href: "/admin/staff" },
+          { label: "News Desk" },
+        ]}
         icon={Newspaper}
         title="News Desk"
         description="ingest → simplify → quiz → publish. Every AI-drafted story is a draft until a staff member with news.publish toggles it live - nothing here reaches a learner automatically."
       />
 
       <div className="flex items-center gap-2">
-        <Badge variant={pipelineStatusBadge === "PUBLISHED" ? "success" : "warning"}>
+        <Badge
+          variant={pipelineStatusBadge === "PUBLISHED" ? "success" : "warning"}
+        >
           {pipelineStatusBadge}
         </Badge>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-muted-foreground text-xs">
           {kpis.undraftedCount > 0
             ? `${kpis.undraftedCount} raw item(s) not yet drafted`
             : "every ingested item has a draft"}
@@ -65,20 +97,32 @@ export default async function NewsDeskPage() {
 
       <KpiTileGrid
         tiles={[
-          { label: "Ingested", value: kpis.ingestedCount.toLocaleString("en-IN") },
-          { label: "Published", value: kpis.publishedCount.toLocaleString("en-IN") },
+          {
+            label: "Ingested",
+            value: kpis.ingestedCount.toLocaleString("en-IN"),
+          },
+          {
+            label: "Published",
+            value: kpis.publishedCount.toLocaleString("en-IN"),
+          },
           {
             label: "Draft / hidden",
             value: `${kpis.draftCount.toLocaleString("en-IN")} / ${kpis.hiddenCount.toLocaleString("en-IN")}`,
           },
-          { label: "News source", value: "Mock (fixture data)", hint: "D50: no vendor licensed yet" },
+          {
+            label: "News source",
+            value: "Mock (fixture data)",
+            hint: "D50: no vendor licensed yet",
+          },
         ]}
       />
 
       <PipelineTable
         stories={stories.map((s) => ({
           id: s.id,
-          headline: (s.content as { headline: { en: string; hi: string; hx: string } }).headline,
+          headline: (
+            s.content as { headline: { en: string; hi: string; hx: string } }
+          ).headline,
           outlet: s.outlet,
           category: s.category,
           qualityGrade: s.qualityGrade,
@@ -99,15 +143,24 @@ export default async function NewsDeskPage() {
           who could actually save a change, same reasoning
           /admin/settings's economy section already documents for exactly
           this "would silently fail on submit instead of being hidden" gap. */}
-      <EngagementChart daily={engagement.daily} averagePct={engagement.averagePct} />
+      <EngagementChart
+        daily={engagement.daily}
+        averagePct={engagement.averagePct}
+      />
 
-      {canManageSettings && <QuizGeneratorSettingsEditor settings={quizSettings} />}
-      {canManageSettings && <PulseCheckScoringEditor scoring={pulseCheckScoring} />}
+      {canManageSettings && (
+        <QuizGeneratorSettingsEditor settings={quizSettings} />
+      )}
+      {canManageSettings && (
+        <PulseCheckScoringEditor scoring={pulseCheckScoring} />
+      )}
 
-      <div className="space-y-2 border-t border-border pt-6">
+      <div className="border-border space-y-2 border-t pt-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Audit log</h2>
-          <span className="text-xs text-muted-foreground">{recentEvents.length} recent events</span>
+          <h2 className="text-foreground text-sm font-semibold">Audit log</h2>
+          <span className="text-muted-foreground text-xs">
+            {recentEvents.length} recent events
+          </span>
         </div>
         {recentEvents.length === 0 ? (
           <EmptyState
@@ -119,15 +172,21 @@ export default async function NewsDeskPage() {
           <ul className="space-y-1.5">
             {recentEvents.map((event) => (
               <li key={event.id} className="flex items-center gap-2 text-xs">
-                <span className="font-mono text-muted-foreground">
-                  {event.createdAt.toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" })}
+                <span className="text-muted-foreground font-mono">
+                  {event.createdAt.toLocaleString("en-IN", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
                 </span>
                 <Badge variant="secondary">{event.action}</Badge>
               </li>
             ))}
           </ul>
         )}
-        <Link href="/admin/activity-log" className="inline-block text-xs font-medium underline">
+        <Link
+          href="/admin/activity-log"
+          className="inline-block text-xs font-medium underline"
+        >
           View full activity log
         </Link>
       </div>

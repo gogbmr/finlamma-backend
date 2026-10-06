@@ -252,6 +252,86 @@ run. Confirmed still failing as expected at the current `max: 2` - re-run after 
 confirm it passes. `src/db/client.test.ts`'s static config assertion updated to cross-reference
 both decisions; its numeric floor is unchanged pending the chosen `max` value.
 
+**Round 6 (same day): fixed, on branch `db-pool-concurrency-fix`, not yet merged.** Before
+touching anything: audited all 16 Inngest job files (+ the service/repo functions they call,
+same depth as the web audit) for the same pattern, since they run in their own serverless
+instances and the max arithmetic needed to account for them too. Mostly safe by design - every
+fan-out over a collection (users, orders, competitions, SIP plans) uses a plain sequential `for`
+loop with one `step.run()`/await per item, never `Promise.all`/`.map()` into concurrent
+execution, across the whole Inngest layer. Two real exceptions found, both money-adjacent:
+`settleArenaLeaguesForWeek` (7 concurrent, fixed, guaranteed on every weekly run) and
+`settleOneCompetition` (3 concurrent, safe under the chosen `max: 4`, left as-is). Confirmed the
+worst case stays 13 (web analytics) - Inngest didn't move the number.
+
+**The arithmetic** (Supavisor's project pool_size: 15, confirmed from the Supabase dashboard,
+shared with PostgREST/pg_cron/pg_net/the metrics exporter): raising `max` to cover 13 directly
+would mean one single warm instance alone consuming 13 of the 15 total slots, leaving 2 for
+everything else combined - unsafe regardless of how carefully anything else is written. So `max`
+went to **4** (a safety margin, not sized to cover any specific worst case) and
+`src/lib/concurrency-limit.ts`'s `runWithConcurrencyLimit` became the actual prevention,
+hand-written (no new dependency) with two overloads so a heterogeneous array (e.g. the admin
+shell's 22 booleans + one role object) keeps its per-element types, exactly like `Promise.all`
+itself does.
+
+**Investigated whether a wedged connection could be reclaimed instead of only prevented** - read
+the installed `postgres@3.4.9` library's own source rather than assuming: `idle_timeout` only
+arms when a connection is moved into the pool's genuinely-idle queue (`idleTimer.start()` is
+called from exactly one place, the pool's `move()` function, only when a connection enters that
+queue); `max_lifetime`'s handler explicitly defers actual termination until the connection has no
+in-flight query, which never becomes true for a wedged one. Neither can ever reclaim this failure
+mode. The one forceful lever, the top-level `sql.end({ timeout })`, does forcibly terminate even
+a busy connection past its timeout (confirmed in source: it races graceful shutdown against a
+hard `destroy()` that calls `.terminate()` on every connection) - but it tears down the *entire*
+pool at once, with no automatic reconnect, so using it as a recovery mechanism would mean
+building and testing a watchdog that can't tell a wedge apart from a merely-slow query, and would
+kill every other healthy request sharing that warm instance when it fires. Decided against
+building this: if prevention (below) holds, it never fires; if prevention has a gap somewhere
+unaudited, a crash-and-recover watchdog trades an occasional hang for an occasional crash loop
+that takes down co-located healthy requests too - not a clear improvement. Prevention only.
+
+**Applied `runWithConcurrencyLimit` to all 13 web/admin sites the codebase-wide audit found
+exceeding `max: 4`** (worst-first): the admin shell's own 22-permission check (`(dashboard)/
+layout.tsx` - the original incident's own shell, left instrumented), admin analytics summary (13),
+admin News Desk page (14), admin Ops console page (12), two Arena endpoints (public profile at
+11, weekly league settlement at 7 - money-adjacent, also the Inngest exception above) plus two
+Arena admin-settings editors (5 each), Ops service's user-ledger aggregation (5), portfolio
+summary (5), profile overview (9 - likely the single most-hit endpoint in the app), and two
+report-card aggregations (7, 6).
+
+**Added the mechanical check** (`scripts/check-promise-all-db-concurrency.ts` +
+`.test.ts`, matching `scripts/generate-openapi.test.ts`'s established precedent of a plain-text
+scan over a full AST/type-checker, not a new ESLint plugin): finds every `Promise.all`/
+`Promise.allSettled` in `src/`, estimates each array element's concurrent-query weight (1 for a
+call into a file that imports `db` directly, 2 for a call into any other `src/server/` file -
+conservative on purpose, resolved via the project's actual `@/*` -> `src/*` alias rather than
+filename-suffix guessing, which an early version of this heuristic used and which missed a real
+finding - `src/lib/settings.ts` doesn't end in `/service.ts` but does import `db` directly),
+`Infinity` for an unbounded `.map(async ...)`, and recurses into a nested literal `Promise.all`.
+Flags anything exceeding `src/db/client.ts`'s own configured `max`, read directly from that file
+so the two can never silently drift apart. Runs as a `pnpm test` guard; a genuine false positive
+gets a `// promise-all-db-concurrency-ok: <reason>` comment, never a silent exclusion. Found three
+real sites a manual audit had missed (including the arena league-settlement Inngest job) before
+any fix was applied - the exact kind of result that justifies building it over relying on
+"remember to check."
+
+**Verified, run directly against the real database, before considering this done:**
+`scripts/verify-db-pool.ts` (extended with a third check) now proves three things in one run: the
+original D13 pair still resolves fine, the D72 triple now resolves fine too (previously hung at
+`max: 2`), and - the actual fix, not just the raised number - 8 real concurrent queries (double
+`DB_CONCURRENCY_LIMIT`) issued through `runWithConcurrencyLimit` all resolve in ~400ms without
+ever wedging, proving the limiter queues rather than exceeding the pool. `pnpm typecheck`/`lint`/
+the full test suite (231 files, 2306 tests) all pass; `check-promise-all-db-concurrency.test.ts`
+passes with zero findings at the new `max: 4`.
+
+**Documented going forward, not just fixed once**: `CLAUDE.md` rule 15 and the `admin-page`,
+`new-endpoint` and `money-ledger` skills all now state this rule directly, each pointing at
+`runWithConcurrencyLimit` and the mechanical check - the goal is that the next person (or
+session) writing a new `Promise.all` gets caught by the test before it ever reaches production,
+not by rediscovering this investigation from scratch.
+
+**Not yet merged** - on branch `db-pool-concurrency-fix`, held for the founder's review in one
+piece given how much this touches, per their explicit instruction.
+
 ## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 
 While doing the `design-pass-homepage-admin` design pass, local `pnpm dev` started throwing on

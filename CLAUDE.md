@@ -179,6 +179,20 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
     or higher. (Incident: a Write call on `src/server/lesson-progress/repo.test.ts` during Phase
     3a Checkpoint 3 silently deleted three functions' test coverage; the suite still reported
     "passing" since nothing checked for a minimum count at the time — see `docs/STATUS.md`.)
+15. **Never run 3 or more DB-querying calls concurrently via a bare `Promise.all`/
+    `Promise.allSettled`** (nesting counts — a 1-query call alongside a `Promise.all` of 2 more is
+    still 3). `src/db/client.ts`'s pool (`max: 4`, Supabase's transaction pooler) wedges a
+    connection forever past that many concurrent queries, and it is never reclaimed — confirmed
+    from the `postgres` library's own source, neither `idle_timeout` nor `max_lifetime` ever
+    revisit a connection that's busy/stuck, only a genuinely idle one. This caused a real
+    production incident, not a theoretical one (`docs/ARCHITECTURE.md` D13/D72 — a `/admin/worlds`
+    page hanging ~300s, root-caused to this exact pattern on 2026-10-06). Use
+    `runWithConcurrencyLimit` (`src/lib/concurrency-limit.ts`, pass `DB_CONCURRENCY_LIMIT`) instead
+    — same call shape as `Promise.all`, just wrap each element in `() => ...`.
+    `scripts/check-promise-all-db-concurrency.test.ts` fails `pnpm test` if a new call site
+    reintroduces this (a heuristic, convention-based scan — not a type-checker — so it can both
+    over- and under-flag; a real finding still needs the fix, a false one gets a
+    `// promise-all-db-concurrency-ok: <reason>` comment, never a silent ignore).
 
 ## API endpoint documentation (required)
 `docs/API_ENDPOINTS.md` must always list **every** endpoint with method, path, summary, auth,

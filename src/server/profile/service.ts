@@ -1,8 +1,15 @@
 import type { users } from "@/db/schema";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
 import { istDateString } from "@/lib/ist-date";
 import { getMyArenaRankSummary } from "@/server/arena/service";
 import { getLevelInfo } from "@/server/leveling/service";
-import { countCompletedLessonsForUser, listLessonCompletionTimestampsForUser } from "@/server/lesson-progress/repo";
+import {
+  countCompletedLessonsForUser,
+  listLessonCompletionTimestampsForUser,
+} from "@/server/lesson-progress/repo";
 import { countPublishedLessons } from "@/server/lessons/repo";
 import { getQuizAccuracyTotalsForUser } from "@/server/quiz-attempts/repo";
 import { getRankTitleForLevel } from "@/server/rank-titles/service";
@@ -16,11 +23,19 @@ const ACTIVITY_DOT_CALENDAR_DAYS = 7;
 // completed any lesson that day - see listLessonCompletionTimestampsForUser's
 // comment for why "completed a lesson" (not per-question step) is the
 // activity signal here.
-function buildActivityDotCalendar(completionTimestamps: Date[], at: Date, days: number) {
-  const activeDates = new Set(completionTimestamps.map((d) => istDateString(d)));
+function buildActivityDotCalendar(
+  completionTimestamps: Date[],
+  at: Date,
+  days: number,
+) {
+  const activeDates = new Set(
+    completionTimestamps.map((d) => istDateString(d)),
+  );
   const calendar: { date: string; active: boolean }[] = [];
   for (let i = days - 1; i >= 0; i--) {
-    const date = istDateString(new Date(at.getTime() - i * 24 * 60 * 60 * 1000));
+    const date = istDateString(
+      new Date(at.getTime() - i * 24 * 60 * 60 * 1000),
+    );
     calendar.push({ date, active: activeDates.has(date) });
   }
   return calendar;
@@ -37,17 +52,29 @@ function buildActivityDotCalendar(completionTimestamps: Date[], at: Date, days: 
 // a scope below the privacy floor, or no XP that week), never a fabricated
 // 0 or a broken partial state.
 export async function getProfileOverview(user: UserRow, at: Date = new Date()) {
-  const since = new Date(at.getTime() - (ACTIVITY_DOT_CALENDAR_DAYS - 1) * 24 * 60 * 60 * 1000);
-  const [levelInfo, streakStats, completedLessons, totalLessons, quizAccuracy, recentCompletions, rankSummary] =
-    await Promise.all([
-      getLevelInfo(user.id),
-      getStreakStats(user.id, at),
-      countCompletedLessonsForUser(user.id),
-      countPublishedLessons(),
-      getQuizAccuracyTotalsForUser(user.id),
-      listLessonCompletionTimestampsForUser(user.id, since),
-      getMyArenaRankSummary(user),
-    ]);
+  const since = new Date(
+    at.getTime() - (ACTIVITY_DOT_CALENDAR_DAYS - 1) * 24 * 60 * 60 * 1000,
+  );
+  const [
+    levelInfo,
+    streakStats,
+    completedLessons,
+    totalLessons,
+    quizAccuracy,
+    recentCompletions,
+    rankSummary,
+  ] = await runWithConcurrencyLimit(
+    [
+      () => getLevelInfo(user.id),
+      () => getStreakStats(user.id, at),
+      () => countCompletedLessonsForUser(user.id),
+      () => countPublishedLessons(),
+      () => getQuizAccuracyTotalsForUser(user.id),
+      () => listLessonCompletionTimestampsForUser(user.id, since),
+      () => getMyArenaRankSummary(user),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
   const rankTitleRow = await getRankTitleForLevel(levelInfo.level);
 
   return {
@@ -72,10 +99,19 @@ export async function getProfileOverview(user: UserRow, at: Date = new Date()) {
     lessons: {
       completed: completedLessons,
       total: totalLessons,
-      pct: totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0,
+      pct:
+        totalLessons > 0
+          ? Math.round((completedLessons / totalLessons) * 100)
+          : 0,
     },
     quizAccuracyPct:
-      quizAccuracy.total > 0 ? Math.round((quizAccuracy.correct / quizAccuracy.total) * 100) : null,
-    activityDotCalendar: buildActivityDotCalendar(recentCompletions, at, ACTIVITY_DOT_CALENDAR_DAYS),
+      quizAccuracy.total > 0
+        ? Math.round((quizAccuracy.correct / quizAccuracy.total) * 100)
+        : null,
+    activityDotCalendar: buildActivityDotCalendar(
+      recentCompletions,
+      at,
+      ACTIVITY_DOT_CALENDAR_DAYS,
+    ),
   };
 }

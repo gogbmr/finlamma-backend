@@ -1,5 +1,9 @@
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
 import { istDateStartUtc } from "@/lib/ist-date";
 import { getOrSetJsonCache } from "@/lib/redis";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
@@ -83,7 +87,11 @@ export function computeRiskFlag(
   thresholds: RiskThresholds,
 ): RiskFlag {
   if (accountAgeDays < thresholds.newAccountDays) return "new";
-  if (concentrationPct > thresholds.concentrationPct || ordersToday > thresholds.dailyOrderCount) return "watch";
+  if (
+    concentrationPct > thresholds.concentrationPct ||
+    ordersToday > thresholds.dailyOrderCount
+  )
+    return "watch";
   return "ok";
 }
 
@@ -114,36 +122,50 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // what keeps the cost bounded by "how many distinct things are held right
 // now", not by how many users or how much order history exists
 // (docs/ARCHITECTURE.md D48).
-async function computeLedgerRows(userIds: string[], thresholds: RiskThresholds, now: Date): Promise<LedgerRow[]> {
+async function computeLedgerRows(
+  userIds: string[],
+  thresholds: RiskThresholds,
+  now: Date,
+): Promise<LedgerRow[]> {
   if (userIds.length === 0) return [];
 
   const todayStartUtc = istDateStartUtc(now);
-  const [userRows, balances, ordersTodayCounts, holdingsData, realizedPnl] = await Promise.all([
-    getUsersByIds(userIds),
-    sumVmoneyBalancesForUsers(userIds),
-    countOrdersTodayForUsers(userIds, todayStartUtc),
-    listHoldingsForUsers(userIds),
-    sumRealizedPnlForUsers(userIds),
-  ]);
+  const [userRows, balances, ordersTodayCounts, holdingsData, realizedPnl] =
+    await runWithConcurrencyLimit(
+      [
+        () => getUsersByIds(userIds),
+        () => sumVmoneyBalancesForUsers(userIds),
+        () => countOrdersTodayForUsers(userIds, todayStartUtc),
+        () => listHoldingsForUsers(userIds),
+        () => sumRealizedPnlForUsers(userIds),
+      ],
+      DB_CONCURRENCY_LIMIT,
+    );
 
-  const instrumentIds = Array.from(new Set(holdingsData.stock.map((h) => h.instrumentId)));
+  const instrumentIds = Array.from(
+    new Set(holdingsData.stock.map((h) => h.instrumentId)),
+  );
   const fundIds = Array.from(new Set(holdingsData.fund.map((h) => h.fundId)));
 
   const instruments = await getInstrumentsByIds(instrumentIds);
   const [stockQuotes, fundNavs] = await Promise.all([
-    Promise.allSettled(instruments.map((i) => getCachedQuote(i.symbol, i.exchange))),
+    Promise.allSettled(
+      instruments.map((i) => getCachedQuote(i.symbol, i.exchange)),
+    ),
     Promise.allSettled(fundIds.map((id) => getLatestNav(id))),
   ]);
 
   const priceByInstrumentId = new Map<string, number>();
   instruments.forEach((inst, i) => {
     const result = stockQuotes[i];
-    if (result?.status === "fulfilled" && result.value) priceByInstrumentId.set(inst.id, result.value.pricePaise);
+    if (result?.status === "fulfilled" && result.value)
+      priceByInstrumentId.set(inst.id, result.value.pricePaise);
   });
   const navByFundId = new Map<string, number>();
   fundIds.forEach((fundId, i) => {
     const result = fundNavs[i];
-    if (result?.status === "fulfilled" && result.value) navByFundId.set(fundId, result.value.navPaise);
+    if (result?.status === "fulfilled" && result.value)
+      navByFundId.set(fundId, result.value.navPaise);
   });
 
   const stockByUser = new Map<string, StockHoldingRow[]>();
@@ -180,25 +202,39 @@ async function computeLedgerRows(userIds: string[], thresholds: RiskThresholds, 
       const nav = navByFundId.get(h.fundId) ?? h.avgNavPaise;
       const value = Math.round((h.unitsMilli * nav) / 1000);
       holdingsValuePaise += value;
-      unrealizedPnlPaise += Math.round((h.unitsMilli * (nav - h.avgNavPaise)) / 1000);
+      unrealizedPnlPaise += Math.round(
+        (h.unitsMilli * (nav - h.avgNavPaise)) / 1000,
+      );
       if (value > largestPositionPaise) largestPositionPaise = value;
     }
 
     const totalAccountValuePaise = balancePaise + holdingsValuePaise;
-    const concentrationPct = totalAccountValuePaise > 0 ? (largestPositionPaise / totalAccountValuePaise) * 100 : 0;
+    const concentrationPct =
+      totalAccountValuePaise > 0
+        ? (largestPositionPaise / totalAccountValuePaise) * 100
+        : 0;
     const ordersToday = ordersTodayCounts.get(user.id) ?? 0;
     const totalPnlPaise = (realizedPnl.get(user.id) ?? 0) + unrealizedPnlPaise;
-    const accountAgeDays = Math.floor((now.getTime() - user.createdAt.getTime()) / MS_PER_DAY);
+    const accountAgeDays = Math.floor(
+      (now.getTime() - user.createdAt.getTime()) / MS_PER_DAY,
+    );
 
     return {
       userId: user.id,
-      displayName: user.lastInitial ? `${user.firstName ?? "—"} ${user.lastInitial}.` : (user.firstName ?? "—"),
+      displayName: user.lastInitial
+        ? `${user.firstName ?? "—"} ${user.lastInitial}.`
+        : (user.firstName ?? "—"),
       joinedAt: user.createdAt.toISOString(),
       balancePaise,
       totalPnlPaise,
       concentrationPct: roundPct(concentrationPct),
       ordersToday,
-      flag: computeRiskFlag(accountAgeDays, concentrationPct, ordersToday, thresholds),
+      flag: computeRiskFlag(
+        accountAgeDays,
+        concentrationPct,
+        ordersToday,
+        thresholds,
+      ),
     };
   }
 
@@ -210,8 +246,10 @@ const OPS_KPIS_CACHE_TTL_SECONDS = 60;
 const LEDGER_PAGE_SIZE_DEFAULT = 20;
 
 async function getCachedTradingActiveUserIds(): Promise<string[]> {
-  return getOrSetJsonCache("ops:trading-active-user-ids", TRADING_ACTIVE_IDS_CACHE_TTL_SECONDS, () =>
-    listTradingActiveUserIdsSorted(),
+  return getOrSetJsonCache(
+    "ops:trading-active-user-ids",
+    TRADING_ACTIVE_IDS_CACHE_TTL_SECONDS,
+    () => listTradingActiveUserIdsSorted(),
   );
 }
 
@@ -233,12 +271,13 @@ export async function getOpsKpis(): Promise<OpsKpis> {
   return getOrSetJsonCache("ops:kpis", OPS_KPIS_CACHE_TTL_SECONDS, async () => {
     const now = new Date();
     const todayStartUtc = istDateStartUtc(now);
-    const [activeTradersToday, ordersToday, tradingActiveUserIds, thresholds] = await Promise.all([
-      countActiveTradersToday(todayStartUtc),
-      countOrdersToday(todayStartUtc),
-      getCachedTradingActiveUserIds(),
-      getRiskThresholds(),
-    ]);
+    const [activeTradersToday, ordersToday, tradingActiveUserIds, thresholds] =
+      await Promise.all([
+        countActiveTradersToday(todayStartUtc),
+        countOrdersToday(todayStartUtc),
+        getCachedTradingActiveUserIds(),
+        getRiskThresholds(),
+      ]);
     const [vmoneyInPlayPaise, rows] = await Promise.all([
       sumVmoneyInPlay(tradingActiveUserIds),
       computeLedgerRows(tradingActiveUserIds, thresholds, now),
@@ -264,7 +303,9 @@ export async function getUserTradingLedgerPage(
 ): Promise<{ data: LedgerRow[]; nextCursor: string | null }> {
   const limit = opts.limit ?? LEDGER_PAGE_SIZE_DEFAULT;
   const allIds = await getCachedTradingActiveUserIds();
-  const candidateIds = opts.cursor ? allIds.filter((id) => id > opts.cursor!) : allIds;
+  const candidateIds = opts.cursor
+    ? allIds.filter((id) => id > opts.cursor!)
+    : allIds;
   const pageIds = candidateIds.slice(0, limit);
   const hasMore = candidateIds.length > limit;
 

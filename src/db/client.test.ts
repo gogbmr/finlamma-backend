@@ -1,13 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import { DB_CONCURRENCY_LIMIT } from "@/lib/concurrency-limit";
 
 const mockEnv = vi.hoisted(() => ({
   NODE_ENV: "production" as string,
-  DATABASE_URL: "postgres://user:pass@aws-0-region.pooler.supabase.com:6543/postgres",
+  DATABASE_URL:
+    "postgres://user:pass@aws-0-region.pooler.supabase.com:6543/postgres",
 }));
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
-const mockPostgres = vi.fn<(url: string, options: Record<string, unknown>) => object>(() => ({}));
-vi.mock("postgres", () => ({ default: (...args: [string, Record<string, unknown>]) => mockPostgres(...args) }));
+const mockPostgres = vi.fn<
+  (url: string, options: Record<string, unknown>) => object
+>(() => ({}));
+vi.mock("postgres", () => ({
+  default: (...args: [string, Record<string, unknown>]) =>
+    mockPostgres(...args),
+}));
 
 vi.mock("drizzle-orm/postgres-js", () => ({ drizzle: () => ({}) }));
 
@@ -41,7 +48,17 @@ describe("db client pool configuration", () => {
     expect(options.connect_timeout).toBeGreaterThan(0);
     expect(options.idle_timeout).toBeGreaterThan(0);
     expect(
-      (options.connection as Record<string, unknown> | undefined)?.statement_timeout,
+      (options.connection as Record<string, unknown> | undefined)
+        ?.statement_timeout,
     ).toBeGreaterThan(0);
+
+    // The two are deliberately defined in separate, un-coupled modules (see
+    // DB_CONCURRENCY_LIMIT's own comment for why) - this is what keeps them
+    // from silently drifting apart instead of just a comment saying so.
+    // Same test, not a second `it()`: ./client is only ever evaluated once
+    // per file (module caching), so a later test's own import() is a no-op
+    // and would see an empty mock-calls list once mocks are cleared between
+    // tests.
+    expect(options.max).toBe(DB_CONCURRENCY_LIMIT);
   });
 });
