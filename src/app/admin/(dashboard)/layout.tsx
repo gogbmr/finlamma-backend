@@ -5,60 +5,17 @@ import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import { getStaffMember } from "@/lib/auth";
+import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
 import { getRoleById, roleHasPermission } from "@/server/staff/repo";
 import { getMarketControls } from "@/server/trading/service";
 import { AdminNavStrip, AdminSidebar, type AdminNavVisibility } from "@/components/admin/admin-nav";
 
-// Diagnostic instrumentation added while investigating a production incident
-// (2026-10-06, see docs/STATUS.md): every authenticated /admin/(dashboard)
-// page was hanging ~300s (Vercel's function timeout) then showing the error
-// boundary, reproduced with a fresh incognito sign-in (so not a stale
-// cookie). The signed-out path (middleware's redirect branch, /admin/sign-in
-// itself) is fast and healthy - only the real-session path through auth()
-// has ever been unverified. This wrapper doesn't fix the root cause; it
-// turns an indefinite hang into a fast, clearly-logged failure so the next
-// occurrence tells us where the time actually goes, instead of a silent
-// 300s wait. Remove once the root cause (likely the Next 16.3.5 /
-// @clerk/nextjs 7.9.4 combination - same STATUS.md entry) is confirmed fixed.
+// See src/lib/admin-diagnostics.ts for the full context on why this exists.
+// Confirmed 2026-10-06: both calls below resolve in ~6s total (1.4s +
+// 4.5s) - the shell itself is NOT the hang. Kept instrumented anyway (cheap,
+// and rules the shell back out on every future occurrence too) while the
+// hang is chased further down into each page's own data fetches.
 const ADMIN_SHELL_TIMEOUT_MS = 15_000;
-
-async function withTimingAndTimeout<T>(label: string, promise: Promise<T>): Promise<T> {
-  const start = Date.now();
-  let timedOut = false;
-
-  // The underlying call isn't cancelled just because we stop waiting for it
-  // below - if it eventually settles after its own timeout already fired,
-  // this logs how late, which is exactly the number we need to confirm
-  // whether it's genuinely hanging forever or just very slow.
-  promise.then(
-    () => {
-      if (timedOut) {
-        console.warn(`[admin-shell] "${label}" actually resolved ${Date.now() - start}ms after its timeout fired`);
-      }
-    },
-    (err) => {
-      if (timedOut) {
-        console.warn(`[admin-shell] "${label}" actually rejected ${Date.now() - start}ms after its timeout fired:`, err);
-      }
-    },
-  );
-
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      timedOut = true;
-      reject(new Error(`[admin-shell] "${label}" did not resolve within ${ADMIN_SHELL_TIMEOUT_MS}ms`));
-    }, ADMIN_SHELL_TIMEOUT_MS);
-  });
-
-  try {
-    const result = await Promise.race([promise, timeoutPromise]);
-    console.log(`[admin-shell] "${label}" resolved in ${Date.now() - start}ms`);
-    return result;
-  } catch (err) {
-    console.error(`[admin-shell] "${label}" failed after ${Date.now() - start}ms`, err);
-    throw err;
-  }
-}
 
 // A thrown error here is NOT caught by ./error.tsx - Next.js error
 // boundaries never catch an error thrown by the layout.tsx in their own
@@ -92,7 +49,7 @@ function AdminShellFailure({ error }: { error: unknown }) {
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   let staff: Awaited<ReturnType<typeof getStaffMember>>;
   try {
-    staff = await withTimingAndTimeout("getStaffMember (auth())", getStaffMember());
+    staff = await withTimingAndTimeout("getStaffMember (auth())", getStaffMember(), ADMIN_SHELL_TIMEOUT_MS);
   } catch (err) {
     return <AdminShellFailure error={err} />;
   }
@@ -200,6 +157,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         roleHasPermission(staff.roleId, "analytics.view"),
         getRoleById(staff.roleId),
       ]),
+      ADMIN_SHELL_TIMEOUT_MS,
     );
   } catch (err) {
     return <AdminShellFailure error={err} />;
