@@ -54,12 +54,12 @@ bug reports above.
    2026-10-05's attempt only renamed the file, which may be why it reproduced identically).
 4. No evidence supports a Clerk v8 or Next 17 major jump as necessary or sufficient.
 
-**Mitigation shipped as diagnostics, not a fix**, on branch `admin-hang-instrumentation` (not yet
-merged): the dashboard layout's `getStaffMember()` call (the `auth()` call) and the 22-permission
-`Promise.all` are now wrapped in a 15s timeout with start/resolve/reject timing logged server-side
-(`[admin-shell] ...`), so the next occurrence fails fast with a clear logged message instead of
-silently hanging the full 300s. This does not fix the root cause - it exists so the next failure
-tells us exactly where the time goes.
+**Mitigation shipped as diagnostics, not a fix**, on branch `admin-hang-instrumentation` (merged to
+`main` as `c29dc9e`): the dashboard layout's `getStaffMember()` call (the `auth()` call) and the
+22-permission `Promise.all` are now wrapped in a 15s timeout with start/resolve/reject timing
+logged server-side (`[admin-shell] ...`), so the next occurrence fails fast with a clear logged
+message instead of silently hanging the full 300s. This does not fix the root cause - it exists so
+the next failure tells us exactly where the time goes.
 
 **Verified before considering this safe to merge (founder asked specifically whether a timeout
 could render a half-permissioned admin shell - it cannot, confirmed two ways):**
@@ -87,6 +87,72 @@ could render a half-permissioned admin shell - it cannot, confirmed two ways):**
   not be caught by this patch and would still run the full ~300s. Not fixed here since it wasn't
   in the requested scope and is a separate, lower-probability read - flagged so it's a known
   limitation, not a silent gap.
+
+**Round 2 (same day): the shell is confirmed NOT the cause.** Production logs from the first
+occurrence after merge: `getStaffMember (auth())` resolved in 1391ms, the 22-permission
+`Promise.all` resolved in 4527ms - both fine, ~6s total, nowhere near 300s. This rules out Clerk's
+`auth()` and the Next 16.3.5/`@clerk/nextjs` 7.9.4 combination as the cause of THIS incident (the
+upgrade research from Round 1 is still worth doing for its own sake, but it is not expected to fix
+this hang). Instrumentation pushed one level deeper into `/admin/worlds` (the one confirmed repro
+case) on branch `admin-worlds-page-instrumentation`, extracting the timing helper to
+`src/lib/admin-diagnostics.ts` (now a required `timeoutMs` argument per call site, since a
+permission check and an N-row data fetch don't share a sensible threshold). Found, while verifying
+this is safe: Next's `error.js` does **not** catch an error thrown by the `layout.js` in its own
+route segment (confirmed against this Next version's bundled docs) - fixed by having the shell
+catch its own two guarded calls explicitly and render a dedicated failure panel, since
+`(dashboard)/error.tsx` could never have reached a layout-level throw anyway. A page's own `page.js`
+(e.g. `worlds/page.tsx`) does NOT have this problem - `error.js` correctly wraps `page.js` in the
+same segment - so no custom panel was needed there, a plain `throw` is enough.
+
+**Round 3 (same day): isolated to exactly one call, which never returns at all.** With the page
+instrumented, the next occurrence's logs: both shell calls and the page's own redundant
+`getStaffMember()`/permission check all resolved normally (1.5s, 1.6s, 4.5s, 4.8s) - then
+`"worlds page: getWorldEditorData + getMentorEditorData"` **failed after the full 20000ms timeout,
+never resolving at all.** Investigated, read-only, before changing anything beyond instrumentation:
+- Both functions generate a signed download URL per row (`getSignedDownloadUrl`,
+  `src/lib/s3.ts`) for every world/mentor with an `artKey` - the one thing in this code path
+  meaningfully different from every other call already proven fast elsewhere.
+- Read the actual installed `@aws-sdk/s3-request-presigner@3.1136.0` source
+  (`node_modules/.pnpm/.../dist-cjs/index.js`), not assumed from memory: `getSignedUrl()` inserts a
+  `presignInterceptMiddleware` directly before `awsAuthMiddleware` with `override: true`, which
+  **replaces** the real request-sending step entirely - presigning **never sends an actual HTTP
+  request to S3**, confirmed from source. This weakens (does not eliminate) the "S3 network call
+  hangs" theory specifically for presigning - but the same code path still resolves
+  `client.config.credentials`/`region` asynchronously, and constructs a brand-new `S3Client` per
+  call (`getS3Config()` is called inside `getSignedDownloadUrl()` itself, not reused), both
+  unverified in practice until now.
+- Checked the installed `@smithy/node-http-handler@4.12.1`'s actual source for default timeouts:
+  `DEFAULT_REQUEST_TIMEOUT = 0` (no timeout at all) for the regular HTTP/1.1 handler - confirmed,
+  not assumed. A real `.send()` call (as `uploadObject`/`deleteObject` make, unlike presigning)
+  with an unreachable endpoint would hang indefinitely, with nothing in this codebase's config
+  setting a timeout. One coincidental, likely-irrelevant finding: `node-http2-connection-manager.js`
+  has a **300,000ms (300s) default** session timeout - matches our symptom's duration suspiciously
+  well, but it's in the HTTP/2 isolated-session path, which presigning's intercepted middleware
+  shouldn't reach either - noted as a red herring unless disproven.
+- `GET /api/v1/health`'s `storage: "ok"` field is **config-only** (`checkStorageConfigured()` just
+  checks the five `S3_*` env vars are non-empty strings) - it has never made a real call to confirm
+  `S3_ENDPOINT` is actually reachable from production. **Action item for the founder**: confirm in
+  Vercel's dashboard that `S3_ENDPOINT`/`S3_REGION` are set correctly for the **Production**
+  environment specifically (not just Preview/Development), and that the endpoint matches Supabase
+  Storage's actual S3-compatible URL for this project - this needs direct access neither this
+  session nor the health check has.
+- **Open question, plausible given this entire investigation's pattern so far**: S3 storage
+  plumbing shipped in Phase 2b (`docs/STATUS.md`'s historical record), but no entry in this file
+  ever confirms a real authenticated staff session loaded a page that calls `getSignedDownloadUrl`
+  in production - every prior verification (same blind spot as the auth hang itself) only checked
+  signed-out redirects or unauthenticated API responses. It is plausible this exact code path has
+  never actually run in production before this week.
+
+**Fixed, diagnostics only, not yet merged** (branch `admin-worlds-page-instrumentation`): split
+`getWorldEditorData()`/`getMentorEditorData()` (`src/server/worlds/service.ts`,
+`src/server/mentors/service.ts`) into separately-timed DB-list vs. per-row-presign steps, and the
+worlds page now times each of the two functions independently rather than as one combined
+`Promise.all`, so the next occurrence shows precisely which function, and which half of it (DB
+query vs. signed-URL generation vs. a specific row), the time is actually going into. If this
+confirms the S3 path, the likely fix is an explicit request timeout on the S3 client plus not
+re-presigning on every single list render (e.g. caching/deriving the URL once, or only on demand)
+- not implemented yet, pending this round's data, per the founder's explicit "one change at a
+time" instruction.
 
 ## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 

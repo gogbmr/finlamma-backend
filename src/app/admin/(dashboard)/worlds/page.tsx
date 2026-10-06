@@ -38,11 +38,14 @@ export default async function WorldsPage() {
     return <Forbidden message="You don't have permission to manage worlds." />;
   }
 
-  const [worlds, mentors] = await withTimingAndTimeout(
-    "worlds page: getWorldEditorData + getMentorEditorData",
-    Promise.all([getWorldEditorData(), getMentorEditorData()]),
-    20_000,
-  );
+  // getWorldEditorData/getMentorEditorData are the two calls the previous
+  // run narrowed the hang down to (combined, never returned within 20s) -
+  // timed separately here (which one, if not both) on top of each
+  // function's own internal DB-vs-presign split (see their definitions).
+  const [worlds, mentors] = await Promise.all([
+    withTimingAndTimeout("worlds page: getWorldEditorData (overall)", getWorldEditorData(), 20_000),
+    withTimingAndTimeout("worlds page: getMentorEditorData (overall)", getMentorEditorData(), 20_000),
+  ]);
 
   // Doubt Zone lessons per world, for the mentor-change warning below (see
   // docs/ARCHITECTURE.md D19) - worlds/lessons are staff-created with no

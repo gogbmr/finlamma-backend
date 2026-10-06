@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
+import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
 import {
   isForeignKeyViolation,
   isTransactionConflict,
@@ -112,12 +113,24 @@ function validateWorldForPublish(world: WorldRow): void {
   }
 }
 
+// Diagnostic instrumentation (2026-10-06, see docs/STATUS.md): this is one
+// of the two calls the worlds-page investigation narrowed the hang down to
+// (the other being getMentorEditorData) - the combined call never returned
+// within 20s. Split here into the DB list vs. each row's signed-URL
+// generation individually, so the next occurrence shows which part it's
+// actually in rather than "somewhere in this function."
 export async function getWorldEditorData() {
-  const rows = await listAllWorlds();
+  const rows = await withTimingAndTimeout("getWorldEditorData: listAllWorlds (DB)", listAllWorlds(), 10_000);
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
+      artUrl: row.artKey
+        ? await withTimingAndTimeout(
+            `getWorldEditorData: getSignedDownloadUrl(world=${row.id})`,
+            getSignedDownloadUrl(row.artKey),
+            10_000,
+          )
+        : null,
     })),
   );
 }
