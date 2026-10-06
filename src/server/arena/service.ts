@@ -1,13 +1,29 @@
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
-import { istDateString, istWeekStartDate, istWeekStartUtc } from "@/lib/ist-date";
-import { getSettingJson, getSettingNumber, setSettingJson } from "@/lib/settings";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
+import {
+  istDateString,
+  istWeekStartDate,
+  istWeekStartUtc,
+} from "@/lib/ist-date";
+import {
+  getSettingJson,
+  getSettingNumber,
+  setSettingJson,
+} from "@/lib/settings";
 import { captureEvent } from "@/lib/analytics";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
-import { insertVmoneyLedgerEntryIfNew, insertXpEventIfNew, sumXpSince } from "@/server/economy/repo";
+import {
+  insertVmoneyLedgerEntryIfNew,
+  insertXpEventIfNew,
+  sumXpSince,
+} from "@/server/economy/repo";
 import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import { getLevelInfo } from "@/server/leveling/service";
@@ -59,7 +75,8 @@ import { encodeScope, resolveScopeForRequest, type ArenaScope } from "./scope";
 
 type LeagueZone = "promote" | "safe" | "demote";
 
-export const ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY = "arena_min_leaderboard_pool_size";
+export const ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY =
+  "arena_min_leaderboard_pool_size";
 export const DEFAULT_ARENA_MIN_LEADERBOARD_POOL_SIZE = 20;
 
 // AR-12: "+5 XP" per the prototype/PRODUCT_SPEC.md §3, admin-tunable rather
@@ -78,7 +95,8 @@ export const DEFAULT_CHEER_DAILY_XP_CAP = 50;
 // three cheers' worth at the default per-cheer amount, so sustained
 // day-after-day cheering between the same two accounts stops paying out
 // partway through the week without cutting off normal cheering.
-export const CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY = "arena_cheer_weekly_sender_receiver_cap";
+export const CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY =
+  "arena_cheer_weekly_sender_receiver_cap";
 export const DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP = 15;
 
 // The number of ranked rows returned outright - AR-06/AR-10 also want the
@@ -114,7 +132,10 @@ export type LeaderboardRowView = {
 // row. `zone` here is this scope's CURRENT league_members state (as of the
 // last settlement), not necessarily the zone Checkpoint 3 actually paid -
 // see league_settlements for the single best-zone-per-week payout record.
-function visibleZone(zone: LeagueZone | undefined, isSelf: boolean): LeagueZone | null {
+function visibleZone(
+  zone: LeagueZone | undefined,
+  isSelf: boolean,
+): LeagueZone | null {
   if (!zone) return null;
   if (isSelf) return zone;
   return zone === "demote" ? null : zone;
@@ -152,7 +173,9 @@ async function requestedScopeForUser(
   return worldId ? { kind: "world", worldId } : { kind: "india" };
 }
 
-function rankRows(rows: { userId: string; xp: number }[]): { userId: string; xp: number; rank: number }[] {
+function rankRows(
+  rows: { userId: string; xp: number }[],
+): { userId: string; xp: number; rank: number }[] {
   return [...rows]
     .sort((a, b) => b.xp - a.xp)
     .map((r, i) => ({ ...r, rank: i + 1 }));
@@ -171,7 +194,11 @@ async function buildLeaderboardView(
 ): Promise<LeaderboardView> {
   const requestedRows = await weeklyXpByScope(requested, weekStartUtc);
 
-  let resolution = resolveScopeForRequest(requested, requestedRows.length, minPoolSize);
+  let resolution = resolveScopeForRequest(
+    requested,
+    requestedRows.length,
+    minPoolSize,
+  );
   let rows = requestedRows;
 
   if (resolution.fallbackFrom) {
@@ -190,8 +217,13 @@ async function buildLeaderboardView(
   // AR-09: last week's settled rank for this same (resolved) scope, keyed by
   // user - a plain lookup against leaderboard_snapshots (empty map if that
   // scope didn't settle last week, e.g. it was below the D52 privacy floor).
-  const previousWeekStartDate = istWeekStartDate(new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000));
-  const prevRanks = await getLastWeekRanksForScope(encodeScope(resolution.resolved), previousWeekStartDate);
+  const previousWeekStartDate = istWeekStartDate(
+    new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000),
+  );
+  const prevRanks = await getLastWeekRanksForScope(
+    encodeScope(resolution.resolved),
+    previousWeekStartDate,
+  );
   const rankDeltaFor = (userId: string, rank: number): number | null => {
     const prevRank = prevRanks.get(userId);
     return prevRank !== undefined ? prevRank - rank : null;
@@ -238,7 +270,11 @@ async function buildLeaderboardView(
     poolSize: rows.length,
     rows: viewRows,
     self: selfRanked
-      ? { rank: selfRanked.rank, xp: selfRanked.xp, rankDelta: rankDeltaFor(selfRanked.userId, selfRanked.rank) }
+      ? {
+          rank: selfRanked.rank,
+          xp: selfRanked.xp,
+          rankDelta: rankDeltaFor(selfRanked.userId, selfRanked.rank),
+        }
       : null,
   };
 }
@@ -249,7 +285,11 @@ async function weekContext() {
     ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY,
     DEFAULT_ARENA_MIN_LEADERBOARD_POOL_SIZE,
   );
-  return { weekStartUtc: istWeekStartUtc(now), weekStartDate: istWeekStartDate(now), minPoolSize };
+  return {
+    weekStartUtc: istWeekStartUtc(now),
+    weekStartDate: istWeekStartDate(now),
+    minPoolSize,
+  };
 }
 
 export async function getLeaderboard(
@@ -257,8 +297,18 @@ export async function getLeaderboard(
   requestedKind: "world" | "state" | "india" | "global",
 ): Promise<LeaderboardView> {
   const { weekStartUtc, weekStartDate, minPoolSize } = await weekContext();
-  const requested = await requestedScopeForUser(user.id, requestedKind, user.state);
-  return buildLeaderboardView(user, requested, weekStartUtc, weekStartDate, minPoolSize);
+  const requested = await requestedScopeForUser(
+    user.id,
+    requestedKind,
+    user.state,
+  );
+  return buildLeaderboardView(
+    user,
+    requested,
+    weekStartUtc,
+    weekStartDate,
+    minPoolSize,
+  );
 }
 
 // AR-06: drilling into a SPECIFIC world's own leaderboard (tapped from the
@@ -270,7 +320,13 @@ export async function getWorldLeaderboard(
   worldId: string,
 ): Promise<LeaderboardView> {
   const { weekStartUtc, weekStartDate, minPoolSize } = await weekContext();
-  return buildLeaderboardView(user, { kind: "world", worldId }, weekStartUtc, weekStartDate, minPoolSize);
+  return buildLeaderboardView(
+    user,
+    { kind: "world", worldId },
+    weekStartUtc,
+    weekStartDate,
+    minPoolSize,
+  );
 }
 
 export type WorldsLeaderboardRow = {
@@ -288,9 +344,14 @@ export type WorldsLeaderboardRow = {
 // compete" is what xpPerMember surfaces alongside the raw total). A world
 // with zero current members this week is omitted rather than shown at 0 -
 // there's nothing to rank.
-export async function getWorldsLeaderboard(): Promise<{ weekStartDate: string; worlds: WorldsLeaderboardRow[] }> {
+export async function getWorldsLeaderboard(): Promise<{
+  weekStartDate: string;
+  worlds: WorldsLeaderboardRow[];
+}> {
   const { weekStartUtc, weekStartDate } = await weekContext();
-  const previousWeekStartUtc = new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const previousWeekStartUtc = new Date(
+    weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000,
+  );
 
   const [thisWeek, lastWeek, allWorlds] = await Promise.all([
     xpByWorldInRange(weekStartUtc),
@@ -309,7 +370,8 @@ export async function getWorldsLeaderboard(): Promise<{ weekStartDate: string; w
     .filter((w) => titleByWorld.has(w.worldId))
     .map((w) => {
       const previous = lastWeekByWorld.get(w.worldId) ?? 0;
-      const deltaPct = previous > 0 ? Math.round(((w.xp - previous) / previous) * 100) : null;
+      const deltaPct =
+        previous > 0 ? Math.round(((w.xp - previous) / previous) * 100) : null;
       return {
         worldId: w.worldId,
         title: titleByWorld.get(w.worldId)!,
@@ -334,7 +396,9 @@ export type ActivityFeedItem = {
 
 // AR-03: a live-feeling marquee of recent XP credits. Kid-safe display name
 // only (first name + last initial), same as every other Arena surface.
-export async function getActivityFeed(): Promise<{ items: ActivityFeedItem[] }> {
+export async function getActivityFeed(): Promise<{
+  items: ActivityFeedItem[];
+}> {
   const rows = await listRecentXpEvents(ACTIVITY_FEED_LIMIT);
   return {
     items: rows.map((r) => ({
@@ -346,7 +410,11 @@ export async function getActivityFeed(): Promise<{ items: ActivityFeedItem[] }> 
   };
 }
 
-export type SendCheerResult = { alreadyCheeredToday: boolean; xpAwarded: number; dailyCapReached: boolean };
+export type SendCheerResult = {
+  alreadyCheeredToday: boolean;
+  xpAwarded: number;
+  dailyCapReached: boolean;
+};
 
 // AR-12. Server-enforced end to end - never trusts the app to have already
 // hidden a cheer button for a self-row or an opted-out receiver.
@@ -372,7 +440,10 @@ export async function sendCheer(
   // enabled - only an explicit `false` opts out, see users.ts's schema
   // comment on cheersEnabled.
   if (receiver.preferences?.cheersEnabled === false) {
-    throw new AppError("CHEER_RECEIVER_OPTED_OUT", "This learner isn't receiving cheers right now");
+    throw new AppError(
+      "CHEER_RECEIVER_OPTED_OUT",
+      "This learner isn't receiving cheers right now",
+    );
   }
 
   const todayIst = istDateString(new Date());
@@ -380,7 +451,10 @@ export async function sendCheer(
   const [cheerXpAmount, dailyCap, weeklyPairCap] = await Promise.all([
     getSettingNumber(CHEER_XP_AMOUNT_KEY, DEFAULT_CHEER_XP_AMOUNT),
     getSettingNumber(CHEER_DAILY_XP_CAP_KEY, DEFAULT_CHEER_DAILY_XP_CAP),
-    getSettingNumber(CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY, DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP),
+    getSettingNumber(
+      CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY,
+      DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP,
+    ),
   ]);
 
   // Locks the RECEIVER's row before reading or crediting anything, so two
@@ -393,20 +467,45 @@ export async function sendCheer(
   // protect the daily per-receiver cap against DISTINCT senders arriving at
   // the same instant - a security-audit finding, Phase 6 audit 2026-09-29.
   const result = await db.transaction(async (tx) => {
-    await tx.execute(sql`select id from ${users} where id = ${receiverId} for update`);
+    await tx.execute(
+      sql`select id from ${users} where id = ${receiverId} for update`,
+    );
 
-    const cheerRow = await insertCheerIfNew(sender.id, receiverId, todayIst, tx);
+    const cheerRow = await insertCheerIfNew(
+      sender.id,
+      receiverId,
+      todayIst,
+      tx,
+    );
     if (!cheerRow) {
-      return { alreadyCheeredToday: true as const, xpAwarded: 0, dailyCapReached: false, cheerId: null };
+      return {
+        alreadyCheeredToday: true as const,
+        xpAwarded: 0,
+        dailyCapReached: false,
+        cheerId: null,
+      };
     }
 
-    const [alreadyCreditedToday, alreadyCreditedThisPairThisWeek] = await Promise.all([
-      sumCheerXpCreditedToday(receiverId, todayIst, tx),
-      sumCheerXpFromSenderToReceiverSince(sender.id, receiverId, weekStartUtc, tx),
-    ]);
+    const [alreadyCreditedToday, alreadyCreditedThisPairThisWeek] =
+      await Promise.all([
+        sumCheerXpCreditedToday(receiverId, todayIst, tx),
+        sumCheerXpFromSenderToReceiverSince(
+          sender.id,
+          receiverId,
+          weekStartUtc,
+          tx,
+        ),
+      ]);
     const remainingDaily = Math.max(0, dailyCap - alreadyCreditedToday);
-    const remainingWeeklyPair = Math.max(0, weeklyPairCap - alreadyCreditedThisPairThisWeek);
-    const toCredit = Math.min(cheerXpAmount, remainingDaily, remainingWeeklyPair);
+    const remainingWeeklyPair = Math.max(
+      0,
+      weeklyPairCap - alreadyCreditedThisPairThisWeek,
+    );
+    const toCredit = Math.min(
+      cheerXpAmount,
+      remainingDaily,
+      remainingWeeklyPair,
+    );
 
     if (toCredit > 0) {
       await insertXpEventIfNew(tx, {
@@ -458,16 +557,29 @@ export async function sendCheer(
   // keep running background work after the response is sent, and
   // notifyUser itself never throws (see its own doc comment), so awaiting
   // it costs correctness nothing.
-  await notifyUser(receiverId, "cheer_received", NOTIFICATION_COPY.cheer_received);
+  await notifyUser(
+    receiverId,
+    "cheer_received",
+    NOTIFICATION_COPY.cheer_received,
+  );
 
-  return { alreadyCheeredToday: false, xpAwarded: result.xpAwarded, dailyCapReached: result.dailyCapReached };
+  return {
+    alreadyCheeredToday: false,
+    xpAwarded: result.xpAwarded,
+    dailyCapReached: result.dailyCapReached,
+  };
 }
 
 // The aggregate-only weekly count a learner sees about the cheers THEY
 // received - never sender identity, per docs/ARCHITECTURE.md D53.
-export async function getMyCheersSummary(user: { id: string }): Promise<{ receivedThisWeek: number }> {
+export async function getMyCheersSummary(user: {
+  id: string;
+}): Promise<{ receivedThisWeek: number }> {
   const weekStartUtc = istWeekStartUtc(new Date());
-  const receivedThisWeek = await countCheersReceivedSince(user.id, weekStartUtc);
+  const receivedThisWeek = await countCheersReceivedSince(
+    user.id,
+    weekStartUtc,
+  );
   return { receivedThisWeek };
 }
 
@@ -490,7 +602,10 @@ export async function createAboutMeChipForAdmin(
   input: AboutMeChipInput,
   meta: RequestMeta,
 ) {
-  const created = await insertAboutMeChip({ ...input, iconKey: input.iconKey ?? null });
+  const created = await insertAboutMeChip({
+    ...input,
+    iconKey: input.iconKey ?? null,
+  });
   await logActivity({
     actorType: "staff",
     actorId: actor.id,
@@ -513,7 +628,10 @@ export async function updateAboutMeChipForAdmin(
   const previous = await getAboutMeChipById(id);
   if (!previous) throw new AppError("NOT_FOUND", "Chip not found");
 
-  const updated = await updateAboutMeChipRow(id, { ...input, iconKey: input.iconKey ?? null });
+  const updated = await updateAboutMeChipRow(id, {
+    ...input,
+    iconKey: input.iconKey ?? null,
+  });
   if (!updated) throw new AppError("NOT_FOUND", "Chip not found");
 
   await logActivity({
@@ -522,7 +640,10 @@ export async function updateAboutMeChipForAdmin(
     action: "about_me_chips.updated",
     targetType: "about_me_chips",
     targetId: id,
-    metadata: { previous: { name: previous.name, active: previous.active }, next: input },
+    metadata: {
+      previous: { name: previous.name, active: previous.active },
+      next: input,
+    },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
@@ -534,7 +655,11 @@ export async function updateAboutMeChipForAdmin(
 // silently orphaning their selection. Staff should retire a chip (active:
 // false) instead of deleting one that's in use; deletion is really only for
 // a chip added by mistake, never touched.
-export async function deleteAboutMeChipForAdmin(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function deleteAboutMeChipForAdmin(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   const existing = await getAboutMeChipById(id);
   if (!existing) throw new AppError("NOT_FOUND", "Chip not found");
 
@@ -575,14 +700,20 @@ export async function setMySelectedChips(
 ): Promise<void> {
   const uniqueIds = [...new Set(chipIds)];
   if (uniqueIds.length > MAX_SELECTED_CHIPS) {
-    throw new AppError("VALIDATION_FAILED", `Pick at most ${MAX_SELECTED_CHIPS} chips`);
+    throw new AppError(
+      "VALIDATION_FAILED",
+      `Pick at most ${MAX_SELECTED_CHIPS} chips`,
+    );
   }
 
   const activeChips = await listActiveAboutMeChips();
   const activeIds = new Set(activeChips.map((c) => c.id));
   const invalid = uniqueIds.filter((id) => !activeIds.has(id));
   if (invalid.length > 0) {
-    throw new AppError("VALIDATION_FAILED", "One or more chips aren't available to select");
+    throw new AppError(
+      "VALIDATION_FAILED",
+      "One or more chips aren't available to select",
+    );
   }
 
   await replaceUserChipSelection(user.id, uniqueIds);
@@ -603,12 +734,22 @@ export type PublicProfileView = {
   lastInitial: string | null;
   level: number;
   rankTitle: LocalizedText | null;
-  badges: { id: string; name: LocalizedText; description: LocalizedText; iconKey: string | null }[];
+  badges: {
+    id: string;
+    name: LocalizedText;
+    description: LocalizedText;
+    iconKey: string | null;
+  }[];
   chips: { id: string; name: LocalizedText; iconKey: string | null }[];
   weekXp: number;
   streak: { current: number; longest: number };
   quizAccuracyPct: number | null;
-  currentWorld: { id: string; title: LocalizedText; completedLessons: number; totalLessons: number } | null;
+  currentWorld: {
+    id: string;
+    title: LocalizedText;
+    completedLessons: number;
+    totalLessons: number;
+  } | null;
 };
 
 // AR-20's public player profile bottom sheet - opened by any OTHER learner
@@ -618,24 +759,41 @@ export type PublicProfileView = {
 // accuracy, current world + completion. Never: email, phone, DOB, state,
 // parent info, school/class, or `bio` (docs/ARCHITECTURE.md D36 - bio stays
 // on GET/PATCH /me forever, never surfaced here or anywhere else).
-export async function getPublicProfile(targetUserId: string): Promise<PublicProfileView> {
+export async function getPublicProfile(
+  targetUserId: string,
+): Promise<PublicProfileView> {
   const target = await findCheerableUser(targetUserId); // same shape needed: id + not-deleted
-  if (!target || target.deletedAt) throw new AppError("NOT_FOUND", "Learner not found");
+  if (!target || target.deletedAt)
+    throw new AppError("NOT_FOUND", "Learner not found");
 
   const weekStartUtc = istWeekStartUtc(new Date());
-  const [nameRows, levelInfo, streakStats, quizAccuracy, badges, chips, currentWorldId, weekXp] =
-    await Promise.all([
-      getDisplayNamesForUserIds([targetUserId]),
-      getLevelInfo(targetUserId),
-      getStreakStats(targetUserId),
-      getQuizAccuracyTotalsForUser(targetUserId),
-      getMyBadges(targetUserId),
-      getSelectedChipsForUser(targetUserId),
-      getCurrentWorldIdForUser(targetUserId),
-      sumXpSince(targetUserId, weekStartUtc),
-    ]);
+  const [
+    nameRows,
+    levelInfo,
+    streakStats,
+    quizAccuracy,
+    badges,
+    chips,
+    currentWorldId,
+    weekXp,
+  ] = await runWithConcurrencyLimit(
+    [
+      () => getDisplayNamesForUserIds([targetUserId]),
+      () => getLevelInfo(targetUserId),
+      () => getStreakStats(targetUserId),
+      () => getQuizAccuracyTotalsForUser(targetUserId),
+      () => getMyBadges(targetUserId),
+      () => getSelectedChipsForUser(targetUserId),
+      () => getCurrentWorldIdForUser(targetUserId),
+      () => sumXpSince(targetUserId, weekStartUtc),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
 
-  const name = nameRows.get(targetUserId) ?? { firstName: null, lastInitial: null };
+  const name = nameRows.get(targetUserId) ?? {
+    firstName: null,
+    lastInitial: null,
+  };
   const rankTitleRow = await getRankTitleForLevel(levelInfo.level);
 
   let currentWorld: PublicProfileView["currentWorld"] = null;
@@ -646,7 +804,12 @@ export async function getPublicProfile(targetUserId: string): Promise<PublicProf
         countCompletedLessonsForUserInWorld(targetUserId, currentWorldId),
         countPublishedLessonsInWorld(currentWorldId),
       ]);
-      currentWorld = { id: currentWorldId, title, completedLessons, totalLessons };
+      currentWorld = {
+        id: currentWorldId,
+        title,
+        completedLessons,
+        totalLessons,
+      };
     }
   }
 
@@ -657,12 +820,22 @@ export async function getPublicProfile(targetUserId: string): Promise<PublicProf
     rankTitle: rankTitleRow?.title ?? null,
     badges: badges
       .filter((b) => b.unlocked)
-      .map((b) => ({ id: b.id, name: b.name, description: b.description, iconKey: b.iconKey })),
+      .map((b) => ({
+        id: b.id,
+        name: b.name,
+        description: b.description,
+        iconKey: b.iconKey,
+      })),
     chips: chips.map((c) => ({ id: c.id, name: c.name, iconKey: c.iconKey })),
     weekXp,
-    streak: { current: streakStats.learning.current, longest: streakStats.learning.longest },
+    streak: {
+      current: streakStats.learning.current,
+      longest: streakStats.learning.longest,
+    },
     quizAccuracyPct:
-      quizAccuracy.total > 0 ? Math.round((quizAccuracy.correct / quizAccuracy.total) * 100) : null,
+      quizAccuracy.total > 0
+        ? Math.round((quizAccuracy.correct / quizAccuracy.total) * 100)
+        : null,
     currentWorld,
   };
 }
@@ -681,7 +854,11 @@ export const DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP = 500;
 // failing the whole payout over a missing configuration.
 export const ARENA_CREST_BADGE_ID_KEY = "arena_crest_badge_id";
 
-const ZONE_VALUE: Record<LeagueZone, number> = { promote: 2, safe: 1, demote: 0 };
+const ZONE_VALUE: Record<LeagueZone, number> = {
+  promote: 2,
+  safe: 1,
+  demote: 0,
+};
 
 // Pure and exported for direct testing - the prototype's own formula
 // (`Finlamma App.dc.html` L6229: `Math.max(1, Math.round(n/4))` for both the
@@ -693,7 +870,10 @@ export function computeZonesForRankedList(
   const zoneN = Math.max(1, Math.round(n / 4));
   const map = new Map<string, LeagueZone>();
   ranked.forEach((r, i) => {
-    map.set(r.userId, i < zoneN ? "promote" : i >= n - zoneN ? "demote" : "safe");
+    map.set(
+      r.userId,
+      i < zoneN ? "promote" : i >= n - zoneN ? "demote" : "safe",
+    );
   });
   return map;
 }
@@ -733,18 +913,48 @@ export async function settleArenaLeaguesForWeek(): Promise<{
   const weekEndUtc = istWeekStartUtc(now); // start of the CURRENT week = exclusive end of the one just closed
   const weekStartUtc = new Date(weekEndUtc.getTime() - 7 * 24 * 60 * 60 * 1000);
   const weekStartDate = istWeekStartDate(weekStartUtc);
-  const previousWeekStartDate = istWeekStartDate(new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000));
+  const previousWeekStartDate = istWeekStartDate(
+    new Date(weekStartUtc.getTime() - 7 * 24 * 60 * 60 * 1000),
+  );
 
-  const [promoteVm, safeVm, weeklyCap, minPoolSize, multiplier, crestBadgeIdRaw, scopes] = await Promise.all([
-    getSettingNumber(ARENA_PROMOTE_VM_REWARD_KEY, DEFAULT_ARENA_PROMOTE_VM_REWARD),
-    getSettingNumber(ARENA_SAFE_VM_REWARD_KEY, DEFAULT_ARENA_SAFE_VM_REWARD),
-    getSettingNumber(ARENA_LEAGUE_WEEKLY_VM_CAP_KEY, DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP),
-    getSettingNumber(ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY, DEFAULT_ARENA_MIN_LEADERBOARD_POOL_SIZE),
-    getVmIssuanceMultiplier(),
-    getSettingJson(ARENA_CREST_BADGE_ID_KEY),
-    allCandidateScopes(),
-  ]);
-  const crestBadgeId = typeof crestBadgeIdRaw === "string" ? crestBadgeIdRaw : null;
+  const [
+    promoteVm,
+    safeVm,
+    weeklyCap,
+    minPoolSize,
+    multiplier,
+    crestBadgeIdRaw,
+    scopes,
+  ] = await runWithConcurrencyLimit(
+    [
+      () =>
+        getSettingNumber(
+          ARENA_PROMOTE_VM_REWARD_KEY,
+          DEFAULT_ARENA_PROMOTE_VM_REWARD,
+        ),
+      () =>
+        getSettingNumber(
+          ARENA_SAFE_VM_REWARD_KEY,
+          DEFAULT_ARENA_SAFE_VM_REWARD,
+        ),
+      () =>
+        getSettingNumber(
+          ARENA_LEAGUE_WEEKLY_VM_CAP_KEY,
+          DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP,
+        ),
+      () =>
+        getSettingNumber(
+          ARENA_MIN_LEADERBOARD_POOL_SIZE_KEY,
+          DEFAULT_ARENA_MIN_LEADERBOARD_POOL_SIZE,
+        ),
+      () => getVmIssuanceMultiplier(),
+      () => getSettingJson(ARENA_CREST_BADGE_ID_KEY),
+      () => allCandidateScopes(),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
+  const crestBadgeId =
+    typeof crestBadgeIdRaw === "string" ? crestBadgeIdRaw : null;
 
   const bestByUser = new Map<string, BestZoneEntry>();
   let scopesSettled = 0;
@@ -756,12 +966,19 @@ export async function settleArenaLeaguesForWeek(): Promise<{
 
     const ranked = rankRows(rows);
     const zones = computeZonesForRankedList(ranked);
-    const prevRanks = await getLastWeekRanksForScope(encoded, previousWeekStartDate);
+    const prevRanks = await getLastWeekRanksForScope(
+      encoded,
+      previousWeekStartDate,
+    );
     const league = await ensureLeague(encoded);
 
     await replaceLeagueMembers(
       league.id,
-      ranked.map((r) => ({ userId: r.userId, zone: zones.get(r.userId)!, rank: r.rank })),
+      ranked.map((r) => ({
+        userId: r.userId,
+        zone: zones.get(r.userId)!,
+        rank: r.rank,
+      })),
     );
     await upsertLeaderboardSnapshotIfNew({
       weekStartDate,
@@ -788,7 +1005,8 @@ export async function settleArenaLeaguesForWeek(): Promise<{
 
   let usersSettled = 0;
   for (const [userId, best] of bestByUser) {
-    const nominal = best.zone === "promote" ? promoteVm : best.zone === "safe" ? safeVm : 0;
+    const nominal =
+      best.zone === "promote" ? promoteVm : best.zone === "safe" ? safeVm : 0;
     const vmAwarded = Math.min(Math.round(nominal * multiplier), weeklyCap);
 
     const paid = await db.transaction(async (tx) => {
@@ -826,7 +1044,11 @@ export async function settleArenaLeaguesForWeek(): Promise<{
       // (`paid`), never a retried/idempotent replay of an already-settled
       // week.
       if (best.zone === "promote") {
-        await notifyUser(userId, "league_rank_change", NOTIFICATION_COPY.league_rank_change);
+        await notifyUser(
+          userId,
+          "league_rank_change",
+          NOTIFICATION_COPY.league_rank_change,
+        );
       }
     }
   }
@@ -838,14 +1060,38 @@ export async function settleArenaLeaguesForWeek(): Promise<{
 // tunable at once - staff see and change these as one form, same as every
 // other grouped settings_kv editor in this codebase.
 export async function getArenaLeagueSettingsForAdmin(): Promise<ArenaLeagueSettingsInput> {
-  const [promoteVmReward, safeVmReward, weeklyVmCap, cheerWeeklySenderReceiverCap, crestBadgeIdRaw] =
-    await Promise.all([
-      getSettingNumber(ARENA_PROMOTE_VM_REWARD_KEY, DEFAULT_ARENA_PROMOTE_VM_REWARD),
-      getSettingNumber(ARENA_SAFE_VM_REWARD_KEY, DEFAULT_ARENA_SAFE_VM_REWARD),
-      getSettingNumber(ARENA_LEAGUE_WEEKLY_VM_CAP_KEY, DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP),
-      getSettingNumber(CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY, DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP),
-      getSettingJson(ARENA_CREST_BADGE_ID_KEY),
-    ]);
+  const [
+    promoteVmReward,
+    safeVmReward,
+    weeklyVmCap,
+    cheerWeeklySenderReceiverCap,
+    crestBadgeIdRaw,
+  ] = await runWithConcurrencyLimit(
+    [
+      () =>
+        getSettingNumber(
+          ARENA_PROMOTE_VM_REWARD_KEY,
+          DEFAULT_ARENA_PROMOTE_VM_REWARD,
+        ),
+      () =>
+        getSettingNumber(
+          ARENA_SAFE_VM_REWARD_KEY,
+          DEFAULT_ARENA_SAFE_VM_REWARD,
+        ),
+      () =>
+        getSettingNumber(
+          ARENA_LEAGUE_WEEKLY_VM_CAP_KEY,
+          DEFAULT_ARENA_LEAGUE_WEEKLY_VM_CAP,
+        ),
+      () =>
+        getSettingNumber(
+          CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY,
+          DEFAULT_CHEER_WEEKLY_SENDER_RECEIVER_CAP,
+        ),
+      () => getSettingJson(ARENA_CREST_BADGE_ID_KEY),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
   return {
     promoteVmReward,
     safeVmReward,
@@ -862,17 +1108,41 @@ export async function updateArenaLeagueSettingsForAdmin(
 ): Promise<ArenaLeagueSettingsInput> {
   const previous = await getArenaLeagueSettingsForAdmin();
 
-  await Promise.all([
-    setSettingJson(ARENA_PROMOTE_VM_REWARD_KEY, input.promoteVmReward, "Arena league promote-zone weekly VM reward"),
-    setSettingJson(ARENA_SAFE_VM_REWARD_KEY, input.safeVmReward, "Arena league safe-zone weekly VM reward"),
-    setSettingJson(ARENA_LEAGUE_WEEKLY_VM_CAP_KEY, input.weeklyVmCap, "Arena league weekly VM cap per learner"),
-    setSettingJson(
-      CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY,
-      input.cheerWeeklySenderReceiverCap,
-      "Arena cheers: weekly XP cap per sender-receiver pair",
-    ),
-    setSettingJson(ARENA_CREST_BADGE_ID_KEY, input.crestBadgeId, "Badge id awarded for the Arena promote-zone crest"),
-  ]);
+  await runWithConcurrencyLimit(
+    [
+      () =>
+        setSettingJson(
+          ARENA_PROMOTE_VM_REWARD_KEY,
+          input.promoteVmReward,
+          "Arena league promote-zone weekly VM reward",
+        ),
+      () =>
+        setSettingJson(
+          ARENA_SAFE_VM_REWARD_KEY,
+          input.safeVmReward,
+          "Arena league safe-zone weekly VM reward",
+        ),
+      () =>
+        setSettingJson(
+          ARENA_LEAGUE_WEEKLY_VM_CAP_KEY,
+          input.weeklyVmCap,
+          "Arena league weekly VM cap per learner",
+        ),
+      () =>
+        setSettingJson(
+          CHEER_WEEKLY_SENDER_RECEIVER_CAP_KEY,
+          input.cheerWeeklySenderReceiverCap,
+          "Arena cheers: weekly XP cap per sender-receiver pair",
+        ),
+      () =>
+        setSettingJson(
+          ARENA_CREST_BADGE_ID_KEY,
+          input.crestBadgeId,
+          "Badge id awarded for the Arena promote-zone crest",
+        ),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
 
   await logActivity({
     actorType: "staff",
@@ -909,7 +1179,10 @@ export type ArenaRankSummary = {
   global: ScopeRankInfo | null;
 };
 
-function shapeSnapshotEntry(entry: SnapshotEntry | null, scope: string): ScopeRankInfo | null {
+function shapeSnapshotEntry(
+  entry: SnapshotEntry | null,
+  scope: string,
+): ScopeRankInfo | null {
   if (!entry) return null;
   return {
     scope,
@@ -937,20 +1210,31 @@ function shapeSnapshotEntry(entry: SnapshotEntry | null, scope: string): ScopeRa
 // simply reads world: null until settlement next runs under their new
 // world. Nothing tracks "which world was I in as of last Monday," and nothing
 // needs to for this to be honest (null, not wrong).
-export async function getMyArenaRankSummary(user: { id: string; state: string | null }): Promise<ArenaRankSummary> {
-  const lastSettledWeekStartUtc = new Date(istWeekStartUtc(new Date()).getTime() - 7 * 24 * 60 * 60 * 1000);
+export async function getMyArenaRankSummary(user: {
+  id: string;
+  state: string | null;
+}): Promise<ArenaRankSummary> {
+  const lastSettledWeekStartUtc = new Date(
+    istWeekStartUtc(new Date()).getTime() - 7 * 24 * 60 * 60 * 1000,
+  );
   const weekStartDate = istWeekStartDate(lastSettledWeekStartUtc);
 
   const worldId = await getCurrentWorldIdForUser(user.id);
   const worldScope = worldId ? encodeScope({ kind: "world", worldId }) : null;
   const globalScope = encodeScope({ kind: "global" });
   const indiaScope = encodeScope({ kind: "india" });
-  const stateScope = user.state ? encodeScope({ kind: "state", state: user.state }) : null;
+  const stateScope = user.state
+    ? encodeScope({ kind: "state", state: user.state })
+    : null;
 
   const [worldEntry, globalEntry, stateEntry] = await Promise.all([
-    worldScope ? getSnapshotEntryForUser(worldScope, weekStartDate, user.id) : Promise.resolve(null),
+    worldScope
+      ? getSnapshotEntryForUser(worldScope, weekStartDate, user.id)
+      : Promise.resolve(null),
     getSnapshotEntryForUser(globalScope, weekStartDate, user.id),
-    stateScope ? getSnapshotEntryForUser(stateScope, weekStartDate, user.id) : Promise.resolve(null),
+    stateScope
+      ? getSnapshotEntryForUser(stateScope, weekStartDate, user.id)
+      : Promise.resolve(null),
   ]);
 
   // State-or-India (PR-03): prefer the state entry when one genuinely
@@ -961,7 +1245,11 @@ export async function getMyArenaRankSummary(user: { id: string; state: string | 
   let stateOrIndiaEntry = stateEntry;
   let stateOrIndiaScope = stateScope ?? indiaScope;
   if (!stateOrIndiaEntry) {
-    stateOrIndiaEntry = await getSnapshotEntryForUser(indiaScope, weekStartDate, user.id);
+    stateOrIndiaEntry = await getSnapshotEntryForUser(
+      indiaScope,
+      weekStartDate,
+      user.id,
+    );
     stateOrIndiaScope = indiaScope;
   }
 

@@ -49,3 +49,9 @@ paths: "src/server/ledger/**, src/server/xp/**, src/server/trading/**, src/serve
   will ever be called from inside a money-moving transaction, give it the `txDb: DbOrTx = db`
   shape every other such function in this codebase already uses, and pass `tx` at every call site
   inside that transaction.
+- **A settlement/reconciliation job that reads several settings/rates concurrently before writing
+  (e.g. `settleArenaLeaguesForWeek`'s reward amounts/caps/multiplier) must use
+  `runWithConcurrencyLimit` (`src/lib/concurrency-limit.ts`, `DB_CONCURRENCY_LIMIT`), never a bare
+  `Promise.all` of 3+ DB-querying calls.** This is exactly the pattern that caused a real
+  production incident (`docs/ARCHITECTURE.md` D13/D72) - and on a weekly payout job specifically,
+  a wedged connection means a silently-failed settlement, not just a slow page load.

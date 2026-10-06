@@ -1,7 +1,15 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
 import type { requestMeta } from "@/lib/http";
-import { istDateString, istWeekStartDate, istWeekStartUtc } from "@/lib/ist-date";
+import {
+  istDateString,
+  istWeekStartDate,
+  istWeekStartUtc,
+} from "@/lib/ist-date";
 import { getMyArenaRankSummary } from "@/server/arena/service";
 import { getConsentRecord, getParentContact } from "@/server/onboarding/repo";
 import { isMinor } from "@/server/onboarding/service";
@@ -42,10 +50,15 @@ import {
   updateDraftCoachNoteTemplate,
   type CoachNoteCategory,
 } from "./repo";
-import type { CreateCoachNoteTemplateInput, UpdateCoachNoteTemplateInput } from "./schemas";
+import type {
+  CreateCoachNoteTemplateInput,
+  UpdateCoachNoteTemplateInput,
+} from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
-type ReportSnapshotRow = NonNullable<Awaited<ReturnType<typeof getReportSnapshot>>>;
+type ReportSnapshotRow = NonNullable<
+  Awaited<ReturnType<typeof getReportSnapshot>>
+>;
 
 // --- Admin: coach note templates (D34, docs/ARCHITECTURE.md - tone rule
 // enforced in the editor's help text, src/app/admin/(dashboard)/report-card) ---
@@ -95,18 +108,29 @@ export async function updateCoachNoteTemplate(
 }
 
 function validateTemplateForPublish(template: LocalizedText): void {
-  const missing = (["en", "hi", "hx"] as const).filter((lang) => !template[lang]?.trim());
+  const missing = (["en", "hi", "hx"] as const).filter(
+    (lang) => !template[lang]?.trim(),
+  );
   if (missing.length > 0) {
-    throw new AppError("VALIDATION_FAILED", `Cannot publish: missing template.${missing.join(", template.")}`, {
-      missingFields: missing.map((l) => `template.${l}`),
-    });
+    throw new AppError(
+      "VALIDATION_FAILED",
+      `Cannot publish: missing template.${missing.join(", template.")}`,
+      {
+        missingFields: missing.map((l) => `template.${l}`),
+      },
+    );
   }
 }
 
-export async function publishCoachNoteTemplate(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function publishCoachNoteTemplate(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   const existing = await getCoachNoteTemplateById(id);
   if (!existing) throw new AppError("NOT_FOUND", "Template not found");
-  if (existing.status !== "draft") throw new AppError("CONFLICT", "Template is not a draft");
+  if (existing.status !== "draft")
+    throw new AppError("CONFLICT", "Template is not a draft");
   validateTemplateForPublish(existing.template);
 
   const published = await publishCoachNoteTemplateRow(id, actor.id);
@@ -125,9 +149,14 @@ export async function publishCoachNoteTemplate(actor: { id: string }, id: string
   return published;
 }
 
-export async function unpublishCoachNoteTemplate(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function unpublishCoachNoteTemplate(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   const unpublished = await unpublishCoachNoteTemplateRow(id);
-  if (!unpublished) throw new AppError("CONFLICT", "Template not found, or it's not published");
+  if (!unpublished)
+    throw new AppError("CONFLICT", "Template not found, or it's not published");
 
   await logActivity({
     actorType: "staff",
@@ -162,26 +191,50 @@ export async function computeAndStoreWeeklySnapshot(
   const weekStart = istWeekStartUtc(at);
   const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
 
-  const [fullHistory, videoAttempts, gradedCompletions, ungradedCompletions, answersWithWorld, streakStats] =
-    await Promise.all([
-      listAnsweredQuestionHistoryForUser(userId),
-      listCompletedVideoAttemptsForUserInRange(userId, weekStart, weekEnd),
-      listCompletedGradedLessonsForUserInRange(userId, weekStart, weekEnd),
-      listCompletedUngradedLessonsForUserInRange(userId, weekStart, weekEnd),
-      listAnsweredQuestionsWithWorldForUserInRange(userId, weekStart, weekEnd),
-      getStreakStats(userId, at),
-    ]);
+  const [
+    fullHistory,
+    videoAttempts,
+    gradedCompletions,
+    ungradedCompletions,
+    answersWithWorld,
+    streakStats,
+  ] = await runWithConcurrencyLimit(
+    [
+      () => listAnsweredQuestionHistoryForUser(userId),
+      () =>
+        listCompletedVideoAttemptsForUserInRange(userId, weekStart, weekEnd),
+      () =>
+        listCompletedGradedLessonsForUserInRange(userId, weekStart, weekEnd),
+      () =>
+        listCompletedUngradedLessonsForUserInRange(userId, weekStart, weekEnd),
+      () =>
+        listAnsweredQuestionsWithWorldForUserInRange(
+          userId,
+          weekStart,
+          weekEnd,
+        ),
+      () => getStreakStats(userId, at),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
 
   const weekAnswers = fullHistory.filter(
     (a) => a.answeredAt && a.answeredAt >= weekStart && a.answeredAt < weekEnd,
   );
   const quizAccuracy = computeQuizAccuracy(weekAnswers);
-  const retention = computeRetention(fullHistory, weekStart, weekEnd, quizAccuracy);
+  const retention = computeRetention(
+    fullHistory,
+    weekStart,
+    weekEnd,
+    quizAccuracy,
+  );
   const watchSpeed = computeWatchSpeed(videoAttempts);
 
   const allCompletions = [...gradedCompletions, ...ungradedCompletions];
   const activeDates = new Set(
-    allCompletions.filter((c) => c.completedAt).map((c) => istDateString(c.completedAt!)),
+    allCompletions
+      .filter((c) => c.completedAt)
+      .map((c) => istDateString(c.completedAt!)),
   );
   const consistency = computeConsistency(activeDates.size, 7);
 
@@ -190,20 +243,34 @@ export async function computeAndStoreWeeklySnapshot(
 
   const worldIds = [...new Set(allCompletions.map((c) => c.worldId))];
   const worldTitlePairs = await Promise.all(
-    worldIds.map(async (id) => [id, (await getWorldById(id))?.title.en ?? "Unknown world"] as const),
+    worldIds.map(
+      async (id) =>
+        [id, (await getWorldById(id))?.title.en ?? "Unknown world"] as const,
+    ),
   );
-  const moduleBreakdown = computeModuleBreakdown(allCompletions, answersWithWorld, new Map(worldTitlePairs));
+  const moduleBreakdown = computeModuleBreakdown(
+    allCompletions,
+    answersWithWorld,
+    new Map(worldTitlePairs),
+  );
   const topicMastery = computeTopicMastery(weekAnswers);
 
   const opportunityTopic = pickOpportunityTopic(fullHistory, at);
   const habitDetail = pickHabitDetail(allCompletions, streakStats.learning);
 
-  const [strengthTemplate, gapTemplate, opportunityTemplate, habitTemplate] = await Promise.all([
-    pickCoachNoteTemplate("strength"),
-    pickCoachNoteTemplate("gap"),
-    opportunityTopic ? pickCoachNoteTemplate("opportunity") : Promise.resolve(null),
-    pickCoachNoteTemplate("habit"),
-  ]);
+  const [strengthTemplate, gapTemplate, opportunityTemplate, habitTemplate] =
+    await runWithConcurrencyLimit(
+      [
+        () => pickCoachNoteTemplate("strength"),
+        () => pickCoachNoteTemplate("gap"),
+        () =>
+          opportunityTopic
+            ? pickCoachNoteTemplate("opportunity")
+            : Promise.resolve(null),
+        () => pickCoachNoteTemplate("habit"),
+      ],
+      DB_CONCURRENCY_LIMIT,
+    );
 
   const inserted = await insertReportSnapshot({
     userId,
@@ -238,18 +305,34 @@ const METRIC_LABELS: Record<SubMetricName, string> = {
   consistency: "showing up regularly",
 };
 
-function fillTemplate(template: LocalizedText, values: Record<string, string>): LocalizedText {
+function fillTemplate(
+  template: LocalizedText,
+  values: Record<string, string>,
+): LocalizedText {
   const fill = (text: string) =>
-    Object.entries(values).reduce((t, [key, value]) => t.replaceAll(`{{${key}}}`, value), text);
-  return { en: fill(template.en), hi: fill(template.hi), hx: fill(template.hx) };
+    Object.entries(values).reduce(
+      (t, [key, value]) => t.replaceAll(`{{${key}}}`, value),
+      text,
+    );
+  return {
+    en: fill(template.en),
+    hi: fill(template.hi),
+    hx: fill(template.hx),
+  };
 }
 
 async function renderCoachNotes(snapshot: ReportSnapshotRow) {
   const [strengthTpl, gapTpl, opportunityTpl, habitTpl] = await Promise.all([
-    snapshot.strengthNoteId ? getCoachNoteTemplateById(snapshot.strengthNoteId) : null,
+    snapshot.strengthNoteId
+      ? getCoachNoteTemplateById(snapshot.strengthNoteId)
+      : null,
     snapshot.gapNoteId ? getCoachNoteTemplateById(snapshot.gapNoteId) : null,
-    snapshot.opportunityNoteId ? getCoachNoteTemplateById(snapshot.opportunityNoteId) : null,
-    snapshot.habitNoteId ? getCoachNoteTemplateById(snapshot.habitNoteId) : null,
+    snapshot.opportunityNoteId
+      ? getCoachNoteTemplateById(snapshot.opportunityNoteId)
+      : null,
+    snapshot.habitNoteId
+      ? getCoachNoteTemplateById(snapshot.habitNoteId)
+      : null,
   ]);
 
   const notes: { category: CoachNoteCategory; text: LocalizedText }[] = [];
@@ -290,7 +373,10 @@ async function renderCoachNotes(snapshot: ReportSnapshotRow) {
         ? `${snapshot.habitDetail.bestWeekday}s are your strongest study day`
         : null;
     if (detail) {
-      notes.push({ category: "habit", text: fillTemplate(habitTpl.template, { detail }) });
+      notes.push({
+        category: "habit",
+        text: fillTemplate(habitTpl.template, { detail }),
+      });
     }
   }
   return notes;
@@ -310,22 +396,30 @@ function maskEmail(email: string): string {
 // minor's own in-app "shared with parent" display shows regardless of
 // whether the weekly email happens to be on right now (see
 // getSharedWithParentInfo below, which reads weeklyEmailOn separately).
-async function getVerifiedParentContact(
-  user: { id: string; dateOfBirth: string | null },
-): Promise<{ email: string; weeklyReportOptIn: boolean } | null> {
+async function getVerifiedParentContact(user: {
+  id: string;
+  dateOfBirth: string | null;
+}): Promise<{ email: string; weeklyReportOptIn: boolean } | null> {
   if (!user.dateOfBirth || !isMinor(user.dateOfBirth)) return null;
 
-  const [consent, parentContact] = await Promise.all([getConsentRecord(user.id), getParentContact(user.id)]);
+  const [consent, parentContact] = await Promise.all([
+    getConsentRecord(user.id),
+    getParentContact(user.id),
+  ]);
   if (consent?.status !== "consented" || !parentContact) return null;
 
-  return { email: parentContact.email, weeklyReportOptIn: parentContact.weeklyReportOptIn };
+  return {
+    email: parentContact.email,
+    weeklyReportOptIn: parentContact.weeklyReportOptIn,
+  };
 }
 
 // The weekly Inngest job's real send gate (src/inngest/functions/
 // weekly-report-card.ts) - a verified parent AND the opt-in currently on.
-export async function getEligibleParentContactForWeeklyReport(
-  user: { id: string; dateOfBirth: string | null },
-): Promise<{ email: string } | null> {
+export async function getEligibleParentContactForWeeklyReport(user: {
+  id: string;
+  dateOfBirth: string | null;
+}): Promise<{ email: string } | null> {
   const contact = await getVerifiedParentContact(user);
   return contact?.weeklyReportOptIn ? { email: contact.email } : null;
 }
@@ -336,11 +430,17 @@ export async function getEligibleParentContactForWeeklyReport(
 // verified relationship but has the weekly email off still sees the
 // relationship (not just silently null, indistinguishable from "no
 // relationship at all").
-async function getSharedWithParentInfo(
-  user: { id: string; dateOfBirth: string | null },
-): Promise<{ maskedEmail: string; weeklyEmailOn: boolean } | null> {
+async function getSharedWithParentInfo(user: {
+  id: string;
+  dateOfBirth: string | null;
+}): Promise<{ maskedEmail: string; weeklyEmailOn: boolean } | null> {
   const contact = await getVerifiedParentContact(user);
-  return contact ? { maskedEmail: maskEmail(contact.email), weeklyEmailOn: contact.weeklyReportOptIn } : null;
+  return contact
+    ? {
+        maskedEmail: maskEmail(contact.email),
+        weeklyEmailOn: contact.weeklyReportOptIn,
+      }
+    : null;
 }
 
 // PR-30/31/32/33: the caller's own weekly report card - current week's
@@ -377,7 +477,10 @@ export async function getMyReportCard(
         }
       : null,
     trend: recent
-      .map((s) => ({ weekStartDate: s.weekStartDate, efficiencyScore: s.efficiencyScore }))
+      .map((s) => ({
+        weekStartDate: s.weekStartDate,
+        efficiencyScore: s.efficiencyScore,
+      }))
       .reverse(),
     sharedWithParent,
     globalRank: rankSummary.global?.rank ?? null,

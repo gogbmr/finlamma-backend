@@ -24,7 +24,13 @@ Follow every step. Do not skip the activity log or OpenAPI registration.
    forgetting this step fails `pnpm test`, not just the honor system - but add the import anyway,
    don't rely on the test to remind you.
 5. **Service** in `src/server/<domain>/service.ts` holds the logic; DB access in `repo.ts`.
-   Wrap multi-table writes in a Drizzle transaction.
+   Wrap multi-table writes in a Drizzle transaction. **Never run 3+ DB-querying calls together via
+   a bare `Promise.all`/`Promise.allSettled`** - the pool (`src/db/client.ts`, `max: 4`) wedges a
+   connection forever past that many concurrent queries against Supabase's transaction pooler, and
+   it's never reclaimed (`docs/ARCHITECTURE.md` D13/D72 - a real production incident, not a
+   theoretical one). Use `runWithConcurrencyLimit` (`src/lib/concurrency-limit.ts`, pass
+   `DB_CONCURRENCY_LIMIT`) instead - same shape, wrap each element in `() => ...`.
+   `scripts/check-promise-all-db-concurrency.test.ts` guards against this in `pnpm test`.
 6. **Activity log**: every mutation calls `logActivity({ actorType, actorId, action: "<domain>.<verb>", targetType, targetId, metadata })`
    inside the same transaction when possible.
 7. **Rate limit** sensitive endpoints (auth-adjacent, orders, AI) with `@upstash/ratelimit`.

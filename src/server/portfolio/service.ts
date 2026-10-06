@@ -1,5 +1,9 @@
 import { sumVmoneyBalance } from "@/server/economy/repo";
 import { decodeCursor } from "@/lib/http";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
 import { getCachedQuote } from "@/server/market/cache";
 import {
   countOpenPositions,
@@ -63,24 +67,37 @@ export function buildEquityCurve(
   let liveMarketValuePaise = 0;
   for (const [symbol, qty] of heldQtyBySymbol) {
     if (qty <= 0) continue;
-    const livePrice = livePricesBySymbol.get(symbol) ?? lastPriceBySymbol.get(symbol) ?? 0;
+    const livePrice =
+      livePricesBySymbol.get(symbol) ?? lastPriceBySymbol.get(symbol) ?? 0;
     liveMarketValuePaise += qty * livePrice;
   }
   points[points.length - 1] = cashFlowPaise + liveMarketValuePaise;
 
   if (points.length <= maxBars) return points;
   const step = (points.length - 1) / (maxBars - 1);
-  return Array.from({ length: maxBars }, (_, i) => points[Math.round(i * step)]!);
+  return Array.from(
+    { length: maxBars },
+    (_, i) => points[Math.round(i * step)]!,
+  );
 }
 
 export async function getPortfolioSummary(userId: string) {
-  const [cashBalancePaise, openPositions, filledOrders, costBasisPaise, realizedPnlPaise] = await Promise.all([
-    sumVmoneyBalance(userId),
-    listOpenPositions(userId),
-    listFilledOrdersChronological(userId),
-    sumBuyCostBasisPaise(userId),
-    sumRealizedPnlPaise(userId),
-  ]);
+  const [
+    cashBalancePaise,
+    openPositions,
+    filledOrders,
+    costBasisPaise,
+    realizedPnlPaise,
+  ] = await runWithConcurrencyLimit(
+    [
+      () => sumVmoneyBalance(userId),
+      () => listOpenPositions(userId),
+      () => listFilledOrdersChronological(userId),
+      () => sumBuyCostBasisPaise(userId),
+      () => sumRealizedPnlPaise(userId),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
 
   const quotes = await Promise.allSettled(
     openPositions.map((p) => getCachedQuote(p.symbol, p.exchange)),
@@ -90,7 +107,10 @@ export async function getPortfolioSummary(userId: string) {
   let holdingsMarketValuePaise = 0;
   openPositions.forEach((p, i) => {
     const result = quotes[i];
-    const price = result?.status === "fulfilled" ? result.value?.pricePaise ?? null : null;
+    const price =
+      result?.status === "fulfilled"
+        ? (result.value?.pricePaise ?? null)
+        : null;
     if (price !== null) {
       livePricesBySymbol.set(p.symbol, price);
       holdingsMarketValuePaise += p.qty * price;
@@ -99,7 +119,8 @@ export async function getPortfolioSummary(userId: string) {
   });
 
   const allTimePnlPaise = realizedPnlPaise + unrealizedPnlPaise;
-  const allTimePnlPct = costBasisPaise > 0 ? roundPct((allTimePnlPaise / costBasisPaise) * 100) : 0;
+  const allTimePnlPct =
+    costBasisPaise > 0 ? roundPct((allTimePnlPaise / costBasisPaise) * 100) : 0;
   const equityBarsPaise = buildEquityCurve(filledOrders, livePricesBySymbol);
 
   return {
@@ -113,20 +134,25 @@ export async function getPortfolioSummary(userId: string) {
 }
 
 export async function getPortfolioStats(userId: string) {
-  const [closedTrades, openPositionsCount, realizedPnlPaise] = await Promise.all([
-    listClosedTradesForStats(userId),
-    countOpenPositions(userId),
-    sumRealizedPnlPaise(userId),
-  ]);
+  const [closedTrades, openPositionsCount, realizedPnlPaise] =
+    await Promise.all([
+      listClosedTradesForStats(userId),
+      countOpenPositions(userId),
+      sumRealizedPnlPaise(userId),
+    ]);
 
   const totalClosedTrades = closedTrades.length;
   const winners = closedTrades.filter((t) => t.realizedPnlPaise > 0);
   const winCount = winners.length;
   const lossCount = totalClosedTrades - winCount;
-  const winRatePct = totalClosedTrades > 0 ? roundPct((winCount / totalClosedTrades) * 100) : 0;
+  const winRatePct =
+    totalClosedTrades > 0 ? roundPct((winCount / totalClosedTrades) * 100) : 0;
   const avgHoldDays =
     totalClosedTrades > 0
-      ? roundPct(closedTrades.reduce((sum, t) => sum + t.holdDays, 0) / totalClosedTrades)
+      ? roundPct(
+          closedTrades.reduce((sum, t) => sum + t.holdDays, 0) /
+            totalClosedTrades,
+        )
       : null;
 
   const best = closedTrades.reduce<(typeof closedTrades)[number] | null>(
@@ -145,8 +171,20 @@ export async function getPortfolioStats(userId: string) {
     lossCount,
     winRatePct,
     avgHoldDays,
-    bestTrade: best ? { symbol: best.symbol, realizedPnlPaise: best.realizedPnlPaise, filledAt: best.filledAt.toISOString() } : null,
-    worstTrade: worst ? { symbol: worst.symbol, realizedPnlPaise: worst.realizedPnlPaise, filledAt: worst.filledAt.toISOString() } : null,
+    bestTrade: best
+      ? {
+          symbol: best.symbol,
+          realizedPnlPaise: best.realizedPnlPaise,
+          filledAt: best.filledAt.toISOString(),
+        }
+      : null,
+    worstTrade: worst
+      ? {
+          symbol: worst.symbol,
+          realizedPnlPaise: worst.realizedPnlPaise,
+          filledAt: worst.filledAt.toISOString(),
+        }
+      : null,
     openPositionsCount,
   };
 }
@@ -155,7 +193,8 @@ function shapeOpenRow(
   p: Awaited<ReturnType<typeof listOpenPositions>>[number],
   livePricePaise: number | null,
 ) {
-  const unrealizedPnlPaise = livePricePaise !== null ? p.qty * (livePricePaise - p.avgPricePaise) : null;
+  const unrealizedPnlPaise =
+    livePricePaise !== null ? p.qty * (livePricePaise - p.avgPricePaise) : null;
   const costBasisPaise = p.qty * p.avgPricePaise;
   return {
     kind: "open" as const,
@@ -166,13 +205,18 @@ function shapeOpenRow(
     livePricePaise,
     unrealizedPnlPaise,
     unrealizedPnlPct:
-      unrealizedPnlPaise !== null && costBasisPaise > 0 ? roundPct((unrealizedPnlPaise / costBasisPaise) * 100) : null,
+      unrealizedPnlPaise !== null && costBasisPaise > 0
+        ? roundPct((unrealizedPnlPaise / costBasisPaise) * 100)
+        : null,
     positionOpenedAt: p.positionOpenedAt.toISOString(),
   };
 }
 
-function shapeClosedRow(t: Awaited<ReturnType<typeof listClosedTradesPage>>["data"][number]) {
-  const entryPricePaise = t.fillPricePaise - Math.round(t.realizedPnlPaise / t.qty);
+function shapeClosedRow(
+  t: Awaited<ReturnType<typeof listClosedTradesPage>>["data"][number],
+) {
+  const entryPricePaise =
+    t.fillPricePaise - Math.round(t.realizedPnlPaise / t.qty);
   const costBasisPaise = entryPricePaise * t.qty;
   const msPerDay = 24 * 60 * 60 * 1000;
   return {
@@ -183,8 +227,16 @@ function shapeClosedRow(t: Awaited<ReturnType<typeof listClosedTradesPage>>["dat
     entryPricePaise,
     exitPricePaise: t.fillPricePaise,
     realizedPnlPaise: t.realizedPnlPaise,
-    realizedPnlPct: costBasisPaise > 0 ? roundPct((t.realizedPnlPaise / costBasisPaise) * 100) : 0,
-    holdDays: Math.max(0, Math.round((t.filledAt.getTime() - t.positionOpenedAt.getTime()) / msPerDay)),
+    realizedPnlPct:
+      costBasisPaise > 0
+        ? roundPct((t.realizedPnlPaise / costBasisPaise) * 100)
+        : 0,
+    holdDays: Math.max(
+      0,
+      Math.round(
+        (t.filledAt.getTime() - t.positionOpenedAt.getTime()) / msPerDay,
+      ),
+    ),
     filledAt: t.filledAt.toISOString(),
   };
 }
@@ -203,17 +255,30 @@ export async function getPortfolioTrades(
 
   const [openPositions, closedPage] = await Promise.all([
     includeOpen ? listOpenPositions(userId) : Promise.resolve([]),
-    includeClosed ? listClosedTradesPage(userId, { limit: opts.limit, cursor: decodedCursor }) : Promise.resolve({ data: [], nextCursor: null }),
+    includeClosed
+      ? listClosedTradesPage(userId, {
+          limit: opts.limit,
+          cursor: decodedCursor,
+        })
+      : Promise.resolve({ data: [], nextCursor: null }),
   ]);
 
-  const quotes = await Promise.allSettled(openPositions.map((p) => getCachedQuote(p.symbol, p.exchange)));
+  const quotes = await Promise.allSettled(
+    openPositions.map((p) => getCachedQuote(p.symbol, p.exchange)),
+  );
   const openRows = openPositions.map((p, i) => {
     const result = quotes[i];
-    const price = result?.status === "fulfilled" ? result.value?.pricePaise ?? null : null;
+    const price =
+      result?.status === "fulfilled"
+        ? (result.value?.pricePaise ?? null)
+        : null;
     return shapeOpenRow(p, price);
   });
 
   const closedRows = closedPage.data.map(shapeClosedRow);
 
-  return { data: [...openRows, ...closedRows], nextCursor: closedPage.nextCursor };
+  return {
+    data: [...openRows, ...closedRows],
+    nextCursor: closedPage.nextCursor,
+  };
 }

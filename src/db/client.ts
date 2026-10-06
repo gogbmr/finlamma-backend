@@ -19,38 +19,54 @@ if (env.NODE_ENV === "test") {
 // Transaction pool mode (Supabase pooler, port 6543) does not support
 // prepared statements or connection-level state, so prepare is disabled.
 //
-// max: 2, not 1 - see docs/ARCHITECTURE.md decision D13 for the full
-// postmortem. Short version: with max: 1, two queries issued concurrently
-// from the same request (e.g. Promise.all([db.select()..., db.select()...]))
-// hang *forever*, with no error and no timeout, once the connection has
-// carried a few prior queries. Confirmed by direct comparison: the exact
-// same concurrent query pair resolves in 50ms against the session/direct
-// connection (DATABASE_URL_DIRECT, port 5432, no pooler) and in 285ms
-// against this same transaction pooler once max is 2, but hangs
-// indefinitely against the transaction pooler at max: 1. Root cause:
-// postgres.js pipelines concurrent queries onto a single logical
-// connection, which assumes a continuous single backend - Supavisor's
-// transaction mode can reassign the real backend between individual
-// statements, so the client ends up waiting on a response that was framed
-// for a connection the pooler already reassigned. This is a client/pooler
-// protocol mismatch, not a slow query, which is exactly why it isn't
-// caught by statement_timeout below (Postgres itself never sees a problem).
-// max: 2 gives any accidental pair of concurrent queries within one
-// request its own connection each, which sidesteps the single-connection
-// pipelining path entirely - still a small, deliberately-bounded pool per
-// serverless invocation (Supavisor is what makes many small per-invocation
-// pools cheap in the first place), just not so small that one stray
-// Promise.all silently wedges a request forever.
+// max: 4 - see docs/ARCHITECTURE.md decisions D13 and D72 for the full
+// postmortem of why this number is load-bearing, not a round default.
+// Short version: postgres.js pipelines concurrent queries beyond `max`
+// onto an already-busy logical connection, assuming a continuous single
+// backend - Supabase's Supavisor transaction-mode pooler can reassign the
+// real backend between individual statements, so the client ends up
+// waiting on a response that was framed for a connection the pooler
+// already reassigned. The connection then wedges FOREVER and is never
+// reclaimed (confirmed: neither idle_timeout nor max_lifetime below ever
+// revisit a connection that's busy/stuck, only a genuinely idle one) -
+// this is a client/pooler protocol mismatch, not a slow query, which is
+// exactly why it isn't caught by statement_timeout either (Postgres
+// itself never sees a problem).
 //
-// connect_timeout/idle_timeout/statement_timeout are defense-in-depth for
-// a different failure mode: a connection Supavisor has silently dropped
+// max: 1 hung on a concurrent PAIR (D13, found first). max: 2 then hung on
+// a concurrent TRIPLE (D72, 2026-10-06 production incident - a real admin
+// page running one query alongside a Promise.all of two more). An audit
+// after D72 found the SAME pattern at up to 23 concurrent queries in
+// several other places (this file's own admin-shell permission check
+// among them) - raising `max` enough to cover the worst case directly
+// (23) is not safe either: Supavisor's project-level pool_size is a hard
+// ceiling (15 at the time of D72's investigation) shared with PostgREST/
+// pg_cron/pg_net/the metrics exporter AND every other concurrent Vercel/
+// Inngest instance, each holding its own `max`-sized pool - a single
+// instance alone at max: 23 would nearly exhaust that entire shared budget.
+//
+// So max: 4 is deliberately a SAFETY MARGIN, not a number sized to cover
+// every known call site directly - the actual prevention is
+// src/lib/concurrency-limit.ts's runWithConcurrencyLimit (DB_CONCURRENCY_LIMIT,
+// kept equal to this value - cross-checked below, not just by convention),
+// applied at every call site a request-time audit or
+// scripts/check-promise-all-db-concurrency.ts's ongoing mechanical scan
+// found issuing more than this many concurrent queries. This number should
+// be revisited with real production concurrency data (Vercel's dashboard
+// shows live concurrent execution counts) once there's real traffic -
+// see docs/STATUS.md's D72 account for the full arithmetic.
+//
+// connect_timeout/idle_timeout/statement_timeout are a separate concern:
+// defense-in-depth for a connection Supavisor has silently dropped
 // (idle-recycled) while this module-scope client sat idle between warm
 // Vercel invocations. Without them, the next query on a connection like
 // that would hang with nothing to time the wait out; with them, it fails
-// fast as a catchable error instead.
+// fast as a catchable error instead. They do nothing for the wedging
+// failure mode above - confirmed, see D72 - since that connection is
+// never idle from postgres.js's own point of view.
 const queryClient = postgres(env.DATABASE_URL, {
   prepare: false,
-  max: 2,
+  max: 4,
   connect_timeout: 10,
   idle_timeout: 20,
   connection: {

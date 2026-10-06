@@ -143,16 +143,194 @@ never resolving at all.** Investigated, read-only, before changing anything beyo
   signed-out redirects or unauthenticated API responses. It is plausible this exact code path has
   never actually run in production before this week.
 
-**Fixed, diagnostics only, not yet merged** (branch `admin-worlds-page-instrumentation`): split
+**Fixed, diagnostics only** (branch `admin-worlds-page-instrumentation`): split
 `getWorldEditorData()`/`getMentorEditorData()` (`src/server/worlds/service.ts`,
 `src/server/mentors/service.ts`) into separately-timed DB-list vs. per-row-presign steps, and the
 worlds page now times each of the two functions independently rather than as one combined
 `Promise.all`, so the next occurrence shows precisely which function, and which half of it (DB
-query vs. signed-URL generation vs. a specific row), the time is actually going into. If this
-confirms the S3 path, the likely fix is an explicit request timeout on the S3 client plus not
-re-presigning on every single list render (e.g. caching/deriving the URL once, or only on demand)
-- not implemented yet, pending this round's data, per the founder's explicit "one change at a
-time" instruction.
+query vs. signed-URL generation vs. a specific row), the time is actually going into.
+
+**Round 4 (same day): root cause confirmed - it's D13's transaction-pooler bug recurring at a
+higher concurrency than its fix was ever verified against, NOT S3.** The next production run's
+logs: `getWorldEditorData` resolved in 200ms (both its own steps fast); `getMentorEditorData`'s
+TWO internal queries (`listAllMentors`, `listAllWorlds`) both failed after the full 10s timeout,
+never resolving - and then a later reload's `getStaffMember (auth())` in the layout *also* failed
+after 15s, despite that exact call having succeeded earlier in the same investigation. That
+specific shape - one query succeeds, a concurrent pair from a DIFFERENT call hangs, and a
+previously-fast call later hangs too - is precisely connection-pool exhaustion, not a slow query.
+
+Confirmed three ways, read-only, before touching any pool or query code:
+1. **Live `pg_stat_activity` against production** (via the Supabase MCP tool) found a
+   `staff_members` lookup sitting at `state: active` but `wait_event_type: Client` /
+   `wait_event: ClientRead` for **8 minutes 34 seconds**. Postgres had already answered that query
+   and was simply waiting for the client to send its next message - which never came. This is
+   `src/db/client.ts`'s own documented D13 incident's exact client-side symptom, caught live.
+2. **A `pg_locks`/`pg_stat_activity` join for genuine blocking locks returned zero rows** - not a
+   lock, and not specific to the `mentors` table (`mentors`/`worlds`/`staff_members` have 3/7/2
+   rows respectively - far too small for a slow-query explanation regardless).
+3. **Reproduced directly against the real database** with a standalone script
+   (`scripts/verify-db-pool-3way.ts`, modeled on the existing `scripts/verify-db-pool.ts`/D13's
+   own repro): one query running alongside a `Promise.all` of two more (the worlds page's exact
+   shape - `getWorldEditorData`'s 1 query concurrent with `getMentorEditorData`'s internal pair) -
+   two of the three resolved in 68ms/530ms, the third hung for the full 15s timeout, every time.
+
+**Why it gets worse on repeated reloads (the founder's own observation, now explained)**: `db` in
+`src/db/client.ts` is instantiated once at module scope and persists across warm Vercel
+invocations. A wedged connection is never released - nothing times out a connection that's already
+established and simply waiting on a response that will never arrive - so each subsequent request
+hitting the same warm instance has fewer of the fixed `max: 2` connections actually available than
+the last, until even a single trivial query (the layout's own `getStaffMember()`) can't get a
+connection at all.
+
+**D13's own fix (`max: 2`) was only ever verified against a concurrent PAIR** - `scripts/
+verify-db-pool.ts` and `src/db/client.test.ts` both test exactly two concurrent queries. Nobody
+had reproduced three. Recorded as D72, with a correction appended to D13's own entry in
+`docs/ARCHITECTURE.md`, since D13's text asserted "max: 2 gives an accidental concurrent pair its
+own connection each" as settled - true for a pair, not for three.
+
+**Not yet fixed - two options, not yet chosen between, per the founder's "don't change pool
+settings blindly" instruction:**
+1. Raise `max` further (3, 4, or more). Bounded by Supavisor's own project-level pool size
+   (`Project Settings -> Database -> Connection pooling` in the Supabase dashboard) - this is NOT
+   visible from a SQL query against the database itself (the Supabase MCP tool's `execute_sql` and
+   `get_advisors` can't see Supavisor's own pooler configuration), only from the dashboard. Every
+   concurrent Vercel function instance gets its OWN `max: N` pool (module-scope per instance), so
+   raising `max` multiplies by however many instances run concurrently under real load - this needs
+   checking against Supavisor's actual ceiling before picking a number, not guessed.
+2. Restructure the affected call sites so no single request ever issues more than 2 truly
+   concurrent queries (e.g. make `getMentorEditorData`'s internal `Promise.all` sequential, or run
+   `getWorldEditorData`/`getMentorEditorData` sequentially in the page instead of via `Promise.all`).
+   Lower blast radius (doesn't touch the shared pool config, so no risk of hitting Supavisor's own
+   ceiling), but this exact pattern (more than one `Promise.all` nested or adjacent within a single
+   request) could exist elsewhere in the codebase and hasn't been audited for yet.
+`GET /api/v1/health`'s own multiple sequential-await DB checks (never more than 1-2 concurrent at
+once, confirmed by reading the route) are not at risk - consistent with it staying fast throughout
+this entire investigation.
+
+**Round 5 (same day): audited the rest of the codebase for the same pattern. This is NOT an
+isolated admin-page bug - it is pervasive, including on the app's highest-traffic consumer
+endpoints.** Read-only audit, nothing fixed. Worst cases found (concurrent Postgres-touching calls
+at peak, confirmed by reading each repo function, Redis-only calls excluded):
+- `src/server/analytics/service.ts` (admin dashboard summary) - **13 concurrent**, cache-gated
+  (only exposed once per TTL window, not every view).
+- `src/server/arena/service.ts` public player profile - **8 concurrent**, and a second call site
+  in the same file at 7.
+- `src/server/profile/service.ts` (`GET /me/profile/overview` - almost certainly the single
+  most-hit endpoint in the app) - **7 concurrent**.
+- `src/app/admin/(dashboard)/ops/page.tsx` - 6 at the page level, running alongside
+  `getOpsKpis()`'s own internal 4-way fan-out on a cache miss - compounds to ~8-9.
+- `src/app/admin/(dashboard)/news/page.tsx` - 7. `src/server/report-card/service.ts` - 6, plus
+  three more smaller (4-item) `Promise.all`s in the same file.
+- `src/server/portfolio/service.ts` (`GET /me/portfolio/summary`) - 5.
+- `src/server/worlds/service.ts`'s `getPublicWorlds` (`GET /api/v1/worlds` - every learner's home
+  screen) - 3. `src/app/admin/(dashboard)/lessons/page.tsx` - 3, the identical shape to the
+  confirmed worlds-page bug (a data-fetch call running alongside `getMentorEditorData`'s own
+  internal pair).
+- **Unbounded - grows with data, not fixed at "happens to be 3 today"**: `src/server/badges/
+  service.ts`'s per-badge progress evaluator (one call per published badge, could be dozens),
+  `src/server/report-card/service.ts`'s per-world lookup, `src/server/certificates/service.ts`'s
+  per-certificate lookup, `src/server/rewards/service.ts`'s per-claimed-reward lookup,
+  `src/server/funds/service.ts`'s `listPublicFunds` (one NAV lookup per fund, every call, no
+  cache), and `src/app/admin/(dashboard)/legal/page.tsx` (fixed at 3 document types, but each
+  iteration does 2 queries internally - up to 6, guaranteed on every single load).
+- Not fully traced (flagged, not confirmed): the news admin page's KPI/pipeline calls and a few
+  other nested service calls likely add further concurrency on top of what's listed - a fully
+  exhaustive trace would need more time than this pass budgeted.
+
+**This changes the shape of the fix.** "Restructure every call site to never exceed 2 concurrent
+queries" is not realistic at this scale (dozens of sites, up to 13-way concurrency) - raising
+`max` has to be the primary lever, sized well above 3, bounded by Supavisor's actual project pool
+size (not yet confirmed - needs the Supabase dashboard, not visible via SQL). And because this
+pattern recurs this widely, a future call site exceeding whatever `max` is chosen is a realistic
+"when," not "if" - making the connection-reclaim question (can a wedged connection ever be
+recovered automatically, see above) more than a theoretical nicety.
+
+**Regression test added** (`scripts/verify-db-pool.ts`, consolidated - the standalone
+`verify-db-pool-3way.ts` script from Round 4 was folded in rather than left as a second file):
+now tests a concurrent PAIR (D13) and a concurrent TRIPLE (D72) against the real pooler in one
+run. Confirmed still failing as expected at the current `max: 2` - re-run after any pool change to
+confirm it passes. `src/db/client.test.ts`'s static config assertion updated to cross-reference
+both decisions; its numeric floor is unchanged pending the chosen `max` value.
+
+**Round 6 (same day): fixed, on branch `db-pool-concurrency-fix`, not yet merged.** Before
+touching anything: audited all 16 Inngest job files (+ the service/repo functions they call,
+same depth as the web audit) for the same pattern, since they run in their own serverless
+instances and the max arithmetic needed to account for them too. Mostly safe by design - every
+fan-out over a collection (users, orders, competitions, SIP plans) uses a plain sequential `for`
+loop with one `step.run()`/await per item, never `Promise.all`/`.map()` into concurrent
+execution, across the whole Inngest layer. Two real exceptions found, both money-adjacent:
+`settleArenaLeaguesForWeek` (7 concurrent, fixed, guaranteed on every weekly run) and
+`settleOneCompetition` (3 concurrent, safe under the chosen `max: 4`, left as-is). Confirmed the
+worst case stays 13 (web analytics) - Inngest didn't move the number.
+
+**The arithmetic** (Supavisor's project pool_size: 15, confirmed from the Supabase dashboard,
+shared with PostgREST/pg_cron/pg_net/the metrics exporter): raising `max` to cover 13 directly
+would mean one single warm instance alone consuming 13 of the 15 total slots, leaving 2 for
+everything else combined - unsafe regardless of how carefully anything else is written. So `max`
+went to **4** (a safety margin, not sized to cover any specific worst case) and
+`src/lib/concurrency-limit.ts`'s `runWithConcurrencyLimit` became the actual prevention,
+hand-written (no new dependency) with two overloads so a heterogeneous array (e.g. the admin
+shell's 22 booleans + one role object) keeps its per-element types, exactly like `Promise.all`
+itself does.
+
+**Investigated whether a wedged connection could be reclaimed instead of only prevented** - read
+the installed `postgres@3.4.9` library's own source rather than assuming: `idle_timeout` only
+arms when a connection is moved into the pool's genuinely-idle queue (`idleTimer.start()` is
+called from exactly one place, the pool's `move()` function, only when a connection enters that
+queue); `max_lifetime`'s handler explicitly defers actual termination until the connection has no
+in-flight query, which never becomes true for a wedged one. Neither can ever reclaim this failure
+mode. The one forceful lever, the top-level `sql.end({ timeout })`, does forcibly terminate even
+a busy connection past its timeout (confirmed in source: it races graceful shutdown against a
+hard `destroy()` that calls `.terminate()` on every connection) - but it tears down the *entire*
+pool at once, with no automatic reconnect, so using it as a recovery mechanism would mean
+building and testing a watchdog that can't tell a wedge apart from a merely-slow query, and would
+kill every other healthy request sharing that warm instance when it fires. Decided against
+building this: if prevention (below) holds, it never fires; if prevention has a gap somewhere
+unaudited, a crash-and-recover watchdog trades an occasional hang for an occasional crash loop
+that takes down co-located healthy requests too - not a clear improvement. Prevention only.
+
+**Applied `runWithConcurrencyLimit` to all 13 web/admin sites the codebase-wide audit found
+exceeding `max: 4`** (worst-first): the admin shell's own 22-permission check (`(dashboard)/
+layout.tsx` - the original incident's own shell, left instrumented), admin analytics summary (13),
+admin News Desk page (14), admin Ops console page (12), two Arena endpoints (public profile at
+11, weekly league settlement at 7 - money-adjacent, also the Inngest exception above) plus two
+Arena admin-settings editors (5 each), Ops service's user-ledger aggregation (5), portfolio
+summary (5), profile overview (9 - likely the single most-hit endpoint in the app), and two
+report-card aggregations (7, 6).
+
+**Added the mechanical check** (`scripts/check-promise-all-db-concurrency.ts` +
+`.test.ts`, matching `scripts/generate-openapi.test.ts`'s established precedent of a plain-text
+scan over a full AST/type-checker, not a new ESLint plugin): finds every `Promise.all`/
+`Promise.allSettled` in `src/`, estimates each array element's concurrent-query weight (1 for a
+call into a file that imports `db` directly, 2 for a call into any other `src/server/` file -
+conservative on purpose, resolved via the project's actual `@/*` -> `src/*` alias rather than
+filename-suffix guessing, which an early version of this heuristic used and which missed a real
+finding - `src/lib/settings.ts` doesn't end in `/service.ts` but does import `db` directly),
+`Infinity` for an unbounded `.map(async ...)`, and recurses into a nested literal `Promise.all`.
+Flags anything exceeding `src/db/client.ts`'s own configured `max`, read directly from that file
+so the two can never silently drift apart. Runs as a `pnpm test` guard; a genuine false positive
+gets a `// promise-all-db-concurrency-ok: <reason>` comment, never a silent exclusion. Found three
+real sites a manual audit had missed (including the arena league-settlement Inngest job) before
+any fix was applied - the exact kind of result that justifies building it over relying on
+"remember to check."
+
+**Verified, run directly against the real database, before considering this done:**
+`scripts/verify-db-pool.ts` (extended with a third check) now proves three things in one run: the
+original D13 pair still resolves fine, the D72 triple now resolves fine too (previously hung at
+`max: 2`), and - the actual fix, not just the raised number - 8 real concurrent queries (double
+`DB_CONCURRENCY_LIMIT`) issued through `runWithConcurrencyLimit` all resolve in ~400ms without
+ever wedging, proving the limiter queues rather than exceeding the pool. `pnpm typecheck`/`lint`/
+the full test suite (231 files, 2306 tests) all pass; `check-promise-all-db-concurrency.test.ts`
+passes with zero findings at the new `max: 4`.
+
+**Documented going forward, not just fixed once**: `CLAUDE.md` rule 15 and the `admin-page`,
+`new-endpoint` and `money-ledger` skills all now state this rule directly, each pointing at
+`runWithConcurrencyLimit` and the mechanical check - the goal is that the next person (or
+session) writing a new `Promise.all` gets caught by the test before it ever reaches production,
+not by rediscovering this investigation from scratch.
+
+**Not yet merged** - on branch `db-pool-concurrency-fix`, held for the founder's review in one
+piece given how much this touches, per their explicit instruction.
 
 ## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
 

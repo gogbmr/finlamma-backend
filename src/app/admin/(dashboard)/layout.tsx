@@ -6,9 +6,17 @@ import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import { getStaffMember } from "@/lib/auth";
 import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
+import {
+  DB_CONCURRENCY_LIMIT,
+  runWithConcurrencyLimit,
+} from "@/lib/concurrency-limit";
 import { getRoleById, roleHasPermission } from "@/server/staff/repo";
 import { getMarketControls } from "@/server/trading/service";
-import { AdminNavStrip, AdminSidebar, type AdminNavVisibility } from "@/components/admin/admin-nav";
+import {
+  AdminNavStrip,
+  AdminSidebar,
+  type AdminNavVisibility,
+} from "@/components/admin/admin-nav";
 
 // See src/lib/admin-diagnostics.ts for the full context on why this exists.
 // Confirmed 2026-10-06: both calls below resolve in ~6s total (1.4s +
@@ -33,23 +41,33 @@ const ADMIN_SHELL_TIMEOUT_MS = 15_000;
 function AdminShellFailure({ error }: { error: unknown }) {
   const message = error instanceof Error ? error.message : "Unknown error";
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+    <div className="bg-background flex min-h-screen flex-col items-center justify-center gap-3 p-6 text-center">
       <div className="max-w-md space-y-2">
-        <h1 className="text-lg font-semibold text-foreground">Admin couldn&apos;t load</h1>
-        <p className="text-sm text-muted-foreground">{message}</p>
-        <p className="text-xs text-muted-foreground">
-          Refresh to try again. If this keeps happening, check the server logs for
-          [admin-shell] timing entries - see docs/STATUS.md.
+        <h1 className="text-foreground text-lg font-semibold">
+          Admin couldn&apos;t load
+        </h1>
+        <p className="text-muted-foreground text-sm">{message}</p>
+        <p className="text-muted-foreground text-xs">
+          Refresh to try again. If this keeps happening, check the server logs
+          for [admin-shell] timing entries - see docs/STATUS.md.
         </p>
       </div>
     </div>
   );
 }
 
-export default async function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   let staff: Awaited<ReturnType<typeof getStaffMember>>;
   try {
-    staff = await withTimingAndTimeout("getStaffMember (auth())", getStaffMember(), ADMIN_SHELL_TIMEOUT_MS);
+    staff = await withTimingAndTimeout(
+      "getStaffMember (auth())",
+      getStaffMember(),
+      ADMIN_SHELL_TIMEOUT_MS,
+    );
   } catch (err) {
     return <AdminShellFailure error={err} />;
   }
@@ -62,12 +80,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     if (!userId) redirect("/admin/sign-in");
 
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="bg-background flex min-h-screen items-center justify-center p-6">
         <div className="max-w-sm text-center">
-          <h1 className="text-lg font-semibold text-foreground">Access denied</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Your account isn&apos;t set up as an active staff member yet. Ask a super admin to
-            add you.
+          <h1 className="text-foreground text-lg font-semibold">
+            Access denied
+          </h1>
+          <p className="text-muted-foreground mt-2 text-sm">
+            Your account isn&apos;t set up as an active staff member yet. Ask a
+            super admin to add you.
           </p>
           <div className="mt-4 flex justify-center">
             <UserButton />
@@ -111,10 +131,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
 
   try {
     [
-      worldManage, worldPublish,
-      lessonManage, lessonPublish,
-      questionManage, questionPublish,
-      mentorManage, mentorPublish,
+      worldManage,
+      worldPublish,
+      lessonManage,
+      lessonPublish,
+      questionManage,
+      questionPublish,
+      mentorManage,
+      mentorPublish,
       consentView,
       doubtZoneModerate,
       staffManage,
@@ -132,31 +156,38 @@ export default async function DashboardLayout({ children }: { children: ReactNod
       role,
     ] = await withTimingAndTimeout(
       "permission Promise.all (22 roleHasPermission + getRoleById)",
-      Promise.all([
-        roleHasPermission(staff.roleId, "world.manage"),
-        roleHasPermission(staff.roleId, "world.publish"),
-        roleHasPermission(staff.roleId, "lesson.manage"),
-        roleHasPermission(staff.roleId, "lesson.publish"),
-        roleHasPermission(staff.roleId, "question.manage"),
-        roleHasPermission(staff.roleId, "question.publish"),
-        roleHasPermission(staff.roleId, "mentor.manage"),
-        roleHasPermission(staff.roleId, "mentor.publish"),
-        roleHasPermission(staff.roleId, "consent.view"),
-        roleHasPermission(staff.roleId, "doubt_zone.moderate"),
-        roleHasPermission(staff.roleId, "staff.manage"),
-        roleHasPermission(staff.roleId, "activity_log.view"),
-        roleHasPermission(staff.roleId, "legal.manage"),
-        roleHasPermission(staff.roleId, "settings.manage"),
-        roleHasPermission(staff.roleId, "economy.manage"),
-        roleHasPermission(staff.roleId, "coach_note.manage"),
-        roleHasPermission(staff.roleId, "coach_note.publish"),
-        roleHasPermission(staff.roleId, "instrument.manage"),
-        roleHasPermission(staff.roleId, "trading.ops"),
-        roleHasPermission(staff.roleId, "news.manage"),
-        roleHasPermission(staff.roleId, "news.publish"),
-        roleHasPermission(staff.roleId, "analytics.view"),
-        getRoleById(staff.roleId),
-      ]),
+      // D13/D72 (docs/ARCHITECTURE.md): 23 truly concurrent queries against
+      // a max: 4 pool would wedge a connection the same way the worlds-page
+      // incident did - runWithConcurrencyLimit caps this at DB_CONCURRENCY_LIMIT
+      // instead of a bare Promise.all.
+      runWithConcurrencyLimit(
+        [
+          () => roleHasPermission(staff.roleId, "world.manage"),
+          () => roleHasPermission(staff.roleId, "world.publish"),
+          () => roleHasPermission(staff.roleId, "lesson.manage"),
+          () => roleHasPermission(staff.roleId, "lesson.publish"),
+          () => roleHasPermission(staff.roleId, "question.manage"),
+          () => roleHasPermission(staff.roleId, "question.publish"),
+          () => roleHasPermission(staff.roleId, "mentor.manage"),
+          () => roleHasPermission(staff.roleId, "mentor.publish"),
+          () => roleHasPermission(staff.roleId, "consent.view"),
+          () => roleHasPermission(staff.roleId, "doubt_zone.moderate"),
+          () => roleHasPermission(staff.roleId, "staff.manage"),
+          () => roleHasPermission(staff.roleId, "activity_log.view"),
+          () => roleHasPermission(staff.roleId, "legal.manage"),
+          () => roleHasPermission(staff.roleId, "settings.manage"),
+          () => roleHasPermission(staff.roleId, "economy.manage"),
+          () => roleHasPermission(staff.roleId, "coach_note.manage"),
+          () => roleHasPermission(staff.roleId, "coach_note.publish"),
+          () => roleHasPermission(staff.roleId, "instrument.manage"),
+          () => roleHasPermission(staff.roleId, "trading.ops"),
+          () => roleHasPermission(staff.roleId, "news.manage"),
+          () => roleHasPermission(staff.roleId, "news.publish"),
+          () => roleHasPermission(staff.roleId, "analytics.view"),
+          () => getRoleById(staff.roleId),
+        ],
+        DB_CONCURRENCY_LIMIT,
+      ),
       ADMIN_SHELL_TIMEOUT_MS,
     );
   } catch (err) {
@@ -200,33 +231,47 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     .catch(() => false);
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="bg-background min-h-screen">
       <Toaster richColors position="top-right" />
       <div className="flex min-h-screen">
-        <aside className="hidden w-60 shrink-0 border-r border-border bg-card px-4 py-6 lg:flex lg:flex-col">
+        <aside className="border-border bg-card hidden w-60 shrink-0 border-r px-4 py-6 lg:flex lg:flex-col">
           <div className="mb-6 flex items-center gap-2 px-3">
-            <span className="text-lg font-bold text-brand-violet-900">FinLamma</span>
-            <span className="text-xs font-medium text-muted-foreground">Admin</span>
+            <span className="text-brand-violet-900 text-lg font-bold">
+              FinLamma
+            </span>
+            <span className="text-muted-foreground text-xs font-medium">
+              Admin
+            </span>
           </div>
           <AdminSidebar visibility={visibility} />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex items-center justify-between gap-4 border-b border-border bg-card px-4 py-3 lg:px-6">
-            <span className="text-base font-bold text-brand-violet-900 lg:hidden">FinLamma</span>
+          <header className="border-border bg-card flex items-center justify-between gap-4 border-b px-4 py-3 lg:px-6">
+            <span className="text-brand-violet-900 text-base font-bold lg:hidden">
+              FinLamma
+            </span>
             <div className="ml-auto flex items-center gap-3">
               <div className="hidden text-right sm:block">
-                <p className="font-mono text-xs text-foreground">{staff.clerkUserId}</p>
-                <p className="text-xs text-muted-foreground">{role?.name ?? "Staff"}</p>
+                <p className="text-foreground font-mono text-xs">
+                  {staff.clerkUserId}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {role?.name ?? "Staff"}
+                </p>
               </div>
               <UserButton />
             </div>
           </header>
           <AdminNavStrip visibility={visibility} />
           {globalHalt && (
-            <div className="flex items-center justify-center gap-2 bg-destructive px-4 py-2 text-center text-sm font-semibold text-destructive-foreground">
-              GLOBAL TRADING HALT ACTIVE — no learner can place an order right now.
+            <div className="bg-destructive text-destructive-foreground flex items-center justify-center gap-2 px-4 py-2 text-center text-sm font-semibold">
+              GLOBAL TRADING HALT ACTIVE — no learner can place an order right
+              now.
               {visibility.opsConsole && (
-                <Link href="/admin/ops" className="underline underline-offset-2">
+                <Link
+                  href="/admin/ops"
+                  className="underline underline-offset-2"
+                >
                   Resolve in Ops Console
                 </Link>
               )}

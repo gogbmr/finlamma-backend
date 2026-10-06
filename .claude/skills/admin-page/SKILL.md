@@ -47,3 +47,9 @@ paths: "src/app/admin/**"
    the domain's own permission (never a broader one), and logged via `logActivity` with
    before/after values. Don't invent a second bounds-checking convention for a lever that's
    structurally the same shape as one that already exists.
+9. **Never fetch an admin page's data with a bare `Promise.all`/`Promise.allSettled` of 3+
+   DB-querying calls** (admin pages are exactly where this bit production - `docs/ARCHITECTURE.md`
+   D72, a `/admin/worlds` load hanging ~300s). Use `runWithConcurrencyLimit`
+   (`src/lib/concurrency-limit.ts`) with `DB_CONCURRENCY_LIMIT` instead - same call shape, just
+   wrap each element in `() => ...`. `scripts/check-promise-all-db-concurrency.test.ts` fails
+   `pnpm test` if a new page reintroduces this, but fix it before you hit that, not because of it.
