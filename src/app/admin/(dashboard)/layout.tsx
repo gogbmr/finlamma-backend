@@ -6,11 +6,7 @@ import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import { getStaffMember } from "@/lib/auth";
 import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
-import {
-  DB_CONCURRENCY_LIMIT,
-  runWithConcurrencyLimit,
-} from "@/lib/concurrency-limit";
-import { getRoleById, roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole, getRoleById } from "@/server/staff/repo";
 import { getMarketControls } from "@/server/trading/service";
 import {
   AdminNavStrip,
@@ -105,89 +101,26 @@ export default async function DashboardLayout({
   // here must never fall through to a sidebar render with some permissions
   // resolved and others missing - it renders the dedicated failure panel
   // instead, never the nav/visibility JSX below.
-  // Declared outside the try (not a tuple type on a temp variable - a
-  // hand-counted tuple is exactly the kind of off-by-one this invites, and
-  // in fact did on the first pass here) so the destructuring assignment
-  // below is the only place element count/order has to match the
-  // Promise.all array, self-checked by the compiler against these 22
-  // booleans + role.
-  let worldManage: boolean, worldPublish: boolean;
-  let lessonManage: boolean, lessonPublish: boolean;
-  let questionManage: boolean, questionPublish: boolean;
-  let mentorManage: boolean, mentorPublish: boolean;
-  let consentView: boolean;
-  let doubtZoneModerate: boolean;
-  let staffManage: boolean;
-  let activityLogView: boolean;
-  let legalManage: boolean;
-  let settingsManage: boolean;
-  let economyManage: boolean;
-  let coachNoteManage: boolean, coachNotePublish: boolean;
-  let instrumentManage: boolean;
-  let tradingOps: boolean;
-  let newsManage: boolean, newsPublish: boolean;
-  let analyticsView: boolean;
+  //
+  // Used to be 22 separate roleHasPermission() round trips (even batched
+  // through runWithConcurrencyLimit, still 22 round trips - 4.5s even when
+  // it worked, and still capable of tripping the transaction-pooler
+  // pipelining hang under cross-request pool contention on a warm
+  // instance, which is what actually happened in production after the
+  // limiter shipped - docs/ARCHITECTURE.md D72's follow-up). The
+  // concurrency limiter was pacing a design that shouldn't have existed:
+  // one query (getPermissionKeysForRole) returns every permission key the
+  // role holds, and getRoleById runs alongside it - 2 queries total,
+  // comfortably under max: 4 with no limiter needed at all.
+  let grantedKeys: Set<string>;
   let role: Awaited<ReturnType<typeof getRoleById>>;
-
   try {
-    [
-      worldManage,
-      worldPublish,
-      lessonManage,
-      lessonPublish,
-      questionManage,
-      questionPublish,
-      mentorManage,
-      mentorPublish,
-      consentView,
-      doubtZoneModerate,
-      staffManage,
-      activityLogView,
-      legalManage,
-      settingsManage,
-      economyManage,
-      coachNoteManage,
-      coachNotePublish,
-      instrumentManage,
-      tradingOps,
-      newsManage,
-      newsPublish,
-      analyticsView,
-      role,
-    ] = await withTimingAndTimeout(
-      "permission Promise.all (22 roleHasPermission + getRoleById)",
-      // D13/D72 (docs/ARCHITECTURE.md): 23 truly concurrent queries against
-      // a max: 4 pool would wedge a connection the same way the worlds-page
-      // incident did - runWithConcurrencyLimit caps this at DB_CONCURRENCY_LIMIT
-      // instead of a bare Promise.all.
-      runWithConcurrencyLimit(
-        [
-          () => roleHasPermission(staff.roleId, "world.manage"),
-          () => roleHasPermission(staff.roleId, "world.publish"),
-          () => roleHasPermission(staff.roleId, "lesson.manage"),
-          () => roleHasPermission(staff.roleId, "lesson.publish"),
-          () => roleHasPermission(staff.roleId, "question.manage"),
-          () => roleHasPermission(staff.roleId, "question.publish"),
-          () => roleHasPermission(staff.roleId, "mentor.manage"),
-          () => roleHasPermission(staff.roleId, "mentor.publish"),
-          () => roleHasPermission(staff.roleId, "consent.view"),
-          () => roleHasPermission(staff.roleId, "doubt_zone.moderate"),
-          () => roleHasPermission(staff.roleId, "staff.manage"),
-          () => roleHasPermission(staff.roleId, "activity_log.view"),
-          () => roleHasPermission(staff.roleId, "legal.manage"),
-          () => roleHasPermission(staff.roleId, "settings.manage"),
-          () => roleHasPermission(staff.roleId, "economy.manage"),
-          () => roleHasPermission(staff.roleId, "coach_note.manage"),
-          () => roleHasPermission(staff.roleId, "coach_note.publish"),
-          () => roleHasPermission(staff.roleId, "instrument.manage"),
-          () => roleHasPermission(staff.roleId, "trading.ops"),
-          () => roleHasPermission(staff.roleId, "news.manage"),
-          () => roleHasPermission(staff.roleId, "news.publish"),
-          () => roleHasPermission(staff.roleId, "analytics.view"),
-          () => getRoleById(staff.roleId),
-        ],
-        DB_CONCURRENCY_LIMIT,
-      ),
+    [grantedKeys, role] = await withTimingAndTimeout(
+      "permission keys + role (2 queries, was 23)",
+      Promise.all([
+        getPermissionKeysForRole(staff.roleId),
+        getRoleById(staff.roleId),
+      ]),
       ADMIN_SHELL_TIMEOUT_MS,
     );
   } catch (err) {
@@ -195,24 +128,29 @@ export default async function DashboardLayout({
   }
 
   const visibility: AdminNavVisibility = {
-    worlds: worldManage || worldPublish,
-    lessons: lessonManage || lessonPublish,
-    questions: questionManage || questionPublish,
-    mentors: mentorManage || mentorPublish,
-    consent: consentView,
-    doubtZoneModeration: doubtZoneModerate,
-    staff: staffManage,
-    activityLog: activityLogView,
-    legal: legalManage,
-    settings: settingsManage,
-    badges: economyManage,
-    rewards: economyManage,
-    competitions: economyManage,
-    coachNotes: coachNoteManage || coachNotePublish,
-    instruments: instrumentManage,
-    opsConsole: tradingOps,
-    newsDesk: newsManage || newsPublish,
-    analytics: analyticsView,
+    worlds: grantedKeys.has("world.manage") || grantedKeys.has("world.publish"),
+    lessons:
+      grantedKeys.has("lesson.manage") || grantedKeys.has("lesson.publish"),
+    questions:
+      grantedKeys.has("question.manage") || grantedKeys.has("question.publish"),
+    mentors:
+      grantedKeys.has("mentor.manage") || grantedKeys.has("mentor.publish"),
+    consent: grantedKeys.has("consent.view"),
+    doubtZoneModeration: grantedKeys.has("doubt_zone.moderate"),
+    staff: grantedKeys.has("staff.manage"),
+    activityLog: grantedKeys.has("activity_log.view"),
+    legal: grantedKeys.has("legal.manage"),
+    settings: grantedKeys.has("settings.manage"),
+    badges: grantedKeys.has("economy.manage"),
+    rewards: grantedKeys.has("economy.manage"),
+    competitions: grantedKeys.has("economy.manage"),
+    coachNotes:
+      grantedKeys.has("coach_note.manage") ||
+      grantedKeys.has("coach_note.publish"),
+    instruments: grantedKeys.has("instrument.manage"),
+    opsConsole: grantedKeys.has("trading.ops"),
+    newsDesk: grantedKeys.has("news.manage") || grantedKeys.has("news.publish"),
+    analytics: grantedKeys.has("analytics.view"),
   };
 
   // Persistent halt banner (docs/ARCHITECTURE.md D47, founder's requirement
