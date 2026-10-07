@@ -48,21 +48,26 @@ pnpm contract       # regenerate openapi/openapi.json AND docs/API_ENDPOINTS.md
 ```
 Create these scripts in package.json during project setup if they don't exist.
 
-**Known issue, NOT dev-only (corrected 2026-10-06)**: local `pnpm dev` returns 500 on every
-`/admin/*` route with a misleading Clerk "middleware might be misplaced" error, in this Next
-16.3.5 + `@clerk/nextjs` 7.9.4 combination (confirmed: `middleware.ts` at the project root is
-correct, and renaming it to `proxy.ts` doesn't help either - both tested and reverted). This was
-first believed to be dev-only because `pnpm build && pnpm start` and the Vercel preview correctly
-handle a *signed-out* request - but a real, authenticated staff session hangs for ~300s on every
-`/admin/(dashboard)/*` route in production too (confirmed 2026-10-06 with a fresh incognito
-sign-in). The signed-out test never actually proved `clerkMiddleware()` ran, since `auth()`
-resolves "no session" fast either way. There is currently **no working workaround** for testing
-the authenticated admin path, locally or in production - see `docs/STATUS.md` 2026-10-06 for the
-full diagnosis, external research (likely related to Next 16's `middleware.ts`→`proxy.ts`
-migration being actively unstable) and recommended patch-version upgrade path, and 2026-10-05 for
-the original dev-mode writeup this corrects. The pre-launch checklist in `docs/ROADMAP.md` has the
-item to re-verify this - with a real authenticated session, not just a signed-out redirect - after
-any Next/Clerk version change.
+**Known limitation, dev-only (RESOLVED for production 2026-10-06/07 - see below)**: local `pnpm dev`
+returns 500 on every `/admin/*` route with a misleading Clerk "middleware might be misplaced" error,
+in this Next 16.3.5 + `@clerk/nextjs` 7.9.4 combination (confirmed: `middleware.ts` at the project
+root is correct, and renaming it to `proxy.ts` doesn't help either - both tested and reverted). This
+is a genuine Next 16/Clerk dev-mode fragility (likely the `middleware.ts`→`proxy.ts` migration being
+actively unstable upstream), separate from the production incident below even though both surfaced in
+the same subsystem a day apart - `docs/STATUS.md`'s 2026-10-07 postmortem has a "False lead #1"
+section spelling out why they're not the same bug. `pnpm build && pnpm start` works correctly, as
+does the Vercel preview, for local admin testing until this dev-mode issue is separately revisited.
+
+A second, now-resolved issue was found while chasing the one above: a real, authenticated staff
+session hung ~300s on every `/admin/(dashboard)/*` route **in production**, not just locally
+(confirmed 2026-10-06 - the signed-out redirect every prior check had used never actually exercised
+an authenticated session). Root cause: `src/db/client.ts`'s postgres.js pool (`max: 2`) wedging under
+3+ concurrent queries against Supavisor's transaction-mode pooler - see rule 15 below and
+`docs/ARCHITECTURE.md` D13/D72. Fixed in two layers (`max: 4` + `runWithConcurrencyLimit`, then the
+real fix of replacing a 22-round-trip permission check with one query,
+`getPermissionKeysForRole`) and confirmed working in production (`/admin/staff`, `/admin/worlds`,
+`/admin/analytics` all load). Full account, including the two false leads ruled out along the way
+and why the first fix attempt wasn't enough: `docs/STATUS.md`'s 2026-10-07 entry.
 
 Separately: killing a `next dev` process can corrupt `.next/dev/types/*`, which then makes `pnpm
 build` fail its own typecheck on generated (not real) code - fix is `rm -rf .next` before

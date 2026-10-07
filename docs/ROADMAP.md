@@ -528,18 +528,17 @@ own repo later, hosted on Railway.
       (founder decision, Phase 4 Checkpoint 8) but a real gap once real learners depend on these
       jobs running - deferred from Phase 0's Sentry item above, called out again here since it's
       specifically the AMFI ingestion job's own failure mode that motivated re-flagging it.
-- [ ] **BLOCKING: fix the authenticated admin-path hang in production (Next 16.3.5 / `@clerk/nextjs`
-      7.9.4).** Not just a local dev-mode cosmetic issue as first believed (2026-10-05) - a real,
-      fresh-incognito-confirmed staff session hangs ~300s on every `/admin/(dashboard)/*` route in
-      production too (2026-10-06), since the earlier "build mode and the Vercel preview work
-      correctly" conclusion only ever tested a signed-out redirect, which can't prove
-      `clerkMiddleware()` actually ran. See `docs/STATUS.md`'s 2026-10-06 entry for the full
-      diagnosis, external research (likely tied to Next 16's `middleware.ts`→`proxy.ts` migration
-      being actively unstable upstream right now) and the recommended patch-version upgrade path.
-      **Whatever fix is attempted, re-verification must hit every `/admin/(dashboard)/*` route with
-      a real signed-in staff session, not just a signed-out redirect** - that blind spot is what let
-      this ship unnoticed in the first place. Delete the workaround notes in `CLAUDE.md`/
-      `docs/STATUS.md` once a real fix lands and is verified that way.
+- [x] **Fix the authenticated admin-path hang in production.** RESOLVED 2026-10-07 - turned out to be
+      unrelated to Next/Clerk (that was a false lead, see `docs/STATUS.md`'s 2026-10-07 postmortem):
+      `src/db/client.ts`'s connection pool wedging under 3+ concurrent queries (D13/D72), with the
+      admin shell's own 22-round-trip permission check as the actual trigger. Fixed via
+      `getPermissionKeysForRole` (one query) + `max: 4` + `runWithConcurrencyLimit` (CLAUDE.md rule
+      15) and confirmed in production with a real signed-in staff session (not just the signed-out
+      redirect every prior check had used) on `/admin/staff`, `/admin/worlds`, `/admin/analytics`.
+- [ ] Separately, still open: local `pnpm dev` returns 500 on every `/admin/*` route (misleading
+      Clerk "middleware might be misplaced" error, Next 16.3.5 / `@clerk/nextjs` 7.9.4) - a genuine
+      dev-mode fragility, not the production bug above. Non-blocking (`pnpm build && pnpm start` and
+      the Vercel preview work fine for local admin testing); re-test after any Next/Clerk upgrade.
 
 ## Later (non-blocking — no phase assigned)
 - [ ] Visual lesson/quiz content builder for the admin editor, replacing Phase 2b's
