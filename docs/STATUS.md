@@ -1,5 +1,56 @@
 # Status
 
+## 2026-10-07 — Dev/test seed dataset, layer 1 of 2: content prerequisites created
+
+Building toward a ~50-user dev/test dataset for mobile app development (plan below this entry).
+This step creates no `users` rows at all - it's the catalog/content layer the next step's ~50
+seeded learners will need to generate activity against (lessons to complete, badges to earn,
+rewards to claim, news to read, competitions to enter). **Test learners recorded so far: still
+none** - the "none" bullet further down in this file (2026-09-23 entry) stays accurate until the
+next step actually creates `users` rows.
+
+**What `scripts/seed-dev-content.ts` (`pnpm seed:dev-content`) created, run against the real
+shared database and verified by live query to match exactly:**
+- 42 lessons (6 per world × 7 worlds: video/story/quiz/boss_quiz/role_play/doubt_zone)
+- 24 questions (21 backing the lesson quizzes, 3 backing Pulse Check)
+- 8 badges, 6 rewards, 10 about-me chips
+- 3 news stories + 1 published news edition (today, IST)
+- 2 competitions (one open for entry, one past its window and deliberately left unsettled -
+  settlement is a real money-moving action, not something to fake in a seed script)
+
+**Deliberate deviation from the draft-by-default seed convention** (`seed-mentors.ts`,
+`seed-worlds.ts`, etc., per a Phase 5 security-audit finding that a seed script publishing content
+isn't a real staff action): this content seeds as **published**, because the mobile app's
+read-side API only ever returns published content - a draft placeholder would be invisible to the
+very app this dataset exists to develop against. Same precedent already established by
+`seed-legal-documents.ts`. The safety net instead is that every title/name/headline/prompt is
+prefixed `[PLACEHOLDER]` in **every** language field (hi/hx are not real translations here, unlike
+the legal docs - this is disposable dev content, never shown to a real learner, so translation
+quality doesn't matter the way it does for shipped copy).
+
+**Traceability query for this layer** (every row this script wrote, across every table it touched):
+
+```sql
+SELECT 'lessons' t, count(*) FROM lessons WHERE title->>'en' LIKE '[PLACEHOLDER]%'
+UNION ALL SELECT 'questions', count(*) FROM questions WHERE prompt->>'en' LIKE '[PLACEHOLDER]%'
+UNION ALL SELECT 'badges', count(*) FROM badges WHERE name->>'en' LIKE '[PLACEHOLDER]%'
+UNION ALL SELECT 'rewards', count(*) FROM rewards WHERE name->>'en' LIKE '[PLACEHOLDER]%'
+UNION ALL SELECT 'about_me_chips', count(*) FROM about_me_chips WHERE name->>'en' LIKE '[PLACEHOLDER]%'
+UNION ALL SELECT 'news_stories', count(*) FROM news_stories WHERE content->'headline'->>'en' LIKE '[PLACEHOLDER]%'
+UNION ALL SELECT 'news_editions', count(*) FROM news_editions
+UNION ALL SELECT 'competitions', count(*) FROM competitions WHERE name->>'en' LIKE '[PLACEHOLDER]%';
+```
+
+(`news_editions` has no title field of its own - it's fully identified by its `question_ids`
+pointing at `[PLACEHOLDER]`-tagged questions, so it's included unconditionally; there is exactly
+one, dated today.) This is a **different** traceability mechanism from the one the next layer
+(the ~50 seeded users and their activity) will use - that layer's rows all carry a real `userId`
+and will be traceable back to a seeded user directly by a join, documented when that layer ships.
+The 2 non-seed rows already in `users` (one active - first name "John" - and one already
+anonymized/deleted via the real account-deletion path, both predating this dataset) are untouched
+by either layer and stay exactly as they are; they are not part of what either traceability query
+above is meant to find.
+
 ## 2026-10-07 — Postmortem: the admin-path 300s hang, written up end to end for a reader with no prior context
 
 **For the full round-by-round evidence (exact `pg_stat_activity` output, repro script results, timing numbers), see the 2026-10-06 entry below - this entry is the clean narrative a future session should read first.**
