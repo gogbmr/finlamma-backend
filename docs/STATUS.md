@@ -1,5 +1,87 @@
 # Status
 
+## 2026-10-07 — Dev/test seed dataset, layer 2 of 2: ~50 synthetic users + correlated activity, applied
+
+Builds on the content layer below. `scripts/seed-dev-users.ts` (`pnpm seed:dev-users`, or
+`--apply` to write for real - a bare run is a dry-run-only preview that touches nothing) created
+50 synthetic learners: 10 brand-new, 25 mid-journey, 10 advanced, and 5 explicit edge cases (minor
+with consent pending - fully blocked, zero activity; minor with consent withdrawn - has
+pre-withdrawal history only; a deleted account - PII scrubbed, historical ledger/orders untouched,
+same as a real deletion; and the trading-unlock boundary on both sides - locked at 2 cleared
+worlds with zero trades, unlocked at 3 with exactly one). Every table correlates realistically:
+badges are only awarded when the real evaluator thresholds are actually met (never forced), V
+Money amounts match `reward_rules`/badge/trade amounts exactly, and no user ended up with a
+negative balance or a negative holding (both checked explicitly - see below).
+
+Applied to the real shared database and verified by live query (every count below matches the
+script's own report exactly): 50 users, 19 parent_contacts, 19 consent_records, 198
+legal_acceptances, 49 streaks, 390 lesson_progress, 390 quiz_attempts, 1170 question_answers, 780
+xp_events, 1008 vmoney_ledger, 155 user_badges, 12 reward_claims, 130 certificates, 37 orders, 20
+holdings, 6 sip_plans, 9 fund_orders, 6 fund_holdings, 10 league_members, 18
+user_about_me_chips, 8 cheers, 148 notifications, 3 doubt_threads (18 doubt_messages), 343
+session_time_daily, 10 report_snapshots (+ 4 coach_note_templates, seeded here since none existed -
+published, `[PLACEHOLDER]`-tagged, same deliberate-deviation reasoning as layer 1), 4
+entitlements, 24 news_reads, 10 competition_entries, 15 pulse_check_attempts (45
+pulse_check_answers).
+
+**Caught and fixed before ever applying**: the first dry run let trading/SIP/competition-trade
+spending ignore the user's actual V Money balance, and the sample advanced-tier user came out with
+a **negative balance** (-₹28,121.70) - something the real app would never allow (a trade with
+insufficient funds is rejected outright, no DB row at all, per `orders.ts`'s own comment). Fixed
+by bounding every spend against the balance already earned so far in that user's own build order
+(lessons/badges credited first, trading/funds get first claim on it, reward claims spend only
+genuine leftover change), and added explicit invariant checks (no negative balance, no negative
+holding qty) to the dry-run summary so this class of bug would surface on every future run, not
+just this once.
+
+**Traceability** (the load-bearing requirement, since these are permanent ledger rows on a shared
+database per D27): every seeded user's `clerk_user_id` starts with `seed_clerk_` - a prefix
+nothing else in this codebase ever generates (a real Clerk id is always Clerk's own opaque
+format). The single query that finds every row this layer wrote, across every table it touched:
+
+```sql
+WITH seed_users AS (SELECT id FROM users WHERE clerk_user_id LIKE 'seed_clerk_%')
+SELECT 'users' t, count(*) FROM seed_users
+UNION ALL SELECT 'parent_contacts', count(*) FROM parent_contacts WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'consent_records', count(*) FROM consent_records WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'legal_acceptances', count(*) FROM legal_acceptances WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'streaks', count(*) FROM streaks WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'lesson_progress', count(*) FROM lesson_progress WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'quiz_attempts', count(*) FROM quiz_attempts WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'xp_events', count(*) FROM xp_events WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'vmoney_ledger', count(*) FROM vmoney_ledger WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'user_badges', count(*) FROM user_badges WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'reward_claims', count(*) FROM reward_claims WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'certificates', count(*) FROM certificates WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'orders', count(*) FROM orders WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'holdings', count(*) FROM holdings WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'sip_plans', count(*) FROM sip_plans WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'fund_orders', count(*) FROM fund_orders WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'fund_holdings', count(*) FROM fund_holdings WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'league_members', count(*) FROM league_members WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'user_about_me_chips', count(*) FROM user_about_me_chips WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'cheers', count(*) FROM cheers WHERE sender_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'notifications', count(*) FROM notifications WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'doubt_threads', count(*) FROM doubt_threads WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'session_time_daily', count(*) FROM session_time_daily WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'report_snapshots', count(*) FROM report_snapshots WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'entitlements', count(*) FROM entitlements WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'news_reads', count(*) FROM news_reads WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'competition_entries', count(*) FROM competition_entries WHERE user_id IN (SELECT id FROM seed_users)
+UNION ALL SELECT 'pulse_check_attempts', count(*) FROM pulse_check_attempts WHERE user_id IN (SELECT id FROM seed_users);
+```
+
+(`doubt_messages`/`question_answers`/`pulse_check_answers`/`competition_trades` join one level
+further, through `doubt_threads`/`quiz_attempts`/`pulse_check_attempts`/`competition_entries`
+respectively, rather than carrying `user_id` directly - all still reachable by following that join
+from the same `seed_users` CTE.) `coach_note_templates` is content, not user data, and is instead
+found the same way layer 1's rows are - by its `[PLACEHOLDER]`-prefixed `template->>'en'`.
+
+Separately, 5 **real** Clerk test accounts (one per persona: new learner, consented minor,
+consent-pending minor, minor with trading just unlocked, ad-free adult) are planned but not yet
+created as of this entry - pending real email addresses from the founder. These are intentionally
+outside the `seed_clerk_` traceability net above, same as the 2 pre-existing non-seed accounts.
+
 ## 2026-10-07 — Dev/test seed dataset, layer 1 of 2: content prerequisites created
 
 Building toward a ~50-user dev/test dataset for mobile app development (plan below this entry).
@@ -1414,11 +1496,12 @@ infrastructure than the risk currently justifies.
   (they can't, per the point above), but so they're identifiable rather than mistaken for real
   activity when the recreate actually happens.
 
-**Test learners recorded so far: none.** No test learner (user) rows have been created against
-the shared database during Phase 3a work (Checkpoints 1-2 only touched schema/seed/settings rows
-- `reward_rules`, `settings_kv`, the `economy.manage` permission grant - which are real
-launch-intended data, not test learners). This section gets a new bullet the first time one is
-created.
+**Test learners recorded so far:**
+- 2026-10-07: 50 synthetic learners created by `scripts/seed-dev-users.ts` (`pnpm seed:dev-users
+  --apply`), identified by `clerk_user_id LIKE 'seed_clerk_%'` - see this file's own 2026-10-07
+  "layer 2 of 2" entry above for the full traceability query across every table they touch.
+- 5 more real Clerk test accounts are planned (same entry, "real Clerk test accounts" paragraph)
+  but not yet created as of this bullet.
 
 ## 2026-09-22 — Phase 2b merged to `main` and verified in production. Next: Phase 3a.
 
