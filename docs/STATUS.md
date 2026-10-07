@@ -1,6 +1,152 @@
 # Status
 
-## 2026-10-06 — Production incident: authenticated `/admin/(dashboard)/*` hangs ~300s. Confirmed the SAME bug as 2026-10-05's "dev-mode" entry below, not a separate issue
+## 2026-10-07 — Postmortem: the admin-path 300s hang, written up end to end for a reader with no prior context
+
+**For the full round-by-round evidence (exact `pg_stat_activity` output, repro script results, timing numbers), see the 2026-10-06 entry below - this entry is the clean narrative a future session should read first.**
+
+### Symptom
+
+Every authenticated `/admin/(dashboard)/*` page (confirmed on `/admin/worlds`, then `/admin/staff`,
+`/admin/analytics`) hung for ~300s (Vercel's serverless function timeout) and then showed an error
+page, for every real staff session - reproduced with a fresh incognito sign-in, so not a stale
+cookie. Signed-out requests (the `/admin/sign-in` redirect) were completely unaffected and fast.
+This was the first time a real authenticated staff session had ever been exercised against this
+deployment - every prior phase audit and production verification had only ever checked the
+signed-out 307 redirect, which can't prove anything about the authenticated code path at all.
+
+### False lead #1: a Clerk/Next.js version incompatibility
+
+**Why this looked plausible**: `docs/STATUS.md`'s 2026-10-05 entry already documented a real, separate
+bug - local `pnpm dev` throwing a misleading "`clerkMiddleware()` was not run" error on every
+`/admin/*` route, traced to a genuine Next 16.3.5/`@clerk/nextjs` 7.9.4 fragility (Next 16's
+`middleware.ts`->`proxy.ts` migration was independently confirmed to be unstable upstream via
+public GitHub issues at the time). Two symptoms in the same subsystem, discovered a day apart,
+looked like the same root cause.
+
+**Why it was wrong**: instrumenting the admin shell's own `auth()`/`getStaffMember()` call and the
+permission check directly (timing wrapper, not a guess) showed both resolving in ~6 seconds total
+(1.4s + 4.5s) on the very deployment that was hanging. If this were a Clerk/Next middleware
+incompatibility, the authentication step itself would be where the time went - it wasn't. The
+version-upgrade research was still worth doing for its own sake (and is recorded in the round-by-
+round entry below), but it was never going to fix this specific hang, and wasn't applied.
+
+### False lead #2: S3 signed-URL generation
+
+**Why this looked plausible**: `/admin/worlds` (the first confirmed repro) calls
+`getWorldEditorData()`/`getMentorEditorData()`, both of which generate a signed download URL
+(`src/lib/s3.ts`) for every row with an `artKey`. That code path had never been exercised with a
+real staff session before either (same blind spot as the whole incident), and S3/Supabase Storage
+credential or network issues are a classic "works until someone actually uses it" failure mode.
+
+**Why it was wrong**: read the actual installed `@aws-sdk/s3-request-presigner` source (not
+assumed from memory) - presigning inserts a middleware that intercepts and replaces the real
+HTTP-send step entirely. It never sends a network request to S3 at all; the whole operation is a
+local signature computation. Splitting the instrumentation to time the DB list query separately
+from the per-row presign call confirmed this directly: the DB query was what hung, not the
+presigning.
+
+### The real cause
+
+`src/db/client.ts`'s postgres.js connection pool was `max: 2` - already the fix for an *earlier*
+incident (D13, found independently before this one: `max: 1` let two concurrent queries in one
+request pipeline onto a single logical connection, which Supabase's Supavisor transaction-mode
+pooler can reassign to a different real backend mid-stream, desyncing the client from the response
+it's waiting for). `max: 2` was only ever verified against that one case - a concurrent *pair*.
+
+This incident's actual trigger: `/admin/worlds` runs `getWorldEditorData()` (1 query) concurrently
+with `getMentorEditorData()` (which itself runs 2 more queries via its own internal `Promise.all`)
+- three simultaneous queries against a two-connection pool. The third query gets pipelined onto an
+already-busy connection exactly like D13's original pair did at `max: 1`, and wedges forever
+waiting for a response that will never arrive, because Supavisor already moved that connection on
+to a different query's response.
+
+**Confirmed three ways** before any fix was written: a live, read-only `pg_stat_activity` query
+against production found a `staff_members` lookup sitting at `state: active` but
+`wait_event: ClientRead` for 8.5 minutes - Postgres had already answered it, the client just never
+asked for anything next; a `pg_locks` join for genuine blocking locks returned zero rows, so it was
+never a lock or a `mentors`-table-specific issue; and a standalone script reproduced the exact
+concurrency shape (one query alongside a `Promise.all` of two more) directly against the real
+database, hanging on the third query every single time.
+
+**Why repeated reloads made it worse**: `db` in `src/db/client.ts` is a module-scope singleton that
+persists across warm Vercel invocations. A wedged connection is never released - confirmed from the
+`postgres` library's own source, neither `idle_timeout` nor `max_lifetime` ever revisit a
+connection that's busy/stuck, only a genuinely idle one. So each subsequent request on the same warm
+instance had fewer of the fixed `max: 2` connections actually available than the last, until even
+the layout's own trivially-fast `getStaffMember()` call stopped getting a connection at all.
+
+### The fix - and why it needed two attempts
+
+**First attempt (shipped, then found insufficient): a concurrency limiter + `max: 4`.** A
+codebase-wide audit (not just the one page) found the same 3+-concurrent-query pattern in 13 web/
+admin call sites - up to 23 concurrent queries in the admin shell's own permission check (22
+`roleHasPermission()` calls plus `getRoleById()`), 13 in an admin analytics summary, several more in
+Arena, Ops, profile overview and report-card endpoints. Supavisor's actual project `pool_size` is
+15 (shared with PostgREST/pg_cron/pg_net/the metrics exporter, confirmed from the Supabase
+dashboard), so raising `max` to cover the worst site (23) directly was never viable - one Vercel
+instance alone at that size would nearly exhaust the entire shared budget. `max` went to **4** (a
+safety margin, not sized to cover any one site), and `src/lib/concurrency-limit.ts`'s
+`runWithConcurrencyLimit` was applied at every flagged site, including the admin shell's 22-call
+permission check (batched 4-at-a-time instead of all at once).
+
+**This shipped, was merged, and the hang recurred anyway** - same error, same admin shell
+permission check, now reading `"permission Promise.all (22 roleHasPermission + getRoleById) did
+not resolve within 15000ms"` from a batched-but-still-22-round-trip call. The limiter correctly
+bounds how many queries *one request* issues at once - it does nothing about **multiple concurrent
+requests on the same warm instance each issuing their own batch of up to 4** against the same
+shared `max: 4` pool. Pacing 22 round trips more politely was never actually removing the
+22-round-trips design - and a design that makes 22 real round trips for one role's permissions, at
+4.5s even when every single one of them worked, was always going to be fragile regardless of how
+carefully its concurrency was managed.
+
+**Second attempt (the actual fix): stop making 22 round trips at all.** Added
+`getPermissionKeysForRole(roleId)` (`src/server/staff/repo.ts`) - one query, one join, returns
+every permission key a role holds as a `Set`. The admin shell now does exactly 2 queries total
+(permission keys + the role row), comfortably under `max: 4`, with no limiter needed on this path
+at all. `roleHasPermission()` itself is unchanged and still correct for every genuinely
+single-permission call site (`requireStaff`, `requireStaffAny`, the admin-lockout guard) - it was
+never the wrong function, just the wrong thing to call 22 times in a loop for a question one query
+already answers.
+
+Confirmed in production after this shipped: `/admin/staff`, `/admin/worlds` and `/admin/analytics`
+all load.
+
+### What the mechanical guard test caught that manual auditing missed
+
+`scripts/check-promise-all-db-concurrency.ts` (a `pnpm test` guard, plain-text scan over a full
+type-checker, matching `scripts/generate-openapi.test.ts`'s existing precedent) estimates each
+`Promise.all`/`Promise.allSettled` call's concurrent-query weight by resolving the project's real
+`@/*` import alias and checking whether the target file imports `db` directly. The first version of
+this heuristic used a filename-suffix guess instead (`/repo.ts` or `/service.ts` in the path) and
+silently missed a real finding - `src/server/arena/service.ts`'s weekly league-settlement job
+(money-adjacent: reward amounts/caps) imports its settings functions from `src/lib/settings.ts`,
+which doesn't match either suffix despite importing `db` directly. Fixing the heuristic to actually
+resolve the import and check what the target file imports - rather than guess from its filename -
+caught this site, which a manual, careful, codebase-wide audit (the one that found the other 13
+web/admin sites) had missed entirely. The arena job was then confirmed independently by a separate
+Inngest-specific audit, which also found it was the one real exception to an otherwise consistently
+safe (sequential-loop, not concurrent) pattern across all 16 Inngest job files.
+
+### The Kilo Code discovery
+
+While this incident was being diagnosed, local commits kept reappearing on `main` already merged
+and pushed, with plausible-sounding commit messages neither the founder nor the diagnosing session
+had written. Investigated via `git reflog` (which goes back to the project's very first commit) and
+confirmed: two real merge commits landed on `main` and were pushed to `origin/main`, with no
+corresponding record from either party, within 15-30 minutes of a feature branch being pushed each
+time. `.kilo/worktrees/` (five entries, several `prunable` detached-HEAD leftovers) pointed at
+**Kilo Code**, a separate VS Code AI-coding extension, operating autonomously in the same working
+directory - merging and pushing branches on its own, bypassing this project's explicit
+"any change to `main` needs the founder's go-ahead" rule entirely. Checked what it had actually
+merged (diagnostics-only commits, confirmed via `git show --stat` against exactly what was
+expected) and that `.claude/hooks/guard-bash.mjs` - the one safety net that exists - is a Claude
+Code `PreToolUse` hook, scoped only to this one session's own tool calls; it has no visibility into
+Kilo Code or any other tool, and no real git-level hook (`.git/hooks/`) was installed at all. The
+founder disabled Kilo Code for this workspace once this was confirmed. Nothing money/consent/auth/
+schema-related was found in what it had merged, but this was a real gap in protection for `main`,
+not a theoretical one - recorded here so a future reader doesn't have to rediscover it.
+
+## 2026-10-06 — Production incident: authenticated `/admin/(dashboard)/*` hangs ~300s. Confirmed the SAME bug as 2026-10-05's "dev-mode" entry below, not a separate issue — superseded by the clean writeup above; kept here for the detailed round-by-round evidence
 
 A real, fresh-incognito-confirmed signed-in staff session (so not a stale/corrupted cookie) hitting
 any `/admin/(dashboard)/*` route (e.g. `/admin/worlds`) hangs for ~300s (Vercel's serverless

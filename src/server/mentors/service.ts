@@ -1,13 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
-import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
-import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
+import {
+  imageContentType,
+  imageExtension,
+  MAX_IMAGE_BYTES,
+  sniffImageType,
+} from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { roleHasPermission } from "@/server/staff/repo";
-import { listAllWorlds, listPublishedWorldsByMentorId } from "@/server/worlds/repo";
+import {
+  listAllWorlds,
+  listPublishedWorldsByMentorId,
+} from "@/server/worlds/repo";
 import {
   getMentorById,
   getPublishedMentorByKey,
@@ -47,7 +54,8 @@ export async function getPublicMentors() {
 
 export async function getPublicMentorByKey(key: string) {
   const row = await getPublishedMentorByKey(key);
-  if (!row) throw new AppError("NOT_FOUND", `No published mentor with key "${key}"`);
+  if (!row)
+    throw new AppError("NOT_FOUND", `No published mentor with key "${key}"`);
   return toPublicMentor(row);
 }
 
@@ -82,17 +90,15 @@ function validateMentorForPublish(mentor: MentorRow): void {
 // query for every world plus an in-memory group-by, mirroring
 // src/server/worlds/service.ts's mentorKeyById() (the reverse lookup) -
 // avoids an N+1 query per mentor.
-// Diagnostic instrumentation (2026-10-06, see docs/STATUS.md): the other of
-// the two calls the worlds-page investigation narrowed the hang down to
-// (the other being getWorldEditorData) - split the DB listing from each
-// row's signed-URL generation for the same reason: so the next occurrence
-// shows which part it's actually in.
 export async function getMentorEditorData() {
   const [rows, allWorlds] = await Promise.all([
-    withTimingAndTimeout("getMentorEditorData: listAllMentors (DB)", listAllMentors(), 10_000),
-    withTimingAndTimeout("getMentorEditorData: listAllWorlds (DB)", listAllWorlds(), 10_000),
+    listAllMentors(),
+    listAllWorlds(),
   ]);
-  const worldsByMentorId = new Map<string, { id: string; title: LocalizedText; status: "draft" | "published" }[]>();
+  const worldsByMentorId = new Map<
+    string,
+    { id: string; title: LocalizedText; status: "draft" | "published" }[]
+  >();
   for (const w of allWorlds) {
     const list = worldsByMentorId.get(w.mentorId) ?? [];
     list.push({ id: w.id, title: w.title, status: w.status });
@@ -102,13 +108,7 @@ export async function getMentorEditorData() {
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      artUrl: row.artKey
-        ? await withTimingAndTimeout(
-            `getMentorEditorData: getSignedDownloadUrl(mentor=${row.id})`,
-            getSignedDownloadUrl(row.artKey),
-            10_000,
-          )
-        : null,
+      artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
       usedByWorlds: worldsByMentorId.get(row.id) ?? [],
     })),
   );
@@ -124,7 +124,10 @@ export async function createMentorDraft(
     created = await insertDraftMentor(input);
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw new AppError("CONFLICT", `Key "${input.key}" or order ${input.order} is already in use`);
+      throw new AppError(
+        "CONFLICT",
+        `Key "${input.key}" or order ${input.order} is already in use`,
+      );
     }
     throw err;
   }
@@ -151,7 +154,10 @@ export async function updateMentorDraft(
     updated = await updateDraftMentor(input);
   } catch (err) {
     if (isUniqueViolation(err)) {
-      throw new AppError("CONFLICT", `Order ${input.order} is already in use by another mentor`);
+      throw new AppError(
+        "CONFLICT",
+        `Order ${input.order} is already in use by another mentor`,
+      );
     }
     throw err;
   }
@@ -191,7 +197,8 @@ export async function uploadMentorArt(
   const mentor = await getMentorById(id);
   if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
 
-  const requiredPermission = mentor.status === "published" ? "mentor.publish" : "mentor.manage";
+  const requiredPermission =
+    mentor.status === "published" ? "mentor.publish" : "mentor.manage";
   if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
     throw new AppError(
       "FORBIDDEN",
@@ -212,7 +219,10 @@ export async function uploadMentorArt(
   // matter what header or filename accompanies it - see src/lib/image.ts.
   const detectedType = sniffImageType(file.body);
   if (!detectedType) {
-    throw new AppError("VALIDATION_FAILED", "Art must be a valid PNG, JPEG or WebP image");
+    throw new AppError(
+      "VALIDATION_FAILED",
+      "Art must be a valid PNG, JPEG or WebP image",
+    );
   }
 
   // A unique key per upload (not a fixed per-mentor path) - replacing art
@@ -230,14 +240,22 @@ export async function uploadMentorArt(
     action: "mentor.art_uploaded",
     targetType: "mentor",
     targetId: id,
-    metadata: { key: mentor.key, previousArtKey: mentor.artKey, newArtKey: artKey },
+    metadata: {
+      key: mentor.key,
+      previousArtKey: mentor.artKey,
+      newArtKey: artKey,
+    },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
   return updated;
 }
 
-export async function publishMentor(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function publishMentor(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   const mentor = await getMentorById(id);
   if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
   if (mentor.status !== "draft") {
@@ -276,13 +294,20 @@ export async function hotfixMentor(
   const existing = await getMentorById(input.id);
   if (!existing) throw new AppError("NOT_FOUND", "Mentor not found");
   if (existing.status !== "published") {
-    throw new AppError("CONFLICT", "Mentor is not published - edit its draft instead");
+    throw new AppError(
+      "CONFLICT",
+      "Mentor is not published - edit its draft instead",
+    );
   }
 
   validateMentorForPublish({ ...existing, ...input });
 
   const updated = await hotfixMentorRow(input);
-  if (!updated) throw new AppError("CONFLICT", "Mentor is not published - edit its draft instead");
+  if (!updated)
+    throw new AppError(
+      "CONFLICT",
+      "Mentor is not published - edit its draft instead",
+    );
 
   await logActivity({
     actorType: "staff",
@@ -297,7 +322,11 @@ export async function hotfixMentor(
   return updated;
 }
 
-export async function unpublishMentor(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function unpublishMentor(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   // Blocked while any published world still references this mentor - a
   // learner in that world must always have a real mentor to meet. Checked
   // before the unpublish itself, not as a post-hoc rollback, so a mentor
@@ -313,7 +342,8 @@ export async function unpublishMentor(actor: { id: string }, id: string, meta: R
   }
 
   const unpublished = await unpublishMentorRow(id);
-  if (!unpublished) throw new AppError("CONFLICT", "Mentor not found, or it's not published");
+  if (!unpublished)
+    throw new AppError("CONFLICT", "Mentor not found, or it's not published");
 
   await logActivity({
     actorType: "staff",

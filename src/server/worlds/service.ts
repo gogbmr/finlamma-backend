@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
-import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
 import {
   isForeignKeyViolation,
   isTransactionConflict,
@@ -9,7 +8,12 @@ import {
 } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
-import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
+import {
+  imageContentType,
+  imageExtension,
+  MAX_IMAGE_BYTES,
+  sniffImageType,
+} from "@/lib/image";
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
 import {
@@ -35,7 +39,11 @@ import {
   updateDraftWorld,
   WorldOrderConflictError,
 } from "./repo";
-import type { CreateWorldDraftInput, HotfixWorldInput, UpdateWorldDraftInput } from "./schemas";
+import type {
+  CreateWorldDraftInput,
+  HotfixWorldInput,
+  UpdateWorldDraftInput,
+} from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type WorldRow = NonNullable<Awaited<ReturnType<typeof getWorldById>>>;
@@ -49,7 +57,11 @@ async function mentorKeyById(): Promise<Map<string, string>> {
   return new Map(mentors.map((m) => [m.id, m.key]));
 }
 
-async function toPublicWorld(row: WorldRow, mentorKeysById: Map<string, string>, locked: boolean) {
+async function toPublicWorld(
+  row: WorldRow,
+  mentorKeysById: Map<string, string>,
+  locked: boolean,
+) {
   return {
     order: row.order,
     title: row.title,
@@ -113,24 +125,12 @@ function validateWorldForPublish(world: WorldRow): void {
   }
 }
 
-// Diagnostic instrumentation (2026-10-06, see docs/STATUS.md): this is one
-// of the two calls the worlds-page investigation narrowed the hang down to
-// (the other being getMentorEditorData) - the combined call never returned
-// within 20s. Split here into the DB list vs. each row's signed-URL
-// generation individually, so the next occurrence shows which part it's
-// actually in rather than "somewhere in this function."
 export async function getWorldEditorData() {
-  const rows = await withTimingAndTimeout("getWorldEditorData: listAllWorlds (DB)", listAllWorlds(), 10_000);
+  const rows = await listAllWorlds();
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      artUrl: row.artKey
-        ? await withTimingAndTimeout(
-            `getWorldEditorData: getSignedDownloadUrl(world=${row.id})`,
-            getSignedDownloadUrl(row.artKey),
-            10_000,
-          )
-        : null,
+      artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
     })),
   );
 }
@@ -143,7 +143,10 @@ async function assertMentorExists(mentorId: string): Promise<void> {
 // worlds has two independent unique columns (order, code) - names which one
 // actually collided rather than a generic "already in use" that could
 // misdirect staff at the wrong field.
-function worldUniqueViolationMessage(err: unknown, input: { order: number; code?: string | null }): string {
+function worldUniqueViolationMessage(
+  err: unknown,
+  input: { order: number; code?: string | null },
+): string {
   const constraint = uniqueViolationConstraintName(err);
   if (constraint === "worlds_code_unique") {
     return `Code ${input.code} is already in use by another world`;
@@ -237,7 +240,8 @@ export async function reorderWorld(
   const mover = await getWorldById(id);
   if (!mover) throw new AppError("NOT_FOUND", "World not found");
 
-  const requiredPermission = mover.status === "published" ? "world.publish" : "world.manage";
+  const requiredPermission =
+    mover.status === "published" ? "world.publish" : "world.manage";
   if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
     throw new AppError(
       "FORBIDDEN",
@@ -305,7 +309,8 @@ export async function uploadWorldArt(
   const world = await getWorldById(id);
   if (!world) throw new AppError("NOT_FOUND", "World not found");
 
-  const requiredPermission = world.status === "published" ? "world.publish" : "world.manage";
+  const requiredPermission =
+    world.status === "published" ? "world.publish" : "world.manage";
   if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
     throw new AppError(
       "FORBIDDEN",
@@ -324,7 +329,10 @@ export async function uploadWorldArt(
   // which this mirrors exactly.
   const detectedType = sniffImageType(file.body);
   if (!detectedType) {
-    throw new AppError("VALIDATION_FAILED", "Art must be a valid PNG, JPEG or WebP image");
+    throw new AppError(
+      "VALIDATION_FAILED",
+      "Art must be a valid PNG, JPEG or WebP image",
+    );
   }
 
   // A unique key per upload, not a fixed per-world path - see
@@ -341,14 +349,22 @@ export async function uploadWorldArt(
     action: "world.art_uploaded",
     targetType: "world",
     targetId: id,
-    metadata: { title: world.title.en, previousArtKey: world.artKey, newArtKey: artKey },
+    metadata: {
+      title: world.title.en,
+      previousArtKey: world.artKey,
+      newArtKey: artKey,
+    },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
   return updated;
 }
 
-export async function publishWorld(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function publishWorld(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   const world = await getWorldById(id);
   if (!world) throw new AppError("NOT_FOUND", "World not found");
   if (world.status !== "draft") {
@@ -414,13 +430,20 @@ export async function hotfixWorld(
   const existing = await getWorldById(input.id);
   if (!existing) throw new AppError("NOT_FOUND", "World not found");
   if (existing.status !== "published") {
-    throw new AppError("CONFLICT", "World is not published - edit its draft instead");
+    throw new AppError(
+      "CONFLICT",
+      "World is not published - edit its draft instead",
+    );
   }
 
   validateWorldForPublish({ ...existing, ...input });
 
   const updated = await hotfixWorldRow(input);
-  if (!updated) throw new AppError("CONFLICT", "World is not published - edit its draft instead");
+  if (!updated)
+    throw new AppError(
+      "CONFLICT",
+      "World is not published - edit its draft instead",
+    );
 
   await logActivity({
     actorType: "staff",
@@ -435,7 +458,11 @@ export async function hotfixWorld(
   return updated;
 }
 
-export async function unpublishWorld(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function unpublishWorld(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   // Blocked while any published lesson still belongs to this world - same
   // reasoning and pattern as mentors/service.ts's unpublishMentor being
   // blocked by a published world: checked before the unpublish itself, not
@@ -453,7 +480,8 @@ export async function unpublishWorld(actor: { id: string }, id: string, meta: Re
   }
 
   const unpublished = await unpublishWorldRow(id);
-  if (!unpublished) throw new AppError("CONFLICT", "World not found, or it's not published");
+  if (!unpublished)
+    throw new AppError("CONFLICT", "World not found, or it's not published");
 
   await logActivity({
     actorType: "staff",
@@ -479,7 +507,11 @@ export async function unpublishWorld(actor: { id: string }, id: string, meta: Re
 // world.publish (not world.manage) in the action layer, the same trust bar
 // as unpublishing - deletion is a stronger, irreversible action, so it
 // shouldn't be reachable by a role that isn't even trusted to unpublish.
-export async function deleteWorld(actor: { id: string }, id: string, meta: RequestMeta) {
+export async function deleteWorld(
+  actor: { id: string },
+  id: string,
+  meta: RequestMeta,
+) {
   const world = await getWorldById(id);
   if (!world) throw new AppError("NOT_FOUND", "World not found");
 
@@ -569,7 +601,10 @@ export async function countLeadingClearedWorlds(
     return { cleared: 0, worldsToGo: position };
   }
 
-  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, bossQuizPassMarkPct);
+  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(
+    userId,
+    bossQuizPassMarkPct,
+  );
   let cleared = 0;
   for (let i = 0; i < position; i++) {
     if (!clearedWorldIds.has(publishedWorlds[i]!.id)) break;
