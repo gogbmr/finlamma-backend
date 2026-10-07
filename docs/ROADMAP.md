@@ -552,3 +552,22 @@ own repo later, hosted on Railway.
       `/consent/reapprove`, `/consent/withdraw`, and `/consent/weekly-report/unsubscribe` are
       plain `useState`, so they reset to English every visit). Low priority, and not worth
       touching consent-flow code before the pre-launch legal review of that flow.
+- [ ] **Batch N+1 queries in background jobs before real user volume.** Found during the D72
+      investigation's follow-up audit (2026-10-07) - all four are in Inngest background jobs, not
+      request paths, so none is urgent today with zero real users, but each does one DB round
+      trip per item in a loop where a single batched query (`inArray()` + a join/`groupBy`, the
+      same shape `countInProgressLearnersByLessonIds` already uses) would do:
+      - `src/server/onboarding/service.ts` (~line 1100) - one `getLegalDocumentById()` call per
+        pending legal-reapproval request. Grows with consented-minor count x legal-doc changes.
+      - `src/server/onboarding/service.ts` (~line 842) - one `claimReapprovalRequestSlot()` call
+        (which opens its own transaction) per already-consented minor on a new legal-doc version -
+        N separate transactions, not just N queries. Grows with the real user base.
+      - `src/server/news/service.ts` (~lines 141-145) - **the worst of the four**: nested loop
+        (pending stories x engaged readers), and `notifyUser()` itself does 3 round trips per
+        call - `pending x readers x 3+` total. Would be genuinely bad at any real scale, not just
+        a large one.
+      - `src/server/daily-goals/service.ts` (~line 87) - one `hasBeenNotifiedSince()` call per
+        active user, every day. Grows directly with DAU.
+      Safe to leave alone at zero users; fix before any of these jobs runs against a real,
+      growing user base - the news-notification one especially shouldn't wait for a crisis the
+      way the admin shell's 22-query check did (docs/ARCHITECTURE.md D72).
