@@ -1,20 +1,18 @@
-// Diagnostic instrumentation added while investigating a production incident
-// (2026-10-06, see docs/STATUS.md): an authenticated /admin/(dashboard) page
-// was hanging ~300s (Vercel's function timeout) then showing the error
-// boundary, reproduced with a fresh incognito sign-in (so not a stale
-// cookie). The admin shell itself (getStaffMember()/auth(), the permission
-// Promise.all) was instrumented first and confirmed fast (~6s total) - the
-// hang is somewhere after the shell resolves, in a page's own data fetches.
-// This wrapper doesn't fix anything; it turns an indefinite hang into a
-// fast, clearly-logged failure (and a slow-but-not-hanging call into a
-// visible timing line) so the next occurrence tells us exactly where the
-// time goes. Remove once the root cause is found and fixed - see
-// docs/STATUS.md for the running account of this investigation.
+// Originated as diagnostic instrumentation during a production incident
+// (2026-10-06/07, see docs/STATUS.md and docs/ARCHITECTURE.md D72 for the
+// full account) where an authenticated /admin/(dashboard) page hung ~300s
+// (Vercel's function timeout). The root cause is fixed; this wrapper is
+// KEPT deliberately, narrowed to the admin shell's own two unavoidable DB
+// calls (src/app/admin/(dashboard)/layout.tsx) - a 300s hang is a bad
+// failure mode regardless of cause, so that one high-leverage path (every
+// admin page load runs through it) fails fast and loud instead, whatever
+// breaks it next. The per-page/per-row instrumentation this helper also
+// used to back (worlds page, world/mentor editor data) was investigation-
+// specific and has been removed now that the question it was answering is
+// answered - see docs/STATUS.md for what it found.
 //
 // `timeoutMs` is a required, explicit argument (no shared default) because
-// call sites differ a lot in what "too slow" means - a single-row
-// permission check and an N-world fan-out over signed-URL generation and
-// per-world lesson queries don't share a sensible timeout.
+// different calls can have genuinely different "too slow" thresholds.
 export async function withTimingAndTimeout<T>(
   label: string,
   promise: Promise<T>,
@@ -30,12 +28,17 @@ export async function withTimingAndTimeout<T>(
   promise.then(
     () => {
       if (timedOut) {
-        console.warn(`[admin-shell] "${label}" actually resolved ${Date.now() - start}ms after its timeout fired`);
+        console.warn(
+          `[admin-shell] "${label}" actually resolved ${Date.now() - start}ms after its timeout fired`,
+        );
       }
     },
     (err) => {
       if (timedOut) {
-        console.warn(`[admin-shell] "${label}" actually rejected ${Date.now() - start}ms after its timeout fired:`, err);
+        console.warn(
+          `[admin-shell] "${label}" actually rejected ${Date.now() - start}ms after its timeout fired:`,
+          err,
+        );
       }
     },
   );
@@ -43,7 +46,11 @@ export async function withTimingAndTimeout<T>(
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => {
       timedOut = true;
-      reject(new Error(`[admin-shell] "${label}" did not resolve within ${timeoutMs}ms`));
+      reject(
+        new Error(
+          `[admin-shell] "${label}" did not resolve within ${timeoutMs}ms`,
+        ),
+      );
     }, timeoutMs);
   });
 
@@ -52,7 +59,10 @@ export async function withTimingAndTimeout<T>(
     console.log(`[admin-shell] "${label}" resolved in ${Date.now() - start}ms`);
     return result;
   } catch (err) {
-    console.error(`[admin-shell] "${label}" failed after ${Date.now() - start}ms`, err);
+    console.error(
+      `[admin-shell] "${label}" failed after ${Date.now() - start}ms`,
+      err,
+    );
     throw err;
   }
 }

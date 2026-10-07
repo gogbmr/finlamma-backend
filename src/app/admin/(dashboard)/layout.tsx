@@ -14,11 +14,14 @@ import {
   type AdminNavVisibility,
 } from "@/components/admin/admin-nav";
 
-// See src/lib/admin-diagnostics.ts for the full context on why this exists.
-// Confirmed 2026-10-06: both calls below resolve in ~6s total (1.4s +
-// 4.5s) - the shell itself is NOT the hang. Kept instrumented anyway (cheap,
-// and rules the shell back out on every future occurrence too) while the
-// hang is chased further down into each page's own data fetches.
+// Deliberate, permanent safety net - not left over from the D72 incident
+// investigation (docs/STATUS.md 2026-10-06/07 has the full account). A
+// 300s hang here (Vercel's function timeout) is a bad failure mode
+// regardless of cause, so every admin page load fails fast and loud
+// instead, whatever eventually breaks this path next. See
+// src/lib/admin-diagnostics.ts for the timing/timeout mechanics - with
+// only the 2 queries below wrapped (not the 23 this shell used to make),
+// the logging it produces is cheap, not noise.
 const ADMIN_SHELL_TIMEOUT_MS = 15_000;
 
 // A thrown error here is NOT caught by ./error.tsx - Next.js error
@@ -102,16 +105,14 @@ export default async function DashboardLayout({
   // resolved and others missing - it renders the dedicated failure panel
   // instead, never the nav/visibility JSX below.
   //
-  // Used to be 22 separate roleHasPermission() round trips (even batched
-  // through runWithConcurrencyLimit, still 22 round trips - 4.5s even when
-  // it worked, and still capable of tripping the transaction-pooler
-  // pipelining hang under cross-request pool contention on a warm
-  // instance, which is what actually happened in production after the
-  // limiter shipped - docs/ARCHITECTURE.md D72's follow-up). The
-  // concurrency limiter was pacing a design that shouldn't have existed:
-  // one query (getPermissionKeysForRole) returns every permission key the
-  // role holds, and getRoleById runs alongside it - 2 queries total,
-  // comfortably under max: 4 with no limiter needed at all.
+  // Used to be 22 separate roleHasPermission() round trips - see
+  // docs/ARCHITECTURE.md D72 and docs/STATUS.md's 2026-10-06/07 incident
+  // writeup for the full history (a concurrency limiter was tried first
+  // and still wasn't enough under cross-request pool contention; the real
+  // fix was removing the 22 round trips entirely). getPermissionKeysForRole
+  // returns every permission key the role holds in one query; getRoleById
+  // runs alongside it - 2 queries total, comfortably under max: 4, no
+  // limiter needed here.
   let grantedKeys: Set<string>;
   let role: Awaited<ReturnType<typeof getRoleById>>;
   try {
