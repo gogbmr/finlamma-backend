@@ -118,6 +118,7 @@ import {
   declineReapproval,
   getConsentRequestView,
   getConsentReviewList,
+  getOnboardingConsentState,
   getReapprovalRequestView,
   getWeeklyReportUnsubscribeView,
   getWithdrawRequestView,
@@ -772,6 +773,155 @@ describe("requireFullAccess", () => {
   it("doesn't require parent re-approval for an adult, even if allParentApproved were false", async () => {
     mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true, allParentApproved: false });
     await expect(requireFullAccess(ADULT)).resolves.toBeUndefined();
+  });
+});
+
+describe("getOnboardingConsentState", () => {
+  it("reports not_required with isMinor null when date of birth isn't set yet", async () => {
+    await expect(getOnboardingConsentState({ id: "u1", dateOfBirth: null })).resolves.toEqual({
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
+    });
+    expect(mockGetConsentRecord).not.toHaveBeenCalled();
+  });
+
+  it("reports not_required for an adult, without reading the consent record", async () => {
+    await expect(
+      getOnboardingConsentState({ id: "u1", dateOfBirth: "1990-01-01" }),
+    ).resolves.toEqual({ dobSet: true, isMinor: false, parentConsentStatus: "not_required" });
+    expect(mockGetConsentRecord).not.toHaveBeenCalled();
+  });
+
+  it("reports not_requested for a minor with no consent record yet (no request sent)", async () => {
+    mockGetConsentRecord.mockResolvedValueOnce(null);
+    await expect(
+      getOnboardingConsentState({ id: "u1", dateOfBirth: "2015-01-01" }),
+    ).resolves.toEqual({ dobSet: true, isMinor: true, parentConsentStatus: "not_requested" });
+  });
+
+  it.each(["pending", "consented", "refused", "withdrawn"] as const)(
+    "passes a minor's consent record status (%s) straight through",
+    async (status) => {
+      mockGetConsentRecord.mockResolvedValueOnce({ status });
+      await expect(
+        getOnboardingConsentState({ id: "u1", dateOfBirth: "2015-01-01" }),
+      ).resolves.toEqual({ dobSet: true, isMinor: true, parentConsentStatus: status });
+    },
+  );
+
+  it("flips to not_required the moment a minor turns 18, regardless of a prior refused/withdrawn consent record", async () => {
+    const now = new Date();
+    const turned18Yesterday = new Date(
+      Date.UTC(now.getUTCFullYear() - 18, now.getUTCMonth(), now.getUTCDate() - 1),
+    )
+      .toISOString()
+      .slice(0, 10);
+
+    // Deliberately NOT stubbing mockGetConsentRecord here: even if a
+    // consent_records row existed from when they were still a minor (e.g.
+    // the parent had refused), it must never be consulted once isMinor is
+    // false - asserting the mock was never called below is the proof
+    // (stubbing an unused mockResolvedValueOnce would leave it queued for
+    // the next test to accidentally consume, since vi.clearAllMocks()
+    // clears call history but not queued once-values).
+    await expect(
+      getOnboardingConsentState({ id: "u1", dateOfBirth: turned18Yesterday }),
+    ).resolves.toEqual({ dobSet: true, isMinor: false, parentConsentStatus: "not_required" });
+    expect(mockGetConsentRecord).not.toHaveBeenCalled();
+  });
+});
+
+// Proves GET /me's onboarding-state fields and requireFullAccess's DOB/
+// consent gate can never silently disagree, since both are driven by the
+// same getOnboardingConsentState call - this exercises the real function,
+// not two independent mocks, across every reachable state including the
+// "turned 18" edge case.
+describe("getOnboardingConsentState / requireFullAccess agreement", () => {
+  // Mirrors requireFullAccess's own DOB/consent gate (ignoring the separate
+  // legal-acceptance check, which GET /me's fields deliberately don't cover
+  // - see docs/API_ENDPOINTS.md and the PR description for why) - passes
+  // iff parentConsentStatus is not_required or consented.
+  function dobConsentGatePasses(state: Awaited<ReturnType<typeof getOnboardingConsentState>>) {
+    if (!state.dobSet) return false;
+    if (state.isMinor && state.parentConsentStatus !== "consented") return false;
+    return true;
+  }
+
+  it.each([
+    { label: "no DOB set", dateOfBirth: null, consentRecord: null, expectGatePass: false },
+    { label: "adult", dateOfBirth: "1990-01-01", consentRecord: null, expectGatePass: true },
+    {
+      label: "minor, no consent request sent",
+      dateOfBirth: "2015-01-01",
+      consentRecord: null,
+      expectGatePass: false,
+    },
+    {
+      label: "minor, consent pending",
+      dateOfBirth: "2015-01-01",
+      consentRecord: { status: "pending" as const },
+      expectGatePass: false,
+    },
+    {
+      label: "minor, consented",
+      dateOfBirth: "2015-01-01",
+      consentRecord: { status: "consented" as const },
+      expectGatePass: true,
+    },
+    {
+      label: "minor, refused",
+      dateOfBirth: "2015-01-01",
+      consentRecord: { status: "refused" as const },
+      expectGatePass: false,
+    },
+    {
+      label: "minor, withdrawn",
+      dateOfBirth: "2015-01-01",
+      consentRecord: { status: "withdrawn" as const },
+      expectGatePass: false,
+    },
+  ])(
+    "$label: GET /me's state and requireFullAccess's DOB/consent gate agree",
+    async ({ dateOfBirth, consentRecord, expectGatePass }) => {
+      // Only stub mockGetConsentRecord for a minor case, which is the only
+      // case that actually reaches that call - queuing an unused
+      // mockResolvedValueOnce for the no-DOB/adult cases would leave it
+      // sitting in the mock's once-queue (vi.clearAllMocks() doesn't drain
+      // it) and corrupt a later case's FIFO consumption.
+      const isMinorCase = dateOfBirth !== null && isMinor(dateOfBirth);
+      if (isMinorCase) mockGetConsentRecord.mockResolvedValueOnce(consentRecord);
+      const state = await getOnboardingConsentState({ id: "u1", dateOfBirth });
+      expect(dobConsentGatePasses(state)).toBe(expectGatePass);
+
+      // requireFullAccess itself, with legal acceptance stubbed to always
+      // pass, so only the DOB/consent half of the gate is under test here.
+      if (isMinorCase) mockGetConsentRecord.mockResolvedValueOnce(consentRecord);
+      mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true, allParentApproved: true });
+      const gateResult = await requireFullAccess({ id: "u1", dateOfBirth } as never).then(
+        () => true,
+        () => false,
+      );
+      expect(gateResult).toBe(expectGatePass);
+    },
+  );
+
+  it("turning 18 flips both GET /me's state and requireFullAccess's gate together, even with a historical refused consent record", async () => {
+    const now = new Date();
+    const turned18Yesterday = new Date(
+      Date.UTC(now.getUTCFullYear() - 18, now.getUTCMonth(), now.getUTCDate() - 1),
+    )
+      .toISOString()
+      .slice(0, 10);
+
+    const state = await getOnboardingConsentState({ id: "u1", dateOfBirth: turned18Yesterday });
+    expect(state).toEqual({ dobSet: true, isMinor: false, parentConsentStatus: "not_required" });
+    expect(dobConsentGatePasses(state)).toBe(true);
+
+    mockGetLegalStatus.mockResolvedValueOnce({ allAccepted: true, allParentApproved: false });
+    await expect(
+      requireFullAccess({ id: "u1", dateOfBirth: turned18Yesterday } as never),
+    ).resolves.toBeUndefined();
   });
 });
 

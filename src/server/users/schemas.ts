@@ -59,6 +59,24 @@ const StateSchema = IndianStateSchema.nullable().openapi({
     "your or anyone else's public profile.",
 });
 
+// Derived from the exact same logic requireFullAccess uses to gate access
+// (src/server/onboarding/service.ts getOnboardingConsentState) - never a
+// parallel computation, so this can never silently disagree with what the
+// app can actually do. Private to the owner only: never returned on any
+// endpoint another learner can see.
+const ParentConsentStatusSchema = z
+  .enum(["not_required", "not_requested", "pending", "consented", "refused", "withdrawn"])
+  .openapi({
+    example: "not_required",
+    description:
+      "Onboarding/consent step for this account. \"not_required\": an adult account, or date " +
+      "of birth not set yet. \"not_requested\": a minor account with date of birth set, but no " +
+      "parent-consent email sent yet. \"pending\": a consent email was sent and the parent " +
+      "hasn't acted yet. \"consented\" / \"refused\" / \"withdrawn\": the parent's resolution. " +
+      "Always \"not_required\" once the account turns 18, regardless of any earlier parent " +
+      "decision - this mirrors requireFullAccess, which stops checking consent at that point too.",
+  });
+
 export const MeDataSchema = registry.register(
   "Me",
   z.object({
@@ -75,6 +93,17 @@ export const MeDataSchema = registry.register(
     bio: BioSchema,
     state: StateSchema,
     preferences: PreferencesSchema,
+    dobSet: z.boolean().openapi({
+      example: true,
+      description: "Whether this account has set its date of birth yet (PATCH /me/date-of-birth).",
+    }),
+    isMinor: z.boolean().nullable().openapi({
+      example: false,
+      description:
+        "Null until dobSet is true. Computed live from date of birth on every call, so this " +
+        "flips to false the moment the account turns 18.",
+    }),
+    parentConsentStatus: ParentConsentStatusSchema,
   }),
 );
 

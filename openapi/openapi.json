@@ -390,6 +390,32 @@
               "dataSaver": false,
               "cheersEnabled": true
             }
+          },
+          "dobSet": {
+            "type": "boolean",
+            "example": true,
+            "description": "Whether this account has set its date of birth yet (PATCH /me/date-of-birth)."
+          },
+          "isMinor": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "example": false,
+            "description": "Null until dobSet is true. Computed live from date of birth on every call, so this flips to false the moment the account turns 18."
+          },
+          "parentConsentStatus": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "not_requested",
+              "pending",
+              "consented",
+              "refused",
+              "withdrawn"
+            ],
+            "example": "not_required",
+            "description": "Onboarding/consent step for this account. \"not_required\": an adult account, or date of birth not set yet. \"not_requested\": a minor account with date of birth set, but no parent-consent email sent yet. \"pending\": a consent email was sent and the parent hasn't acted yet. \"consented\" / \"refused\" / \"withdrawn\": the parent's resolution. Always \"not_required\" once the account turns 18, regardless of any earlier parent decision - this mirrors requireFullAccess, which stops checking consent at that point too."
           }
         },
         "required": [
@@ -402,7 +428,10 @@
           "theme",
           "bio",
           "state",
-          "preferences"
+          "preferences",
+          "dobSet",
+          "isMinor",
+          "parentConsentStatus"
         ]
       },
       "MeResponse": {
@@ -3884,7 +3913,7 @@
     "/api/v1/me": {
       "get": {
         "summary": "Get my profile",
-        "description": "Returns the signed-in user's own profile.",
+        "description": "Returns the signed-in user's own profile, including read-only onboarding/consent state (dobSet, isMinor, parentConsentStatus) so the app can tell which onboarding step an account is on after a restart, reinstall or new device without caching anything sensitive locally. These fields are private to the owner only - never returned on any endpoint another learner can see.",
         "tags": [
           "Users"
         ],

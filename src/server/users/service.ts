@@ -3,14 +3,18 @@ import { logActivity } from "@/lib/activity-log";
 import { deleteConsumerClerkUser } from "@/lib/auth";
 import type { requestMeta } from "@/lib/http";
 import type { users } from "@/db/schema";
-import { scrubConsentDataForDeletedUser } from "@/server/onboarding/service";
+import {
+  getOnboardingConsentState,
+  scrubConsentDataForDeletedUser,
+  type OnboardingConsentState,
+} from "@/server/onboarding/service";
 import type { UpdateMeInput } from "./schemas";
 import { anonymizeUserFromClerk, updateUserPrefs, upsertUserFromClerk } from "./repo";
 
 type UserRow = typeof users.$inferSelect;
 type RequestMeta = ReturnType<typeof requestMeta>;
 
-function toMeResponse(user: UserRow) {
+function toMeResponse(user: UserRow, consentState: OnboardingConsentState) {
   return {
     id: user.id,
     firstName: user.firstName,
@@ -22,11 +26,15 @@ function toMeResponse(user: UserRow) {
     bio: user.bio,
     state: user.state,
     preferences: user.preferences,
+    dobSet: consentState.dobSet,
+    isMinor: consentState.isMinor,
+    parentConsentStatus: consentState.parentConsentStatus,
   };
 }
 
-export function getMe(user: UserRow) {
-  return toMeResponse(user);
+export async function getMe(user: UserRow) {
+  const consentState = await getOnboardingConsentState(user);
+  return toMeResponse(user, consentState);
 }
 
 export async function updateMe(user: UserRow, input: UpdateMeInput, meta: RequestMeta) {
@@ -43,7 +51,8 @@ export async function updateMe(user: UserRow, input: UpdateMeInput, meta: Reques
     userAgent: meta.userAgent,
   });
 
-  return toMeResponse(updated);
+  const consentState = await getOnboardingConsentState(updated);
+  return toMeResponse(updated, consentState);
 }
 
 // Account deletion (docs/PRODUCT_SPEC.md Settings, non-negotiable rule 10):

@@ -107,6 +107,46 @@ export function isMinor(dateOfBirth: string): boolean {
   return age < 18;
 }
 
+export type ParentConsentStatus =
+  | "not_required"
+  | "not_requested"
+  | "pending"
+  | "consented"
+  | "refused"
+  | "withdrawn";
+
+export type OnboardingConsentState = {
+  dobSet: boolean;
+  isMinor: boolean | null;
+  parentConsentStatus: ParentConsentStatus;
+};
+
+// Single source of truth for "has this account resolved DOB, and (if a
+// minor) parental consent" - requireFullAccess's gate below and GET /me's
+// onboarding-state fields (src/server/users/service.ts) both call this
+// instead of each computing their own version, so they can never silently
+// drift apart. In particular: isMinor is computed live from dateOfBirth
+// every call, so the moment an account turns 18 this naturally reports
+// isMinor: false and parentConsentStatus: "not_required" - regardless of
+// whatever the parent decided while the account was still a minor - exactly
+// matching requireFullAccess's own behavior of no longer gating on consent
+// once isMinor is false.
+export async function getOnboardingConsentState(
+  user: Pick<MeUser, "id" | "dateOfBirth">,
+): Promise<OnboardingConsentState> {
+  if (!user.dateOfBirth) {
+    return { dobSet: false, isMinor: null, parentConsentStatus: "not_required" };
+  }
+
+  const minor = isMinor(user.dateOfBirth);
+  if (!minor) {
+    return { dobSet: true, isMinor: false, parentConsentStatus: "not_required" };
+  }
+
+  const consent = await getConsentRecord(user.id);
+  return { dobSet: true, isMinor: true, parentConsentStatus: consent?.status ?? "not_requested" };
+}
+
 // Sends via Resend, except outside the real production deployment with no
 // verified Resend domain configured yet - there, it logs the link to the
 // server console instead of throwing, so the consent flow stays testable
@@ -742,17 +782,14 @@ export async function revealParentContact(
 // "onboarding incomplete", same bucket as an unresolved minor consent -
 // both mean "limited to onboarding, Settings and legal pages only".
 export async function requireFullAccess(user: MeUser): Promise<void> {
-  if (!user.dateOfBirth) {
+  const { dobSet, isMinor: minor, parentConsentStatus } = await getOnboardingConsentState(user);
+
+  if (!dobSet) {
     throw new AppError("FORBIDDEN", "Complete onboarding before using this feature");
   }
 
-  const minor = isMinor(user.dateOfBirth);
-
-  if (minor) {
-    const consent = await getConsentRecord(user.id);
-    if (consent?.status !== "consented") {
-      throw new AppError("FORBIDDEN", "Parental consent is required before using this feature");
-    }
+  if (minor && parentConsentStatus !== "consented") {
+    throw new AppError("FORBIDDEN", "Parental consent is required before using this feature");
   }
 
   const legalStatus = await getLegalStatus(user);

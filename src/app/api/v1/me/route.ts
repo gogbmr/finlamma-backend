@@ -12,7 +12,12 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/me",
   summary: "Get my profile",
-  description: "Returns the signed-in user's own profile.",
+  description:
+    "Returns the signed-in user's own profile, including read-only onboarding/consent state " +
+    "(dobSet, isMinor, parentConsentStatus) so the app can tell which onboarding step an " +
+    "account is on after a restart, reinstall or new device without caching anything sensitive " +
+    "locally. These fields are private to the owner only - never returned on any endpoint " +
+    "another learner can see.",
   tags: ["Users"],
   security: [{ bearerAuth: [] }],
   responses: {
@@ -119,7 +124,7 @@ registry.registerPath({
 
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
-  return ok(getMe(user));
+  return ok(await getMe(user));
 });
 
 export const PATCH = withErrors(async (req: Request) => {

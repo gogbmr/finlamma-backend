@@ -102,6 +102,23 @@ In order, with the exact endpoint for each step (full request/response shapes in
    - **Adult** (`isMinor: false`): no consent step. Skip straight to step 4.
    - **Minor** (`isMinor: true`): continue to step 3.
 
+   **Recovering onboarding state after a restart, reinstall or new device**: `POST
+   /api/v1/me/date-of-birth`'s response above is the only place `isMinor`/`requiresParentConsent`
+   are ever returned from *that* endpoint - don't cache them on the device (that would be caching
+   a sensitive fact locally, and it can't be refreshed once the account ages past 18 anyway).
+   Instead, `GET /api/v1/me` (v1.5.0+) returns three read-only fields on every call, so the app can
+   always re-derive which screen to show:
+   - `dobSet: boolean`
+   - `isMinor: boolean | null` (`null` until `dobSet` is `true`; computed live, so it flips to
+     `false` the instant the account turns 18, regardless of any earlier parent decision)
+   - `parentConsentStatus: "not_required" | "not_requested" | "pending" | "consented" |
+     "refused" | "withdrawn"` (`"not_required"` for adults and before `dobSet`; `"not_requested"`
+     means a minor with DOB set but no consent email sent yet - show the "request consent" form
+     from step 3, not a waiting screen)
+
+   These are private to the signed-in caller only - they never appear on any endpoint another
+   learner can see.
+
 3. **Minor branch - request parental consent**: `POST /api/v1/me/parent-consent/request` with the
    parent's name and email. This:
    - emails the parent a magic link (valid 7 days, single-use)
@@ -112,10 +129,10 @@ In order, with the exact endpoint for each step (full request/response shapes in
 
    **What the app shows while consent is pending**: nothing feature-related works yet (see §3) -
    show a waiting screen ("We've emailed your parent - ask them to check their inbox") and poll
-   `GET /api/v1/me/legal-status` (or re-attempt the gated call you actually need) periodically, or
-   simply let the learner close the app and come back later. There is no push notification or
-   websocket event for "your parent just consented" today - polling on next app open/foreground
-   is the only signal.
+   `GET /api/v1/me`'s `parentConsentStatus` (or re-attempt the gated call you actually need)
+   periodically, or simply let the learner close the app and come back later. There is no push
+   notification or websocket event for "your parent just consented" today - polling on next app
+   open/foreground is the only signal.
 
    The parent acts entirely **outside the app**, on a public web page the backend serves
    (`/consent/...`), not an API call your app makes. Nothing in the app needs to render that step.

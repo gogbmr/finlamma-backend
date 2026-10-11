@@ -21,8 +21,10 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 const mockScrubConsentData = vi.fn();
+const mockGetOnboardingConsentState = vi.fn();
 vi.mock("@/server/onboarding/service", () => ({
   scrubConsentDataForDeletedUser: (userId: unknown, meta: unknown) => mockScrubConsentData(userId, meta),
+  getOnboardingConsentState: (user: unknown) => mockGetOnboardingConsentState(user),
 }));
 
 import { deleteMe, getMe, syncUserFromClerkEvent, updateMe } from "./service";
@@ -216,8 +218,14 @@ const USER_ROW = {
 };
 
 describe("getMe", () => {
-  it("shapes the users row into the public profile fields", () => {
-    expect(getMe(USER_ROW)).toEqual({
+  it("shapes the users row into the public profile fields, including onboarding/consent state", async () => {
+    mockGetOnboardingConsentState.mockResolvedValueOnce({
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
+    });
+
+    await expect(getMe(USER_ROW)).resolves.toEqual({
       id: "u1",
       firstName: "Chirag",
       lastInitial: "B",
@@ -228,7 +236,25 @@ describe("getMe", () => {
       bio: null,
       state: null,
       preferences: { sound: true, haptics: true, dataSaver: false, cheersEnabled: true },
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
     });
+    expect(mockGetOnboardingConsentState).toHaveBeenCalledWith(USER_ROW);
+  });
+
+  it("carries a minor's pending-consent state through to the response", async () => {
+    mockGetOnboardingConsentState.mockResolvedValueOnce({
+      dobSet: true,
+      isMinor: true,
+      parentConsentStatus: "pending",
+    });
+
+    const result = await getMe({ ...USER_ROW, dateOfBirth: "2015-01-01" });
+
+    expect(result.dobSet).toBe(true);
+    expect(result.isMinor).toBe(true);
+    expect(result.parentConsentStatus).toBe("pending");
   });
 });
 
@@ -238,6 +264,11 @@ describe("updateMe", () => {
   it("persists the update and logs it as the user's own action, with request meta", async () => {
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, language: "hi" as const });
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetOnboardingConsentState.mockResolvedValueOnce({
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
+    });
 
     const result = await updateMe(USER_ROW, { language: "hi" }, META);
 
@@ -258,6 +289,11 @@ describe("updateMe", () => {
   it("persists a bio update", async () => {
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, bio: "Saving up!" });
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetOnboardingConsentState.mockResolvedValueOnce({
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
+    });
 
     const result = await updateMe(USER_ROW, { bio: "Saving up!" }, META);
 
@@ -268,6 +304,11 @@ describe("updateMe", () => {
   it("persists a state update (Arena's state-scope leaderboard, never shown on any profile)", async () => {
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, state: "Maharashtra" });
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetOnboardingConsentState.mockResolvedValueOnce({
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
+    });
 
     const result = await updateMe(USER_ROW, { state: "Maharashtra" }, META);
 
@@ -279,6 +320,11 @@ describe("updateMe", () => {
     const preferences = { sound: false, haptics: false, dataSaver: true, cheersEnabled: false };
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, preferences });
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetOnboardingConsentState.mockResolvedValueOnce({
+      dobSet: false,
+      isMinor: null,
+      parentConsentStatus: "not_required",
+    });
 
     const result = await updateMe(USER_ROW, { preferences }, META);
 
