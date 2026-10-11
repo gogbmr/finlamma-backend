@@ -1,5 +1,76 @@
 # Status
 
+## 2026-10-11 — Full pre-launch `/phase-audit` (all phases, 0-9), read-only
+
+First full-codebase audit covering every phase at once rather than one phase at a time - run
+because the project is now in the pre-launch checklist stage (all 9 numbered phases ticked
+complete in `docs/ROADMAP.md`). Six parallel read-only passes (ROADMAP Phases 0-4, ROADMAP Phases
+5-9, `docs/FEATURE_MAP.md` row-by-row, API surface, `security-auditor`, docs-vs-reality) plus
+direct checks of code health (`typecheck`/`lint`/`test`/`build`, all clean - 2333 tests passing),
+the database (Supabase MCP), and production (`https://finlamma-backend-rho.vercel.app`).
+
+**Result: no Critical/High security findings, no money/data-integrity bugs.** Everything that
+came back is one of: a real but modest gap, a documentation drift, or a pre-launch decision
+already correctly left open in the roadmap.
+
+**Database**: all 49 Drizzle migrations applied and matching (`drizzle.__drizzle_migrations` vs
+`drizzle/meta/_journal.json`), RLS enabled with zero policies on all 71 tables (per rule 6,
+defense-in-depth only), spot-checked schema (users/vmoney_ledger/consent_records/parent_contacts/
+orders/holdings/fund_orders/entitlements) matches `src/db/schema/*` exactly.
+
+**Production**: health endpoint OK, deployed commit (`055af73`) matches `origin/main`,
+unauthenticated endpoints 401 (never 500), Clerk webhooks reject unsigned requests with 400,
+`/admin` redirects signed-out visitors (307). RevenueCat's webhook currently 503s with "neither
+webhook secret configured" - expected given RevenueCat isn't live yet; tracked as a pre-launch
+action (founder will configure `REVENUECAT_WEBHOOK_SECRET`/`REVENUECAT_WEBHOOK_AUTH_HEADER` in
+Vercel before subscriptions go live, not before).
+
+**ROADMAP (0-9, 66 ticked items)**: 64 PASS with real evidence. 2 already self-disclosed gaps
+confirmed real and left open per founder decision: News Desk picks have no admin authoring UI, and
+news bookmarks (`PRODUCT_SPEC.md` §5) have zero implementation anywhere.
+
+**`docs/FEATURE_MAP.md` (254 rows, 247 audited, 7 skipped as out-of-scope by design)**: 89 rows
+corrected to `Not built`/`Partially built` with evidence (Status column only, committed alongside
+this entry) - most are legitimately out-of-scope client-only UI rows; the real backend gaps worth
+tracking are concentrated in Trade/Ops console (no account/index/candle/watchlist/positions
+endpoints, no fund-portfolio-summary/category-filter, fund list missing the "held" tag and
+1Y/3Y/5Y returns) and Lesson Flow (no per-lesson attempt-summary/XP-breakdown endpoint - LF-24/25/
+26/27/31 were previously marked "Partial" with no evidence and are now correctly `Not built`).
+`WH-06` ("Resume" banner) is worth calling out specifically: its backend (`getCurrentLesson()`,
+`src/server/lessons/service.ts`) is a non-functional placeholder that always returns world 1/
+lesson 1 regardless of the caller's actual progress, despite the roadmap having marked it `Built`.
+
+**API surface**: all 92 registered OpenAPI paths have a matching `docs/API_ENDPOINTS.md` section;
+contract regenerates byte-identical to committed files (not stale); every route is authenticated
+or documented as intentionally public. Two mutating routes don't call `logActivity()`:
+`POST /me/notifications/mark-read` and pulse-check's `POST .../steps/{n}/serve` (its lessons
+sibling does log).
+
+**Security** (`security-auditor` subagent, full pass): one Medium - account deletion
+(`src/server/users/service.ts` `deleteMe`) has no reconciliation path if the Clerk-delete succeeds
+but the DB-anonymize step fails, leaving PII un-scrubbed indefinitely (the Inngest job already
+named in `docs/ROADMAP.md` Phase 7 was never built). Two Low - RevenueCat's shared-auth-header mode
+has no replay window if the header value ever leaks outside this codebase (mitigated by
+event-id dedup downstream; HMAC mode recommended instead), and Sentry is listed in CLAUDE.md's
+stack but not actually integrated anywhere (no centralized alerting on money/webhook/auth error
+paths today - recorded as an open pre-launch decision in `docs/ROADMAP.md`, not a silent gap).
+
+**Docs vs reality**: `docs/ARCHITECTURE.md` (17 decisions sampled across money/trading/consent/
+pooling/security/auth) and `docs/DATA_MODEL.md` (money/consent/users tables) both matched current
+code exactly, down to subtle details like dropped columns. Two drifts: CLAUDE.md's folder-
+structure domain list is stale (missing ~23 real domains, names 4 that don't exist by those
+names), and `.env.example` declares `FINNHUB_API_KEY`/`INDIA_NEWS_API_KEY` with no matching entry
+in `src/lib/env.ts` and no code anywhere that reads them (forward-placeholders for an unbuilt news
+provider). One DB-hygiene note: `vmoney_ledger.amount_paise` is still nullable even though the
+Phase 4 migration comment says the column it coexisted with (`amount`, whole VM) during the
+transition window was already dropped.
+
+**Founder decisions from this audit**: fix list approved, to be applied on a new `audit-fixes`
+branch cut from `main` after PR #1 (`mobile-onboarding-state`) merges. RevenueCat webhook secret:
+founder will configure in Vercel before subscriptions go live, not immediately. News bookmarks and
+News Desk admin authoring: stay open on the roadmap, no change. Backend Sentry integration:
+recorded as an open pre-launch decision in `docs/ROADMAP.md`'s checklist.
+
 ## 2026-10-07 — Dev/test seed dataset, layer 2 of 2: ~50 synthetic users + correlated activity, applied
 
 Builds on the content layer below. `scripts/seed-dev-users.ts` (`pnpm seed:dev-users`, or

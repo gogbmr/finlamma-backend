@@ -2,6 +2,24 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-11 — v1.5.0
+
+Minor bump: purely additive, 0 new operations, 3 new fields on an existing response schema plus an
+updated endpoint description, nothing removed and nothing changed incompatibly since v1.4.0.
+Requested by the mobile app (finlamma-app) on branch `mobile-onboarding-state`.
+
+**Onboarding/consent state (`docs/ARCHITECTURE.md` D73/D74 context)**
+- `GET /api/v1/me` — now also returns `dobSet` (boolean), `isMinor` (boolean, null until `dobSet`
+  is true), and `parentConsentStatus` (`not_required` | `not_requested` | `pending` | `consented` |
+  `refused` | `withdrawn`). Lets the app recover which onboarding step an account is on after a
+  restart, reinstall or new device without caching anything sensitive on the device. These three
+  fields are derived from the exact same logic `requireFullAccess` uses to gate access (a single
+  shared function, `getOnboardingConsentState` in `src/server/onboarding/service.ts`), so they can
+  never disagree with what the app can actually do — including the moment an account turns 18,
+  where both independently resolve to "not required" regardless of any earlier parent decision.
+  Private to the signed-in caller only; confirmed (by a dedicated schema test) never to appear on
+  any Arena/competition/leaderboard/public-profile/cheers response another learner can see.
+
 ## 2026-10-04 — v1.4.0
 
 Minor bump: purely additive, 1 new operation, nothing removed and nothing changed incompatibly

@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.4.0) on 2026-10-04.
+> Generated from `openapi/openapi.json` (version 1.5.0) on 2026-10-11.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -203,7 +203,7 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
 
 **Get my profile**
 
-Returns the signed-in user's own profile.
+Returns the signed-in user's own profile, including read-only onboarding/consent state (dobSet, isMinor, parentConsentStatus) so the app can tell which onboarding step an account is on after a restart, reinstall or new device without caching anything sensitive locally. These fields are private to the owner only - never returned on any endpoint another learner can see.
 
 **Auth:** bearerAuth
 
@@ -228,7 +228,10 @@ Returns the signed-in user's own profile.
       "haptics": true,
       "dataSaver": false,
       "cheersEnabled": true
-    }
+    },
+    "dobSet": true,
+    "isMinor": false,
+    "parentConsentStatus": "not_required"
   }
 }
 ```
@@ -305,7 +308,10 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
       "haptics": true,
       "dataSaver": false,
       "cheersEnabled": true
-    }
+    },
+    "dobSet": true,
+    "isMinor": false,
+    "parentConsentStatus": "not_required"
   }
 }
 ```

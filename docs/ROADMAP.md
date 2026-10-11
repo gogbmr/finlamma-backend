@@ -377,6 +377,28 @@ own repo later, hosted on Railway.
       identical to what seeding would insert, so there's no functional gap today; seeding only
       matters once staff actually want to tune the ad-start world position from `/admin/settings`
       instead of a code change. See `docs/STATUS.md`'s 2026-10-04 merge entry.
+- [ ] **Build the staff DOB-correction tool** (`src/server/onboarding/service.ts setDateOfBirth`'s
+      own comment, and the `mobile-onboarding-state` branch's PR description, both say "only staff
+      can correct a mistake after that" - no such admin page or service function actually exists
+      yet). Needs: a logged audit trail (who corrected it, old/new value, reason), and if the
+      correction moves the account across the minor/adult boundary in either direction, it must
+      re-evaluate (and if needed re-trigger) the parental-consent flow rather than leaving a stale
+      `parentConsentStatus` - `getOnboardingConsentState` (`src/server/onboarding/service.ts`)
+      already recomputes `isMinor` live from `dateOfBirth`, so a correction alone flips that; the
+      open question is only what, if anything, to do with an *existing* consent record when the
+      boundary is crossed (e.g. a corrected-to-minor account that was previously "not_required").
+- [ ] **Trim public `GET /api/v1/health` to `status` only; move the rest behind staff auth.** Audit
+      (`mobile-onboarding-state` branch) found it currently returns, with no auth at all: Clerk-key
+      health, market/push/redis/Inngest config state, migration status, world/trading-gate
+      warnings, and the git commit SHA - all genuinely useful for uptime monitoring, but also a
+      config/version fingerprint handed to anyone who requests the URL.
+- [ ] **Legal review of email-link-only parental consent against DPDP's "verifiable parental
+      consent" standard**, including whether the existing parent-email-≠-learner-email check
+      (`requestParentConsent`, `src/server/onboarding/service.ts`) is sufficient. Confirmed by
+      code audit: consent is verified purely by possession of the emailed token (7-day expiry,
+      single-use) - no secondary identity check (no OTP, no re-entered parent details, no CAPTCHA).
+      Facts only, no legal opinion formed here - see the `mobile-onboarding-state` PR description
+      for the full writeup the founder is taking to counsel.
 - [ ] **Confirm no learner-authored free text is ever rendered to another learner** (D36,
       `docs/ARCHITECTURE.md`) - `users.bio` must stay `GET`/`PATCH /me`-only forever; re-check this
       specifically when Phase 6's public player profile (AR-20) ships, and again for any future
@@ -473,7 +495,11 @@ own repo later, hosted on Railway.
       Indian SMS provider (e.g. MSG91/Gupshup) and DLT template registration; not required to
       launch, deferred until that provider/registration work is done
 - [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
-      `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
+      `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0. Re-confirmed open
+      by the 2026-10-11 full `/phase-audit` (`docs/STATUS.md`): no centralized, alertable error
+      tracking exists today for any money/webhook/auth error path - a silent failure there
+      currently depends entirely on someone reading raw platform logs. Founder decision: stays
+      open, not a pre-launch blocker.
 - [ ] Create PostHog project (EU region), add `POSTHOG_API_KEY`/`POSTHOG_HOST` - the
       `posthog-node` server client (`src/lib/analytics.ts`) and every capture-site are already
       built (Phase 9, docs/ARCHITECTURE.md D69) and no-op without these, so this is purely an
