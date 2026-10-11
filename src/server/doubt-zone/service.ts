@@ -18,6 +18,7 @@ import {
   listRecentMessages,
   markMessageFlagged,
   markMessageReviewed,
+  scrubMessagesForUser,
   touchThreadLastMessageAt,
 } from "./repo";
 import { streamDoubtZoneReply, type DoubtZoneChatMessage } from "./reply";
@@ -425,4 +426,12 @@ export async function markFlaggedMessageReviewed(actor: { id: string }, messageI
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+}
+
+// Account-deletion scrub (src/server/users/service.ts
+// reconcileAccountDeletion) - thin wrapper so the users domain never reaches
+// into doubt-zone's repo directly, same cross-domain-via-service convention
+// scrubConsentDataForDeletedUser already follows for the onboarding domain.
+export async function scrubDoubtZoneContentForUser(userId: string): Promise<number> {
+  return scrubMessagesForUser(userId);
 }

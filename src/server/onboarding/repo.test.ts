@@ -23,6 +23,7 @@ const {
   approveReapprovalAndRecordAcceptance,
   declineReapprovalAndRefuseConsent,
   getParentContactByWeeklyReportUnsubscribeTokenHash,
+  scrubParentContactDataTx,
   setParentContactWeeklyReportOptIn,
   unsubscribeParentContactFromWeeklyReport,
 } = await import("./repo");
@@ -336,6 +337,51 @@ describe("anonymizeParentContact", () => {
     expect(row.name).toBe("[deleted]");
     expect(row.weeklyReportOptIn).toBe(false);
     expect(row.weeklyReportUnsubscribeTokenHash).toBeNull();
+  });
+});
+
+describe("scrubParentContactDataTx", () => {
+  it("anonymizes the contact, writes the HMAC, and stamps scrubbed_at - all in one go", async () => {
+    const { user, parentContact } = await makeUserWithParentContact(true);
+    await db.insert(consentRecords).values({
+      userId: user.id,
+      parentContactId: parentContact.id,
+      status: "consented",
+      tokenHash: `hash-${user.id}`,
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    });
+
+    await scrubParentContactDataTx({
+      userId: user.id,
+      parentContactId: parentContact.id,
+      parentEmailHmac: "deterministic-hmac",
+      anonymizeContact: true,
+    });
+
+    const [contactRow] = await db.select().from(parentContacts).where(eq(parentContacts.id, parentContact.id));
+    expect(contactRow.name).toBe("[deleted]");
+    expect(contactRow.email).toBe(`deleted+${parentContact.id}@anonymized.invalid`);
+    expect(contactRow.weeklyReportOptIn).toBe(false);
+    expect(contactRow.scrubbedAt).not.toBeNull();
+
+    const [consentRow] = await db.select().from(consentRecords).where(eq(consentRecords.userId, user.id));
+    expect(consentRow.parentEmailHmac).toBe("deterministic-hmac");
+  });
+
+  it("stamps scrubbed_at without touching name/email when anonymizeContact is false (a sibling still depends on it)", async () => {
+    const { user, parentContact } = await makeUserWithParentContact(false);
+
+    await scrubParentContactDataTx({
+      userId: user.id,
+      parentContactId: parentContact.id,
+      parentEmailHmac: null,
+      anonymizeContact: false,
+    });
+
+    const [contactRow] = await db.select().from(parentContacts).where(eq(parentContacts.id, parentContact.id));
+    expect(contactRow.name).toBe("Priya");
+    expect(contactRow.email).toBe(parentContact.email);
+    expect(contactRow.scrubbedAt).not.toBeNull();
   });
 });
 

@@ -504,6 +504,46 @@ export async function setConsentRecordParentEmailHmac(
   await db.update(consentRecords).set({ parentEmailHmac }).where(eq(consentRecords.userId, userId));
 }
 
+// The actual, idempotent-safe account-deletion scrub write (phase-audit
+// 2026-10-11 finding): sets consent_records.parent_email_hmac, conditionally
+// anonymizes the parent_contacts row (only when no other active sibling
+// depends on it - same reasoning as anonymizeParentContact above), and - in
+// the SAME transaction either way - stamps parent_contacts.scrubbed_at, the
+// explicit marker the service layer checks before ever recomputing the HMAC
+// again. Doing this as one transaction (not three sequential calls, as the
+// original version did) closes the exact gap a retry would otherwise hit: a
+// crash between the HMAC write and the scrubbed_at write would make a retry
+// recompute the HMAC from an already-anonymized placeholder email,
+// destroying the original DPDP consent-proof evidence.
+export async function scrubParentContactDataTx(input: {
+  userId: string;
+  parentContactId: string;
+  parentEmailHmac: string | null;
+  anonymizeContact: boolean;
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx
+      .update(consentRecords)
+      .set({ parentEmailHmac: input.parentEmailHmac })
+      .where(eq(consentRecords.userId, input.userId));
+
+    await tx
+      .update(parentContacts)
+      .set(
+        input.anonymizeContact
+          ? {
+              name: "[deleted]",
+              email: `deleted+${input.parentContactId}@anonymized.invalid`,
+              weeklyReportOptIn: false,
+              weeklyReportUnsubscribeTokenHash: null,
+              scrubbedAt: new Date(),
+            }
+          : { scrubbedAt: new Date() },
+      )
+      .where(eq(parentContacts.id, input.parentContactId));
+  });
+}
+
 // --- Parent re-approval on legal-document changes (src/server/onboarding/
 // service.ts notifyAffectedMinorsForReapproval / approveReapproval /
 // declineReapproval / resendReapprovalRequests) ---

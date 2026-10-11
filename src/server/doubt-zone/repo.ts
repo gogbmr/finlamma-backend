@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { doubtMessages, doubtThreads, mentors, users, type DoubtMessageFlagCategory } from "@/db/schema";
 
@@ -156,4 +156,32 @@ export async function markMessageReviewed(id: string, staffId: string) {
     .update(doubtMessages)
     .set({ reviewedAt: new Date(), reviewedBy: staffId })
     .where(eq(doubtMessages.id, id));
+}
+
+// Account-deletion scrub (src/server/doubt-zone/service.ts
+// scrubDoubtZoneContentForUser, called from the account-deletion
+// reconciliation path): replaces this user's own message content and
+// flaggedReason with "[deleted]" across every thread they own. Thread rows,
+// flagged/flaggedCategory, and reviewedAt/reviewedBy all stay untouched -
+// they're needed for moderation statistics and carry no identifying text on
+// their own (phase-audit 2026-10-11 finding: Doubt Zone chat content was
+// never touched by account deletion before this). The
+// `ne(content, "[deleted]")` guard makes a repeat call a cheap no-op rather
+// than a second write - idempotent without a separate marker column, since
+// "[deleted]" can never be a real message's own content.
+export async function scrubMessagesForUser(userId: string): Promise<number> {
+  const ownThreadIds = db
+    .select({ id: doubtThreads.id })
+    .from(doubtThreads)
+    .where(eq(doubtThreads.userId, userId));
+
+  const updated = await db
+    .update(doubtMessages)
+    .set({
+      content: "[deleted]",
+      flaggedReason: sql`CASE WHEN ${doubtMessages.flaggedReason} IS NOT NULL THEN '[deleted]' ELSE NULL END`,
+    })
+    .where(and(inArray(doubtMessages.threadId, ownThreadIds), ne(doubtMessages.content, "[deleted]")))
+    .returning({ id: doubtMessages.id });
+  return updated.length;
 }

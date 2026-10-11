@@ -31,6 +31,7 @@ const mockRepo = {
   listRecentMessages: vi.fn(),
   markMessageFlagged: vi.fn(),
   markMessageReviewed: vi.fn(),
+  scrubMessagesForUser: vi.fn(),
   touchThreadLastMessageAt: vi.fn(),
 };
 vi.mock("./repo", () => mockRepo);
@@ -60,6 +61,7 @@ const {
   prepareMessage,
   reportMessage,
   revealFlaggedMessageContent,
+  scrubDoubtZoneContentForUser,
   streamReplyAndPersist,
 } = await import("./service");
 
@@ -461,5 +463,16 @@ describe("staff moderation queue", () => {
         expect.objectContaining({ action: "doubt_zone.flagged_message_reviewed", targetId: "m1" }),
       );
     });
+  });
+});
+
+describe("scrubDoubtZoneContentForUser", () => {
+  it("delegates to the repo and returns how many messages were scrubbed", async () => {
+    mockRepo.scrubMessagesForUser.mockResolvedValueOnce(3);
+
+    const result = await scrubDoubtZoneContentForUser("u1");
+
+    expect(mockRepo.scrubMessagesForUser).toHaveBeenCalledWith("u1");
+    expect(result).toBe(3);
   });
 });

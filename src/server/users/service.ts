@@ -1,15 +1,26 @@
 import type { WebhookEvent } from "@clerk/nextjs/server";
 import { logActivity } from "@/lib/activity-log";
-import { deleteConsumerClerkUser } from "@/lib/auth";
-import type { requestMeta } from "@/lib/http";
+import { consumerClerkUserExists, deleteConsumerClerkUser } from "@/lib/auth";
+import { inngest } from "@/lib/inngest";
+import { logInternalError, type requestMeta } from "@/lib/http";
 import type { users } from "@/db/schema";
+import { deleteAllPushTokensForUser } from "@/server/notifications/service";
+import { scrubDoubtZoneContentForUser } from "@/server/doubt-zone/service";
 import {
   getOnboardingConsentState,
   scrubConsentDataForDeletedUser,
   type OnboardingConsentState,
 } from "@/server/onboarding/service";
 import type { UpdateMeInput } from "./schemas";
-import { anonymizeUserFromClerk, updateUserPrefs, upsertUserFromClerk } from "./repo";
+import {
+  anonymizeUserFromClerk,
+  getUserByClerkUserId,
+  getUserById,
+  listStuckAccountDeletions,
+  markDeletionRequested,
+  updateUserPrefs,
+  upsertUserFromClerk,
+} from "./repo";
 
 type UserRow = typeof users.$inferSelect;
 type RequestMeta = ReturnType<typeof requestMeta>;
@@ -40,13 +51,19 @@ export async function getMe(user: UserRow) {
 export async function updateMe(user: UserRow, input: UpdateMeInput, meta: RequestMeta) {
   const updated = await updateUserPrefs(user.id, input);
 
+  // Field NAMES only, never their values (phase-audit 2026-10-11 finding):
+  // `input` can include the learner's own bio text and state, which would
+  // otherwise sit permanently in this append-only table (rule 5 - no
+  // update/delete path exists, for anyone) with no way to ever erase it,
+  // even via account deletion. `changedFields` still gives staff a useful
+  // audit trail of WHAT changed, just never the content.
   await logActivity({
     actorType: "user",
     actorId: user.id,
     action: "user.updated_prefs",
     targetType: "user",
     targetId: user.id,
-    metadata: input,
+    metadata: { changedFields: Object.keys(input) },
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
@@ -55,37 +72,118 @@ export async function updateMe(user: UserRow, input: UpdateMeInput, meta: Reques
   return toMeResponse(updated, consentState);
 }
 
-// Account deletion (docs/PRODUCT_SPEC.md Settings, non-negotiable rule 10):
-// deletes the Clerk identity first (the harder-to-retry external call - if
-// it fails, nothing in our DB has changed yet), then anonymizes our own row
-// directly rather than waiting on the resulting user.deleted webhook, so
-// the caller sees the effect immediately. anonymizeUserFromClerk is
-// idempotent, so the webhook redelivery is a harmless no-op.
-//
-// Known gap (flagged by security review, still open - tracked in
-// docs/ROADMAP.md Phase 7 as "Clerk/DB account-deletion reconciliation
-// Inngest job"): if the Clerk delete above succeeds but the anonymize below
-// throws, the user is stuck - requireUser() now fails (Clerk identity gone)
-// before they can retry, and the only remaining path to consistency is the
-// async user.deleted webhook eventually arriving. Inngest exists now
-// (Phase 3b Checkpoint 0) but this reconciliation job itself hasn't been
-// built yet - see the ROADMAP item for what it needs to do.
-export async function deleteMe(user: UserRow, meta: RequestMeta) {
-  await deleteConsumerClerkUser(user.clerkUserId);
-  const anonymized = await anonymizeUserFromClerk(user.clerkUserId);
-  if (anonymized) {
-    await scrubConsentDataForDeletedUser(anonymized.id, meta);
-  }
+// Account deletion (docs/PRODUCT_SPEC.md Settings, non-negotiable rule 10).
+// Phase-audit 2026-10-11: a deletion must now ALWAYS finish, even if the
+// caller's own request dies partway through - so this only ever does one
+// thing synchronously: durably record that deletion was requested (before
+// anything else, so the marker survives even a crash one line later), then
+// hand the actual work off to reconcileAccountDeletion below via Inngest.
+// requireUser() (src/lib/auth.ts) rejects any further request from this
+// account the instant the marker is set (ACCOUNT_DELETION_PENDING) - so a
+// half-deleted account can never keep being used while reconciliation
+// finishes in the background, typically within seconds.
+export async function deleteMe(user: UserRow, meta: RequestMeta): Promise<void> {
+  await markDeletionRequested(user.id);
 
   await logActivity({
     actorType: "user",
     actorId: user.id,
-    action: "user.deleted_self",
+    action: "user.deletion_requested",
     targetType: "user",
     targetId: user.id,
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
+
+  await inngest.send({ name: "account/deletion.requested", data: { userId: user.id } });
+}
+
+// The actual deletion work, shared by three triggers: the Inngest event
+// deleteMe() above fires (with Inngest's own automatic step-retry/backoff),
+// the daily reconciliation sweep's safety net for anything still stuck, and
+// the Clerk user.deleted webhook (syncUserFromClerkEvent below) - whichever
+// of the three gets there first does the real work; the other two find
+// `deletedAt` already set and no-op. Every sub-step is independently
+// idempotent, so re-running this from the top after a partial failure is
+// always safe, never double-applies anything:
+// - consumerClerkUserExists/deleteConsumerClerkUser: closes the gap where
+//   the ORIGINAL request died before the Clerk delete itself ever
+//   completed, not just the narrower "Clerk succeeded, DB failed" case.
+// - anonymizeUserFromClerk: guarded by `deletedAt IS NULL`.
+// - scrubConsentDataForDeletedUser: guarded by `parent_contacts.scrubbed_at`.
+// - deleteAllPushTokensForUser / scrubDoubtZoneContentForUser: deleting/
+//   overwriting already-gone rows is a harmless no-op either way.
+// Activity-log metadata here is deliberately userId-only, never an email or
+// name, per the founder's explicit instruction for this reconciliation path.
+export async function reconcileAccountDeletion(
+  userId: string,
+  meta: RequestMeta,
+): Promise<{ alreadyDone: boolean }> {
+  const user = await getUserById(userId);
+  if (!user || user.deletedAt) return { alreadyDone: true };
+
+  const clerkStillExists = await consumerClerkUserExists(user.clerkUserId);
+  if (clerkStillExists) {
+    await deleteConsumerClerkUser(user.clerkUserId);
+  }
+
+  await anonymizeUserFromClerk(user.clerkUserId);
+  await scrubConsentDataForDeletedUser(userId, meta);
+  await deleteAllPushTokensForUser(userId);
+  await scrubDoubtZoneContentForUser(userId);
+
+  await logActivity({
+    actorType: "system",
+    action: "user.deletion_reconciled",
+    targetType: "user",
+    targetId: userId,
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  return { alreadyDone: false };
+}
+
+const STUCK_DELETION_ESCALATION_DAYS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The daily safety-net sweep (account-deletion-reconciliation Inngest cron,
+// 3:50am IST) for any deletion the event-triggered path above never
+// finished - a worklist of users.deletion_requested_at IS NOT NULL AND
+// deleted_at IS NULL, which stays tiny in practice (anything healthy falls
+// out of it within seconds of the event firing). Each row is retried
+// independently (sequential, not Promise.all - rule 15, and so one bad row
+// can never block the rest of the batch); a row stuck 3+ days also gets a
+// second, distinctly-named log entry, greppable for the Sentry alerting
+// that's still an open pre-launch item (docs/ROADMAP.md) - this is the one
+// future wiring point, not a bespoke alerting channel built here.
+export async function runAccountDeletionReconciliationSweep(): Promise<{
+  attempted: number;
+  succeeded: number;
+}> {
+  const stuck = await listStuckAccountDeletions();
+  let succeeded = 0;
+
+  for (const row of stuck) {
+    try {
+      await reconcileAccountDeletion(row.id, { ip: null, userAgent: null });
+      succeeded++;
+    } catch (err) {
+      logInternalError("account_deletion.reconciliation_attempt_failed", err);
+
+      const daysPending = row.deletionRequestedAt
+        ? Math.floor((Date.now() - row.deletionRequestedAt.getTime()) / DAY_MS)
+        : 0;
+      if (daysPending >= STUCK_DELETION_ESCALATION_DAYS) {
+        logInternalError(
+          "account_deletion.reconciliation_stuck",
+          new Error(`userId=${row.id} daysPending=${daysPending}`),
+        );
+      }
+    }
+  }
+
+  return { attempted: stuck.length, succeeded };
 }
 
 function primaryVerifiedEmail(
@@ -142,11 +240,16 @@ export async function syncUserFromClerkEvent(evt: WebhookEvent) {
     const clerkUserId = evt.data.id;
     if (!clerkUserId) return;
 
-    const anonymized = await anonymizeUserFromClerk(clerkUserId);
-    if (anonymized) {
-      // No requestMeta for a webhook - same "no ip/userAgent" shape already
-      // used for every other webhook-driven logActivity call in this file.
-      await scrubConsentDataForDeletedUser(anonymized.id, { ip: null, userAgent: null });
+    // One of three triggers for the same shared reconciliation (see
+    // reconcileAccountDeletion's own comment above) - whichever gets here
+    // first does the real work, idempotently; a webhook redelivery, or one
+    // that arrives after deleteMe()'s own Inngest event already finished,
+    // is a harmless no-op. No requestMeta for a webhook - same
+    // "no ip/userAgent" shape already used for every other webhook-driven
+    // logActivity call in this file.
+    const user = await getUserByClerkUserId(clerkUserId);
+    if (user) {
+      await reconcileAccountDeletion(user.id, { ip: null, userAgent: null });
     }
 
     await logActivity({

@@ -11,7 +11,15 @@ import { uniqueClerkUserId, uniqueEmail } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { anonymizeUserFromClerk, upsertUserFromClerk } = await import("./repo");
+const {
+  anonymizeUserFromClerk,
+  countStuckAccountDeletionsOlderThan,
+  getUserByClerkUserId,
+  getUserById,
+  listStuckAccountDeletions,
+  markDeletionRequested,
+  upsertUserFromClerk,
+} = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 // The vi.mock factory above runs once for this file, so this is a single
@@ -239,5 +247,101 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
 
     const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
     expect(row.state).toBeNull();
+  });
+});
+
+describe("getUserById / getUserByClerkUserId", () => {
+  it("finds a row by internal id or by clerk_user_id", async () => {
+    const clerkUserId = uniqueClerkUserId("lookup");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+
+    expect((await getUserById(row.id))?.clerkUserId).toBe(clerkUserId);
+    expect((await getUserByClerkUserId(clerkUserId))?.id).toBe(row.id);
+  });
+
+  it("returns null for an id/clerk_user_id that doesn't exist", async () => {
+    expect(await getUserById("00000000-0000-4000-8000-000000000000")).toBeNull();
+    expect(await getUserByClerkUserId(uniqueClerkUserId("never-seen"))).toBeNull();
+  });
+});
+
+describe("markDeletionRequested / listStuckAccountDeletions / countStuckAccountDeletionsOlderThan", () => {
+  it("sets the marker, and the row shows up as stuck until deletedAt is also set", async () => {
+    const clerkUserId = uniqueClerkUserId("deletion-marker");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    const [before] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+
+    const marked = await markDeletionRequested(before.id);
+    expect(marked?.deletionRequestedAt).not.toBeNull();
+
+    const stuck = await listStuckAccountDeletions();
+    expect(stuck.some((r) => r.id === before.id)).toBe(true);
+
+    // Once anonymized (deletedAt set), it must fall out of the stuck list -
+    // the reconciliation sweep must never retry an already-finished row.
+    await anonymizeUserFromClerk(clerkUserId);
+    const stuckAfter = await listStuckAccountDeletions();
+    expect(stuckAfter.some((r) => r.id === before.id)).toBe(false);
+  });
+
+  it("re-requesting deletion for an already-pending account is a harmless timestamp refresh", async () => {
+    const clerkUserId = uniqueClerkUserId("deletion-marker-repeat");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+
+    await markDeletionRequested(row.id);
+    await expect(markDeletionRequested(row.id)).resolves.not.toBeNull();
+  });
+
+  it("countStuckAccountDeletionsOlderThan only counts rows whose marker predates the cutoff", async () => {
+    const clerkUserId = uniqueClerkUserId("deletion-old");
+    await upsertUserFromClerk({
+      clerkUserId,
+      firstName: "Test",
+      lastInitial: "U",
+      email: null,
+      phone: null,
+      clerkUpdatedAt: new Date(),
+    });
+    const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId));
+    await markDeletionRequested(row.id);
+
+    const farFuture = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+    const farPast = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+
+    // "Just requested" always counts against a far-future cutoff, and never
+    // against a far-past one - other tests in this shared-DB file may leave
+    // their own stuck rows behind, so this asserts containment/exclusion of
+    // THIS row specifically, never an exact total count.
+    const beforeFuture = await countStuckAccountDeletionsOlderThan(farFuture);
+    const beforePast = await countStuckAccountDeletionsOlderThan(farPast);
+
+    await anonymizeUserFromClerk(clerkUserId);
+
+    const afterFuture = await countStuckAccountDeletionsOlderThan(farFuture);
+    expect(afterFuture).toBe(beforeFuture - 1); // this row dropped out, nothing else changed
+    expect(beforePast).toBe(0); // "just now" can never be 365 days old
   });
 });

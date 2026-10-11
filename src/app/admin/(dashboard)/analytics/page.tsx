@@ -41,6 +41,16 @@ export default async function AnalyticsDashboardPage() {
             { label: "Total active accounts", value: fmt(summary.users.totalActive) },
             { label: "New today", value: fmt(summary.users.newToday) },
             { label: "New, last 7 days", value: fmt(summary.users.newLast7Days) },
+            {
+              label: "Account deletions pending >24h",
+              value: fmt(summary.users.accountDeletionsPendingOver24h),
+              hint: "Requested but not yet finished - usually resolves within seconds; a nonzero count here for long means the background reconciliation needs a look",
+            },
+            {
+              label: "Account deletions stuck >3 days",
+              value: fmt(summary.users.accountDeletionsStuckOver3Days),
+              hint: "Also logged as account_deletion.reconciliation_stuck on every failed retry",
+            },
           ]}
         />
       </section>

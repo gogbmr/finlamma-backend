@@ -58,6 +58,15 @@ export async function listPushTokensForUser(userId: string) {
   return db.select().from(pushTokens).where(eq(pushTokens.userId, userId));
 }
 
+// Account-deletion scrub (src/server/users/service.ts
+// reconcileAccountDeletion, phase-audit 2026-10-11 finding: device push
+// tokens were never cleared on deletion before this). Deleting 0 rows for
+// an account with no registered device is a harmless no-op, so this is
+// naturally idempotent.
+export async function deletePushTokensForUser(userId: string): Promise<void> {
+  await db.delete(pushTokens).where(eq(pushTokens.userId, userId));
+}
+
 // --- Notification preferences ---
 
 export async function getNotificationPrefsRow(userId: string) {

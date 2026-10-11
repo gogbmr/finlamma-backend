@@ -29,6 +29,15 @@ registry.registerPath({
         },
       },
     },
+    403: {
+      description: "Account deletion is pending - show \"your account is being deleted\"",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "ACCOUNT_DELETION_PENDING", message: "This account is being deleted" } },
+        },
+      },
+    },
   },
 });
 

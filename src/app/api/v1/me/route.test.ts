@@ -161,7 +161,7 @@ describe("DELETE /api/v1/me", () => {
     expect(body.data.deleted).toBe(true);
   });
 
-  it("surfaces SERVICE_UNAVAILABLE if Clerk deletion fails", async () => {
+  it("surfaces whatever error deleteMe throws", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockDeleteMe.mockRejectedValueOnce(
       new AppError("SERVICE_UNAVAILABLE", "Could not delete account right now"),
@@ -170,5 +170,16 @@ describe("DELETE /api/v1/me", () => {
     const res = await DELETE(makeRequest("DELETE"));
 
     expect(res.status).toBe(503);
+  });
+
+  it("returns 403 ACCOUNT_DELETION_PENDING when deletion is already in progress", async () => {
+    mockRequireUser.mockRejectedValueOnce(
+      new AppError("ACCOUNT_DELETION_PENDING", "This account is being deleted"),
+    );
+
+    const res = await DELETE(makeRequest("DELETE"));
+
+    expect(res.status).toBe(403);
+    expect(mockDeleteMe).not.toHaveBeenCalled();
   });
 });

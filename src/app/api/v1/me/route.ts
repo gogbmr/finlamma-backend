@@ -34,6 +34,15 @@ registry.registerPath({
         },
       },
     },
+    403: {
+      description: "Account deletion is pending - show \"your account is being deleted\"",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "ACCOUNT_DELETION_PENDING", message: "This account is being deleted" } },
+        },
+      },
+    },
   },
 });
 
@@ -81,6 +90,15 @@ registry.registerPath({
         },
       },
     },
+    403: {
+      description: "Account deletion is pending - show \"your account is being deleted\"",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "ACCOUNT_DELETION_PENDING", message: "This account is being deleted" } },
+        },
+      },
+    },
   },
 });
 
@@ -89,14 +107,16 @@ registry.registerPath({
   path: "/api/v1/me",
   summary: "Delete my account",
   description:
-    "Permanently deletes the Clerk identity and anonymizes the DB row in place (email, phone " +
-    "and name are cleared; ledger/trading/leaderboard history is kept for integrity). Cannot " +
-    "be undone.",
+    "Durably records the deletion request and returns success immediately - the deletion is " +
+    "now guaranteed to complete (Clerk identity deleted, DB row anonymized, consent/push-token/" +
+    "Doubt Zone data scrubbed; ledger/trading/leaderboard history kept for integrity), even if " +
+    "a later step needs a background retry. The account stops being usable (ACCOUNT_DELETION_PENDING) " +
+    "immediately, before the background work finishes. Cannot be undone.",
   tags: ["Users"],
   security: [{ bearerAuth: [] }],
   responses: {
     200: {
-      description: "Account deleted",
+      description: "Deletion accepted - guaranteed to complete, possibly finishing in the background",
       content: { "application/json": { schema: DeleteMeResponseSchema } },
     },
     401: {
@@ -108,14 +128,12 @@ registry.registerPath({
         },
       },
     },
-    503: {
-      description: "Could not delete the account right now - retry",
+    403: {
+      description: "Account deletion is already pending - show \"your account is being deleted\"",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
-          example: {
-            error: { code: "SERVICE_UNAVAILABLE", message: "Could not delete account right now" },
-          },
+          example: { error: { code: "ACCOUNT_DELETION_PENDING", message: "This account is being deleted" } },
         },
       },
     },

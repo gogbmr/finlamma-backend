@@ -9,6 +9,7 @@ import {
   countUnreadNotifications,
   deletePushTokenById,
   deletePushTokenByValue,
+  deletePushTokensForUser,
   getNotificationPrefsRow,
   getUserLanguageForNotifications,
   hasNotificationSince,
@@ -152,8 +153,29 @@ export async function getMyUnreadNotificationCount(user: { id: string }): Promis
   return countUnreadNotifications(user.id);
 }
 
-export async function markMyNotificationsRead(user: { id: string }, ids?: string[]): Promise<void> {
+export async function markMyNotificationsRead(
+  user: { id: string },
+  ids: string[] | undefined,
+  meta: RequestMeta,
+): Promise<void> {
   await markNotificationsRead(user.id, ids);
+  await logActivity({
+    actorType: "user",
+    actorId: user.id,
+    action: "notifications.marked_read",
+    targetType: "user",
+    targetId: user.id,
+    metadata: { scope: ids ? "selected" : "all", count: ids?.length ?? null },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+}
+
+// Account-deletion scrub (src/server/users/service.ts
+// reconcileAccountDeletion) - thin wrapper, same cross-domain-via-service
+// convention as scrubConsentDataForDeletedUser/scrubDoubtZoneContentForUser.
+export async function deleteAllPushTokensForUser(userId: string): Promise<void> {
+  await deletePushTokensForUser(userId);
 }
 
 // --- Central dispatcher - every trigger (Checkpoint 7) calls this, never

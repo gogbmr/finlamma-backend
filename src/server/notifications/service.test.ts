@@ -8,6 +8,7 @@ const mockRepo = {
   countUnreadNotifications: vi.fn(),
   deletePushTokenById: vi.fn(),
   deletePushTokenByValue: vi.fn(),
+  deletePushTokensForUser: vi.fn(),
   getNotificationPrefsRow: vi.fn(),
   getUserLanguageForNotifications: vi.fn(),
   hasNotificationSince: vi.fn(),
@@ -27,6 +28,7 @@ const mockGetNotificationsSettings = vi.fn();
 vi.mock("./settings", () => ({ getNotificationsSettings: () => mockGetNotificationsSettings() }));
 
 const {
+  deleteAllPushTokensForUser,
   getMyNotificationPrefs,
   getMyUnreadNotificationCount,
   hasBeenNotifiedSince,
@@ -182,8 +184,38 @@ describe("listMyNotifications / getMyUnreadNotificationCount / markMyNotificatio
     mockRepo.countUnreadNotifications.mockResolvedValueOnce(3);
     expect(await getMyUnreadNotificationCount(USER)).toBe(3);
 
-    await markMyNotificationsRead(USER, ["a", "b"]);
+    await markMyNotificationsRead(USER, ["a", "b"], META);
     expect(mockRepo.markNotificationsRead).toHaveBeenCalledWith("user_1", ["a", "b"]);
+  });
+
+  it("markMyNotificationsRead logs the mutation with scope/count, never the notification ids", async () => {
+    await markMyNotificationsRead(USER, ["a", "b"], META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorType: "user",
+        actorId: "user_1",
+        action: "notifications.marked_read",
+        metadata: { scope: "selected", count: 2 },
+        ip: META.ip,
+        userAgent: META.userAgent,
+      }),
+    );
+  });
+
+  it("markMyNotificationsRead reports scope 'all' when ids are omitted", async () => {
+    await markMyNotificationsRead(USER, undefined, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { scope: "all", count: null } }),
+    );
+  });
+});
+
+describe("deleteAllPushTokensForUser", () => {
+  it("delegates to the repo", async () => {
+    await deleteAllPushTokensForUser("user_1");
+    expect(mockRepo.deletePushTokensForUser).toHaveBeenCalledWith("user_1");
   });
 });
 
