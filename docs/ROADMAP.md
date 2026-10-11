@@ -495,7 +495,11 @@ own repo later, hosted on Railway.
       Indian SMS provider (e.g. MSG91/Gupshup) and DLT template registration; not required to
       launch, deferred until that provider/registration work is done
 - [ ] Create Sentry project, add `SENTRY_DSN` (+ auth token for source maps), wire up
-      `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0
+      `@sentry/nextjs` (client, server, edge configs) - deferred from Phase 0. Re-confirmed open
+      by the 2026-10-11 full `/phase-audit` (`docs/STATUS.md`): no centralized, alertable error
+      tracking exists today for any money/webhook/auth error path - a silent failure there
+      currently depends entirely on someone reading raw platform logs. Founder decision: stays
+      open, not a pre-launch blocker.
 - [ ] Create PostHog project (EU region), add `POSTHOG_API_KEY`/`POSTHOG_HOST` - the
       `posthog-node` server client (`src/lib/analytics.ts`) and every capture-site are already
       built (Phase 9, docs/ARCHITECTURE.md D69) and no-op without these, so this is purely an
