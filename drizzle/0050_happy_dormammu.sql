@@ -1,0 +1,1 @@
+ALTER TABLE "vmoney_ledger" ALTER COLUMN "amount_paise" SET NOT NULL;

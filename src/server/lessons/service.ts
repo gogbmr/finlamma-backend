@@ -4,12 +4,16 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getWorldById, listPublishedWorlds } from "@/server/worlds/repo";
 import { getQuestionsByIds } from "@/server/questions/repo";
-import { countInProgressLearnersByLessonIds } from "@/server/lesson-progress/repo";
+import {
+  countInProgressLearnersByLessonIds,
+  getLessonProgressStatusesForUser,
+} from "@/server/lesson-progress/repo";
+import { getWorldIdsWithPassedBossQuiz } from "@/server/quiz-attempts/repo";
+import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
   getLessonById,
   getPublishedLesson,
-  getPublishedLessonAtPosition,
   hotfixLessonRow,
   insertDraftLesson,
   listAllLessonsForWorld,
@@ -65,19 +69,48 @@ export async function getPublicLesson(id: string) {
   return toDetail(row);
 }
 
-// Placeholder until Checkpoint 5's lesson_progress exists (see
-// docs/ARCHITECTURE.md D18-adjacent reasoning): always "chapter 1, step 1
-// of the lowest-order published world", never actually progress-aware yet.
-// The response shape is the real contract (same as getPublicLesson) so the
-// app can build against it now; only the *selection logic* upgrades later.
-export async function getCurrentLesson() {
+// WH-06 "Resume" banner - progress-aware (phase-audit 2026-10-11 fix; this
+// was previously a placeholder that always returned chapter 1/step 1 of
+// the lowest-order world for every caller, regardless of actual progress).
+// Walks published worlds in order, same sequential-unlock rule
+// getPublicWorlds (src/server/worlds/service.ts) already uses: the first
+// world is always reachable, every later one only once the previous
+// world's Boss Quiz is passed. Within the first reachable world that still
+// has an incomplete lesson, returns the first such lesson in chapter/step
+// order - lesson_progress covers every lesson kind by this point
+// (video/quiz/boss_quiz/role_play via quiz-attempts, story/doubt_zone via
+// completeUngradedLessonProgressIfEligible, D23/D29), so no per-kind
+// branching is needed here. If every reachable lesson is already
+// completed, resumes into the last lesson of the last reachable world as a
+// sensible terminal state rather than erroring.
+export async function getCurrentLesson(userId: string) {
   const worlds = await listPublishedWorlds();
-  const firstWorld = worlds[0];
-  if (!firstWorld) throw new AppError("NOT_FOUND", "No published worlds yet");
+  if (worlds.length === 0) throw new AppError("NOT_FOUND", "No published worlds yet");
 
-  const lesson = await getPublishedLessonAtPosition(firstWorld.id, 1, 1);
-  if (!lesson) throw new AppError("NOT_FOUND", "No published lessons yet");
-  return toDetail(lesson);
+  const settings = await getLessonFlowScoringSettings();
+  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct);
+
+  let lastSeenLesson: LessonRow | null = null;
+
+  for (let i = 0; i < worlds.length; i++) {
+    const world = worlds[i]!;
+    const locked = i > 0 && !clearedWorldIds.has(worlds[i - 1]!.id);
+    if (locked) break; // this world, and every later one, isn't reachable yet
+
+    const lessonsInWorld = await listPublishedLessonsForWorld(world.id);
+    if (lessonsInWorld.length === 0) continue;
+    lastSeenLesson = lessonsInWorld[lessonsInWorld.length - 1]!;
+
+    const progressByLessonId = await getLessonProgressStatusesForUser(
+      userId,
+      lessonsInWorld.map((l) => l.id),
+    );
+    const next = lessonsInWorld.find((l) => progressByLessonId.get(l.id) !== "completed");
+    if (next) return toDetail(next);
+  }
+
+  if (!lastSeenLesson) throw new AppError("NOT_FOUND", "No published lessons yet");
+  return toDetail(lastSeenLesson);
 }
 
 // --- Staff (admin) ---

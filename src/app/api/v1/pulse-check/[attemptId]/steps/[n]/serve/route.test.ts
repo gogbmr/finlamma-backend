@@ -17,7 +17,8 @@ vi.mock("@/lib/redis", () => ({
 
 const mockServeStep = vi.fn();
 vi.mock("@/server/pulse-check/service", () => ({
-  serveStep: (user: unknown, attemptId: unknown, n: unknown) => mockServeStep(user, attemptId, n),
+  serveStep: (user: unknown, attemptId: unknown, n: unknown, meta: unknown) =>
+    mockServeStep(user, attemptId, n, meta),
 }));
 
 import { POST } from "./route";
@@ -83,6 +84,6 @@ describe("POST /api/v1/pulse-check/{attemptId}/steps/{n}/serve", () => {
     const res = await POST(makeRequest(), { params: Promise.resolve({ attemptId: ATTEMPT_ID, n: "1" }) });
 
     expect(res.status).toBe(200);
-    expect(mockServeStep).toHaveBeenCalledWith(USER, ATTEMPT_ID, 1);
+    expect(mockServeStep).toHaveBeenCalledWith(USER, ATTEMPT_ID, 1, { ip: null, userAgent: null });
   });
 });

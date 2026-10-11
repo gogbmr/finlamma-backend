@@ -247,6 +247,17 @@ Returns the signed-in user's own profile, including read-only onboarding/consent
 }
 ```
 
+- **403** — Account deletion is pending - show "your account is being deleted"
+
+```json
+{
+  "error": {
+    "code": "ACCOUNT_DELETION_PENDING",
+    "message": "This account is being deleted"
+  }
+}
+```
+
 
 ---
 
@@ -343,6 +354,17 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
 }
 ```
 
+- **403** — Account deletion is pending - show "your account is being deleted"
+
+```json
+{
+  "error": {
+    "code": "ACCOUNT_DELETION_PENDING",
+    "message": "This account is being deleted"
+  }
+}
+```
+
 
 ---
 
@@ -350,13 +372,13 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
 
 **Delete my account**
 
-Permanently deletes the Clerk identity and anonymizes the DB row in place (email, phone and name are cleared; ledger/trading/leaderboard history is kept for integrity). Cannot be undone.
+Durably records the deletion request and returns success immediately - the deletion is now guaranteed to complete (Clerk identity deleted, DB row anonymized, consent/push-token/Doubt Zone data scrubbed; ledger/trading/leaderboard history kept for integrity), even if a later step needs a background retry. The account stops being usable (ACCOUNT_DELETION_PENDING) immediately, before the background work finishes. Cannot be undone.
 
 **Auth:** bearerAuth
 
 **Responses**
 
-- **200** — Account deleted
+- **200** — Deletion accepted - guaranteed to complete, possibly finishing in the background
 
 ```json
 {
@@ -377,13 +399,13 @@ Permanently deletes the Clerk identity and anonymizes the DB row in place (email
 }
 ```
 
-- **503** — Could not delete the account right now - retry
+- **403** — Account deletion is already pending - show "your account is being deleted"
 
 ```json
 {
   "error": {
-    "code": "SERVICE_UNAVAILABLE",
-    "message": "Could not delete account right now"
+    "code": "ACCOUNT_DELETION_PENDING",
+    "message": "This account is being deleted"
   }
 }
 ```
@@ -479,6 +501,17 @@ Whether the signed-in user has accepted the currently published Terms/Privacy/Ri
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Account deletion is pending - show "your account is being deleted"
+
+```json
+{
+  "error": {
+    "code": "ACCOUNT_DELETION_PENDING",
+    "message": "This account is being deleted"
   }
 }
 ```
@@ -1496,13 +1529,13 @@ Server-graded and server-timed - the submitted answer is checked against the que
 
 **Get my current/resume lesson**
 
-Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's lesson_progress table exists**: always returns chapter 1, step 1 of the lowest-order published world, regardless of what the caller has actually done - not yet progress-aware. The response shape is the real contract (identical to GET /api/v1/lessons/{id}); only the selection logic upgrades once real progress tracking ships.
+Powers World Home's Resume banner (WH-06). Progress-aware: walks published worlds in sequential-unlock order and returns the first lesson in the first reachable world that isn't yet completed (covers every lesson kind - video/quiz/boss_quiz/role_play via quiz_attempts, story/doubt_zone via lesson_progress directly). If a Boss Quiz was attempted but failed, this resumes at that same Boss Quiz, since its world never actually unlocked the next one. If everything reachable is already completed, resumes at the last lesson of the last reachable world. The response shape is identical to GET /api/v1/lessons/{id}.
 
 **Auth:** bearerAuth
 
 **Responses**
 
-- **200** — The caller's current lesson (see description for today's placeholder logic)
+- **200** — The caller's current (resume) lesson
 
 ```json
 {

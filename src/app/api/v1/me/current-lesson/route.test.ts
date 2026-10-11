@@ -13,7 +13,7 @@ vi.mock("@/server/onboarding/service", () => ({
 
 const mockGetCurrentLesson = vi.fn();
 vi.mock("@/server/lessons/service", () => ({
-  getCurrentLesson: () => mockGetCurrentLesson(),
+  getCurrentLesson: (userId: unknown) => mockGetCurrentLesson(userId),
 }));
 
 import { GET } from "./route";
@@ -66,6 +66,7 @@ describe("GET /api/v1/me/current-lesson", () => {
     const res = await GET(makeRequest());
 
     expect(res.status).toBe(200);
+    expect(mockGetCurrentLesson).toHaveBeenCalledWith(USER.id);
     const body = await res.json();
     expect(body.data.id).toBe("lesson_1");
   });

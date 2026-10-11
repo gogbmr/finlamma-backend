@@ -188,26 +188,27 @@ describe("serveStep", () => {
     mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1", "q2"], date: "2026-09-28" });
     mockGetAnswerByStep.mockResolvedValueOnce(null); // step 1 never served
 
-    await expect(serveStep(USER, "attempt_1", 2, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(serveStep(USER, "attempt_1", 2, META, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
   });
 
   it("404s for an attempt belonging to a different user", async () => {
     mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: "someone_else", status: "in_progress" });
 
-    await expect(serveStep(USER, "attempt_1", 1, NOW)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(serveStep(USER, "attempt_1", 1, META, NOW)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   it("rejects serving a step on an attempt whose edition is no longer today's IST date", async () => {
     mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
     mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-20" }); // a past day
 
-    await expect(serveStep(USER, "attempt_1", 1, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(serveStep(USER, "attempt_1", 1, META, NOW)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockInsertServedAnswerIfNew).not.toHaveBeenCalled();
   });
 
-  it("serves step 1 and includes the source headline/topic", async () => {
+  it("serves step 1, includes the source headline/topic, and logs the new serve", async () => {
     mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
     mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-28" });
+    mockGetAnswerByStep.mockResolvedValueOnce(null); // not already served
     mockGetQuestionForServing.mockResolvedValueOnce({
       id: "q1",
       format: "single_select",
@@ -221,10 +222,38 @@ describe("serveStep", () => {
     mockGetTopicById.mockResolvedValueOnce({ name: { en: "RBI", hi: "x", hx: "x" } });
     mockGetStoryHeadline.mockResolvedValueOnce({ en: "H", hi: "H", hx: "H" });
 
-    const result = await serveStep(USER, "attempt_1", 1, NOW);
+    const result = await serveStep(USER, "attempt_1", 1, META, NOW);
 
     expect(result.question.topic).toEqual({ en: "RBI", hi: "x", hx: "x" });
     expect(result.question.sourceHeadline).toEqual({ en: "H", hi: "H", hx: "H" });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "pulse_check.step_served",
+        actorId: USER.id,
+        targetId: "attempt_1",
+        metadata: { stepIndex: 1 },
+      }),
+    );
+  });
+
+  it("does not log again when idempotently re-serving an already-served step", async () => {
+    mockGetAttemptById.mockResolvedValueOnce({ id: "attempt_1", userId: USER.id, status: "in_progress", editionId: "e1" });
+    mockGetEditionById.mockResolvedValueOnce({ id: "e1", questionIds: ["q1"], date: "2026-09-28" });
+    mockGetAnswerByStep.mockResolvedValueOnce({ answeredAt: null }); // already served, unanswered
+    mockGetQuestionForServing.mockResolvedValueOnce({
+      id: "q1",
+      format: "single_select",
+      topicId: null,
+      sourceStoryId: null,
+      prompt: { en: "P", hi: "P", hx: "P" },
+      payload: { options: [] },
+      revision: 1,
+    });
+    mockInsertServedAnswerIfNew.mockResolvedValueOnce({ timerSeconds: 20 });
+
+    await serveStep(USER, "attempt_1", 1, META, NOW);
+
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 
