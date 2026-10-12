@@ -85,15 +85,30 @@ vi.mock("@/server/topics/service", () => ({
     mockUpdateTopicForAdmin(actor, id, input, meta),
 }));
 
+const mockCreatePeerHandleForAdmin = vi.fn();
+const mockUpdatePeerHandleForAdmin = vi.fn();
+const mockDeletePeerHandleForAdmin = vi.fn();
+vi.mock("@/server/peer-handles/service", () => ({
+  createPeerHandleForAdmin: (actor: unknown, input: unknown, meta: unknown) =>
+    mockCreatePeerHandleForAdmin(actor, input, meta),
+  updatePeerHandleForAdmin: (actor: unknown, id: unknown, input: unknown, meta: unknown) =>
+    mockUpdatePeerHandleForAdmin(actor, id, input, meta),
+  deletePeerHandleForAdmin: (actor: unknown, id: unknown, meta: unknown) =>
+    mockDeletePeerHandleForAdmin(actor, id, meta),
+}));
+
 import {
   createAboutMeChipAction,
+  createPeerHandleAction,
   createRankTitleAction,
   deleteAboutMeChipAction,
+  deletePeerHandleAction,
   deleteRankTitleAction,
   updateAboutMeChipAction,
   updateDailyGoalsSettingsAction,
   updateLessonFlowScoringAction,
   updateLevelCurveSettingsAction,
+  updatePeerHandleAction,
   updateRankTitleAction,
   updateRewardRuleAction,
   updateArenaLeagueSettingsAction,
@@ -247,6 +262,21 @@ describe("wrong role is rejected", () => {
 
     expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
     expect(mockDeleteRankTitleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("createPeerHandleAction: requires settings.manage", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+    );
+
+    const result = await createPeerHandleAction({
+      key: "smart-saver",
+      name: { en: "Smart Saver", hi: "x", hx: "x" },
+      active: true,
+    });
+
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(mockCreatePeerHandleForAdmin).not.toHaveBeenCalled();
   });
 
   it("createTopicAction: requires settings.manage", async () => {
@@ -615,5 +645,80 @@ describe("happy path", () => {
     const result = await updateTopicAction("nope", { order: 1, name: { en: "x", hi: "x", hx: "x" }, active: true });
 
     expect(result).toEqual({ ok: false, error: "Topic not found" });
+  });
+
+  it("createPeerHandleAction creates and revalidates", async () => {
+    const input = { key: "smart-saver", name: { en: "Smart Saver", hi: "x", hx: "x" }, active: true };
+    mockCreatePeerHandleForAdmin.mockResolvedValueOnce({ id: "h1", ...input });
+
+    const result = await createPeerHandleAction(input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockCreatePeerHandleForAdmin).toHaveBeenCalledWith(ACTOR, input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("createPeerHandleAction rejects a blank language without calling the service", async () => {
+    const result = await createPeerHandleAction({
+      key: "smart-saver",
+      name: { en: "", hi: "x", hx: "x" },
+      active: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreatePeerHandleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("createPeerHandleAction rejects a key with invalid characters without calling the service", async () => {
+    const result = await createPeerHandleAction({
+      key: "Smart Saver!",
+      name: { en: "x", hi: "x", hx: "x" },
+      active: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(mockCreatePeerHandleForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("updatePeerHandleAction updates and revalidates", async () => {
+    const input = { name: { en: "Bright Bull", hi: "x", hx: "x" }, active: false };
+    mockUpdatePeerHandleForAdmin.mockResolvedValueOnce({ id: "h1", key: "smart-saver", ...input });
+
+    const result = await updatePeerHandleAction("h1", input);
+
+    expect(result).toEqual({ ok: true });
+    expect(mockUpdatePeerHandleForAdmin).toHaveBeenCalledWith(ACTOR, "h1", input, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("updatePeerHandleAction surfaces NOT_FOUND for an unknown id", async () => {
+    mockUpdatePeerHandleForAdmin.mockRejectedValueOnce(new AppError("NOT_FOUND", "Handle not found"));
+
+    const result = await updatePeerHandleAction("nope", { name: { en: "x", hi: "x", hx: "x" }, active: true });
+
+    expect(result).toEqual({ ok: false, error: "Handle not found" });
+  });
+
+  it("deletePeerHandleAction deletes and revalidates", async () => {
+    mockDeletePeerHandleForAdmin.mockResolvedValueOnce(undefined);
+
+    const result = await deletePeerHandleAction("h1");
+
+    expect(result).toEqual({ ok: true });
+    expect(mockDeletePeerHandleForAdmin).toHaveBeenCalledWith(ACTOR, "h1", expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/settings");
+  });
+
+  it("deletePeerHandleAction surfaces a CONFLICT from a handle still assigned to a learner", async () => {
+    mockDeletePeerHandleForAdmin.mockRejectedValueOnce(
+      new AppError("CONFLICT", "This handle is assigned to at least one learner - turn it off instead"),
+    );
+
+    const result = await deletePeerHandleAction("h1");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "This handle is assigned to at least one learner - turn it off instead",
+    });
   });
 });

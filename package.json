@@ -20,6 +20,7 @@
     "db:verify-pool": "tsx scripts/verify-db-pool.ts",
     "check:twelvedata": "tsx scripts/check-twelvedata-nse-access.ts",
     "backfill:world-codes": "tsx scripts/backfill-world-codes.ts",
+    "backfill:peer-handles": "tsx scripts/backfill-peer-handles.ts",
     "seed:super-admin": "tsx scripts/seed-super-admin.ts",
     "seed:legal": "tsx scripts/seed-legal-documents.ts",
     "seed:mentors": "tsx scripts/seed-mentors.ts",
@@ -30,6 +31,7 @@
     "seed:market-holidays": "tsx scripts/seed-market-holidays.ts",
     "seed:funds": "tsx scripts/seed-funds.ts",
     "seed:topics": "tsx scripts/seed-topics.ts",
+    "seed:peer-handles": "tsx scripts/seed-peer-handles.ts",
     "seed:dev-content": "tsx scripts/seed-dev-content.ts",
     "seed:dev-users": "tsx scripts/seed-dev-users.ts",
     "contract": "tsx scripts/generate-openapi.ts && node scripts/openapi-to-markdown.mjs openapi/openapi.json docs/API_ENDPOINTS.md"
