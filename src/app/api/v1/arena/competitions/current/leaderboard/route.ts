@@ -11,8 +11,8 @@ registry.registerPath({
   summary: "Get the current Monthly Competition's ranked board (AR-16)",
   description:
     "Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise " +
-    "fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name " +
-    "only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, " +
+    "fall outside that window - same shape as GET /arena/leaderboard). The handle only (D73). " +
+    "Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, " +
     "same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active " +
     "competition right now.",
   tags: ["Arena"],

@@ -11,12 +11,12 @@ registry.registerPath({
   path: "/api/v1/users/{userId}/public-profile",
   summary: "Get a learner's public Arena profile (AR-20)",
   description:
-    "Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe " +
-    "display name (first name + last initial, never a full name or photo), level, rank title, " +
-    "unlocked badges, selected about-me chips (preset only, never free text - " +
-    "docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current " +
+    "Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: the " +
+    "learner's staff-curated handle (D73, docs/ARCHITECTURE.md - never a real name or photo), " +
+    "level, rank title, unlocked badges, selected about-me chips (preset only, never free text " +
+    "- docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current " +
     "world progress. Never returns email, phone, date of birth, state, parent contact, " +
-    "school/class or `bio` - `users.bio` stays private to its owner forever.",
+    "school/class, firstName/lastInitial or `bio` - `users.bio` stays private to its owner forever.",
   tags: ["Arena"],
   security: [{ bearerAuth: [] }],
   request: { params: z.object({ userId: z.string().uuid() }) },

@@ -46,9 +46,9 @@ vi.mock("./repo", () => ({
 const mockDbTransaction = vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({}));
 vi.mock("@/db/client", () => ({ db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => mockDbTransaction(fn) } }));
 
-const mockGetDisplayNamesForUserIds = vi.fn();
-vi.mock("@/server/arena/repo", () => ({
-  getDisplayNamesForUserIds: (ids: unknown) => mockGetDisplayNamesForUserIds(ids),
+const mockGetHandlesForUserIds = vi.fn();
+vi.mock("@/server/peer-handles/service", () => ({
+  getHandlesForUserIds: (ids: unknown) => mockGetHandlesForUserIds(ids),
 }));
 
 vi.mock("@/server/economy/schemas", () => ({ VM_TO_LEDGER_PAISE: 100 }));

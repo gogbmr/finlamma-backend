@@ -50,3 +50,34 @@ describe("private onboarding/consent fields never leak into a peer-visible schem
     }
   });
 });
+
+// D73 (docs/ARCHITECTURE.md): firstName/lastInitial are retired as
+// peer-visible identity - the handle replaces them everywhere another
+// learner can see a name. This proves the swap actually happened in the
+// schemas themselves, not just in the service code that fills them.
+const RETIRED_NAME_FIELDS = ["firstName", "lastInitial"];
+
+describe("firstName/lastInitial never leak into a peer-visible schema (D73)", () => {
+  it.each([
+    ["Arena leaderboard (AR-07)", ArenaLeaderboardResponseSchema],
+    ["Arena worlds leaderboard", ArenaWorldsResponseSchema],
+    ["Arena activity feed", ArenaActivityResponseSchema],
+    ["Arena public profile (AR-20)", PublicProfileResponseSchema],
+    ["Arena cheers summary", MyCheersSummaryResponseSchema],
+    ["Competition leaderboard", CompetitionLeaderboardResponseSchema],
+  ] as const)("%s never exposes firstName/lastInitial", (_label, schema) => {
+    const keys = collectKeys(schema);
+    for (const field of RETIRED_NAME_FIELDS) {
+      expect(keys.has(field)).toBe(false);
+    }
+  });
+
+  it.each([
+    ["Arena leaderboard (AR-07)", ArenaLeaderboardResponseSchema],
+    ["Arena activity feed", ArenaActivityResponseSchema],
+    ["Arena public profile (AR-20)", PublicProfileResponseSchema],
+    ["Competition leaderboard", CompetitionLeaderboardResponseSchema],
+  ] as const)("%s carries a handle field instead", (_label, schema) => {
+    expect(collectKeys(schema).has("handle")).toBe(true);
+  });
+});

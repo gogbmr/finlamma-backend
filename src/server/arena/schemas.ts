@@ -2,6 +2,7 @@ import { z } from "zod";
 // Side-effect import: registers Zod's .openapi() extension method - must run
 // before any .openapi() call in this file (see src/lib/openapi.ts).
 import "@/lib/openapi";
+import { PeerHandleSchema } from "@/server/peer-handles/schemas";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 
 export const ArenaScopeKindSchema = z.enum(["world", "state", "india", "global"]).openapi({
@@ -15,11 +16,7 @@ export const ArenaScopeKindSchema = z.enum(["world", "state", "india", "global"]
 const LeaderboardRowSchema = z.object({
   rank: z.number().int().positive().openapi({ example: 1 }),
   userId: z.uuid().openapi({ example: "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b" }),
-  firstName: z.string().nullable().openapi({ example: "Aarav" }),
-  lastInitial: z.string().nullable().openapi({
-    example: "S",
-    description: "Kid-safe display name is always firstName + lastInitial - never a full name.",
-  }),
+  handle: PeerHandleSchema,
   xp: z.number().int().nonnegative().openapi({ example: 2710, description: "XP earned this week." }),
   isSelf: z.boolean().openapi({ example: false }),
   zone: z.enum(["promote", "safe", "demote"]).nullable().openapi({
@@ -103,8 +100,7 @@ export const ArenaWorldsResponseSchema = z.object({
 });
 
 const ActivityFeedItemSchema = z.object({
-  firstName: z.string().nullable().openapi({ example: "Meera" }),
-  lastInitial: z.string().nullable().openapi({ example: "K" }),
+  handle: PeerHandleSchema,
   amount: z.number().int().openapi({ example: 80 }),
   createdAt: z.string().datetime().openapi({ example: "2026-09-28T10:12:00.000Z" }),
 });
@@ -178,11 +174,7 @@ const PublicWorldProgressSchema = z
 
 export const PublicProfileResponseSchema = z.object({
   data: z.object({
-    firstName: z.string().nullable().openapi({ example: "Aarav" }),
-    lastInitial: z.string().nullable().openapi({
-      example: "S",
-      description: "Kid-safe display name is always firstName + lastInitial - never a full name or photo.",
-    }),
+    handle: PeerHandleSchema,
     level: z.number().int().positive().openapi({ example: 4 }),
     rankTitle: LocalizedTextSchema.nullable(),
     badges: z.array(PublicBadgeSchema),

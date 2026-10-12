@@ -35,6 +35,7 @@ import { insertUserBadgeIfAbsent } from "@/server/badges/repo";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { NOTIFICATION_COPY } from "@/server/notifications/copy";
 import { notifyUser } from "@/server/notifications/service";
+import { getHandlesForUserIds } from "@/server/peer-handles/service";
 import { INDIAN_STATES } from "@/server/shared/schemas";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import type { AboutMeChipInput, ArenaLeagueSettingsInput } from "./schemas";
@@ -48,7 +49,6 @@ import {
   findCheerableUser,
   getAboutMeChipById,
   getCurrentWorldIdForUser,
-  getDisplayNamesForUserIds,
   getLastWeekRanksForScope,
   getLeagueZonesForScope,
   getSelectedChipsForUser,
@@ -113,8 +113,7 @@ const ACTIVITY_FEED_LIMIT = 20;
 export type LeaderboardRowView = {
   rank: number;
   userId: string;
-  firstName: string | null;
-  lastInitial: string | null;
+  handle: LocalizedText | null;
   xp: number;
   isSelf: boolean;
   zone: LeagueZone | null;
@@ -212,7 +211,7 @@ async function buildLeaderboardView(
   }
 
   const ranked = rankRows(rows);
-  const names = await getDisplayNamesForUserIds(ranked.map((r) => r.userId));
+  const handles = await getHandlesForUserIds(ranked.map((r) => r.userId));
   const zones = await getLeagueZonesForScope(encodeScope(resolution.resolved));
   // AR-09: last week's settled rank for this same (resolved) scope, keyed by
   // user - a plain lookup against leaderboard_snapshots (empty map if that
@@ -233,13 +232,11 @@ async function buildLeaderboardView(
   const selfInTop = topRows.some((r) => r.userId === user.id);
 
   const viewRows: LeaderboardRowView[] = topRows.map((r) => {
-    const name = names.get(r.userId);
     const isSelf = r.userId === user.id;
     return {
       rank: r.rank,
       userId: r.userId,
-      firstName: name?.firstName ?? null,
-      lastInitial: name?.lastInitial ?? null,
+      handle: handles.get(r.userId) ?? null,
       xp: r.xp,
       isSelf,
       zone: visibleZone(zones.get(r.userId), isSelf),
@@ -248,12 +245,10 @@ async function buildLeaderboardView(
   });
 
   if (selfRanked && !selfInTop) {
-    const name = names.get(selfRanked.userId);
     viewRows.push({
       rank: selfRanked.rank,
       userId: selfRanked.userId,
-      firstName: name?.firstName ?? null,
-      lastInitial: name?.lastInitial ?? null,
+      handle: handles.get(selfRanked.userId) ?? null,
       xp: selfRanked.xp,
       isSelf: true,
       zone: visibleZone(zones.get(selfRanked.userId), true),
@@ -388,22 +383,21 @@ export async function getWorldsLeaderboard(): Promise<{
 }
 
 export type ActivityFeedItem = {
-  firstName: string | null;
-  lastInitial: string | null;
+  handle: LocalizedText | null;
   amount: number;
   createdAt: string;
 };
 
-// AR-03: a live-feeling marquee of recent XP credits. Kid-safe display name
-// only (first name + last initial), same as every other Arena surface.
+// AR-03: a live-feeling marquee of recent XP credits. The handle only (D73),
+// same as every other Arena surface.
 export async function getActivityFeed(): Promise<{
   items: ActivityFeedItem[];
 }> {
   const rows = await listRecentXpEvents(ACTIVITY_FEED_LIMIT);
+  const handles = await getHandlesForUserIds(rows.map((r) => r.userId));
   return {
     items: rows.map((r) => ({
-      firstName: r.firstName,
-      lastInitial: r.lastInitial,
+      handle: handles.get(r.userId) ?? null,
       amount: r.amount,
       createdAt: r.createdAt.toISOString(),
     })),
@@ -730,8 +724,7 @@ export async function setMySelectedChips(
 }
 
 export type PublicProfileView = {
-  firstName: string | null;
-  lastInitial: string | null;
+  handle: LocalizedText | null;
   level: number;
   rankTitle: LocalizedText | null;
   badges: {
@@ -754,11 +747,11 @@ export type PublicProfileView = {
 
 // AR-20's public player profile bottom sheet - opened by any OTHER learner
 // tapping a name/avatar anywhere in Arena. Every field here is on the
-// explicit allowlist the founder confirmed at Phase 6 kickoff: kid-safe
-// display name, level, rank title, badges, chips, week XP, streak, quiz
-// accuracy, current world + completion. Never: email, phone, DOB, state,
-// parent info, school/class, or `bio` (docs/ARCHITECTURE.md D36 - bio stays
-// on GET/PATCH /me forever, never surfaced here or anywhere else).
+// explicit allowlist the founder confirmed at Phase 6 kickoff: handle (D73),
+// level, rank title, badges, chips, week XP, streak, quiz accuracy, current
+// world + completion. Never: email, phone, DOB, state, parent info,
+// school/class, firstName/lastInitial, or `bio` (docs/ARCHITECTURE.md D36 -
+// bio stays on GET/PATCH /me forever, never surfaced here or anywhere else).
 export async function getPublicProfile(
   targetUserId: string,
 ): Promise<PublicProfileView> {
@@ -768,7 +761,7 @@ export async function getPublicProfile(
 
   const weekStartUtc = istWeekStartUtc(new Date());
   const [
-    nameRows,
+    handleRows,
     levelInfo,
     streakStats,
     quizAccuracy,
@@ -778,7 +771,7 @@ export async function getPublicProfile(
     weekXp,
   ] = await runWithConcurrencyLimit(
     [
-      () => getDisplayNamesForUserIds([targetUserId]),
+      () => getHandlesForUserIds([targetUserId]),
       () => getLevelInfo(targetUserId),
       () => getStreakStats(targetUserId),
       () => getQuizAccuracyTotalsForUser(targetUserId),
@@ -790,10 +783,7 @@ export async function getPublicProfile(
     DB_CONCURRENCY_LIMIT,
   );
 
-  const name = nameRows.get(targetUserId) ?? {
-    firstName: null,
-    lastInitial: null,
-  };
+  const handle = handleRows.get(targetUserId) ?? null;
   const rankTitleRow = await getRankTitleForLevel(levelInfo.level);
 
   let currentWorld: PublicProfileView["currentWorld"] = null;
@@ -814,8 +804,7 @@ export async function getPublicProfile(
   }
 
   return {
-    firstName: name.firstName,
-    lastInitial: name.lastInitial,
+    handle,
     level: levelInfo.level,
     rankTitle: rankTitleRow?.title ?? null,
     badges: badges

@@ -1,10 +1,11 @@
 import { db } from "@/db/client";
+import type { LocalizedText } from "@/db/schema/_helpers";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
 import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
 import { getSettingNumber, setSettingJson } from "@/lib/settings";
-import { getDisplayNamesForUserIds } from "@/server/arena/repo";
+import { getHandlesForUserIds } from "@/server/peer-handles/service";
 import { insertVmoneyLedgerEntryIfNew } from "@/server/economy/repo";
 import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import { getVmIssuanceMultiplier } from "@/server/economy/service";
@@ -328,8 +329,7 @@ export async function getMyCompetitionStatus(user: { id: string }, now: Date = n
 export type CompetitionLeaderboardRow = {
   rank: number;
   userId: string;
-  firstName: string | null;
-  lastInitial: string | null;
+  handle: LocalizedText | null;
   roiPctBasisPoints: number;
   isSelf: boolean;
 };
@@ -357,31 +357,25 @@ export async function getCompetitionLeaderboard(
 
   const currentPricePaise = price?.pricePaise ?? allEntries[0]!.avgPricePaise;
   const ranked = rankEntriesByRoi(allEntries, currentPricePaise, competition.virtualCapitalPaise);
-  const names = await getDisplayNamesForUserIds(ranked.map((r) => r.userId));
+  const handles = await getHandlesForUserIds(ranked.map((r) => r.userId));
 
   const top = ranked.slice(0, COMPETITION_LEADERBOARD_LIMIT);
   const selfInTop = top.some((r) => r.userId === user.id);
   const mine = ranked.find((r) => r.userId === user.id);
 
-  const rows: CompetitionLeaderboardRow[] = top.map((r) => {
-    const name = names.get(r.userId);
-    return {
-      rank: r.rank,
-      userId: r.userId,
-      firstName: name?.firstName ?? null,
-      lastInitial: name?.lastInitial ?? null,
-      roiPctBasisPoints: r.roiPctBasisPoints,
-      isSelf: r.userId === user.id,
-    };
-  });
+  const rows: CompetitionLeaderboardRow[] = top.map((r) => ({
+    rank: r.rank,
+    userId: r.userId,
+    handle: handles.get(r.userId) ?? null,
+    roiPctBasisPoints: r.roiPctBasisPoints,
+    isSelf: r.userId === user.id,
+  }));
 
   if (mine && !selfInTop) {
-    const name = names.get(mine.userId);
     rows.push({
       rank: mine.rank,
       userId: mine.userId,
-      firstName: name?.firstName ?? null,
-      lastInitial: name?.lastInitial ?? null,
+      handle: handles.get(mine.userId) ?? null,
       roiPctBasisPoints: mine.roiPctBasisPoints,
       isSelf: true,
     });

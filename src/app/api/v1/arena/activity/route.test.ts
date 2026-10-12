@@ -39,7 +39,13 @@ describe("GET /api/v1/arena/activity", () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockGetActivityFeed.mockResolvedValueOnce({
-      items: [{ firstName: "Aarav", lastInitial: "S", amount: 80, createdAt: "2026-09-28T10:00:00.000Z" }],
+      items: [
+        {
+          handle: { en: "Bright Bull", hi: "तेज़ बैल", hx: "Bright Bull" },
+          amount: 80,
+          createdAt: "2026-09-28T10:00:00.000Z",
+        },
+      ],
     });
 
     const res = await GET(makeRequest());

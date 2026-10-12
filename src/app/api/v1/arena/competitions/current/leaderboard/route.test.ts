@@ -48,11 +48,19 @@ describe("GET /api/v1/arena/competitions/current/leaderboard", () => {
     expect(body.data).toBeNull();
   });
 
-  it("returns the ranked board with only kid-safe display fields", async () => {
+  it("returns the ranked board with only the handle, never a real name", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockGetCompetitionLeaderboard.mockResolvedValueOnce({
-      rows: [{ rank: 1, userId: "u2", firstName: "Aarav", lastInitial: "S", roiPctBasisPoints: 900, isSelf: false }],
+      rows: [
+        {
+          rank: 1,
+          userId: "u2",
+          handle: { en: "Bright Bull", hi: "तेज़ बैल", hx: "Bright Bull" },
+          roiPctBasisPoints: 900,
+          isSelf: false,
+        },
+      ],
       poolSize: 50,
     });
 

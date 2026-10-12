@@ -226,8 +226,6 @@ export async function getWorldXpSparklines(
 
 export type RecentXpEvent = {
   userId: string;
-  firstName: string | null;
-  lastInitial: string | null;
   amount: number;
   createdAt: Date;
 };
@@ -235,13 +233,14 @@ export type RecentXpEvent = {
 // AR-03's activity ticker - the most recent real XP credits, newest first.
 // Deliberately unfiltered by source kind (a lesson, a badge, a cheer, ...)
 // since the ticker is meant to feel alive, not curated; excludes deleted
-// users the same way every other Arena query does.
+// users the same way every other Arena query does. Peer-visible identity
+// (the handle, D73) is resolved separately by the service layer via
+// getHandlesForUserIds, same batched-lookup shape every other Arena surface
+// uses - this query stays focused on which events happened.
 export async function listRecentXpEvents(limit: number): Promise<RecentXpEvent[]> {
   const rows = await db
     .select({
       userId: xpEvents.userId,
-      firstName: users.firstName,
-      lastInitial: users.lastInitial,
       amount: xpEvents.amount,
       createdAt: xpEvents.createdAt,
     })
@@ -549,15 +548,4 @@ export async function countCompletedLessonsForUserInWorld(userId: string, worldI
       ),
     );
   return row?.n ?? 0;
-}
-
-export async function getDisplayNamesForUserIds(
-  userIds: string[],
-): Promise<Map<string, { firstName: string | null; lastInitial: string | null }>> {
-  if (userIds.length === 0) return new Map();
-  const rows = await db
-    .select({ id: users.id, firstName: users.firstName, lastInitial: users.lastInitial })
-    .from(users)
-    .where(inArray(users.id, userIds));
-  return new Map(rows.map((r) => [r.id, { firstName: r.firstName, lastInitial: r.lastInitial }]));
 }
