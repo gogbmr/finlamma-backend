@@ -36,7 +36,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     const input = {
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -55,7 +54,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: uniqueEmail("resurrect-before"),
       phone: null,
       clerkUpdatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -69,7 +67,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Resurrected",
-      lastInitial: "U",
       email: uniqueEmail("resurrect-after"),
       phone: null,
       clerkUpdatedAt: new Date("2026-06-01T00:00:00Z"),
@@ -82,12 +79,11 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     expect(row.email).toBeNull();
   });
 
-  it("allows null firstName/lastInitial for a phone-only signup with no name yet", async () => {
+  it("allows a null firstName for a phone-only signup with no name yet", async () => {
     const clerkUserId = uniqueClerkUserId("phone-only");
     await upsertUserFromClerk({
       clerkUserId,
       firstName: null,
-      lastInitial: null,
       email: null,
       phone: "+911234567890",
       clerkUpdatedAt: new Date(),
@@ -106,7 +102,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId: otherClerkUserId,
       firstName: "First",
-      lastInitial: "U",
       email,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -116,8 +111,7 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
       upsertUserFromClerk({
         clerkUserId,
         firstName: "Second",
-        lastInitial: "U",
-        email, // already taken by otherClerkUserId
+          email, // already taken by otherClerkUserId
         phone: null,
         clerkUpdatedAt: new Date(),
       }),
@@ -142,7 +136,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "New",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -158,7 +151,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Original",
-      lastInitial: "U",
       email: uniqueEmail("lifecycle"),
       phone: null,
       clerkUpdatedAt: new Date("2026-01-01T00:00:00Z"),
@@ -170,7 +162,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Updated",
-      lastInitial: "U",
       email: uniqueEmail("lifecycle-updated"),
       phone: null,
       clerkUpdatedAt: new Date("2026-02-01T00:00:00Z"),
@@ -194,7 +185,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -215,7 +205,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -236,7 +225,6 @@ describe("upsertUserFromClerk / anonymizeUserFromClerk", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -256,7 +244,6 @@ describe("getUserById / getUserByClerkUserId", () => {
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -279,7 +266,6 @@ describe("markDeletionRequested / listStuckAccountDeletions / countStuckAccountD
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -304,7 +290,6 @@ describe("markDeletionRequested / listStuckAccountDeletions / countStuckAccountD
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),
@@ -320,7 +305,6 @@ describe("markDeletionRequested / listStuckAccountDeletions / countStuckAccountD
     await upsertUserFromClerk({
       clerkUserId,
       firstName: "Test",
-      lastInitial: "U",
       email: null,
       phone: null,
       clerkUpdatedAt: new Date(),

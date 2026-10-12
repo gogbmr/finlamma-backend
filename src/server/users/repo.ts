@@ -26,7 +26,6 @@ export async function updateUserPrefs(userId: string, input: UserPrefsUpdate) {
 export type ClerkUserSync = {
   clerkUserId: string;
   firstName: string | null;
-  lastInitial: string | null;
   email: string | null;
   phone: string | null;
   clerkUpdatedAt: Date;
@@ -38,6 +37,12 @@ export type ClerkUserSync = {
 // already have) is silently ignored rather than overwriting newer data,
 // and a soft-deleted row is never touched (deletedAt IS NULL guard) so a
 // late user.updated can't resurrect personal data after a user.deleted.
+//
+// `lastInitial` is deliberately absent from both the insert and the update
+// set (D73, docs/ARCHITECTURE.md): a brand-new row simply gets Postgres's
+// default (null) for it, and an existing row's current value - whatever it
+// already was - is never touched again. Peer-visible identity is the
+// handle now, not firstName+lastInitial.
 export async function upsertUserFromClerk(input: ClerkUserSync) {
   const excludedClerkUpdatedAt = sql.raw(
     `excluded.${users.clerkUpdatedAt.name}`,
@@ -51,7 +56,6 @@ export async function upsertUserFromClerk(input: ClerkUserSync) {
         target: users.clerkUserId,
         set: {
           firstName: input.firstName,
-          lastInitial: input.lastInitial,
           email: input.email,
           phone: input.phone,
           clerkUpdatedAt: input.clerkUpdatedAt,
