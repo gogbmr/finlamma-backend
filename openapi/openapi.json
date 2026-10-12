@@ -255,7 +255,7 @@
               "null"
             ],
             "example": "Chirag",
-            "description": "Kid-safe display name part - never the full last name."
+            "description": "Private to the owner (D73, docs/ARCHITECTURE.md) - never shown to another learner. Only ever first name, never the full last name."
           },
           "lastInitial": {
             "type": [
@@ -264,7 +264,36 @@
             ],
             "minLength": 1,
             "maxLength": 1,
-            "example": "B"
+            "example": "B",
+            "description": "Legacy field, retired (D73) - no longer written for new or existing accounts going forward. Kept here, still private to the owner, only for accounts that already had one before this change."
+          },
+          "handle": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "en": {
+                "type": "string"
+              },
+              "hi": {
+                "type": "string"
+              },
+              "hx": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "en",
+              "hi",
+              "hx"
+            ],
+            "example": {
+              "en": "Smart Saver",
+              "hi": "समझदार बचतकर्ता",
+              "hx": "Smart Saver"
+            },
+            "description": "The learner's current peer-visible handle - staff-curated, never learner-authored (D73, docs/ARCHITECTURE.md). Replaces the old firstName+lastInitial display name everywhere another learner can see it."
           },
           "email": {
             "type": [
@@ -422,6 +451,7 @@
           "id",
           "firstName",
           "lastInitial",
+          "handle",
           "email",
           "phone",
           "language",
@@ -4110,6 +4140,128 @@
         }
       }
     },
+    "/api/v1/me/handle/reroll": {
+      "post": {
+        "summary": "Reroll my peer-visible handle (D73)",
+        "description": "Randomly assigns a new staff-curated handle, excluding the caller's current one where possible. Allowed once every 30 days - a second attempt inside the cooldown is rejected with RESEND_TOO_SOON and a retryAfterSeconds/nextRerollAvailableAt in the error details.",
+        "tags": [
+          "Users"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's new handle and when the next reroll will be available",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "handle": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ],
+                          "example": {
+                            "en": "Bright Bull",
+                            "hi": "तेज़ बैल",
+                            "hx": "Bright Bull"
+                          }
+                        },
+                        "nextRerollAvailableAt": {
+                          "type": "string",
+                          "format": "date-time",
+                          "example": "2026-11-11T00:00:00.000Z",
+                          "description": "30 days from now - the earliest the next reroll will be allowed."
+                        }
+                      },
+                      "required": [
+                        "handle",
+                        "nextRerollAvailableAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Still within the 30-day reroll cooldown",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "RESEND_TOO_SOON",
+                    "message": "You can reroll your handle again in a bit",
+                    "details": {
+                      "retryAfterSeconds": 1209600,
+                      "nextRerollAvailableAt": "2026-11-11T00:00:00.000Z"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/legal/{type}": {
       "get": {
         "summary": "Get a published legal document",
@@ -5871,7 +6023,7 @@
     "/api/v1/me/profile/overview": {
       "get": {
         "summary": "Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)",
-        "description": "Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).",
+        "description": "The caller's own identity (first name + last initial - never a full name or photo), private to them the same way GET /me is (D73, docs/ARCHITECTURE.md - other learners see this learner's handle instead, never this), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).",
         "tags": [
           "Learning"
         ],
@@ -11176,20 +11328,33 @@
                                 "format": "uuid",
                                 "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
                               },
-                              "firstName": {
+                              "handle": {
                                 "type": [
-                                  "string",
+                                  "object",
                                   "null"
                                 ],
-                                "example": "Aarav"
-                              },
-                              "lastInitial": {
-                                "type": [
-                                  "string",
-                                  "null"
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
                                 ],
-                                "example": "S",
-                                "description": "Kid-safe display name is always firstName + lastInitial - never a full name."
+                                "example": {
+                                  "en": "Smart Saver",
+                                  "hi": "समझदार बचतकर्ता",
+                                  "hx": "Smart Saver"
+                                },
+                                "description": "The learner's current peer-visible handle - staff-curated, never learner-authored (D73, docs/ARCHITECTURE.md). Replaces the old firstName+lastInitial display name everywhere another learner can see it."
                               },
                               "xp": {
                                 "type": "integer",
@@ -11227,8 +11392,7 @@
                             "required": [
                               "rank",
                               "userId",
-                              "firstName",
-                              "lastInitial",
+                              "handle",
                               "xp",
                               "isSelf",
                               "zone",
@@ -11583,20 +11747,33 @@
                                 "format": "uuid",
                                 "example": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
                               },
-                              "firstName": {
+                              "handle": {
                                 "type": [
-                                  "string",
+                                  "object",
                                   "null"
                                 ],
-                                "example": "Aarav"
-                              },
-                              "lastInitial": {
-                                "type": [
-                                  "string",
-                                  "null"
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
                                 ],
-                                "example": "S",
-                                "description": "Kid-safe display name is always firstName + lastInitial - never a full name."
+                                "example": {
+                                  "en": "Smart Saver",
+                                  "hi": "समझदार बचतकर्ता",
+                                  "hx": "Smart Saver"
+                                },
+                                "description": "The learner's current peer-visible handle - staff-curated, never learner-authored (D73, docs/ARCHITECTURE.md). Replaces the old firstName+lastInitial display name everywhere another learner can see it."
                               },
                               "xp": {
                                 "type": "integer",
@@ -11634,8 +11811,7 @@
                             "required": [
                               "rank",
                               "userId",
-                              "firstName",
-                              "lastInitial",
+                              "handle",
                               "xp",
                               "isSelf",
                               "zone",
@@ -11730,7 +11906,7 @@
     "/api/v1/arena/activity": {
       "get": {
         "summary": "Get the recent-activity ticker (AR-03)",
-        "description": "The most recent real XP credits app-wide, newest first, kid-safe display name only.",
+        "description": "The most recent real XP credits app-wide, newest first, the handle only (D73).",
         "tags": [
           "Arena"
         ],
@@ -11755,19 +11931,33 @@
                           "items": {
                             "type": "object",
                             "properties": {
-                              "firstName": {
+                              "handle": {
                                 "type": [
-                                  "string",
+                                  "object",
                                   "null"
                                 ],
-                                "example": "Meera"
-                              },
-                              "lastInitial": {
-                                "type": [
-                                  "string",
-                                  "null"
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
                                 ],
-                                "example": "K"
+                                "example": {
+                                  "en": "Smart Saver",
+                                  "hi": "समझदार बचतकर्ता",
+                                  "hx": "Smart Saver"
+                                },
+                                "description": "The learner's current peer-visible handle - staff-curated, never learner-authored (D73, docs/ARCHITECTURE.md). Replaces the old firstName+lastInitial display name everywhere another learner can see it."
                               },
                               "amount": {
                                 "type": "integer",
@@ -11780,8 +11970,7 @@
                               }
                             },
                             "required": [
-                              "firstName",
-                              "lastInitial",
+                              "handle",
                               "amount",
                               "createdAt"
                             ]
@@ -12424,7 +12613,7 @@
     "/api/v1/users/{userId}/public-profile": {
       "get": {
         "summary": "Get a learner's public Arena profile (AR-20)",
-        "description": "Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe display name (first name + last initial, never a full name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class or `bio` - `users.bio` stays private to its owner forever.",
+        "description": "Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: the learner's staff-curated handle (D73, docs/ARCHITECTURE.md - never a real name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class, firstName/lastInitial or `bio` - `users.bio` stays private to its owner forever.",
         "tags": [
           "Arena"
         ],
@@ -12455,20 +12644,33 @@
                     "data": {
                       "type": "object",
                       "properties": {
-                        "firstName": {
+                        "handle": {
                           "type": [
-                            "string",
+                            "object",
                             "null"
                           ],
-                          "example": "Aarav"
-                        },
-                        "lastInitial": {
-                          "type": [
-                            "string",
-                            "null"
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
                           ],
-                          "example": "S",
-                          "description": "Kid-safe display name is always firstName + lastInitial - never a full name or photo."
+                          "example": {
+                            "en": "Smart Saver",
+                            "hi": "समझदार बचतकर्ता",
+                            "hx": "Smart Saver"
+                          },
+                          "description": "The learner's current peer-visible handle - staff-curated, never learner-authored (D73, docs/ARCHITECTURE.md). Replaces the old firstName+lastInitial display name everywhere another learner can see it."
                         },
                         "level": {
                           "type": "integer",
@@ -12685,8 +12887,7 @@
                         }
                       },
                       "required": [
-                        "firstName",
-                        "lastInitial",
+                        "handle",
                         "level",
                         "rankTitle",
                         "badges",
@@ -13424,7 +13625,7 @@
     "/api/v1/arena/competitions/current/leaderboard": {
       "get": {
         "summary": "Get the current Monthly Competition's ranked board (AR-16)",
-        "description": "Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.",
+        "description": "Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). The handle only (D73). Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.",
         "tags": [
           "Arena"
         ],
@@ -13460,17 +13661,33 @@
                                 "type": "string",
                                 "format": "uuid"
                               },
-                              "firstName": {
+                              "handle": {
                                 "type": [
-                                  "string",
+                                  "object",
                                   "null"
-                                ]
-                              },
-                              "lastInitial": {
-                                "type": [
-                                  "string",
-                                  "null"
-                                ]
+                                ],
+                                "properties": {
+                                  "en": {
+                                    "type": "string"
+                                  },
+                                  "hi": {
+                                    "type": "string"
+                                  },
+                                  "hx": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "en",
+                                  "hi",
+                                  "hx"
+                                ],
+                                "example": {
+                                  "en": "Smart Saver",
+                                  "hi": "समझदार बचतकर्ता",
+                                  "hx": "Smart Saver"
+                                },
+                                "description": "The learner's current peer-visible handle - staff-curated, never learner-authored (D73, docs/ARCHITECTURE.md). Replaces the old firstName+lastInitial display name everywhere another learner can see it."
                               },
                               "roiPctBasisPoints": {
                                 "type": "integer"
@@ -13482,8 +13699,7 @@
                             "required": [
                               "rank",
                               "userId",
-                              "firstName",
-                              "lastInitial",
+                              "handle",
                               "roiPctBasisPoints",
                               "isSelf"
                             ]

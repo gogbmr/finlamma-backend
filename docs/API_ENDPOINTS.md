@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 1.6.0) on 2026-10-11.
+> Generated from `openapi/openapi.json` (version 1.6.0) on 2026-10-12.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -16,6 +16,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me` — Get my profile
 - `PATCH /api/v1/me` — Update my preferences
 - `DELETE /api/v1/me` — Delete my account
+- `POST /api/v1/me/handle/reroll` — Reroll my peer-visible handle (D73)
 
 **Legal**
 
@@ -217,6 +218,11 @@ Returns the signed-in user's own profile, including read-only onboarding/consent
     "id": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
     "firstName": "Chirag",
     "lastInitial": "B",
+    "handle": {
+      "en": "Smart Saver",
+      "hi": "समझदार बचतकर्ता",
+      "hx": "Smart Saver"
+    },
     "email": "chirag@example.com",
     "phone": "+919876543210",
     "language": "en",
@@ -308,6 +314,11 @@ Updates language, theme, bio, state and/or sound/haptics/data-saver preferences 
     "id": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
     "firstName": "Chirag",
     "lastInitial": "B",
+    "handle": {
+      "en": "Smart Saver",
+      "hi": "समझदार बचतकर्ता",
+      "hx": "Smart Saver"
+    },
     "email": "chirag@example.com",
     "phone": "+919876543210",
     "language": "en",
@@ -406,6 +417,71 @@ Durably records the deletion request and returns success immediately - the delet
   "error": {
     "code": "ACCOUNT_DELETION_PENDING",
     "message": "This account is being deleted"
+  }
+}
+```
+
+
+---
+
+### `POST /api/v1/me/handle/reroll`
+
+**Reroll my peer-visible handle (D73)**
+
+Randomly assigns a new staff-curated handle, excluding the caller's current one where possible. Allowed once every 30 days - a second attempt inside the cooldown is rejected with RESEND_TOO_SOON and a retryAfterSeconds/nextRerollAvailableAt in the error details.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's new handle and when the next reroll will be available
+
+```json
+{
+  "data": {
+    "handle": {
+      "en": "Bright Bull",
+      "hi": "तेज़ बैल",
+      "hx": "Bright Bull"
+    },
+    "nextRerollAvailableAt": "2026-11-11T00:00:00.000Z"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **429** — Still within the 30-day reroll cooldown
+
+```json
+{
+  "error": {
+    "code": "RESEND_TOO_SOON",
+    "message": "You can reroll your handle again in a bit",
+    "details": {
+      "retryAfterSeconds": 1209600,
+      "nextRerollAvailableAt": "2026-11-11T00:00:00.000Z"
+    }
   }
 }
 ```
@@ -1754,7 +1830,7 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
 
 **Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)**
 
-Kid-safe identity (first name + last initial only - never a full name or photo, CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).
+The caller's own identity (first name + last initial - never a full name or photo), private to them the same way GET /me is (D73, docs/ARCHITECTURE.md - other learners see this learner's handle instead, never this), joined date, level, XP progress to the next level, the rank title the caller's current level currently qualifies for (admin-editable rank_titles table, or null if none applies yet), the learning streak, lesson-completion progress, quiz accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` (World/State-or-India/Global) read from Arena's last weekly settlement - each is null, cleanly, whenever there's nothing to report (no settlement yet, a scope below the privacy floor, or no XP that week).
 
 **Auth:** bearerAuth
 
@@ -4906,8 +4982,11 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
       {
         "rank": 1,
         "userId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
-        "firstName": "Aarav",
-        "lastInitial": "S",
+        "handle": {
+          "en": "Smart Saver",
+          "hi": "समझदार बचतकर्ता",
+          "hx": "Smart Saver"
+        },
         "xp": 2710,
         "isSelf": false,
         "zone": "promote",
@@ -5055,8 +5134,11 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
       {
         "rank": 1,
         "userId": "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
-        "firstName": "Aarav",
-        "lastInitial": "S",
+        "handle": {
+          "en": "Smart Saver",
+          "hi": "समझदार बचतकर्ता",
+          "hx": "Smart Saver"
+        },
         "xp": 2710,
         "isSelf": false,
         "zone": "promote",
@@ -5101,7 +5183,7 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
 
 **Get the recent-activity ticker (AR-03)**
 
-The most recent real XP credits app-wide, newest first, kid-safe display name only.
+The most recent real XP credits app-wide, newest first, the handle only (D73).
 
 **Auth:** bearerAuth
 
@@ -5114,8 +5196,11 @@ The most recent real XP credits app-wide, newest first, kid-safe display name on
   "data": {
     "items": [
       {
-        "firstName": "Meera",
-        "lastInitial": "K",
+        "handle": {
+          "en": "Smart Saver",
+          "hi": "समझदार बचतकर्ता",
+          "hx": "Smart Saver"
+        },
         "amount": 80,
         "createdAt": "2026-09-28T10:12:00.000Z"
       }
@@ -5472,7 +5557,7 @@ Replaces the caller's whole chip selection - at most 3, and every id must be an 
 
 **Get a learner's public Arena profile (AR-20)**
 
-Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: kid-safe display name (first name + last initial, never a full name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class or `bio` - `users.bio` stays private to its owner forever.
+Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: the learner's staff-curated handle (D73, docs/ARCHITECTURE.md - never a real name or photo), level, rank title, unlocked badges, selected about-me chips (preset only, never free text - docs/ARCHITECTURE.md D36), this week's XP, learning streak, quiz accuracy and current world progress. Never returns email, phone, date of birth, state, parent contact, school/class, firstName/lastInitial or `bio` - `users.bio` stays private to its owner forever.
 
 **Auth:** bearerAuth
 
@@ -5489,8 +5574,11 @@ Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: 
 ```json
 {
   "data": {
-    "firstName": "Aarav",
-    "lastInitial": "S",
+    "handle": {
+      "en": "Smart Saver",
+      "hi": "समझदार बचतकर्ता",
+      "hx": "Smart Saver"
+    },
     "level": 4,
     "rankTitle": {
       "en": "string",
@@ -5884,7 +5972,7 @@ The "You" rank card - live rank/ROI% among every entrant, computed the instant i
 
 **Get the current Monthly Competition's ranked board (AR-16)**
 
-Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). Kid-safe display name only. Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.
+Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd otherwise fall outside that window - same shape as GET /arena/leaderboard). The handle only (D73). Row expansion (best trade, win rate, avg hold time) isn't built yet - a fast-follow, same as the Worlds/Players ladders' own AR-10 row expansion. Null when there's no active competition right now.
 
 **Auth:** bearerAuth
 
@@ -5899,8 +5987,11 @@ Every entrant ranked live by ROI% (top 50, plus the caller's own row if they'd o
       {
         "rank": 0,
         "userId": "00000000-0000-0000-0000-000000000000",
-        "firstName": "string",
-        "lastInitial": "string",
+        "handle": {
+          "en": "Smart Saver",
+          "hi": "समझदार बचतकर्ता",
+          "hx": "Smart Saver"
+        },
         "roiPctBasisPoints": 0,
         "isSelf": true
       }
