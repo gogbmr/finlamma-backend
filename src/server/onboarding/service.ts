@@ -14,7 +14,6 @@ import { getSettingNumber } from "@/lib/settings";
 import { getLegalDocumentById, listPublishedDocuments } from "@/server/legal/repo";
 import { getLegalStatus } from "@/server/legal/service";
 import {
-  anonymizeParentContact,
   approveReapprovalAndRecordAcceptance,
   claimConsentRequestSlot,
   claimReapprovalRequestSlot,
@@ -36,7 +35,7 @@ import {
   listConsentRecordsForReview,
   listPendingReapprovalRequestsForUser,
   markOnboardingCompletedOnce,
-  setConsentRecordParentEmailHmac,
+  scrubParentContactDataTx,
   setConsentRecordWithdrawTokenHash,
   setDateOfBirthOnce,
   setParentContactWeeklyReportOptIn,
@@ -699,6 +698,14 @@ export async function scrubConsentDataForDeletedUser(
   const parentContact = await getParentContact(userId);
   if (!parentContact) return; // adult account, or a minor who never requested consent
 
+  // Idempotency marker, set in the same transaction as the real scrub below
+  // (phase-audit 2026-10-11 finding) - an explicit column, never derived
+  // from `name === "[deleted]"` or similar, so re-running this (the
+  // account-deletion reconciliation job may call it more than once) can
+  // never recompute parentEmailHmac from an already-anonymized placeholder
+  // email and destroy the original DPDP consent-proof evidence.
+  if (parentContact.scrubbedAt) return;
+
   const hmacKey = env.CONSENT_PII_HMAC_KEY;
   const parentEmailHmac = hmacKey
     ? createHmac("sha256", hmacKey).update(parentContact.email).digest("hex")
@@ -709,7 +716,6 @@ export async function scrubConsentDataForDeletedUser(
       new Error(`CONSENT_PII_HMAC_KEY not configured - deleting user ${userId} without HMAC proof`),
     );
   }
-  await setConsentRecordParentEmailHmac(userId, parentEmailHmac);
 
   // countChildrenForParentEmail excludes deleted accounts, and this user's
   // own deletedAt is already set by the time this runs (see
@@ -717,14 +723,18 @@ export async function scrubConsentDataForDeletedUser(
   // children only, with no separate "exclude self" parameter needed.
   const otherActiveChildren = await countChildrenForParentEmail(parentContact.email);
   const anonymized = otherActiveChildren === 0;
-  if (anonymized) {
-    // Only erase the parent's contact info once no other current child
-    // depends on it - if the same email still backs another active child,
-    // it's still a live, legitimate contact for the platform (that
-    // sibling's own separate parent_contacts row already holds the same
-    // information anyway, so erasing this one row would achieve nothing).
-    await anonymizeParentContact(parentContact.id);
-  }
+  // Only erase the parent's contact info once no other current child
+  // depends on it - if the same email still backs another active child,
+  // it's still a live, legitimate contact for the platform (that sibling's
+  // own separate parent_contacts row already holds the same information
+  // anyway, so erasing this one row would achieve nothing). Either way,
+  // scrubbed_at is stamped in the same transaction.
+  await scrubParentContactDataTx({
+    userId,
+    parentContactId: parentContact.id,
+    parentEmailHmac,
+    anonymizeContact: anonymized,
+  });
 
   await logActivity({
     actorType: "user",

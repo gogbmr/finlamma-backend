@@ -77,6 +77,16 @@ export async function requireUser(req: Request) {
     throw new AppError("UNAUTHENTICATED", "No account found for this session");
   }
 
+  // A deletion is in flight (DELETE /me already called) - the account must
+  // stop being usable immediately, even though the Clerk identity/DB
+  // anonymization/consent scrub may still be finishing in the background
+  // (src/server/users/service.ts reconcileAccountDeletion). Otherwise a
+  // half-deleted account could keep being used, e.g. on a shared family
+  // phone, for however long reconciliation takes.
+  if (user.deletionRequestedAt) {
+    throw new AppError("ACCOUNT_DELETION_PENDING", "This account is being deleted");
+  }
+
   return user;
 }
 
@@ -103,6 +113,36 @@ export async function deleteConsumerClerkUser(clerkUserId: string): Promise<void
     // from Clerk's SDK on a path that runs with the secret key in scope.
     console.error("Consumer Clerk user deletion failed unexpectedly");
     throw new AppError("SERVICE_UNAVAILABLE", "Could not delete account right now");
+  }
+}
+
+// Used only by the account-deletion reconciliation path
+// (src/server/users/service.ts reconcileAccountDeletion) to tell apart "the
+// original deleteMe() call already got as far as deleting the Clerk
+// identity, just failed on a later step" from "the Clerk delete itself
+// never completed" - the two cases this job needs to resume differently.
+// Clerk's SDK throws a ClerkAPIResponseError with `status: 404` for an
+// unknown user id; any other error is a real, unexpected failure and must
+// propagate (so the caller's own retry/backoff handles it), never get
+// silently treated as "deleted".
+export async function consumerClerkUserExists(clerkUserId: string): Promise<boolean> {
+  const consumerClerkClient = getConsumerClerkClient();
+  if (!consumerClerkClient) {
+    throw new AppError(
+      "SERVICE_UNAVAILABLE",
+      "Consumer Clerk application not configured",
+    );
+  }
+
+  try {
+    await consumerClerkClient.users.getUser(clerkUserId);
+    return true;
+  } catch (err) {
+    if (err && typeof err === "object" && "status" in err && err.status === 404) {
+      return false;
+    }
+    console.error("Consumer Clerk user lookup failed unexpectedly");
+    throw new AppError("SERVICE_UNAVAILABLE", "Could not check account deletion status");
   }
 }
 

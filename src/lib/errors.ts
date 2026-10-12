@@ -84,6 +84,14 @@ export const ErrorCode = {
   // genuinely new concepts with no existing equivalent.
   COMPETITION_ENTRY_CLOSED: "COMPETITION_ENTRY_CLOSED",
   COMPETITION_MAX_TRADES_REACHED: "COMPETITION_MAX_TRADES_REACHED",
+
+  // Account deletion (src/lib/auth.ts requireUser, src/server/users/service.ts
+  // deleteMe) - thrown for every request once users.deletionRequestedAt is
+  // set, so a half-deleted account can't keep being used (e.g. on a shared
+  // family phone) while the Inngest reconciliation job finishes the job in
+  // the background. See docs/MOBILE_INTEGRATION.md for the app-facing
+  // "your account is being deleted" screen this should trigger.
+  ACCOUNT_DELETION_PENDING: "ACCOUNT_DELETION_PENDING",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -127,6 +135,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 
   COMPETITION_ENTRY_CLOSED: 409,
   COMPETITION_MAX_TRADES_REACHED: 409,
+
+  ACCOUNT_DELETION_PENDING: 403,
 };
 
 export class AppError extends Error {

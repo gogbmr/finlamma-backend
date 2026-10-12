@@ -22,6 +22,7 @@ const {
   listRecentMessages,
   markMessageFlagged,
   markMessageReviewed,
+  scrubMessagesForUser,
   touchThreadLastMessageAt,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
@@ -351,5 +352,74 @@ describe("listFlaggedMessagesForReview / markMessageReviewed", () => {
     const withReviewed = await listFlaggedMessagesForReview({ includeReviewed: true, limit: 500 });
     const row = withReviewed.find((r) => r.id === flagged.id);
     expect(row!.reviewedAt).not.toBeNull();
+  });
+});
+
+describe("scrubMessagesForUser", () => {
+  it("replaces content and flaggedReason for every message in every thread the user owns, keeping the flag itself", async () => {
+    const user = await makeUser();
+    const mentor = await makeMentor();
+    const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
+    const plain = await insertMessage({
+      threadId: thread.id,
+      role: "learner",
+      content: "I go to Delhi Public School",
+      flagged: false,
+      flaggedReason: null,
+    });
+    const flagged = await insertMessage({
+      threadId: thread.id,
+      role: "assistant",
+      content: "a reply quoting the above",
+      flagged: true,
+      flaggedCategory: "other_wellbeing_concern",
+      flaggedReason: "classifier paraphrase of what they said",
+    });
+
+    const scrubbedCount = await scrubMessagesForUser(user.id);
+
+    expect(scrubbedCount).toBe(2);
+    const plainAfter = await getMessageById(plain.id);
+    const flaggedAfter = await getMessageById(flagged.id);
+    expect(plainAfter!.content).toBe("[deleted]");
+    expect(plainAfter!.flaggedReason).toBeNull(); // was already null
+    expect(flaggedAfter!.content).toBe("[deleted]");
+    expect(flaggedAfter!.flaggedReason).toBe("[deleted]");
+    // Kept for moderation statistics, per the founder's explicit decision.
+    expect(flaggedAfter!.flagged).toBe(true);
+    expect(flaggedAfter!.flaggedCategory).toBe("other_wellbeing_concern");
+  });
+
+  it("never touches another user's messages", async () => {
+    const owner = await makeUser();
+    const other = await makeUser();
+    const mentor = await makeMentor();
+    const ownerThread = await insertThread({ userId: owner.id, mentorId: mentor.id, lessonId: null });
+    const otherThread = await insertThread({ userId: other.id, mentorId: mentor.id, lessonId: null });
+    await insertMessage({ threadId: ownerThread.id, role: "learner", content: "owner's text", flagged: false, flaggedReason: null });
+    const otherMessage = await insertMessage({
+      threadId: otherThread.id,
+      role: "learner",
+      content: "other user's text",
+      flagged: false,
+      flaggedReason: null,
+    });
+
+    await scrubMessagesForUser(owner.id);
+
+    expect((await getMessageById(otherMessage.id))!.content).toBe("other user's text");
+  });
+
+  it("is idempotent - a second call on an already-scrubbed thread changes nothing further", async () => {
+    const user = await makeUser();
+    const mentor = await makeMentor();
+    const thread = await insertThread({ userId: user.id, mentorId: mentor.id, lessonId: null });
+    await insertMessage({ threadId: thread.id, role: "learner", content: "hello", flagged: false, flaggedReason: null });
+
+    const firstRun = await scrubMessagesForUser(user.id);
+    const secondRun = await scrubMessagesForUser(user.id);
+
+    expect(firstRun).toBe(1);
+    expect(secondRun).toBe(0);
   });
 });

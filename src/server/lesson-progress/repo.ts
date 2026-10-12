@@ -1,6 +1,6 @@
 import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
-import { lessonProgress } from "@/db/schema";
+import { lessonProgress, type lessonProgressStatusEnum } from "@/db/schema";
 
 // Idempotent "ensure a row exists, in_progress" - called from
 // src/server/quiz-attempts/service.ts's serveStep on a lesson's first-ever
@@ -125,6 +125,24 @@ export async function countCompletedLessonsForUser(userId: string): Promise<numb
 // completion), acceptable here since PR-08 only needs "did something today"
 // - revisit if the weekly report card's Consistency sub-metric (Checkpoint 6)
 // needs finer granularity.
+// WH-06 ("Resume" banner, src/server/lessons/service.ts getCurrentLesson):
+// one grouped query for every lesson in a world, instead of a round trip
+// per lesson - same "no per-row query" reasoning as
+// countInProgressLearnersByLessonIds above. A lesson with no row at all
+// (never started) is simply absent from the map, same "missing key = not
+// started" convention every other map-returning query here already uses.
+export async function getLessonProgressStatusesForUser(
+  userId: string,
+  lessonIds: string[],
+): Promise<Map<string, (typeof lessonProgressStatusEnum.enumValues)[number]>> {
+  if (lessonIds.length === 0) return new Map();
+  const rows = await db
+    .select({ lessonId: lessonProgress.lessonId, status: lessonProgress.status })
+    .from(lessonProgress)
+    .where(and(eq(lessonProgress.userId, userId), inArray(lessonProgress.lessonId, lessonIds)));
+  return new Map(rows.map((r) => [r.lessonId, r.status]));
+}
+
 export async function listLessonCompletionTimestampsForUser(userId: string, since: Date): Promise<Date[]> {
   const rows = await db
     .select({ completedAt: lessonProgress.completedAt })

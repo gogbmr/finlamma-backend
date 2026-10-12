@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { ok, withErrors } from "@/lib/http";
+import { ok, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { MarkNotificationsReadInputSchema } from "@/server/notifications/schemas";
 import { markMyNotificationsRead } from "@/server/notifications/service";
@@ -40,6 +40,6 @@ export const POST = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
   const body = MarkNotificationsReadInputSchema.parse(await req.json());
-  await markMyNotificationsRead({ id: user.id }, body.ids);
+  await markMyNotificationsRead({ id: user.id }, body.ids, requestMeta(req.headers));
   return ok({ marked: true as const });
 });

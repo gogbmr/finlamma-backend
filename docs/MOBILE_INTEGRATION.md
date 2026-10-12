@@ -213,6 +213,7 @@ generic "something went wrong" toast:
 | `COMPETITION_ENTRY_CLOSED` / `COMPETITION_MAX_TRADES_REACHED` | 409 | No | Monthly Competition only - entry window closed (first half of the competition's window only) or the per-entry trade cap (currently 10) was hit. Show the specific reason; don't let the UI suggest "just try again." |
 | `INSUFFICIENT_MARGIN` / `INSUFFICIENT_HOLDINGS` / `INSUFFICIENT_VMONEY` | 409 | No, until balance changes | Show the real reason (not enough V Money / not enough shares to sell) - never silently round the requested amount down. |
 | `PARENT_REAPPROVAL_REQUIRED` | 403 | After parent acts | See §3 - distinct screen from the first-time consent flow. |
+| `ACCOUNT_DELETION_PENDING` | 403 | No, ever | `DELETE /me` was already called (possibly from another device/session) - every endpoint now returns this instead of its normal response. Show "your account is being deleted" and sign the app out; there's no path back from this state. Reconciliation usually finishes within seconds, so this should be rare to actually observe outside of a near-simultaneous double-delete. |
 | `VALIDATION_FAILED` | 400 | No - client bug | `details` has Zod's field-level errors - useful in development, but don't ship raw field-path strings to end users. |
 | `CONFLICT` | 409 | Depends on context | e.g. date-of-birth already set (treat as success, see §2), a reward already claimed, etc. - read the message. |
 

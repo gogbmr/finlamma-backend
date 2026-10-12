@@ -1,13 +1,21 @@
 import type { WebhookEvent } from "@clerk/nextjs/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockUpsert = vi.fn();
 const mockAnonymize = vi.fn();
 const mockUpdatePrefs = vi.fn();
+const mockGetUserById = vi.fn();
+const mockGetUserByClerkUserId = vi.fn();
+const mockMarkDeletionRequested = vi.fn();
+const mockListStuckAccountDeletions = vi.fn();
 vi.mock("./repo", () => ({
   upsertUserFromClerk: (input: unknown) => mockUpsert(input),
   anonymizeUserFromClerk: (id: unknown) => mockAnonymize(id),
   updateUserPrefs: (id: unknown, input: unknown) => mockUpdatePrefs(id, input),
+  getUserById: (id: unknown) => mockGetUserById(id),
+  getUserByClerkUserId: (id: unknown) => mockGetUserByClerkUserId(id),
+  markDeletionRequested: (id: unknown) => mockMarkDeletionRequested(id),
+  listStuckAccountDeletions: () => mockListStuckAccountDeletions(),
 }));
 
 const mockLogActivity = vi.fn();
@@ -16,8 +24,15 @@ vi.mock("@/lib/activity-log", () => ({
 }));
 
 const mockDeleteConsumerClerkUser = vi.fn();
+const mockConsumerClerkUserExists = vi.fn();
 vi.mock("@/lib/auth", () => ({
   deleteConsumerClerkUser: (id: unknown) => mockDeleteConsumerClerkUser(id),
+  consumerClerkUserExists: (id: unknown) => mockConsumerClerkUserExists(id),
+}));
+
+const mockInngestSend = vi.fn();
+vi.mock("@/lib/inngest", () => ({
+  inngest: { send: (input: unknown) => mockInngestSend(input) },
 }));
 
 const mockScrubConsentData = vi.fn();
@@ -27,7 +42,24 @@ vi.mock("@/server/onboarding/service", () => ({
   getOnboardingConsentState: (user: unknown) => mockGetOnboardingConsentState(user),
 }));
 
-import { deleteMe, getMe, syncUserFromClerkEvent, updateMe } from "./service";
+const mockDeleteAllPushTokensForUser = vi.fn();
+vi.mock("@/server/notifications/service", () => ({
+  deleteAllPushTokensForUser: (userId: unknown) => mockDeleteAllPushTokensForUser(userId),
+}));
+
+const mockScrubDoubtZoneContentForUser = vi.fn();
+vi.mock("@/server/doubt-zone/service", () => ({
+  scrubDoubtZoneContentForUser: (userId: unknown) => mockScrubDoubtZoneContentForUser(userId),
+}));
+
+import {
+  deleteMe,
+  getMe,
+  reconcileAccountDeletion,
+  runAccountDeletionReconciliationSweep,
+  syncUserFromClerkEvent,
+  updateMe,
+} from "./service";
 
 function userEvent(
   type: "user.created" | "user.updated",
@@ -64,6 +96,10 @@ function userEvent(
     event_attributes: { http_request: { client_ip: "", user_agent: "" } },
   } as unknown as WebhookEvent;
 }
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("syncUserFromClerkEvent", () => {
   it("upserts first_name + last-initial-only and the verified primary email on user.created", async () => {
@@ -146,44 +182,73 @@ describe("syncUserFromClerkEvent", () => {
     expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({ email: null }));
   });
 
-  it("anonymizes, scrubs consent data (no request meta from a webhook), and logs on user.deleted", async () => {
-    mockAnonymize.mockResolvedValueOnce({ id: "u1" });
-    mockScrubConsentData.mockResolvedValueOnce(undefined);
-    mockLogActivity.mockResolvedValueOnce(undefined);
-
-    const evt = {
-      type: "user.deleted",
-      object: "event",
-      data: { id: "user_123", object: "user", deleted: true },
-      event_attributes: { http_request: { client_ip: "", user_agent: "" } },
-    } as unknown as WebhookEvent;
-
-    await syncUserFromClerkEvent(evt);
-
-    expect(mockAnonymize).toHaveBeenCalledWith("user_123");
-    expect(mockScrubConsentData).toHaveBeenCalledWith("u1", { ip: null, userAgent: null });
-    expect(mockLogActivity).toHaveBeenCalledWith({
-      actorType: "system",
-      action: "user.deleted_from_clerk",
-      targetType: "user",
-      targetId: "user_123",
+  describe("user.deleted", () => {
+    // Shared happy-path setup for the reconciliation this branch delegates
+    // to (reconcileAccountDeletion) - individual tests override whichever
+    // mock they need to differ.
+    beforeEach(() => {
+      mockGetUserByClerkUserId.mockResolvedValue({ id: "u1", clerkUserId: "user_123", deletedAt: null });
+      mockGetUserById.mockResolvedValue({ id: "u1", clerkUserId: "user_123", deletedAt: null });
+      mockConsumerClerkUserExists.mockResolvedValue(false);
+      mockAnonymize.mockResolvedValue({ id: "u1" });
+      mockScrubConsentData.mockResolvedValue(undefined);
+      mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
+      mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
     });
-  });
 
-  it("skips the consent-data scrub when anonymize is a no-op (redelivered/already-deleted event)", async () => {
-    mockAnonymize.mockResolvedValueOnce(null);
-    mockLogActivity.mockResolvedValueOnce(undefined);
+    it("reconciles the account and logs both the reconciliation and the webhook receipt", async () => {
+      await syncUserFromClerkEvent({
+        type: "user.deleted",
+        object: "event",
+        data: { id: "user_123", object: "user", deleted: true },
+        event_attributes: { http_request: { client_ip: "", user_agent: "" } },
+      } as unknown as WebhookEvent);
 
-    const evt = {
-      type: "user.deleted",
-      object: "event",
-      data: { id: "user_123", object: "user", deleted: true },
-      event_attributes: { http_request: { client_ip: "", user_agent: "" } },
-    } as unknown as WebhookEvent;
+      expect(mockAnonymize).toHaveBeenCalledWith("user_123");
+      expect(mockScrubConsentData).toHaveBeenCalledWith("u1", { ip: null, userAgent: null });
+      expect(mockDeleteAllPushTokensForUser).toHaveBeenCalledWith("u1");
+      expect(mockScrubDoubtZoneContentForUser).toHaveBeenCalledWith("u1");
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ actorType: "system", action: "user.deletion_reconciled", targetId: "u1" }),
+      );
+      expect(mockLogActivity).toHaveBeenCalledWith({
+        actorType: "system",
+        action: "user.deleted_from_clerk",
+        targetType: "user",
+        targetId: "user_123",
+      });
+    });
 
-    await syncUserFromClerkEvent(evt);
+    it("skips reconciliation entirely when no user row matches this clerk id", async () => {
+      mockGetUserByClerkUserId.mockResolvedValueOnce(null);
 
-    expect(mockScrubConsentData).not.toHaveBeenCalled();
+      await syncUserFromClerkEvent({
+        type: "user.deleted",
+        object: "event",
+        data: { id: "user_123", object: "user", deleted: true },
+        event_attributes: { http_request: { client_ip: "", user_agent: "" } },
+      } as unknown as WebhookEvent);
+
+      expect(mockAnonymize).not.toHaveBeenCalled();
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "user.deleted_from_clerk" }),
+      );
+    });
+
+    it("is a no-op redelivery when the row is already fully deleted", async () => {
+      mockGetUserByClerkUserId.mockResolvedValueOnce({ id: "u1", clerkUserId: "user_123", deletedAt: new Date() });
+      mockGetUserById.mockResolvedValueOnce({ id: "u1", clerkUserId: "user_123", deletedAt: new Date() });
+
+      await syncUserFromClerkEvent({
+        type: "user.deleted",
+        object: "event",
+        data: { id: "user_123", object: "user", deleted: true },
+        event_attributes: { http_request: { client_ip: "", user_agent: "" } },
+      } as unknown as WebhookEvent);
+
+      expect(mockAnonymize).not.toHaveBeenCalled();
+      expect(mockScrubConsentData).not.toHaveBeenCalled();
+    });
   });
 
   it("ignores event types it doesn't act on", async () => {
@@ -213,6 +278,7 @@ const USER_ROW = {
   preferences: { sound: true, haptics: true, dataSaver: false, cheersEnabled: true },
   clerkUpdatedAt: new Date("2026-01-01T00:00:00.000Z"),
   deletedAt: null,
+  deletionRequestedAt: null,
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 };
@@ -261,7 +327,7 @@ describe("getMe", () => {
 const META = { ip: "203.0.113.5", userAgent: "FinlammaApp/1.0" };
 
 describe("updateMe", () => {
-  it("persists the update and logs it as the user's own action, with request meta", async () => {
+  it("persists the update and logs the changed field NAMES only, never their values", async () => {
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, language: "hi" as const });
     mockLogActivity.mockResolvedValueOnce(undefined);
     mockGetOnboardingConsentState.mockResolvedValueOnce({
@@ -279,14 +345,14 @@ describe("updateMe", () => {
       action: "user.updated_prefs",
       targetType: "user",
       targetId: "u1",
-      metadata: { language: "hi" },
+      metadata: { changedFields: ["language"] },
       ip: "203.0.113.5",
       userAgent: "FinlammaApp/1.0",
     });
     expect(result.language).toBe("hi");
   });
 
-  it("persists a bio update", async () => {
+  it("logs only the field name for a bio update - never the bio text itself", async () => {
     mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, bio: "Saving up!" });
     mockLogActivity.mockResolvedValueOnce(undefined);
     mockGetOnboardingConsentState.mockResolvedValueOnce({
@@ -299,6 +365,9 @@ describe("updateMe", () => {
 
     expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { bio: "Saving up!" });
     expect(result.bio).toBe("Saving up!");
+    const loggedCall = mockLogActivity.mock.calls[0][0];
+    expect(loggedCall.metadata).toEqual({ changedFields: ["bio"] });
+    expect(JSON.stringify(loggedCall)).not.toMatch(/Saving up/);
   });
 
   it("persists a state update (Arena's state-scope leaderboard, never shown on any profile)", async () => {
@@ -316,9 +385,9 @@ describe("updateMe", () => {
     expect(result.state).toBe("Maharashtra");
   });
 
-  it("persists a whole-object preferences update", async () => {
+  it("logs every changed field name when several fields change at once", async () => {
     const preferences = { sound: false, haptics: false, dataSaver: true, cheersEnabled: false };
-    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, preferences });
+    mockUpdatePrefs.mockResolvedValueOnce({ ...USER_ROW, preferences, theme: "light" as const });
     mockLogActivity.mockResolvedValueOnce(undefined);
     mockGetOnboardingConsentState.mockResolvedValueOnce({
       dobSet: false,
@@ -326,43 +395,194 @@ describe("updateMe", () => {
       parentConsentStatus: "not_required",
     });
 
-    const result = await updateMe(USER_ROW, { preferences }, META);
+    const result = await updateMe(USER_ROW, { preferences, theme: "light" }, META);
 
-    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { preferences });
+    expect(mockUpdatePrefs).toHaveBeenCalledWith("u1", { preferences, theme: "light" });
     expect(result.preferences).toEqual(preferences);
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { changedFields: ["preferences", "theme"] } }),
+    );
   });
 });
 
 describe("deleteMe", () => {
-  it("deletes from Clerk, anonymizes the DB row, scrubs consent data with request meta, then logs it", async () => {
-    mockDeleteConsumerClerkUser.mockResolvedValueOnce(undefined);
-    mockAnonymize.mockResolvedValueOnce({ id: "u1" });
-    mockScrubConsentData.mockResolvedValueOnce(undefined);
+  it("durably records the deletion request, logs it, and fires the reconciliation event - does nothing else synchronously", async () => {
+    mockMarkDeletionRequested.mockResolvedValueOnce({ id: "u1", deletionRequestedAt: new Date() });
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockInngestSend.mockResolvedValueOnce(undefined);
 
     await deleteMe(USER_ROW, META);
 
-    expect(mockDeleteConsumerClerkUser).toHaveBeenCalledWith("clerk_123");
-    expect(mockAnonymize).toHaveBeenCalledWith("clerk_123");
-    expect(mockScrubConsentData).toHaveBeenCalledWith("u1", META);
+    expect(mockMarkDeletionRequested).toHaveBeenCalledWith("u1");
     expect(mockLogActivity).toHaveBeenCalledWith({
       actorType: "user",
       actorId: "u1",
-      action: "user.deleted_self",
+      action: "user.deletion_requested",
       targetType: "user",
       targetId: "u1",
       ip: "203.0.113.5",
       userAgent: "FinlammaApp/1.0",
     });
+    expect(mockInngestSend).toHaveBeenCalledWith({
+      name: "account/deletion.requested",
+      data: { userId: "u1" },
+    });
+    // The actual Clerk delete/anonymize/scrub never happen inline anymore -
+    // reconcileAccountDeletion (run via the Inngest event) owns all of that.
+    expect(mockDeleteConsumerClerkUser).not.toHaveBeenCalled();
+    expect(mockAnonymize).not.toHaveBeenCalled();
+  });
+});
+
+describe("reconcileAccountDeletion", () => {
+  beforeEach(() => {
+    mockGetUserById.mockResolvedValue({ id: "u1", clerkUserId: "clerk_123", deletedAt: null });
+    mockConsumerClerkUserExists.mockResolvedValue(false);
+    mockAnonymize.mockResolvedValue({ id: "u1" });
+    mockScrubConsentData.mockResolvedValue(undefined);
+    mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
+    mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
   });
 
-  it("does not anonymize or scrub consent data if the Clerk deletion fails", async () => {
-    mockDeleteConsumerClerkUser.mockRejectedValueOnce(new Error("Clerk unavailable"));
+  it("is a no-op when the account is already fully deleted", async () => {
+    mockGetUserById.mockResolvedValueOnce({ id: "u1", clerkUserId: "clerk_123", deletedAt: new Date() });
 
-    await expect(deleteMe(USER_ROW, META)).rejects.toThrow();
+    const result = await reconcileAccountDeletion("u1", META);
 
+    expect(result).toEqual({ alreadyDone: true });
+    expect(mockConsumerClerkUserExists).not.toHaveBeenCalled();
     expect(mockAnonymize).not.toHaveBeenCalled();
-    expect(mockScrubConsentData).not.toHaveBeenCalled();
-    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op when the user row no longer exists", async () => {
+    mockGetUserById.mockResolvedValueOnce(null);
+
+    await expect(reconcileAccountDeletion("gone", META)).resolves.toEqual({ alreadyDone: true });
+  });
+
+  it("deletes the Clerk identity too when it still exists (the original request died before that step)", async () => {
+    mockConsumerClerkUserExists.mockResolvedValueOnce(true);
+
+    await reconcileAccountDeletion("u1", META);
+
+    expect(mockDeleteConsumerClerkUser).toHaveBeenCalledWith("clerk_123");
+  });
+
+  it("skips the Clerk delete call when Clerk already has no such user", async () => {
+    mockConsumerClerkUserExists.mockResolvedValueOnce(false);
+
+    await reconcileAccountDeletion("u1", META);
+
+    expect(mockDeleteConsumerClerkUser).not.toHaveBeenCalled();
+  });
+
+  it("runs every scrub step and logs completion with the user id only - never an email or name", async () => {
+    const result = await reconcileAccountDeletion("u1", META);
+
+    expect(mockAnonymize).toHaveBeenCalledWith("clerk_123");
+    expect(mockScrubConsentData).toHaveBeenCalledWith("u1", META);
+    expect(mockDeleteAllPushTokensForUser).toHaveBeenCalledWith("u1");
+    expect(mockScrubDoubtZoneContentForUser).toHaveBeenCalledWith("u1");
+    expect(result).toEqual({ alreadyDone: false });
+
+    const loggedCall = mockLogActivity.mock.calls.find(
+      (c) => c[0].action === "user.deletion_reconciled",
+    )?.[0];
+    expect(loggedCall).toEqual({
+      actorType: "system",
+      action: "user.deletion_reconciled",
+      targetType: "user",
+      targetId: "u1",
+      ip: META.ip,
+      userAgent: META.userAgent,
+    });
+    expect(JSON.stringify(loggedCall)).not.toMatch(/chirag|@example\.com/i);
+  });
+});
+
+describe("runAccountDeletionReconciliationSweep", () => {
+  const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+  afterEach(() => {
+    consoleErrorSpy.mockClear();
+  });
+
+  it("reports nothing to do when the worklist is empty", async () => {
+    mockListStuckAccountDeletions.mockResolvedValueOnce([]);
+
+    await expect(runAccountDeletionReconciliationSweep()).resolves.toEqual({
+      attempted: 0,
+      succeeded: 0,
+    });
+  });
+
+  it("reconciles every stuck row", async () => {
+    mockListStuckAccountDeletions.mockResolvedValueOnce([
+      { id: "u1", clerkUserId: "clerk_1", deletionRequestedAt: new Date() },
+      { id: "u2", clerkUserId: "clerk_2", deletionRequestedAt: new Date() },
+    ]);
+    mockGetUserById.mockImplementation((id: string) =>
+      Promise.resolve({ id, clerkUserId: `clerk_${id.slice(-1)}`, deletedAt: null }),
+    );
+    mockConsumerClerkUserExists.mockResolvedValue(false);
+    mockAnonymize.mockResolvedValue({ id: "x" });
+    mockScrubConsentData.mockResolvedValue(undefined);
+    mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
+    mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
+
+    const result = await runAccountDeletionReconciliationSweep();
+
+    expect(result).toEqual({ attempted: 2, succeeded: 2 });
+  });
+
+  it("one failing row never blocks the rest of the batch", async () => {
+    const recentlyRequested = new Date();
+    mockListStuckAccountDeletions.mockResolvedValueOnce([
+      { id: "bad", clerkUserId: "clerk_bad", deletionRequestedAt: recentlyRequested },
+      { id: "good", clerkUserId: "clerk_good", deletionRequestedAt: recentlyRequested },
+    ]);
+    mockGetUserById.mockImplementation((id: string) => {
+      if (id === "bad") return Promise.reject(new Error("transient DB error"));
+      return Promise.resolve({ id, clerkUserId: "clerk_good", deletedAt: null });
+    });
+    mockConsumerClerkUserExists.mockResolvedValue(false);
+    mockAnonymize.mockResolvedValue({ id: "good" });
+    mockScrubConsentData.mockResolvedValue(undefined);
+    mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
+    mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
+
+    const result = await runAccountDeletionReconciliationSweep();
+
+    expect(result).toEqual({ attempted: 2, succeeded: 1 });
+  });
+
+  it("escalates with a distinctly-named, greppable log once a row has been stuck 3+ days", async () => {
+    const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+    mockListStuckAccountDeletions.mockResolvedValueOnce([
+      { id: "stuck", clerkUserId: "clerk_stuck", deletionRequestedAt: fourDaysAgo },
+    ]);
+    mockGetUserById.mockRejectedValueOnce(new Error("still failing"));
+
+    await runAccountDeletionReconciliationSweep();
+
+    const escalation = consoleErrorSpy.mock.calls.find((c) =>
+      String(c[0]).includes("account_deletion.reconciliation_stuck"),
+    );
+    expect(escalation).toBeDefined();
+    expect(String(escalation![0])).toMatch(/userId=stuck/);
+  });
+
+  it("does not escalate a row that's only failed once, recently", async () => {
+    mockListStuckAccountDeletions.mockResolvedValueOnce([
+      { id: "fresh", clerkUserId: "clerk_fresh", deletionRequestedAt: new Date() },
+    ]);
+    mockGetUserById.mockRejectedValueOnce(new Error("one-off failure"));
+
+    await runAccountDeletionReconciliationSweep();
+
+    const escalation = consoleErrorSpy.mock.calls.find((c) =>
+      String(c[0]).includes("account_deletion.reconciliation_stuck"),
+    );
+    expect(escalation).toBeUndefined();
   });
 });

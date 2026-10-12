@@ -28,8 +28,7 @@ const mockGetParentContactForReview = vi.fn();
 const mockGetUserFirstName = vi.fn();
 const mockGetUserDateOfBirth = vi.fn();
 const mockIsUserDeleted = vi.fn();
-const mockAnonymizeParentContact = vi.fn();
-const mockSetConsentRecordParentEmailHmac = vi.fn();
+const mockScrubParentContactDataTx = vi.fn();
 const mockListCandidatesForReapproval = vi.fn();
 const mockClaimReapprovalRequestSlot = vi.fn();
 const mockGetReapprovalRequestByTokenHash = vi.fn();
@@ -62,9 +61,7 @@ vi.mock("./repo", () => ({
   getUserFirstName: (id: unknown) => mockGetUserFirstName(id),
   getUserDateOfBirth: (id: unknown) => mockGetUserDateOfBirth(id),
   isUserDeleted: (userId: unknown) => mockIsUserDeleted(userId),
-  anonymizeParentContact: (id: unknown) => mockAnonymizeParentContact(id),
-  setConsentRecordParentEmailHmac: (userId: unknown, hmac: unknown) =>
-    mockSetConsentRecordParentEmailHmac(userId, hmac),
+  scrubParentContactDataTx: (input: unknown) => mockScrubParentContactDataTx(input),
   listCandidatesForReapproval: (legalDocumentId: unknown) =>
     mockListCandidatesForReapproval(legalDocumentId),
   claimReapprovalRequestSlot: (input: unknown) => mockClaimReapprovalRequestSlot(input),
@@ -1234,23 +1231,38 @@ describe("scrubConsentDataForDeletedUser", () => {
 
     await scrubConsentDataForDeletedUser("u1", META);
 
-    expect(mockSetConsentRecordParentEmailHmac).not.toHaveBeenCalled();
-    expect(mockAnonymizeParentContact).not.toHaveBeenCalled();
+    expect(mockScrubParentContactDataTx).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op, and never recomputes the HMAC, when scrubbed_at is already set", async () => {
+    mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
+    mockGetParentContact.mockResolvedValueOnce({
+      id: "pc1",
+      email: "deleted+pc1@anonymized.invalid",
+      scrubbedAt: new Date("2026-01-01T00:00:00Z"),
+    });
+
+    await scrubConsentDataForDeletedUser("u1", META);
+
+    expect(mockCountChildrenForParentEmail).not.toHaveBeenCalled();
+    expect(mockScrubParentContactDataTx).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it("anonymizes the parent contact and stores an HMAC when no other active child shares that email", async () => {
     mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
-    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com", scrubbedAt: null });
     mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
 
     await scrubConsentDataForDeletedUser("u1", META);
 
-    expect(mockSetConsentRecordParentEmailHmac).toHaveBeenCalledWith(
-      "u1",
-      expect.any(String),
-    );
-    expect(mockAnonymizeParentContact).toHaveBeenCalledWith("pc1");
+    expect(mockScrubParentContactDataTx).toHaveBeenCalledWith({
+      userId: "u1",
+      parentContactId: "pc1",
+      parentEmailHmac: expect.any(String),
+      anonymizeContact: true,
+    });
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "consent.data_scrubbed_on_deletion",
@@ -1262,40 +1274,43 @@ describe("scrubConsentDataForDeletedUser", () => {
 
   it("computes the same HMAC for the same email (deterministic, keyed)", async () => {
     mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
-    mockGetParentContact.mockResolvedValue({ id: "pc1", email: "priya@example.com" });
+    mockGetParentContact.mockResolvedValue({ id: "pc1", email: "priya@example.com", scrubbedAt: null });
     mockCountChildrenForParentEmail.mockResolvedValue(0);
 
     await scrubConsentDataForDeletedUser("u1", META);
-    const firstHmac = mockSetConsentRecordParentEmailHmac.mock.calls[0][1];
+    const firstHmac = mockScrubParentContactDataTx.mock.calls[0][0].parentEmailHmac;
 
     await scrubConsentDataForDeletedUser("u2", META);
-    const secondHmac = mockSetConsentRecordParentEmailHmac.mock.calls[1][1];
+    const secondHmac = mockScrubParentContactDataTx.mock.calls[1][0].parentEmailHmac;
 
     expect(firstHmac).toBe(secondHmac);
   });
 
-  it("does NOT anonymize the parent contact when another active child shares that email", async () => {
+  it("does NOT anonymize the parent contact when another active child shares that email, but still stamps scrubbed_at", async () => {
     mockEnv.CONSENT_PII_HMAC_KEY = "test-hmac-key";
-    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com", scrubbedAt: null });
     mockCountChildrenForParentEmail.mockResolvedValueOnce(1);
 
     await scrubConsentDataForDeletedUser("u1", META);
 
-    expect(mockAnonymizeParentContact).not.toHaveBeenCalled();
+    expect(mockScrubParentContactDataTx).toHaveBeenCalledWith(
+      expect.objectContaining({ anonymizeContact: false }),
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { parentContactAnonymized: false, hmacStored: true } }),
     );
   });
 
-  it("still deletes/scrubs when CONSENT_PII_HMAC_KEY isn't configured, storing a null HMAC and logging the gap", async () => {
-    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com" });
+  it("still scrubs when CONSENT_PII_HMAC_KEY isn't configured, storing a null HMAC and logging the gap", async () => {
+    mockGetParentContact.mockResolvedValueOnce({ id: "pc1", email: "priya@example.com", scrubbedAt: null });
     mockCountChildrenForParentEmail.mockResolvedValueOnce(0);
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await scrubConsentDataForDeletedUser("u1", META);
 
-    expect(mockSetConsentRecordParentEmailHmac).toHaveBeenCalledWith("u1", null);
-    expect(mockAnonymizeParentContact).toHaveBeenCalledWith("pc1");
+    expect(mockScrubParentContactDataTx).toHaveBeenCalledWith(
+      expect.objectContaining({ parentEmailHmac: null, anonymizeContact: true }),
+    );
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ metadata: { parentContactAnonymized: true, hmacStored: false } }),
     );

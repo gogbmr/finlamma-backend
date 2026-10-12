@@ -17,6 +17,11 @@ vi.mock("@/server/pulse-check/service", () => ({
   getPulseCheckEngagement: (...args: unknown[]) => mockGetPulseCheckEngagement(...args),
 }));
 
+const mockCountStuckAccountDeletionsOlderThan = vi.fn();
+vi.mock("@/server/users/repo", () => ({
+  countStuckAccountDeletionsOlderThan: (...args: unknown[]) => mockCountStuckAccountDeletionsOlderThan(...args),
+}));
+
 const mockCountTotalActiveUsers = vi.fn();
 const mockCountNewUsersSince = vi.fn();
 const mockCountDistinctActiveUsersSinceIstDate = vi.fn();
@@ -46,6 +51,7 @@ beforeEach(() => {
   mockGetPulseCheckEngagement.mockResolvedValue({ daily: [], averagePct: 42, activeUserCount: 100 });
   mockCountActiveAdFreeEntitlements.mockResolvedValue(3);
   mockListEntitlementUpdateEventTypesSince.mockResolvedValue([]);
+  mockCountStuckAccountDeletionsOlderThan.mockResolvedValue(0);
 });
 
 describe("getAdminAnalyticsSummary", () => {
@@ -62,7 +68,13 @@ describe("getAdminAnalyticsSummary", () => {
   it("assembles every domain's tiles from the underlying bounded aggregates", async () => {
     const summary = await getAdminAnalyticsSummary();
 
-    expect(summary.users).toEqual({ totalActive: 500, newToday: 10, newLast7Days: 10 });
+    expect(summary.users).toEqual({
+      totalActive: 500,
+      newToday: 10,
+      newLast7Days: 10,
+      accountDeletionsPendingOver24h: 0,
+      accountDeletionsStuckOver3Days: 0,
+    });
     expect(summary.retention).toEqual({ dau: 50, wau: 50, mau: 50 });
     expect(summary.lessons).toEqual({ completedToday: 20, completedLast7Days: 20 });
     expect(summary.trading).toEqual({ activeTradersToday: 5, ordersToday: 8 });
@@ -83,6 +95,17 @@ describe("getAdminAnalyticsSummary", () => {
     const summary = await getAdminAnalyticsSummary();
 
     expect(summary.revenue.newPurchasesLast7Days).toBe(3);
+  });
+
+  it("reports the 24h-pending and 3-day-stuck account-deletion counts separately", async () => {
+    mockCountStuckAccountDeletionsOlderThan.mockResolvedValueOnce(4); // 24h cutoff
+    mockCountStuckAccountDeletionsOlderThan.mockResolvedValueOnce(1); // 3-day cutoff
+
+    const summary = await getAdminAnalyticsSummary();
+
+    expect(summary.users.accountDeletionsPendingOver24h).toBe(4);
+    expect(summary.users.accountDeletionsStuckOver3Days).toBe(1);
+    expect(mockCountStuckAccountDeletionsOlderThan).toHaveBeenCalledTimes(2);
   });
 
   it("never returns anything shaped like a per-user identifier - aggregate counts only", async () => {

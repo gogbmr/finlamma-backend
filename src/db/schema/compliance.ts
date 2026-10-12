@@ -132,6 +132,18 @@ export const parentContacts = pgTable(
     // Turning this off never touches consent_records - it only ever clears
     // weekly_report_opt_in.
     weeklyReportUnsubscribeTokenHash: text("weekly_report_unsubscribe_token_hash"),
+    // Set once, in the same transaction as the actual scrub
+    // (src/server/onboarding/service.ts scrubConsentDataForDeletedUser),
+    // the instant this row's name/email are anonymized. The explicit
+    // idempotency marker a retry checks - never re-derived from
+    // `name === "[deleted]"` or similar, so a future change to the
+    // anonymized placeholder text can never silently break the "already
+    // scrubbed, don't touch the HMAC again" guard (phase-audit 2026-10-11
+    // finding: a naive retry previously would have overwritten
+    // consent_records.parent_email_hmac with a hash of the already-
+    // anonymized placeholder email, destroying the original DPDP
+    // consent-proof evidence).
+    scrubbedAt: timestamp("scrubbed_at", { withTimezone: true }),
   },
   (t) => [
     uniqueIndex("parent_contacts_user_id_idx").on(t.userId),

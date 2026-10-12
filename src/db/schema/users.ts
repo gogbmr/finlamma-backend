@@ -75,4 +75,15 @@ export const users = pgTable("users", {
   // overwriting newer data with older data.
   clerkUpdatedAt: timestamp("clerk_updated_at", { withTimezone: true }).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Set the instant DELETE /me is called, before anything else happens -
+  // the durable "this account must end up deleted, no matter what" marker
+  // (docs/STATUS.md's 2026-10-11 phase audit, account-deletion
+  // reconciliation). requireUser() rejects any further request once this is
+  // set (ACCOUNT_DELETION_PENDING), and the account-deletion Inngest
+  // function/daily sweep (src/server/users/service.ts
+  // reconcileAccountDeletion) keeps retrying until deletedAt is finally set
+  // too. Never cleared once set - a non-null value here forever records
+  // when deletion was first requested, same "permanent fact" reasoning as
+  // deletedAt itself.
+  deletionRequestedAt: timestamp("deletion_requested_at", { withTimezone: true }),
 }).enableRLS();

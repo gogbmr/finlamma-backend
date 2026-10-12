@@ -10,16 +10,18 @@ registry.registerPath({
   path: "/api/v1/me/current-lesson",
   summary: "Get my current/resume lesson",
   description:
-    "Powers World Home's Resume banner (WH-06). **Placeholder until Checkpoint 5's " +
-    "lesson_progress table exists**: always returns chapter 1, step 1 of the lowest-order " +
-    "published world, regardless of what the caller has actually done - not yet progress-aware. " +
-    "The response shape is the real contract (identical to GET /api/v1/lessons/{id}); only the " +
-    "selection logic upgrades once real progress tracking ships.",
+    "Powers World Home's Resume banner (WH-06). Progress-aware: walks published worlds in " +
+    "sequential-unlock order and returns the first lesson in the first reachable world that " +
+    "isn't yet completed (covers every lesson kind - video/quiz/boss_quiz/role_play via " +
+    "quiz_attempts, story/doubt_zone via lesson_progress directly). If a Boss Quiz was attempted " +
+    "but failed, this resumes at that same Boss Quiz, since its world never actually unlocked " +
+    "the next one. If everything reachable is already completed, resumes at the last lesson of " +
+    "the last reachable world. The response shape is identical to GET /api/v1/lessons/{id}.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {
     200: {
-      description: "The caller's current lesson (see description for today's placeholder logic)",
+      description: "The caller's current (resume) lesson",
       content: { "application/json": { schema: LessonDetailResponseSchema } },
     },
     401: {
@@ -57,5 +59,5 @@ registry.registerPath({
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  return ok(await getCurrentLesson());
+  return ok(await getCurrentLesson(user.id));
 });

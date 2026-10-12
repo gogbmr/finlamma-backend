@@ -85,9 +85,14 @@ src/
     api/docs/            Scalar API reference (interactive)
     api/openapi.json/    serves openapi/openapi.json (the app downloads its contract here)
   server/
-    <domain>/            business logic by domain: users, worlds, lessons, quizzes, xp,
-                         ledger, trading, market, news, arena, notifications, entitlements,
-                         certificates, analytics
+    <domain>/            business logic by domain - one folder per bounded area under
+                         src/server/ (not an exhaustive or fixed list; check that directory for
+                         the current one): users, onboarding, legal, worlds, lessons,
+                         lesson-progress, quiz-attempts, questions, economy, leveling, streaks,
+                         daily-goals, badges, rewards, certificates, report-card, trading, orders,
+                         market, funds, fund-orders, arena, competitions, news, pulse-check,
+                         notifications, doubt-zone, monetisation, analytics, staff, ops, mentors,
+                         rank-titles, settings, session-time, portfolio, profile, relay, topics
       service.ts         domain logic (pure where possible)
       schemas.ts         Zod request/response schemas (registered in OpenAPI)
       repo.ts            Drizzle queries for this domain

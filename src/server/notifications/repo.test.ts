@@ -16,6 +16,7 @@ const {
   deleteNotificationsOlderThan,
   deletePushTokenById,
   deletePushTokenByValue,
+  deletePushTokensForUser,
   getNotificationPrefsRow,
   getUserLanguageForNotifications,
   hasNotificationSince,
@@ -123,6 +124,25 @@ describe("push tokens", () => {
     await deletePushTokenById(row.id);
 
     expect(await listPushTokensForUser(user.id)).toEqual([]);
+  });
+
+  it("deletePushTokensForUser (account deletion) removes every token for that user, no others", async () => {
+    const userA = await makeUser();
+    const userB = await makeUser();
+    await upsertPushToken({ userId: userA.id, expoPushToken: `ExponentPushToken[${randomUUID()}]`, platform: "ios" });
+    await upsertPushToken({ userId: userA.id, expoPushToken: `ExponentPushToken[${randomUUID()}]`, platform: "android" });
+    await upsertPushToken({ userId: userB.id, expoPushToken: `ExponentPushToken[${randomUUID()}]`, platform: "ios" });
+
+    await deletePushTokensForUser(userA.id);
+
+    expect(await listPushTokensForUser(userA.id)).toEqual([]);
+    expect(await listPushTokensForUser(userB.id)).toHaveLength(1);
+  });
+
+  it("deletePushTokensForUser on a user with no tokens is a harmless no-op", async () => {
+    const user = await makeUser();
+
+    await expect(deletePushTokensForUser(user.id)).resolves.toBeUndefined();
   });
 });
 

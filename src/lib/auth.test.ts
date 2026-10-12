@@ -7,8 +7,11 @@ const mockEnv = vi.hoisted(() => ({
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
 const mockAuthenticateRequest = vi.fn();
+const mockGetUser = vi.fn();
+const mockDeleteUser = vi.fn();
 const mockCreateClerkClient = vi.fn((options: unknown) => ({
   authenticateRequest: mockAuthenticateRequest,
+  users: { getUser: mockGetUser, deleteUser: mockDeleteUser },
   __options: options,
 }));
 vi.mock("@clerk/backend", () => ({
@@ -40,7 +43,7 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: () => mockAuth(),
 }));
 
-import { getStaffMember, requireStaff, requireUser } from "./auth";
+import { consumerClerkUserExists, getStaffMember, requireStaff, requireUser } from "./auth";
 
 function makeRequest(headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/v1/me", { headers });
@@ -154,6 +157,55 @@ describe("requireUser", () => {
     const user = await requireUser(makeRequest());
 
     expect(user).toEqual({ id: "u1", clerkUserId: "clerk_123", deletedAt: null });
+  });
+
+  it("throws ACCOUNT_DELETION_PENDING once deletion has been requested, even though deletedAt isn't set yet", async () => {
+    mockAuthenticateRequest.mockResolvedValueOnce(authenticated("clerk_123"));
+    mockLimit.mockResolvedValueOnce([
+      { id: "u1", clerkUserId: "clerk_123", deletedAt: null, deletionRequestedAt: new Date() },
+    ]);
+
+    await expect(requireUser(makeRequest())).rejects.toMatchObject({
+      code: "ACCOUNT_DELETION_PENDING",
+    });
+  });
+});
+
+describe("consumerClerkUserExists", () => {
+  beforeEach(() => {
+    mockEnv.CONSUMER_CLERK_SECRET_KEY = "sk_test_consumer";
+    mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = "pk_test_consumer";
+    mockGetUser.mockReset();
+  });
+
+  it("returns true when Clerk still has the user", async () => {
+    mockGetUser.mockResolvedValueOnce({ id: "clerk_123" });
+
+    await expect(consumerClerkUserExists("clerk_123")).resolves.toBe(true);
+  });
+
+  it("returns false on a 404 (the user is already gone)", async () => {
+    mockGetUser.mockRejectedValueOnce({ status: 404 });
+
+    await expect(consumerClerkUserExists("clerk_123")).resolves.toBe(false);
+  });
+
+  it("throws SERVICE_UNAVAILABLE (without leaking the raw error) on any other failure", async () => {
+    mockGetUser.mockRejectedValueOnce(new Error("network blip"));
+
+    await expect(consumerClerkUserExists("clerk_123")).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+    });
+  });
+
+  it("throws SERVICE_UNAVAILABLE when the consumer Clerk app isn't configured", async () => {
+    mockEnv.CONSUMER_CLERK_SECRET_KEY = undefined;
+    mockEnv.CONSUMER_CLERK_PUBLISHABLE_KEY = undefined;
+
+    await expect(consumerClerkUserExists("clerk_123")).rejects.toMatchObject({
+      code: "SERVICE_UNAVAILABLE",
+    });
+    expect(mockGetUser).not.toHaveBeenCalled();
   });
 });
 

@@ -39,9 +39,23 @@ vi.mock("@/server/questions/repo", () => ({
 }));
 
 const mockCountInProgressLearnersByLessonIds = vi.fn();
+const mockGetLessonProgressStatusesForUser = vi.fn();
 vi.mock("@/server/lesson-progress/repo", () => ({
   countInProgressLearnersByLessonIds: (lessonIds: unknown) =>
     mockCountInProgressLearnersByLessonIds(lessonIds),
+  getLessonProgressStatusesForUser: (userId: unknown, lessonIds: unknown) =>
+    mockGetLessonProgressStatusesForUser(userId, lessonIds),
+}));
+
+const mockGetWorldIdsWithPassedBossQuiz = vi.fn();
+vi.mock("@/server/quiz-attempts/repo", () => ({
+  getWorldIdsWithPassedBossQuiz: (userId: unknown, passMark: unknown) =>
+    mockGetWorldIdsWithPassedBossQuiz(userId, passMark),
+}));
+
+const mockGetLessonFlowScoringSettings = vi.fn();
+vi.mock("@/server/settings/service", () => ({
+  getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
 }));
 
 const mockLogActivity = vi.fn();
@@ -99,6 +113,7 @@ beforeEach(() => {
     { id: "11111111-1111-4111-8111-111111111111", status: "published" },
   ]);
   mockCountInProgressLearnersByLessonIds.mockResolvedValue(new Map());
+  mockGetLessonFlowScoringSettings.mockResolvedValue({ bossQuizPassMarkPct: 70 });
 });
 
 describe("getPublicLessonsForWorld / getPublicLesson", () => {
@@ -166,28 +181,115 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
 });
 
 describe("getCurrentLesson", () => {
-  it("returns chapter 1/step 1 of the lowest-order published world", async () => {
+  const USER_ID = "user_1";
+  const WORLD_2_ID = "world_2";
+
+  it("returns the first lesson with no progress yet, in chapter/step order", async () => {
+    const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+    const l2 = lessonRow({ id: "l2", chapter: 1, step: 2 });
     mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
-    mockGetPublishedLessonAtPosition.mockResolvedValueOnce(lessonRow());
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1, l2]);
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
 
-    const result = await getCurrentLesson();
+    const result = await getCurrentLesson(USER_ID);
 
-    expect(mockGetPublishedLessonAtPosition).toHaveBeenCalledWith(WORLD_ID, 1, 1);
-    expect(result.id).toBe("lesson_1");
+    expect(result.id).toBe("l1");
+    expect(mockGetLessonProgressStatusesForUser).toHaveBeenCalledWith(USER_ID, ["l1", "l2"]);
+  });
+
+  it("skips a completed lesson and resumes at the first incomplete one", async () => {
+    const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+    const l2 = lessonRow({ id: "l2", chapter: 1, step: 2 });
+    mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1, l2]);
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([["l1", "completed"]]));
+
+    const result = await getCurrentLesson(USER_ID);
+
+    expect(result.id).toBe("l2");
+  });
+
+  it("an in_progress (not completed) lesson still counts as the current one", async () => {
+    const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+    mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1]);
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([["l1", "in_progress"]]));
+
+    const result = await getCurrentLesson(USER_ID);
+
+    expect(result.id).toBe("l1");
+  });
+
+  it("moves into the next world once the previous world's Boss Quiz is passed and its lessons are all done", async () => {
+    const w1 = worldRow({ id: WORLD_ID });
+    const w2 = worldRow({ id: WORLD_2_ID });
+    const w1Lesson = lessonRow({ id: "w1-lesson", worldId: WORLD_ID });
+    const w2Lesson = lessonRow({ id: "w2-lesson", worldId: WORLD_2_ID });
+    mockListPublishedWorlds.mockResolvedValueOnce([w1, w2]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set([WORLD_ID]));
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([w1Lesson]); // world 1
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([["w1-lesson", "completed"]]));
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([w2Lesson]); // world 2
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
+
+    const result = await getCurrentLesson(USER_ID);
+
+    expect(result.id).toBe("w2-lesson");
+  });
+
+  it("resumes at the last lesson of world 1 (the failed Boss Quiz) when world 2 is still locked, even though lesson_progress shows world 1 fully 'completed'", async () => {
+    const w1 = worldRow({ id: WORLD_ID });
+    const w2 = worldRow({ id: WORLD_2_ID });
+    const bossQuiz = lessonRow({ id: "boss-quiz", worldId: WORLD_ID, kind: "boss_quiz" });
+    mockListPublishedWorlds.mockResolvedValueOnce([w1, w2]);
+    // Attempted and finished (so lesson_progress says "completed"), but
+    // didn't pass the accuracy bar - never added to clearedWorldIds.
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([bossQuiz]);
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([["boss-quiz", "completed"]]));
+
+    const result = await getCurrentLesson(USER_ID);
+
+    expect(result.id).toBe("boss-quiz");
+    // World 2 was locked, so it was never even queried.
+    expect(mockListPublishedLessonsForWorld).toHaveBeenCalledTimes(1);
+  });
+
+  it("resumes at the last lesson of the last world once everything reachable is completed", async () => {
+    const w1 = worldRow({ id: WORLD_ID });
+    const w1LessonA = lessonRow({ id: "w1-a", worldId: WORLD_ID });
+    const w1LessonB = lessonRow({ id: "w1-b", worldId: WORLD_ID });
+    mockListPublishedWorlds.mockResolvedValueOnce([w1]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set([WORLD_ID]));
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([w1LessonA, w1LessonB]);
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(
+      new Map([
+        ["w1-a", "completed"],
+        ["w1-b", "completed"],
+      ]),
+    );
+
+    const result = await getCurrentLesson(USER_ID);
+
+    expect(result.id).toBe("w1-b");
   });
 
   it("throws NOT_FOUND when there are no published worlds", async () => {
     mockListPublishedWorlds.mockResolvedValueOnce([]);
 
-    await expect(getCurrentLesson()).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(mockGetPublishedLessonAtPosition).not.toHaveBeenCalled();
+    await expect(getCurrentLesson(USER_ID)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockGetWorldIdsWithPassedBossQuiz).not.toHaveBeenCalled();
   });
 
-  it("throws NOT_FOUND when the world has no lesson at chapter 1/step 1 yet", async () => {
+  it("throws NOT_FOUND when every published world has zero lessons", async () => {
     mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
-    mockGetPublishedLessonAtPosition.mockResolvedValueOnce(null);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([]);
 
-    await expect(getCurrentLesson()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(getCurrentLesson(USER_ID)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 });
 

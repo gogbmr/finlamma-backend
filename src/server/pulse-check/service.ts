@@ -187,7 +187,13 @@ async function requireCurrentEditionAttempt(user: { id: string }, attemptId: str
   return attempt;
 }
 
-export async function serveStep(user: { id: string }, attemptId: string, stepIndex: number, at: Date = new Date()) {
+export async function serveStep(
+  user: { id: string },
+  attemptId: string,
+  stepIndex: number,
+  meta: RequestMeta,
+  at: Date = new Date(),
+) {
   const attempt = await requireOwnAttempt(user, attemptId);
   if (attempt.status !== "in_progress") throw new AppError("CONFLICT", "This attempt is already finished");
 
@@ -216,6 +222,12 @@ export async function serveStep(user: { id: string }, attemptId: string, stepInd
   const question = await getQuestionForServing(questionId);
   if (!question) throw new AppError("NOT_FOUND", "Question not found");
 
+  // Checked before the insert, not after, so a later idempotent re-serve of
+  // this exact step (e.g. the app reopened mid-question) never logs a
+  // second time - same "log the mutation, not every idempotent replay"
+  // standard as quiz-attempts/service.ts's sibling serveStep.
+  const alreadyServed = await getAnswerByStep(attemptId, stepIndex);
+
   const servedRow = await insertServedAnswerIfNew({
     attemptId,
     questionId,
@@ -224,6 +236,19 @@ export async function serveStep(user: { id: string }, attemptId: string, stepInd
     servedRevision: question.revision,
   });
   if (!servedRow) throw new AppError("INTERNAL", "Failed to serve question");
+
+  if (!alreadyServed) {
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "pulse_check.step_served",
+      targetType: "pulse_check_attempt",
+      targetId: attemptId,
+      metadata: { stepIndex },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
 
   const [topic, sourceHeadline] = await Promise.all([
     question.topicId ? getTopicById(question.topicId) : null,

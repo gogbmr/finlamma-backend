@@ -20,7 +20,13 @@ import AnalyticsDashboardPage from "./page";
 
 const STAFF = { id: "staff_1", roleId: "role_1" };
 const SUMMARY = {
-  users: { totalActive: 10, newToday: 1, newLast7Days: 3 },
+  users: {
+    totalActive: 10,
+    newToday: 1,
+    newLast7Days: 3,
+    accountDeletionsPendingOver24h: 0,
+    accountDeletionsStuckOver3Days: 0,
+  },
   retention: { dau: 4, wau: 6, mau: 8 },
   lessons: { completedToday: 2, completedLast7Days: 9 },
   trading: { activeTradersToday: 1, ordersToday: 2 },

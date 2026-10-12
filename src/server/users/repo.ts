@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { users, type UserPreferences } from "@/db/schema";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -80,6 +80,63 @@ export async function upsertUserFromClerk(input: ClerkUserSync) {
 // the user.deleted webhook handler - know whether to also run
 // scrubConsentDataForDeletedUser (src/server/onboarding/service.ts), which
 // needs the internal user id, not just the Clerk id.
+export async function getUserById(id: string) {
+  const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return row ?? null;
+}
+
+// Used by syncUserFromClerkEvent's user.deleted branch to resolve Clerk's
+// id to our own internal id before handing off to the shared
+// reconcileAccountDeletion - every other lookup in this codebase already
+// keys off the internal id, this is the one place that still only has the
+// Clerk id to start from.
+export async function getUserByClerkUserId(clerkUserId: string) {
+  const [row] = await db.select().from(users).where(eq(users.clerkUserId, clerkUserId)).limit(1);
+  return row ?? null;
+}
+
+// The durable "deletion was requested" marker - set unconditionally (not
+// guarded by a WHERE on the current value) since re-requesting deletion for
+// an account that's already mid-deletion is a harmless timestamp refresh,
+// never a conflict.
+export async function markDeletionRequested(userId: string) {
+  const [row] = await db
+    .update(users)
+    .set({ deletionRequestedAt: new Date() })
+    .where(eq(users.id, userId))
+    .returning();
+  return row ?? null;
+}
+
+// The account-deletion reconciliation sweep's worklist (src/server/users/
+// service.ts reconcileAccountDeletion, run both from an Inngest event at
+// deletion time and from the daily safety-net cron): every account whose
+// deletion was requested but hasn't actually finished yet, regardless of
+// which step failed.
+export async function listStuckAccountDeletions() {
+  return db
+    .select({ id: users.id, clerkUserId: users.clerkUserId, deletionRequestedAt: users.deletionRequestedAt })
+    .from(users)
+    .where(and(isNotNull(users.deletionRequestedAt), isNull(users.deletedAt)));
+}
+
+// Staff-visible counts (the admin Analytics dashboard) - a "stuck" deletion
+// is a real finding worth surfacing now, before Sentry alerting exists, not
+// just a greppable log line nobody is watching yet.
+export async function countStuckAccountDeletionsOlderThan(cutoff: Date): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(users)
+    .where(
+      and(
+        isNotNull(users.deletionRequestedAt),
+        isNull(users.deletedAt),
+        lte(users.deletionRequestedAt, cutoff),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
 export async function anonymizeUserFromClerk(clerkUserId: string) {
   const [updated] = await db
     .update(users)

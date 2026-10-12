@@ -2,6 +2,28 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-11 — v1.6.0
+
+Minor bump: purely additive, 0 new/removed operations, one new error response documented on 4
+existing routes plus two updated endpoint descriptions, nothing changed incompatibly since
+v1.5.0. From the 2026-10-11 full phase-audit's fix list, branch `audit-fixes`.
+
+**Account deletion (`docs/ARCHITECTURE.md` D75)**
+- `GET /api/v1/me`, `PATCH /api/v1/me`, `DELETE /api/v1/me`, `GET /api/v1/me/legal-status` — all
+  four now document a new `403 ACCOUNT_DELETION_PENDING` response: "This account is being
+  deleted." Returned by every authenticated endpoint once `DELETE /me` has been called, until
+  account-deletion reconciliation finishes in the background (typically within seconds). The app
+  should show a "your account is being deleted" screen and sign out - there's no path back from
+  this state. See `docs/MOBILE_INTEGRATION.md`'s error-code table.
+- `DELETE /api/v1/me` — description updated: this endpoint now returns success as soon as the
+  deletion request is durably recorded, not once the deletion is fully complete - the deletion is
+  guaranteed to finish (via a background Inngest job, idempotent and retried), it just may still
+  be in progress when the response arrives. No change to the response shape (`{ deleted: true }`).
+
+**Not a shape change, but worth recording here**: `GET /api/v1/me/current-lesson` (WH-06) is now
+actually progress-aware - its description no longer says "placeholder." No change to the request/
+response shape, only to what lesson is actually selected.
+
 ## 2026-10-11 — v1.5.0
 
 Minor bump: purely additive, 0 new operations, 3 new fields on an existing response schema plus an

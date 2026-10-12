@@ -119,7 +119,11 @@ export const xpEvents = pgTable(
 // badges.vmReward, ...) is UNCHANGED, still whole VM - only this ledger
 // column's unit changed, and only at the handful of call sites that turn a
 // whole-VM figure into a ledger row (see src/server/economy/schemas.ts's
-// VM_TO_LEDGER_PAISE).
+// VM_TO_LEDGER_PAISE). `amountPaise` was nullable only for the one-deploy-
+// cycle transition above - Migration B already dropped the whole-VM
+// `amount` column it coexisted with, so nothing can still legitimately
+// write a null here (phase-audit 2026-10-11 finding; confirmed zero null
+// rows before tightening this).
 export const vmoneyLedger = pgTable(
   "vmoney_ledger",
   {
@@ -128,7 +132,7 @@ export const vmoneyLedger = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    amountPaise: bigint("amount_paise", { mode: "number" }),
+    amountPaise: bigint("amount_paise", { mode: "number" }).notNull(),
     sourceType: text("source_type").notNull(),
     sourceId: uuid("source_id").notNull(),
     ruleId: uuid("rule_id").references(() => rewardRules.id, { onDelete: "restrict" }),

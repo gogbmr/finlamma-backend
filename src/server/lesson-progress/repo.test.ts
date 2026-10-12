@@ -18,6 +18,7 @@ const {
   countInProgressLearners,
   countInProgressLearnersByLessonIds,
   getLessonProgress,
+  getLessonProgressStatusesForUser,
   startLessonProgress,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
@@ -255,5 +256,30 @@ describe("countInProgressLearnersByLessonIds", () => {
 
   it("returns an empty map without querying for an empty id list", async () => {
     expect(await countInProgressLearnersByLessonIds([])).toEqual(new Map());
+  });
+});
+
+describe("getLessonProgressStatusesForUser", () => {
+  it("maps each lesson to this user's own status, omitting a lesson with no row at all", async () => {
+    const { lesson: lessonA } = await makeLesson();
+    const { lesson: lessonB } = await makeLesson();
+    const { lesson: lessonC } = await makeLesson(); // never started by this user
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    await startLessonProgress(user.id, lessonA.id);
+    await startLessonProgress(user.id, lessonB.id);
+    await completeLessonProgress(user.id, lessonB.id);
+    await startLessonProgress(otherUser.id, lessonC.id); // a different user's progress
+
+    const result = await getLessonProgressStatusesForUser(user.id, [lessonA.id, lessonB.id, lessonC.id]);
+
+    expect(result.get(lessonA.id)).toBe("in_progress");
+    expect(result.get(lessonB.id)).toBe("completed");
+    expect(result.has(lessonC.id)).toBe(false);
+  });
+
+  it("returns an empty map without querying for an empty lesson id list", async () => {
+    const user = await makeUser();
+    expect(await getLessonProgressStatusesForUser(user.id, [])).toEqual(new Map());
   });
 });

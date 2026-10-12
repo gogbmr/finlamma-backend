@@ -355,7 +355,38 @@ own repo later, hosted on Railway.
       homepage's own `POST /api/track` beacon is rate-limited per IP, strict-schema
       (`.strict()`, closed enums only), and has no field that could carry PII.
 
+## Backend gaps the mobile app needs before its Phase 4 (Trade)
+
+Found by the 2026-10-11 full `/phase-audit` (`docs/STATUS.md`, `docs/FEATURE_MAP.md`). Not built
+yet - recorded here so the mobile app's Trade tab work doesn't quietly discover these mid-build.
+- **TR-03/04/05/06** — no `GET /api/v1/trade/account` (virtual balance + intraday P&L card), no
+  index strip/candle endpoints for NIFTY 50/BANK NIFTY/SENSEX (no `indices`/`index_quotes` table
+  exists at all yet).
+- **TR-08/09/10/11** — no watchlist endpoints, and no dedicated positions-list endpoint (holdings
+  exist, but not surfaced this way).
+- **TR-13** — an order-list endpoint doesn't exist; `GET /api/v1/trade/orders` is only `POST`
+  (place order) today, and a list-order schema was defined but never wired to a route.
+- **TR-18** — a learner's held position (qty/avg/P&L) isn't merged into the stock-detail response;
+  the data exists in `holdings`, just not joined in.
+- **TR-24/26** — no order-ticket preview endpoint (order value, available margin/balance-after-sell,
+  brokerage).
+- **TR-35/36** — no funds-portfolio-summary endpoint (total value, holdings count, invested
+  amount, active SIP amount) and no `category=` filter on `GET /api/v1/trade/funds`.
+- **TR-38/39** — the fund list/detail endpoints exist, but don't merge in the caller's own
+  `fund_holdings` (the "held" tag + invested amount) and have no 1Y/3Y/5Y return fields anywhere
+  in the schema.
+
 ## Pre-launch checklist
+- [ ] **Define a retention policy for IP addresses and user-agent strings** - founder decision,
+      deferred (`docs/STATUS.md`'s 2026-10-11 phase audit completeness report; no code yet).
+      `consent_records.actor_ip`/`actor_user_agent`, `legal_reapproval_requests.actor_ip`/
+      `actor_user_agent`, and every `activity_logs.ip`/`user_agent` column are retained forever
+      today, with no erasure path even on account deletion - `activity_logs` especially, since
+      rule 5 (append-only, no update/delete path for anyone) makes this a deliberate, narrow
+      exception to carve out, not a simple scrub. A concrete option already discussed: null out
+      IP/user-agent after a fixed window (e.g. 90 days) once they're no longer needed for abuse/
+      fraud investigation, while keeping the rest of the row (action, timestamps, metadata) intact
+      forever. Needs a decision on the retention window and whether it applies retroactively.
 - [ ] **Legal review of subscriptions and ads in a minor-directed app** (Apple/Google policy,
       India's DPDP, Google Play Families Policy) - see `docs/ARCHITECTURE.md` D66/D67 (Phase 8
       kickoff): the under-18 non-personalized-ads line and the server-side block on minors

@@ -16,7 +16,12 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   preferences jsonb (sound, haptics, data_saver — small
   booleans, same jsonb pattern as translatable text), clerk_updated_at (Clerk's own updated_at for
   the last change we applied, so the webhook can ignore stale/out-of-order redeliveries),
-  deleted_at. On `user.deleted` from Clerk, the row is soft-deleted and anonymized in place
+  onboarding_completed_at (set once, the first time the World Home mentor-intro modal finishes,
+  WH-11 — purely "have they seen the intro," never a gate for requireFullAccess),
+  deletion_requested_at (set the instant `DELETE /me` is called, before anything else — the
+  durable marker the account-deletion reconciliation job retries against until `deleted_at` is
+  finally set too, per `docs/STATUS.md`'s 2026-10-11 phase audit), deleted_at. On `user.deleted`
+  from Clerk, the row is soft-deleted and anonymized in place
   (personal fields cleared) rather than removed, so ledger/trading/leaderboard history stays
   intact. **Not added in Phase 3, despite this section's original plan**: `level` and `total_xp`
   are never stored columns — level is always derived from `xp_events`/`vmoney_ledger` sums at
@@ -33,7 +38,11 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
 **Compliance (parental consent & legal documents) — real, v1 scope, see PRODUCT_SPEC.md's
 Onboarding & parental consent section, decided at Phase 2a kickoff**
 - `parent_contacts` (user_id, name, email, verified_at, weekly_report_opt_in,
-  weekly_report_unsubscribe_token_hash) — **email only in v1, no phone.** The email cannot equal
+  weekly_report_unsubscribe_token_hash, scrubbed_at) — **email only in v1, no phone.**
+  `scrubbed_at` is set once, in the same transaction as the actual account-deletion scrub
+  (`docs/STATUS.md`'s 2026-10-11 phase audit) — the idempotency marker a retry checks before ever
+  recomputing `consent_records.parent_email_hmac` again, never derived from `name === "[deleted]"`
+  or similar. The email cannot equal
   the child's own `users.email`; one parent email can back at most
   `settings_kv.parent_email_max_children` (default 5) different `user_id`s, to limit one inbox
   farming consent for many accounts. `weekly_report_opt_in` (Phase 3b, default false) is the

@@ -6,6 +6,7 @@ import { istDateStartUtc, istDateString } from "@/lib/ist-date";
 import { getOrSetJsonCache } from "@/lib/redis";
 import { countActiveTradersToday, countOrdersToday } from "@/server/ops/repo";
 import { getPulseCheckEngagement } from "@/server/pulse-check/service";
+import { countStuckAccountDeletionsOlderThan } from "@/server/users/repo";
 import {
   countActiveAdFreeEntitlements,
   countDistinctActiveUsersSinceIstDate,
@@ -27,7 +28,13 @@ const PURCHASE_EVENT_TYPES = new Set([
 ]);
 
 export type AdminAnalyticsSummary = {
-  users: { totalActive: number; newToday: number; newLast7Days: number };
+  users: {
+    totalActive: number;
+    newToday: number;
+    newLast7Days: number;
+    accountDeletionsPendingOver24h: number;
+    accountDeletionsStuckOver3Days: number;
+  };
   retention: { dau: number; wau: number; mau: number };
   lessons: { completedToday: number; completedLast7Days: number };
   trading: { activeTradersToday: number; ordersToday: number };
@@ -58,6 +65,9 @@ export async function getAdminAnalyticsSummary(): Promise<AdminAnalyticsSummary>
       const sevenDaysAgoIst = istDateString(sevenDaysAgoUtc);
       const thirtyDaysAgoIst = istDateString(thirtyDaysAgoUtc);
 
+      const oneDayAgoUtc = new Date(now.getTime() - DAYS_MS);
+      const threeDaysAgoUtc = new Date(now.getTime() - 3 * DAYS_MS);
+
       const [
         totalActive,
         newToday,
@@ -72,6 +82,8 @@ export async function getAdminAnalyticsSummary(): Promise<AdminAnalyticsSummary>
         pulseCheckEngagement,
         activeAdFreeEntitlements,
         purchaseEventTypesLast7Days,
+        accountDeletionsPendingOver24h,
+        accountDeletionsStuckOver3Days,
       ] = await runWithConcurrencyLimit(
         [
           () => countTotalActiveUsers(),
@@ -87,12 +99,24 @@ export async function getAdminAnalyticsSummary(): Promise<AdminAnalyticsSummary>
           () => getPulseCheckEngagement(7, now),
           () => countActiveAdFreeEntitlements(now),
           () => listEntitlementUpdateEventTypesSince(sevenDaysAgoUtc),
+          // Account-deletion reconciliation visibility (phase-audit
+          // 2026-10-11 amendment 4) - surfaced here, not just as a
+          // greppable log line, since Sentry alerting is still an open
+          // pre-launch item and nobody is watching raw logs today.
+          () => countStuckAccountDeletionsOlderThan(oneDayAgoUtc),
+          () => countStuckAccountDeletionsOlderThan(threeDaysAgoUtc),
         ],
         DB_CONCURRENCY_LIMIT,
       );
 
       return {
-        users: { totalActive, newToday, newLast7Days },
+        users: {
+          totalActive,
+          newToday,
+          newLast7Days,
+          accountDeletionsPendingOver24h,
+          accountDeletionsStuckOver3Days,
+        },
         retention: { dau, wau, mau },
         lessons: { completedToday, completedLast7Days },
         trading: { activeTradersToday, ordersToday },

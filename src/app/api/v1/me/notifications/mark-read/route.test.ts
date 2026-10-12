@@ -41,13 +41,21 @@ describe("POST /api/v1/me/notifications/mark-read", () => {
     const res = await POST(makeRequest({}));
 
     expect(res.status).toBe(200);
-    expect(mockMarkMyNotificationsRead).toHaveBeenCalledWith({ id: "u1" }, undefined);
+    expect(mockMarkMyNotificationsRead).toHaveBeenCalledWith(
+      { id: "u1" },
+      undefined,
+      { ip: null, userAgent: null },
+    );
   });
 
   it("marks only the given ids", async () => {
     const res = await POST(makeRequest({ ids: ["11111111-1111-4111-8111-111111111111"] }));
 
     expect(res.status).toBe(200);
-    expect(mockMarkMyNotificationsRead).toHaveBeenCalledWith({ id: "u1" }, ["11111111-1111-4111-8111-111111111111"]);
+    expect(mockMarkMyNotificationsRead).toHaveBeenCalledWith(
+      { id: "u1" },
+      ["11111111-1111-4111-8111-111111111111"],
+      { ip: null, userAgent: null },
+    );
   });
 });
