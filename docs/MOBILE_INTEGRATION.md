@@ -82,6 +82,9 @@ immediately after sign-up gets `401 UNAUTHENTICATED` with "No account found for 
 retry briefly rather than treating it as a hard failure; it almost always means the webhook just
 hasn't landed yet.
 
+That same webhook also auto-assigns a random peer-visible **handle** (D73, `docs/ARCHITECTURE.md`)
+from a staff-curated catalog - every account has one from the start, no separate step needed.
+
 ---
 
 ## 2. Onboarding flow
@@ -204,7 +207,7 @@ generic "something went wrong" toast:
 | Code | Status | Retryable? | App behavior |
 |---|---|---|---|
 | `RATE_LIMITED` | 429 | Yes, after a delay | Generic rate limits exist on lesson/Pulse-Check steps, reward claims, trade/SIP placement, Doubt Zone messages. Back off and retry; never surface raw "rate limited" text - show a soft "slow down a little" message. |
-| `RESEND_TOO_SOON` / `RESEND_LIMIT_REACHED` | 429 | Yes (after cooldown / next day) | Consent/reapproval resend only. Show a countdown or "try again tomorrow," not an error state. |
+| `RESEND_TOO_SOON` / `RESEND_LIMIT_REACHED` | 429 | Yes (after cooldown / next day) | Consent/reapproval resend, or (`RESEND_TOO_SOON` only) `POST /me/handle/reroll` inside its 30-day cooldown. Show a countdown or "try again tomorrow/later," not an error state - the error `details` carries `retryAfterSeconds`/`nextRerollAvailableAt` for the reroll case. |
 | `LESSON_TOO_SOON` / `NEWS_READ_TOO_SOON` | 429 | Yes, shortly | The request will succeed if simply retried once real time has passed (anti-farming, not a mistake) - don't show this as a failure at all if you can avoid it (e.g. just disable the button briefly). |
 | `IDEMPOTENCY_REPLAY` | 409 | **No - this is a real client bug** | You reused an `Idempotency-Key` for a request with different parameters than the original. Never auto-retry; this means your own idempotency-key generation is wrong. |
 | `PRICE_STALE` / `PRICE_UNAVAILABLE` | 409 | Yes, shortly | Trading only. Show "price unavailable right now, try again" - these are expected during low-liquidity moments or a relay hiccup, not exceptional. |
@@ -280,6 +283,14 @@ every time).
   failure, reward claims, cheers). A rejected attempt is just an error response - there's no
   "pending/rejected" order status to poll for; either the call succeeded (you'll see the created
   resource) or it threw (handle the error code).
+- **Peer-visible identity is always the `handle` field, never `firstName`/`lastInitial` (D73).**
+  Every Arena/leaderboard/activity-feed/competition response that shows another learner gives you
+  a `handle: { en, hi, hx }` object (nullable only in the brief window before auto-assignment runs)
+  - staff-curated, auto-assigned, not learner-picked. `firstName`/`lastInitial` only ever appear on
+  `GET /me` (your own account) and are private - never build a peer-facing display name from them,
+  and never expect them on another learner's data at all. A learner can reroll their own handle
+  once every 30 days via `POST /me/handle/reroll` (`RESEND_TOO_SOON` if called again before the
+  cooldown elapses, with `retryAfterSeconds`/`nextRerollAvailableAt` in the error details).
 
 ---
 

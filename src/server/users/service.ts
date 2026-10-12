@@ -11,6 +11,8 @@ import {
   scrubConsentDataForDeletedUser,
   type OnboardingConsentState,
 } from "@/server/onboarding/service";
+import { assignRandomHandleIfMissing, getMyHandle } from "@/server/peer-handles/service";
+import type { LocalizedText } from "@/server/shared/schemas";
 import type { UpdateMeInput } from "./schemas";
 import {
   anonymizeUserFromClerk,
@@ -25,11 +27,16 @@ import {
 type UserRow = typeof users.$inferSelect;
 type RequestMeta = ReturnType<typeof requestMeta>;
 
-function toMeResponse(user: UserRow, consentState: OnboardingConsentState) {
+function toMeResponse(
+  user: UserRow,
+  consentState: OnboardingConsentState,
+  handle: LocalizedText | null,
+) {
   return {
     id: user.id,
     firstName: user.firstName,
     lastInitial: user.lastInitial,
+    handle,
     email: user.email,
     phone: user.phone,
     language: user.language,
@@ -45,7 +52,8 @@ function toMeResponse(user: UserRow, consentState: OnboardingConsentState) {
 
 export async function getMe(user: UserRow) {
   const consentState = await getOnboardingConsentState(user);
-  return toMeResponse(user, consentState);
+  const handle = await getMyHandle(user.id);
+  return toMeResponse(user, consentState, handle);
 }
 
 export async function updateMe(user: UserRow, input: UpdateMeInput, meta: RequestMeta) {
@@ -69,7 +77,8 @@ export async function updateMe(user: UserRow, input: UpdateMeInput, meta: Reques
   });
 
   const consentState = await getOnboardingConsentState(updated);
-  return toMeResponse(updated, consentState);
+  const handle = await getMyHandle(updated.id);
+  return toMeResponse(updated, consentState, handle);
 }
 
 // Account deletion (docs/PRODUCT_SPEC.md Settings, non-negotiable rule 10).
@@ -214,17 +223,25 @@ function primaryVerifiedPhone(
 export async function syncUserFromClerkEvent(evt: WebhookEvent) {
   if (evt.type === "user.created" || evt.type === "user.updated") {
     const { data } = evt;
-    // Kid-safe: only ever store first name + last-initial, never the full
-    // last name. Both are nullable - phone-only signups have no name yet
-    // until onboarding collects one.
+    // firstName only now (D73, docs/ARCHITECTURE.md) - lastInitial is
+    // retired going forward, never written for new rows and never touched
+    // on existing ones. Peer-visible identity is the handle assigned below.
     await upsertUserFromClerk({
       clerkUserId: data.id,
       firstName: data.first_name || null,
-      lastInitial: data.last_name ? data.last_name[0] : null,
       email: primaryVerifiedEmail(data),
       phone: primaryVerifiedPhone(data),
       clerkUpdatedAt: new Date(data.updated_at),
     });
+
+    // Idempotent (a no-op once a handle is set) - safe to call on every
+    // sync, not just account creation, so a user who somehow slipped
+    // through without one (a gap predating this feature, or a prior
+    // transient failure) self-heals on their next Clerk event too.
+    const user = await getUserByClerkUserId(data.id);
+    if (user) {
+      await assignRandomHandleIfMissing(user.id);
+    }
 
     await logActivity({
       actorType: "system",

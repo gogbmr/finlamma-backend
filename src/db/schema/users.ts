@@ -1,5 +1,6 @@
-import { date, jsonb, pgEnum, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { date, jsonb, pgEnum, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 import { idAndTimestamps } from "./_helpers";
+import { peerHandles } from "./peer_handles";
 
 export const languageEnum = pgEnum("language", ["en", "hi", "hx"]);
 export const themeEnum = pgEnum("theme", ["dark", "light"]);
@@ -30,14 +31,31 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
 // username sign-in on this app - a user may have email, phone, both, or
 // (briefly, right after signup via username/OAuth with no contact info yet)
 // neither, so both columns are nullable. Username itself is a Clerk login
-// credential only and is never stored or shown - the public display name is
-// always first_name + last_initial (kid-safe rule), which may also be null
-// until onboarding collects a name.
+// credential only and is never stored or shown. `firstName` is PRIVATE -
+// returned only on GET /me, used in the parent-consent email, and on the
+// learner's own certificate - never shown to another learner (D73,
+// docs/ARCHITECTURE.md). `lastInitial` is retired: no longer written for
+// any user (src/server/users/service.ts syncUserFromClerkEvent stopped
+// passing it), kept only so an already-populated row isn't retroactively
+// cleared. The actual peer-visible identity everywhere else (Arena,
+// leaderboards, competitions, the activity feed) is `handleId` below.
 export const users = pgTable("users", {
   ...idAndTimestamps(),
   clerkUserId: text("clerk_user_id").notNull().unique(),
   firstName: text("first_name"),
   lastInitial: varchar("last_initial", { length: 1 }),
+  // D73: a staff-curated, non-learner-authored handle (peer_handles),
+  // auto-assigned at account creation and backfilled for every pre-existing
+  // user - this, never firstName/lastInitial, is what another learner ever
+  // sees. Not unique - many learners can share the same handle by design
+  // (it's a display value, not a lookup key). `restrict` on delete: staff
+  // retire a handle (active: false) rather than delete one still assigned
+  // to someone, same convention about_me_chips already uses.
+  handleId: uuid("handle_id").references(() => peerHandles.id, { onDelete: "restrict" }),
+  // Null until the learner's first self-reroll (PATCH /me/handle/reroll) -
+  // the cooldown (30 days) is computed from this, never from `updatedAt`,
+  // since plenty of other fields touch that column too.
+  handleRerolledAt: timestamp("handle_rerolled_at", { withTimezone: true }),
   email: text("email").unique(),
   phone: text("phone").unique(),
   // Collected once at onboarding; drives the under-18 parental-consent gate
@@ -55,9 +73,9 @@ export const users = pgTable("users", {
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   language: languageEnum("language").default("hx").notNull(),
   theme: themeEnum("theme").default("dark").notNull(),
-  // Free-text, self-editable, never shown publicly (Arena's public profile
-  // projection is first-name + last-initial only, per CLAUDE.md rule 10 -
-  // bio is a Settings/account-page field, not a social one).
+  // Free-text, self-editable, never shown publicly (D36 - Arena's public
+  // profile shows the handle, not anything learner-authored - bio is a
+  // Settings/account-page field, not a social one).
   bio: text("bio"),
   // Optional, self-editable (PATCH /me, same as bio/language/theme) - Phase 6
   // Arena's state-scope leaderboard (docs/PRODUCT_SPEC.md §3, FEATURE_MAP

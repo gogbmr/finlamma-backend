@@ -6,6 +6,7 @@ import { getBadgeEditorData } from "@/server/badges/service";
 import { getDailyGoalsSettings } from "@/server/daily-goals/service";
 import { getVmIssuanceMultiplier, listRewardRulesForAdmin } from "@/server/economy/service";
 import { getLevelCurveSettings } from "@/server/leveling/service";
+import { listPeerHandlesForAdmin } from "@/server/peer-handles/service";
 import { listRankTitlesForAdmin } from "@/server/rank-titles/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { roleHasPermission } from "@/server/staff/repo";
@@ -16,6 +17,7 @@ import { LevelCurveSettingsEditor } from "./level-curve-settings-editor";
 import { DailyGoalsSettingsEditor } from "./daily-goals-settings-editor";
 import { RankTitlesEditor } from "./rank-titles-editor";
 import { AboutMeChipsEditor } from "./about-me-chips-editor";
+import { PeerHandlesEditor } from "./peer-handles-editor";
 import { ArenaLeagueSettingsEditor } from "./arena-league-settings-editor";
 import { ScoringSettingsEditor } from "./scoring-settings-editor";
 import { StreaksSettingsEditor } from "./streaks-settings-editor";
@@ -46,6 +48,7 @@ export default async function SettingsPage() {
   const dailyGoalsSettings = await getDailyGoalsSettings();
   const topics = await listTopicsForAdmin();
   const aboutMeChips = await listAboutMeChipsForAdmin();
+  const peerHandles = await listPeerHandlesForAdmin();
 
   return (
     <div className="space-y-8">
@@ -62,6 +65,7 @@ export default async function SettingsPage() {
       <LevelCurveSettingsEditor settings={levelCurveSettings} />
       <RankTitlesEditor rankTitles={rankTitles} />
       <AboutMeChipsEditor chips={aboutMeChips} />
+      <PeerHandlesEditor handles={peerHandles} />
       <TopicsEditor topics={topics} />
     </div>
   );

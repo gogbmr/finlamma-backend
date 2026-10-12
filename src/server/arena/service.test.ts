@@ -6,7 +6,6 @@ vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
 
 const mockGetCurrentWorldIdForUser = vi.fn();
 const mockWeeklyXpByScope = vi.fn();
-const mockGetDisplayNamesForUserIds = vi.fn();
 const mockXpByWorldInRange = vi.fn();
 const mockListPublishedWorldsOrdered = vi.fn();
 const mockGetWorldXpSparklines = vi.fn();
@@ -39,7 +38,6 @@ vi.mock("./repo", () => ({
     mockGetSnapshotEntryForUser(scope, week, userId),
   getCurrentWorldIdForUser: (userId: unknown) => mockGetCurrentWorldIdForUser(userId),
   weeklyXpByScope: (scope: unknown, since: unknown) => mockWeeklyXpByScope(scope, since),
-  getDisplayNamesForUserIds: (ids: unknown) => mockGetDisplayNamesForUserIds(ids),
   xpByWorldInRange: (since: unknown, before: unknown) => mockXpByWorldInRange(since, before),
   listPublishedWorldsOrdered: () => mockListPublishedWorldsOrdered(),
   getWorldXpSparklines: (ids: unknown, days: unknown) => mockGetWorldXpSparklines(ids, days),
@@ -136,6 +134,11 @@ vi.mock("@/server/notifications/service", () => ({
   notifyUser: (...args: unknown[]) => mockNotifyUser(...args),
 }));
 
+const mockGetHandlesForUserIds = vi.fn();
+vi.mock("@/server/peer-handles/service", () => ({
+  getHandlesForUserIds: (ids: unknown) => mockGetHandlesForUserIds(ids),
+}));
+
 import {
   createAboutMeChipForAdmin,
   deleteAboutMeChipForAdmin,
@@ -159,14 +162,14 @@ import {
 
 const META = { ip: null, userAgent: null };
 
-function names(ids: string[]) {
-  return new Map(ids.map((id) => [id, { firstName: `First-${id}`, lastInitial: "L" }]));
+function handlesFor(ids: string[]) {
+  return new Map(ids.map((id) => [id, { en: `Handle-${id}`, hi: `Handle-${id}`, hx: `Handle-${id}` }]));
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetSettingNumber.mockResolvedValue(20);
-  mockGetDisplayNamesForUserIds.mockImplementation((ids: string[]) => Promise.resolve(names(ids)));
+  mockGetHandlesForUserIds.mockImplementation((ids: string[]) => Promise.resolve(handlesFor(ids)));
   mockGetLeagueZonesForScope.mockResolvedValue(new Map());
   mockGetLastWeekRanksForScope.mockResolvedValue(new Map());
 });
@@ -473,16 +476,23 @@ describe("getMyCheersSummary", () => {
 });
 
 describe("getActivityFeed", () => {
-  it("shapes recent XP events into kid-safe activity items", async () => {
+  it("shapes recent XP events into handle-only activity items", async () => {
     const createdAt = new Date("2026-09-28T10:00:00.000Z");
     mockListRecentXpEvents.mockResolvedValueOnce([
-      { userId: "u1", firstName: "Aarav", lastInitial: "S", amount: 80, createdAt },
+      { userId: "u1", amount: 80, createdAt },
     ]);
+    mockGetHandlesForUserIds.mockResolvedValueOnce(
+      new Map([["u1", { en: "Bright Bull", hi: "तेज़ बैल", hx: "Bright Bull" }]]),
+    );
 
     const result = await getActivityFeed();
 
     expect(result.items).toEqual([
-      { firstName: "Aarav", lastInitial: "S", amount: 80, createdAt: "2026-09-28T10:00:00.000Z" },
+      {
+        handle: { en: "Bright Bull", hi: "तेज़ बैल", hx: "Bright Bull" },
+        amount: 80,
+        createdAt: "2026-09-28T10:00:00.000Z",
+      },
     ]);
   });
 });
@@ -579,8 +589,8 @@ describe("getPublicProfile", () => {
 
   it("shapes the full allowlisted public profile, only unlocked badges, no private fields", async () => {
     mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null });
-    mockGetDisplayNamesForUserIds.mockResolvedValueOnce(
-      new Map([["u2", { firstName: "Meera", lastInitial: "K" }]]),
+    mockGetHandlesForUserIds.mockResolvedValueOnce(
+      new Map([["u2", { en: "Smart Saver", hi: "समझदार बचतकर्ता", hx: "Smart Saver" }]]),
     );
     mockGetLevelInfo.mockResolvedValueOnce({ level: 4, totalXp: 1000 });
     mockGetStreakStats.mockResolvedValueOnce({ learning: { current: 4, longest: 12 }, pulseCheck: {} });
@@ -600,8 +610,7 @@ describe("getPublicProfile", () => {
     const result = await getPublicProfile("u2");
 
     expect(result).toEqual({
-      firstName: "Meera",
-      lastInitial: "K",
+      handle: { en: "Smart Saver", hi: "समझदार बचतकर्ता", hx: "Smart Saver" },
       level: 4,
       rankTitle: { en: "Investor" },
       badges: [{ id: "b1", name: { en: "First Trade" }, description: { en: "x" }, iconKey: "trophy" }],
@@ -620,7 +629,7 @@ describe("getPublicProfile", () => {
 
   it("returns currentWorld: null when the learner has no world yet (no published catalog)", async () => {
     mockFindCheerableUser.mockResolvedValueOnce({ id: "u2", deletedAt: null });
-    mockGetDisplayNamesForUserIds.mockResolvedValueOnce(new Map());
+    mockGetHandlesForUserIds.mockResolvedValueOnce(new Map());
     mockGetLevelInfo.mockResolvedValueOnce({ level: 1, totalXp: 0 });
     mockGetStreakStats.mockResolvedValueOnce({ learning: { current: 0, longest: 0 }, pulseCheck: {} });
     mockGetQuizAccuracyTotalsForUser.mockResolvedValueOnce({ correct: 0, total: 0 });

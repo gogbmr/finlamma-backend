@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DEFAULT_USER_PREFERENCES, languageEnum, themeEnum } from "@/db/schema";
 import { registry } from "@/lib/openapi";
+import { PeerHandleSchema } from "@/server/peer-handles/schemas";
 import { IndianStateSchema } from "@/server/shared/schemas";
 
 const LanguageSchema = z.enum(languageEnum.enumValues).openapi({
@@ -83,9 +84,18 @@ export const MeDataSchema = registry.register(
     id: z.uuid().openapi({ example: "b3b6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b" }),
     firstName: z.string().nullable().openapi({
       example: "Chirag",
-      description: "Kid-safe display name part - never the full last name.",
+      description:
+        "Private to the owner (D73, docs/ARCHITECTURE.md) - never shown to another learner. " +
+        "Only ever first name, never the full last name.",
     }),
-    lastInitial: z.string().length(1).nullable().openapi({ example: "B" }),
+    lastInitial: z.string().length(1).nullable().openapi({
+      example: "B",
+      description:
+        "Legacy field, retired (D73) - no longer written for new or existing accounts going " +
+        "forward. Kept here, still private to the owner, only for accounts that already had " +
+        "one before this change.",
+    }),
+    handle: PeerHandleSchema,
     email: z.string().nullable().openapi({ example: "chirag@example.com" }),
     phone: z.string().nullable().openapi({ example: "+919876543210" }),
     language: LanguageSchema,

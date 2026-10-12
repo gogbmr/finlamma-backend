@@ -1,6 +1,7 @@
 // Domain table definitions live in one file per domain here (users.ts,
 // worlds.ts, ledger.ts, ...), re-exported from this barrel.
 export * from "./users";
+export * from "./peer_handles";
 export * from "./activity_logs";
 export * from "./staff";
 export * from "./compliance";

@@ -2,6 +2,30 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-12 — v2.0.0
+
+Major bump: **breaking** - `firstName`/`lastInitial` removed from every peer-visible response
+schema. 1 new operation, 1 new field on an existing schema, 4 existing schemas lost two fields
+each. From the handle rollout (`docs/ARCHITECTURE.md` D73), branch `handles`.
+
+**Peer-visible identity is now a handle, never a real name (D73)**
+- **Breaking**: `firstName`/`lastInitial` removed from `ArenaLeaderboardResponse`'s `rows[]`,
+  `ArenaActivityResponse`'s `items[]`, `PublicProfileResponse`'s `data`, and
+  `CompetitionLeaderboardResponse`'s `rows[]`. Each gains `handle: { en, hi, hx } | null` in their
+  place - a staff-curated, auto-assigned identity, not learner-authored or learner-picked. Any app
+  code reading `firstName`/`lastInitial` off another learner's row must switch to `handle`; those
+  two fields no longer exist on these responses at all.
+- `GET /api/v1/me` - **additive only**: still returns `firstName`/`lastInitial` (now documented as
+  private to the owner, never shown to a peer) and gains a new `handle` field alongside them, so
+  the app can read its own current handle without a dedicated endpoint.
+- **New endpoint**: `POST /api/v1/me/handle/reroll` - rerolls the caller's own handle, excluding
+  their current one where possible. Allowed once every 30 days; a second attempt inside the
+  cooldown returns `429 RESEND_TOO_SOON` with `retryAfterSeconds`/`nextRerollAvailableAt` in the
+  error `details`.
+- Endpoint descriptions updated to describe the handle instead of "kid-safe display name (first
+  name + last initial)": `GET /api/v1/users/{userId}/public-profile`, `GET /api/v1/arena/activity`,
+  `GET /api/v1/arena/competitions/current/leaderboard`, `GET /api/v1/me/profile/overview`.
+
 ## 2026-10-11 — v1.6.0
 
 Minor bump: purely additive, 0 new/removed operations, one new error response documented on 4

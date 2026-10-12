@@ -21,6 +21,12 @@ import { updateRewardRuleForAdmin, updateVmIssuanceMultiplier } from "@/server/e
 import { LevelCurveSettingsSchema } from "@/server/leveling/schemas";
 import { updateLevelCurveSettings } from "@/server/leveling/service";
 import {
+  createPeerHandleForAdmin,
+  deletePeerHandleForAdmin,
+  updatePeerHandleForAdmin,
+} from "@/server/peer-handles/service";
+import { PeerHandleInputSchema, PeerHandleUpdateInputSchema } from "@/server/peer-handles/schemas";
+import {
   createRankTitleForAdmin,
   deleteRankTitleForAdmin,
   updateRankTitleForAdmin,
@@ -167,6 +173,32 @@ export async function deleteRankTitleAction(id: string): Promise<ActionResult> {
   return runAction(async () => {
     const actor = await requireStaff("settings.manage");
     await deleteRankTitleForAdmin(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function createPeerHandleAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = PeerHandleInputSchema.parse(input);
+    await createPeerHandleForAdmin(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function updatePeerHandleAction(id: string, input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    const parsed = PeerHandleUpdateInputSchema.parse(input);
+    await updatePeerHandleForAdmin(actor, id, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/settings");
+  });
+}
+
+export async function deletePeerHandleAction(id: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("settings.manage");
+    await deletePeerHandleForAdmin(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }

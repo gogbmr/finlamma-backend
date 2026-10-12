@@ -52,6 +52,13 @@ vi.mock("@/server/doubt-zone/service", () => ({
   scrubDoubtZoneContentForUser: (userId: unknown) => mockScrubDoubtZoneContentForUser(userId),
 }));
 
+const mockAssignRandomHandleIfMissing = vi.fn();
+const mockGetMyHandle = vi.fn();
+vi.mock("@/server/peer-handles/service", () => ({
+  assignRandomHandleIfMissing: (userId: unknown) => mockAssignRandomHandleIfMissing(userId),
+  getMyHandle: (userId: unknown) => mockGetMyHandle(userId),
+}));
+
 import {
   deleteMe,
   getMe,
@@ -97,25 +104,30 @@ function userEvent(
   } as unknown as WebhookEvent;
 }
 
+const HANDLE_FIXTURE = { en: "Smart Saver", hi: "समझदार बचतकर्ता", hx: "Smart Saver" };
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetMyHandle.mockResolvedValue(HANDLE_FIXTURE);
 });
 
 describe("syncUserFromClerkEvent", () => {
-  it("upserts first_name + last-initial-only and the verified primary email on user.created", async () => {
+  it("upserts first_name (no last_name/lastInitial) and the verified primary email on user.created", async () => {
     mockUpsert.mockResolvedValueOnce(undefined);
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetUserByClerkUserId.mockResolvedValueOnce({ id: "u1" });
+    mockAssignRandomHandleIfMissing.mockResolvedValueOnce(true);
 
     await syncUserFromClerkEvent(userEvent("user.created"));
 
     expect(mockUpsert).toHaveBeenCalledWith({
       clerkUserId: "user_123",
       firstName: "Chirag",
-      lastInitial: "B",
       email: "chirag@example.com",
       phone: null,
       clerkUpdatedAt: new Date(1_700_000_000_000),
     });
+    expect(mockAssignRandomHandleIfMissing).toHaveBeenCalledWith("u1");
     expect(mockLogActivity).toHaveBeenCalledWith({
       actorType: "system",
       action: "user.synced_from_clerk",
@@ -128,6 +140,7 @@ describe("syncUserFromClerkEvent", () => {
   it("allows null first_name/last_name (phone-only signup, no name yet)", async () => {
     mockUpsert.mockResolvedValueOnce(undefined);
     mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetUserByClerkUserId.mockResolvedValueOnce(null);
 
     await syncUserFromClerkEvent(
       userEvent("user.created", {
@@ -139,8 +152,18 @@ describe("syncUserFromClerkEvent", () => {
     );
 
     expect(mockUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({ firstName: null, lastInitial: null, email: null }),
+      expect.objectContaining({ firstName: null, email: null }),
     );
+  });
+
+  it("skips handle assignment when the just-synced user can't be resolved back by clerk id", async () => {
+    mockUpsert.mockResolvedValueOnce(undefined);
+    mockLogActivity.mockResolvedValueOnce(undefined);
+    mockGetUserByClerkUserId.mockResolvedValueOnce(null);
+
+    await syncUserFromClerkEvent(userEvent("user.created"));
+
+    expect(mockAssignRandomHandleIfMissing).not.toHaveBeenCalled();
   });
 
   it("does not crash when primary_email_address_id points at an id absent from email_addresses", async () => {
@@ -267,6 +290,8 @@ const USER_ROW = {
   clerkUserId: "clerk_123",
   firstName: "Chirag",
   lastInitial: "B",
+  handleId: null,
+  handleRerolledAt: null,
   email: "chirag@example.com",
   phone: null,
   dateOfBirth: null,
@@ -295,6 +320,7 @@ describe("getMe", () => {
       id: "u1",
       firstName: "Chirag",
       lastInitial: "B",
+      handle: HANDLE_FIXTURE,
       email: "chirag@example.com",
       phone: null,
       language: "en",
@@ -307,6 +333,7 @@ describe("getMe", () => {
       parentConsentStatus: "not_required",
     });
     expect(mockGetOnboardingConsentState).toHaveBeenCalledWith(USER_ROW);
+    expect(mockGetMyHandle).toHaveBeenCalledWith("u1");
   });
 
   it("carries a minor's pending-consent state through to the response", async () => {

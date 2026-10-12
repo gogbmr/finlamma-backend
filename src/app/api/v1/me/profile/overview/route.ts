@@ -11,8 +11,10 @@ registry.registerPath({
   summary:
     "Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)",
   description:
-    "Kid-safe identity (first name + last initial only - never a full name or photo, " +
-    "CLAUDE.md rule 10), joined date, level, XP progress to the next level, the rank title " +
+    "The caller's own identity (first name + last initial - never a full name or photo), " +
+    "private to them the same way GET /me is (D73, docs/ARCHITECTURE.md - other learners see " +
+    "this learner's handle instead, never this), joined date, level, XP progress to the next " +
+    "level, the rank title " +
     "the caller's current level currently qualifies for (admin-editable rank_titles table, or " +
     "null if none applies yet), the learning streak, lesson-completion progress, quiz " +
     "accuracy and a 7-day activity dot calendar. `percentile` and `rankDeltaCells` " +

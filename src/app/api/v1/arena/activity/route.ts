@@ -9,7 +9,7 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/arena/activity",
   summary: "Get the recent-activity ticker (AR-03)",
-  description: "The most recent real XP credits app-wide, newest first, kid-safe display name only.",
+  description: "The most recent real XP credits app-wide, newest first, the handle only (D73).",
   tags: ["Arena"],
   security: [{ bearerAuth: [] }],
   responses: {

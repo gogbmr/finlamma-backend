@@ -160,8 +160,11 @@ scripts/openapi-to-markdown.mjs  renders API_ENDPOINTS.md (provided — don't re
    columns.)
 9. **Secrets**: never read `.env*` files or print secrets. New variables go into `.env.example`
    and `src/lib/env.ts`, and you tell the user what to add.
-10. **Privacy (kid-safe)**: public display name = first name + last initial. No photos, no chat
-    between users. Support full account deletion (our DB + Clerk).
+10. **Privacy (kid-safe)**: peer-visible identity is a staff-curated, auto-assigned handle
+    (D73, `docs/ARCHITECTURE.md`), never a real name - `firstName`/`lastInitial` are private to
+    their owner (`GET /me`, the parent-consent email, the learner's own certificate) and never
+    appear in any schema another learner's request can return. No photos, no chat between
+    users. Support full account deletion (our DB + Clerk).
 11. **AI features** (news simplification, quiz drafts, Doubt Zone): use `@anthropic-ai/sdk`
     with model names from env (`ANTHROPIC_MODEL_FAST`, `ANTHROPIC_MODEL_SMART`). AI output
     is a draft until a staff member publishes it (except Doubt Zone chat replies, which are

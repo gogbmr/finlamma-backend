@@ -10,6 +10,7 @@ import { registry } from "../src/lib/openapi";
 // import per resource as new routes get built.
 import "../src/app/api/v1/health/route";
 import "../src/app/api/v1/me/route";
+import "../src/app/api/v1/me/handle/reroll/route";
 import "../src/app/api/v1/legal/[type]/route";
 import "../src/app/api/v1/me/legal-status/route";
 import "../src/app/api/v1/me/legal/accept/route";
@@ -100,7 +101,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "1.6.0",
+    version: "2.0.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

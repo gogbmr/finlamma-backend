@@ -3,6 +3,7 @@ import { z } from "zod";
 // before any .openapi() call in this file (see src/lib/openapi.ts).
 import "@/lib/openapi";
 import { MAX_REWARD_AMOUNT } from "@/server/economy/schemas";
+import { PeerHandleSchema } from "@/server/peer-handles/schemas";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 
 const PrizeBandSchema = z.object({
@@ -88,8 +89,7 @@ export const MyCompetitionStatusResponseSchema = z.object({
 const CompetitionLeaderboardRowSchema = z.object({
   rank: z.number().int().positive(),
   userId: z.uuid(),
-  firstName: z.string().nullable(),
-  lastInitial: z.string().nullable(),
+  handle: PeerHandleSchema,
   roiPctBasisPoints: z.number().int(),
   isSelf: z.boolean(),
 });
