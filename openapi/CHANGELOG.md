@@ -2,6 +2,40 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-14 — v2.1.0
+
+Minor bump: purely additive, 1 new operation, new fields on two existing response schemas, and
+one new error response documented on 4 existing routes - nothing removed and nothing changed
+incompatibly since v2.0.0. World Home data pass, branch `world-home-data`
+(`docs/ARCHITECTURE.md` D76/D77).
+
+**World Home: world navigation, per-world progress, per-lesson journey-map state**
+- `GET /api/v1/worlds` — new fields on each world: `id` (needed to navigate into a world via
+  `GET /api/v1/worlds/{id}/lessons` - the app couldn't do this before), `completedLessons` and
+  `totalLessons` (this learner's own progress through the world's published lessons).
+- `GET /api/v1/worlds/{id}/lessons` — each lesson node now includes `state`
+  (`done` | `current` | `available` | `locked`) - this learner's own progress on that node,
+  computed from `lesson_progress` and the same sequential world-unlock rule `GET /api/v1/worlds`
+  uses.
+- **New endpoint**: `GET /api/v1/me/stats/time` - today's (IST) time-studied-today stat
+  (`todaySeconds`), mirroring the existing `stats/streak`/`stats/xp`/`stats/vmoney` pattern. A
+  plain read of the same running total `POST /me/session-time` already returns as a write-path
+  byproduct.
+- No change needed for mentor data - `GET /api/v1/mentors`/`GET /api/v1/mentors/{key}` already
+  cover everything the World Home mentor panel needs; look a world's mentor up by its existing
+  `mentorKey`.
+
+**`state: "locked"` is enforced, not just informational (D77, closed in the same branch)**
+- `POST /api/v1/lessons/{id}/serve`, `.../complete`, `.../steps/{n}/serve`, `.../steps/{n}/answer`
+  — all four now document a new `403 LESSON_LOCKED` response: the lesson's world isn't unlocked
+  for this learner yet (sequential unlock, clear the previous world's Boss Quiz first). Merged
+  into the existing `403` entry alongside the onboarding `FORBIDDEN` case - same response schema,
+  just a second possible code/example. Covers every lesson kind (Video/Story/Quiz/Boss
+  Quiz/Role Play/Doubt Zone) - shouldn't normally be reachable from a correctly-built UI (don't
+  make a locked node tappable), but it's a real, server-enforced check now. `current`/`available`/
+  `done` (a replay) are all still allowed - replays never re-credit XP/VM (`docs/ARCHITECTURE.md`
+  D26). See `docs/MOBILE_INTEGRATION.md`'s error-code table.
+
 ## 2026-10-12 — v2.0.0
 
 Major bump: **breaking** - `firstName`/`lastInitial` removed from every peer-visible response

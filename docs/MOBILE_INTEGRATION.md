@@ -6,7 +6,7 @@ the backend, not the per-endpoint request/response shape of each call.
 
 **For per-endpoint detail** (every route, method, auth requirement, parameters, request body,
 every response code with a JSON example): `docs/API_ENDPOINTS.md`, generated from
-`/api/openapi.json` (currently `v1.4.0`). Download the contract over HTTP and generate a typed
+`/api/openapi.json` (currently `v2.1.0`). Download the contract over HTTP and generate a typed
 client from it rather than hand-copying examples from that file — see `docs/ARCHITECTURE.md`'s
 "Three separate projects" section for the `pnpm api:sync`-style workflow. This document never
 repeats a request/response shape that file already has; it links to the relevant endpoint by
