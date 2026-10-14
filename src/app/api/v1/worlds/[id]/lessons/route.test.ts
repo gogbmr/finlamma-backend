@@ -13,7 +13,8 @@ vi.mock("@/server/onboarding/service", () => ({
 
 const mockGetPublicLessonsForWorld = vi.fn();
 vi.mock("@/server/lessons/service", () => ({
-  getPublicLessonsForWorld: (worldId: unknown) => mockGetPublicLessonsForWorld(worldId),
+  getPublicLessonsForWorld: (worldId: unknown, userId: unknown) =>
+    mockGetPublicLessonsForWorld(worldId, userId),
 }));
 
 import { GET } from "./route";
@@ -51,13 +52,15 @@ describe("GET /api/v1/worlds/{id}/lessons", () => {
   it("returns the world's published lesson summaries", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
-    mockGetPublicLessonsForWorld.mockResolvedValueOnce([{ id: "lesson_1", chapter: 1, step: 1 }]);
+    mockGetPublicLessonsForWorld.mockResolvedValueOnce([
+      { id: "lesson_1", chapter: 1, step: 1, state: "current" },
+    ]);
 
     const res = await GET(makeRequest(), { params: Promise.resolve({ id: "world_1" }) });
 
     expect(res.status).toBe(200);
-    expect(mockGetPublicLessonsForWorld).toHaveBeenCalledWith("world_1");
+    expect(mockGetPublicLessonsForWorld).toHaveBeenCalledWith("world_1", "u1");
     const body = await res.json();
-    expect(body.data).toEqual([{ id: "lesson_1", chapter: 1, step: 1 }]);
+    expect(body.data).toEqual([{ id: "lesson_1", chapter: 1, step: 1, state: "current" }]);
   });
 });

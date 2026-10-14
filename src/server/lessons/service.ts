@@ -58,9 +58,48 @@ function toDetail(row: LessonRow) {
   };
 }
 
-export async function getPublicLessonsForWorld(worldId: string) {
+// WH-12 (World Home journey map): adds this learner's per-node state on top
+// of the plain lesson list - see LessonNodeStateSchema (schemas.ts) and
+// docs/ARCHITECTURE.md D76 for what each value means and why "locked" is
+// informational only (same documented nature as worlds.locked itself,
+// D23), never enforced by POST .../serve or .../complete.
+export async function getPublicLessonsForWorld(worldId: string, userId: string) {
   const rows = await listPublishedLessonsForWorld(worldId);
-  return rows.map(toSummary);
+  if (rows.length === 0) return [];
+
+  // Same sequential-unlock rule as worlds/service.ts's getPublicWorlds and
+  // this file's own getCurrentLesson above - recomputed here for just this
+  // one world rather than calling getPublicWorlds, the same "duplicate the
+  // one-line rule, don't share a round trip" pattern getCurrentLesson
+  // already uses. A lesson can only ever be published while its world is
+  // (publishLesson below, and unpublishWorld blocks unpublishing while a
+  // published lesson still belongs to it), so `rows.length > 0` already
+  // guarantees worldId is a currently-published world - worldIndex === -1
+  // is therefore defensive only (e.g. a world unpublished in the instant
+  // between these two queries), not a real case this needs to distinguish
+  // from "not found".
+  const publishedWorlds = await listPublishedWorlds();
+  const worldIndex = publishedWorlds.findIndex((w) => w.id === worldId);
+  const settings = await getLessonFlowScoringSettings();
+  const clearedWorldIds = await getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct);
+  const worldLocked =
+    worldIndex === -1 || (worldIndex > 0 && !clearedWorldIds.has(publishedWorlds[worldIndex - 1]!.id));
+
+  if (worldLocked) {
+    return rows.map((row) => ({ ...toSummary(row), state: "locked" as const }));
+  }
+
+  const progressByLessonId = await getLessonProgressStatusesForUser(userId, rows.map((r) => r.id));
+  let currentAssigned = false;
+  return rows.map((row) => {
+    const status = progressByLessonId.get(row.id);
+    if (status === "completed") return { ...toSummary(row), state: "done" as const };
+    if (!currentAssigned) {
+      currentAssigned = true;
+      return { ...toSummary(row), state: "current" as const };
+    }
+    return { ...toSummary(row), state: "available" as const };
+  });
 }
 
 export async function getPublicLesson(id: string) {

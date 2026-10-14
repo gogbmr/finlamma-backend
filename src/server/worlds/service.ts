@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import {
   isForeignKeyViolation,
   isTransactionConflict,
@@ -17,10 +18,12 @@ import {
 import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
 import {
+  countPublishedLessonsByWorldId,
   hasBossQuizLesson,
   listAllLessonsForWorld,
   listPublishedLessonsByWorldId,
 } from "@/server/lessons/repo";
+import { countCompletedLessonsByWorldIdForUser } from "@/server/lesson-progress/repo";
 import { getWorldIdsWithPassedBossQuiz } from "@/server/quiz-attempts/repo";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import type { LocalizedText } from "@/server/shared/schemas";
@@ -61,8 +64,11 @@ async function toPublicWorld(
   row: WorldRow,
   mentorKeysById: Map<string, string>,
   locked: boolean,
+  totalLessonsByWorldId: Map<string, number>,
+  completedLessonsByWorldId: Map<string, number>,
 ) {
   return {
+    id: row.id,
     order: row.order,
     title: row.title,
     tagline: row.tagline,
@@ -71,6 +77,8 @@ async function toPublicWorld(
     artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
     mentorKey: mentorKeysById.get(row.mentorId) ?? "",
     locked,
+    completedLessons: completedLessonsByWorldId.get(row.id) ?? 0,
+    totalLessons: totalLessonsByWorldId.get(row.id) ?? 0,
   };
 }
 
@@ -84,15 +92,26 @@ async function toPublicWorld(
 // (listPublishedWorlds), so "previous" is simply the prior element.
 export async function getPublicWorlds(userId: string) {
   const settings = await getLessonFlowScoringSettings();
-  const [rows, keysById, clearedWorldIds] = await Promise.all([
-    listPublishedWorlds(),
-    mentorKeyById(),
-    getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct),
-  ]);
+  // 5 DB-querying calls together - over rule 15's bare-Promise.all limit of
+  // 3 (docs/ARCHITECTURE.md D13/D72), so this batches through
+  // runWithConcurrencyLimit instead, same as every other call site that
+  // audit found. WH-07 (World Home per-world progress %) is what pushed
+  // this past the old 3-call Promise.all.
+  const [rows, keysById, clearedWorldIds, totalLessonsByWorldId, completedLessonsByWorldId] =
+    await runWithConcurrencyLimit(
+      [
+        () => listPublishedWorlds(),
+        () => mentorKeyById(),
+        () => getWorldIdsWithPassedBossQuiz(userId, settings.bossQuizPassMarkPct),
+        () => countPublishedLessonsByWorldId(),
+        () => countCompletedLessonsByWorldIdForUser(userId),
+      ],
+      DB_CONCURRENCY_LIMIT,
+    );
   return Promise.all(
     rows.map((row, i) => {
       const locked = i > 0 && !clearedWorldIds.has(rows[i - 1]!.id);
-      return toPublicWorld(row, keysById, locked);
+      return toPublicWorld(row, keysById, locked, totalLessonsByWorldId, completedLessonsByWorldId);
     }),
   );
 }

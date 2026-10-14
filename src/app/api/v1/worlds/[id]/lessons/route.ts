@@ -11,11 +11,11 @@ registry.registerPath({
   path: "/api/v1/worlds/{id}/lessons",
   summary: "List a world's published lessons",
   description:
-    "The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb - " +
-    "no `content`, which is only needed once a specific lesson is actually opened (see " +
-    "GET /api/v1/lessons/{id}). Per-user node state (done/current/next/locked) is added once " +
-    "lesson_progress exists (Checkpoint 5) - for now this is the world's lesson list only, " +
-    "ordered by chapter then step.",
+    "The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb, " +
+    "and this signed-in learner's own per-node `state` (done/current/available/locked) - no " +
+    "`content`, which is only needed once a specific lesson is actually opened (see " +
+    "GET /api/v1/lessons/{id}). Ordered by chapter then step. See docs/ARCHITECTURE.md D76 for " +
+    "exactly what each state value means and how it's computed.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   request: { params: z.object({ id: z.string().uuid() }) },
@@ -52,6 +52,6 @@ export const GET = withErrors(
     const user = await requireUser(req);
     await requireFullAccess(user);
     const { id } = await params;
-    return ok(await getPublicLessonsForWorld(id));
+    return ok(await getPublicLessonsForWorld(id, user.id));
   },
 );

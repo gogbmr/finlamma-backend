@@ -80,6 +80,7 @@ import {
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
 const ACTOR = { id: "staff_1" };
 const WORLD_ID = "world_1";
+const LEARNER_ID = "learner_1";
 
 function lessonRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -114,13 +115,20 @@ beforeEach(() => {
   ]);
   mockCountInProgressLearnersByLessonIds.mockResolvedValue(new Map());
   mockGetLessonFlowScoringSettings.mockResolvedValue({ bossQuizPassMarkPct: 70 });
+  // WH-12 per-node state defaults: this world is the only (unlocked)
+  // published world, with no progress yet - existing
+  // getPublicLessonsForWorld tests below that don't care about lock/
+  // progress state can rely on these "nothing special" defaults.
+  mockListPublishedWorlds.mockResolvedValue([worldRow()]);
+  mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
+  mockGetLessonProgressStatusesForUser.mockResolvedValue(new Map());
 });
 
 describe("getPublicLessonsForWorld / getPublicLesson", () => {
-  it("maps published lessons to the summary shape (no content field)", async () => {
+  it("maps published lessons to the summary shape (no content field), with per-node state", async () => {
     mockListPublishedLessonsForWorld.mockResolvedValueOnce([lessonRow()]);
 
-    const result = await getPublicLessonsForWorld(WORLD_ID);
+    const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
 
     expect(result).toEqual([
       {
@@ -130,9 +138,117 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
         kind: "quiz",
         title: lessonRow().title,
         blurb: lessonRow().blurb,
+        state: "current",
       },
     ]);
     expect(result[0]).not.toHaveProperty("content");
+  });
+
+  it("returns an empty array for a world with no published lessons, without computing lock/progress state", async () => {
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([]);
+
+    const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
+
+    expect(result).toEqual([]);
+    expect(mockListPublishedWorlds).not.toHaveBeenCalled();
+    expect(mockGetLessonProgressStatusesForUser).not.toHaveBeenCalled();
+  });
+
+  // WH-12 (World Home journey map) - per-node state
+  describe("per-node state", () => {
+    it("marks the first incomplete lesson current and every later incomplete one available", async () => {
+      const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+      const l2 = lessonRow({ id: "l2", chapter: 1, step: 2 });
+      const l3 = lessonRow({ id: "l3", chapter: 1, step: 3 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1, l2, l3]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
+
+      const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
+
+      expect(result.map((r) => r.state)).toEqual(["current", "available", "available"]);
+    });
+
+    it("marks a completed lesson done and resumes current at the first incomplete one", async () => {
+      const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+      const l2 = lessonRow({ id: "l2", chapter: 1, step: 2 });
+      const l3 = lessonRow({ id: "l3", chapter: 1, step: 3 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1, l2, l3]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([["l1", "completed"]]));
+
+      const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
+
+      expect(result.map((r) => r.state)).toEqual(["done", "current", "available"]);
+    });
+
+    it("an in_progress (not completed) lesson is not 'done' - it's still the current one", async () => {
+      const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([["l1", "in_progress"]]));
+
+      const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
+
+      expect(result[0]!.state).toBe("current");
+    });
+
+    it("marks every node done once the whole world is completed (no 'current' left)", async () => {
+      const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+      const l2 = lessonRow({ id: "l2", chapter: 1, step: 2 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1, l2]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(
+        new Map([
+          ["l1", "completed"],
+          ["l2", "completed"],
+        ]),
+      );
+
+      const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
+
+      expect(result.map((r) => r.state)).toEqual(["done", "done"]);
+    });
+
+    // D76 (docs/ARCHITECTURE.md): "locked" reflects the same sequential
+    // world-unlock rule as GET /api/v1/worlds's own `locked` field - every
+    // node in a not-yet-unlocked world is "locked", regardless of any
+    // lesson_progress row (which, structurally, can't exist yet for a world
+    // this learner has never been able to reach).
+    it("marks every node locked when the world itself isn't unlocked yet", async () => {
+      const world2 = worldRow({ id: "world_2", order: 2 });
+      const l1 = lessonRow({ id: "l1", worldId: "world_2", chapter: 1, step: 1 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1]);
+      mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ order: 1 }), world2]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set()); // world 1 not cleared
+
+      const result = await getPublicLessonsForWorld("world_2", LEARNER_ID);
+
+      expect(result.map((r) => r.state)).toEqual(["locked"]);
+      // Locked is purely informational (D76) - no progress lookup needed
+      // once the world itself is known to be out of reach.
+      expect(mockGetLessonProgressStatusesForUser).not.toHaveBeenCalled();
+    });
+
+    it("the first published world is never locked, regardless of Boss Quiz progress anywhere", async () => {
+      const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1]);
+      mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ order: 1 })]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+      const result = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
+
+      expect(result[0]!.state).not.toBe("locked");
+    });
+
+    it("unlocks once the previous world's Boss Quiz is passed", async () => {
+      const world2 = worldRow({ id: "world_2", order: 2 });
+      const l1 = lessonRow({ id: "l1", worldId: "world_2", chapter: 1, step: 1 });
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1]);
+      mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ order: 1 }), world2]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set([WORLD_ID]));
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
+
+      const result = await getPublicLessonsForWorld("world_2", LEARNER_ID);
+
+      expect(result[0]!.state).toBe("current");
+    });
   });
 
   it("maps a single published lesson to the full detail shape", async () => {
@@ -171,7 +287,7 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
       mockListPublishedLessonsForWorld.mockResolvedValueOnce([row]);
       mockGetPublishedLesson.mockResolvedValueOnce(row);
 
-      const summaryList = await getPublicLessonsForWorld(WORLD_ID);
+      const summaryList = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
       const detail = await getPublicLesson(row.id);
 
       expect(JSON.stringify(summaryList)).not.toMatch(/"answer"/i);

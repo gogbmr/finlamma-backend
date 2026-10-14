@@ -5,6 +5,7 @@
 // actually hold at the database level. Never touches the real Supabase
 // database (see @/db/client's NODE_ENV=test guard).
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { lessons, mentors, users, worlds } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
@@ -15,6 +16,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 const {
   completeLessonProgress,
   completeUngradedLessonProgressIfEligible,
+  countCompletedLessonsByWorldIdForUser,
   countInProgressLearners,
   countInProgressLearnersByLessonIds,
   getLessonProgress,
@@ -281,5 +283,54 @@ describe("getLessonProgressStatusesForUser", () => {
   it("returns an empty map without querying for an empty lesson id list", async () => {
     const user = await makeUser();
     expect(await getLessonProgressStatusesForUser(user.id, [])).toEqual(new Map());
+  });
+});
+
+// WH-07 (World Home per-world progress %)
+describe("countCompletedLessonsByWorldIdForUser", () => {
+  it("counts this user's completed, published lessons grouped by world", async () => {
+    const user = await makeUser();
+    const { lesson: a1, world: worldA } = await makeLesson({ status: "published" });
+    const { lesson: a2 } = await makeLesson({ worldId: worldA.id, chapter: 1, step: 2, status: "published" });
+    const { lesson: b1, world: worldB } = await makeLesson({ status: "published" });
+    await startLessonProgress(user.id, a1.id);
+    await completeLessonProgress(user.id, a1.id);
+    await startLessonProgress(user.id, a2.id);
+    await completeLessonProgress(user.id, a2.id);
+    await startLessonProgress(user.id, b1.id); // in_progress only - shouldn't count
+
+    const result = await countCompletedLessonsByWorldIdForUser(user.id);
+
+    expect(result.get(worldA.id)).toBe(2);
+    expect(result.has(worldB.id)).toBe(false);
+  });
+
+  it("does not count another user's completed lessons", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const { lesson, world } = await makeLesson({ status: "published" });
+    await startLessonProgress(otherUser.id, lesson.id);
+    await completeLessonProgress(otherUser.id, lesson.id);
+
+    const result = await countCompletedLessonsByWorldIdForUser(user.id);
+
+    expect(result.has(world.id)).toBe(false);
+  });
+
+  it("does not count a completed lesson that's since been unpublished", async () => {
+    const user = await makeUser();
+    const { lesson, world } = await makeLesson({ status: "published" });
+    await startLessonProgress(user.id, lesson.id);
+    await completeLessonProgress(user.id, lesson.id);
+    await db.update(lessons).set({ status: "draft" }).where(eq(lessons.id, lesson.id));
+
+    const result = await countCompletedLessonsByWorldIdForUser(user.id);
+
+    expect(result.has(world.id)).toBe(false);
+  });
+
+  it("returns an empty map for a user with no completions", async () => {
+    const user = await makeUser();
+    expect(await countCompletedLessonsByWorldIdForUser(user.id)).toEqual(new Map());
   });
 });

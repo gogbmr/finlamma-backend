@@ -1347,6 +1347,11 @@
       "World": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Stable id - needed to navigate into this world (GET /api/v1/worlds/{id}/lessons)."
+          },
           "order": {
             "type": "integer",
             "example": 1
@@ -1427,9 +1432,22 @@
             "type": "boolean",
             "example": false,
             "description": "This signed-in user's own unlock state - sequential only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always false."
+          },
+          "completedLessons": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 3,
+            "description": "How many of this world's published lessons this signed-in user has completed."
+          },
+          "totalLessons": {
+            "type": "integer",
+            "minimum": 0,
+            "example": 8,
+            "description": "How many published lessons this world currently has, for the progress bar."
           }
         },
         "required": [
+          "id",
           "order",
           "title",
           "tagline",
@@ -1437,7 +1455,9 @@
           "displayXpTarget",
           "artUrl",
           "mentorKey",
-          "locked"
+          "locked",
+          "completedLessons",
+          "totalLessons"
         ]
       },
       "WorldListResponse": {
@@ -1517,6 +1537,17 @@
               "hi",
               "hx"
             ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "done",
+              "current",
+              "available",
+              "locked"
+            ],
+            "example": "current",
+            "description": "This signed-in user's own progress on this node - done/current/available/locked (docs/ARCHITECTURE.md D76)."
           }
         },
         "required": [
@@ -1525,7 +1556,8 @@
           "step",
           "kind",
           "title",
-          "blurb"
+          "blurb",
+          "state"
         ]
       },
       "LessonDetail": {
@@ -2104,6 +2136,65 @@
           "data"
         ]
       },
+      "RecordSessionTimeRequest": {
+        "type": "object",
+        "properties": {
+          "seconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 3600,
+            "example": 240,
+            "description": "Duration of one finished session (a lesson/screen, not a heartbeat) - sent once when the session ends, capped at 1 hour per call."
+          }
+        },
+        "required": [
+          "seconds"
+        ]
+      },
+      "RecordSessionTimeResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "todaySeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 1140,
+                "description": "Running total for today (IST), after adding this ping."
+              }
+            },
+            "required": [
+              "todaySeconds"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TimeStatsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "todaySeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "example": 1140,
+                "description": "This signed-in user's total session time today (IST), from session_time_daily."
+              }
+            },
+            "required": [
+              "todaySeconds"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "Certificate": {
         "type": "object",
         "properties": {
@@ -2208,43 +2299,6 @@
             },
             "required": [
               "url"
-            ]
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "RecordSessionTimeRequest": {
-        "type": "object",
-        "properties": {
-          "seconds": {
-            "type": "integer",
-            "exclusiveMinimum": 0,
-            "maximum": 3600,
-            "example": 240,
-            "description": "Duration of one finished session (a lesson/screen, not a heartbeat) - sent once when the session ends, capped at 1 hour per call."
-          }
-        },
-        "required": [
-          "seconds"
-        ]
-      },
-      "RecordSessionTimeResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "type": "object",
-            "properties": {
-              "todaySeconds": {
-                "type": "integer",
-                "minimum": 0,
-                "example": 1140,
-                "description": "Running total for today (IST), after adding this ping."
-              }
-            },
-            "required": [
-              "todaySeconds"
             ]
           }
         },
@@ -4838,7 +4892,7 @@
     "/api/v1/worlds": {
       "get": {
         "summary": "List published worlds",
-        "description": "The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.",
+        "description": "The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked. `id` is needed to navigate into a world (see GET /api/v1/worlds/{id}/lessons); `completedLessons`/`totalLessons` are this user's own progress through the world's published lessons. Each world's mentor (full name/bio/art) is looked up separately by `mentorKey` via GET /api/v1/mentors.",
         "tags": [
           "Learning"
         ],
@@ -4896,7 +4950,7 @@
     "/api/v1/worlds/{id}/lessons": {
       "get": {
         "summary": "List a world's published lessons",
-        "description": "The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Per-user node state (done/current/next/locked) is added once lesson_progress exists (Checkpoint 5) - for now this is the world's lesson list only, ordered by chapter then step.",
+        "description": "The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb, and this signed-in learner's own per-node `state` (done/current/available/locked) - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Ordered by chapter then step. See docs/ARCHITECTURE.md D76 for exactly what each state value means and how it's computed.",
         "tags": [
           "Learning"
         ],
@@ -5981,6 +6035,64 @@
                   "required": [
                     "data"
                   ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/stats/time": {
+      "get": {
+        "summary": "Get my time-studied-today stat (World Home header TIME tile, WH-01)",
+        "description": "Today's (IST) running total from session_time_daily, the same total POST /me/session-time returns as a byproduct of recording a ping - this is a plain read, with no side effect. Day boundaries are computed server-side in IST (Asia/Kolkata) from the server's own clock - never a client-reported date or timezone.",
+        "tags": [
+          "Learning"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's time-studied-today stat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeStatsResponse"
                 }
               }
             }

@@ -23,6 +23,9 @@ export const WorldCodeSchema = z
 export const WorldPublicSchema = registry.register(
   "World",
   z.object({
+    id: z.string().uuid().openapi({
+      description: "Stable id - needed to navigate into this world (GET /api/v1/worlds/{id}/lessons).",
+    }),
     order: z.number().int().openapi({ example: 1 }),
     title: LocalizedTextSchema.openapi({
       example: { en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" },
@@ -57,6 +60,14 @@ export const WorldPublicSchema = registry.register(
       description:
         "This signed-in user's own unlock state - sequential only (clearing the previous " +
         "world's Boss Quiz), never an XP/level gate. The first world is always false.",
+    }),
+    completedLessons: z.number().int().nonnegative().openapi({
+      example: 3,
+      description: "How many of this world's published lessons this signed-in user has completed.",
+    }),
+    totalLessons: z.number().int().nonnegative().openapi({
+      example: 8,
+      description: "How many published lessons this world currently has, for the progress bar.",
     }),
   }),
 );

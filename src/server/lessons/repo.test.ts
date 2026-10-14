@@ -13,6 +13,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  countPublishedLessonsByWorldId,
   getLessonById,
   getPublishedLesson,
   getPublishedLessonAtPosition,
@@ -334,6 +335,35 @@ describe("listAllPublishedLessons", () => {
     expect(resultIds).toContain(publishedA.id);
     expect(resultIds).toContain(publishedB.id);
     expect(resultIds).not.toContain(draft.id);
+  });
+});
+
+// WH-07 (World Home per-world progress %)
+describe("countPublishedLessonsByWorldId", () => {
+  it("counts only published lessons, grouped by world, excluding drafts", async () => {
+    const worldA = (await makeWorld()).id;
+    const worldB = (await makeWorld()).id;
+    const a1 = await insertDraftLesson(await draftInput({ worldId: worldA, chapter: 1, step: 1 }));
+    await publishLessonRow(a1.id, staffId);
+    const a2 = await insertDraftLesson(await draftInput({ worldId: worldA, chapter: 1, step: 2 }));
+    await publishLessonRow(a2.id, staffId);
+    await insertDraftLesson(await draftInput({ worldId: worldA, chapter: 1, step: 3 })); // draft, not counted
+    const b1 = await insertDraftLesson(await draftInput({ worldId: worldB, chapter: 1, step: 1 }));
+    await publishLessonRow(b1.id, staffId);
+
+    const result = await countPublishedLessonsByWorldId();
+
+    expect(result.get(worldA)).toBe(2);
+    expect(result.get(worldB)).toBe(1);
+  });
+
+  it("a world with zero published lessons is absent from the map", async () => {
+    const world = await makeWorld();
+    await insertDraftLesson(await draftInput({ worldId: world.id })); // draft only
+
+    const result = await countPublishedLessonsByWorldId();
+
+    expect(result.has(world.id)).toBe(false);
   });
 });
 

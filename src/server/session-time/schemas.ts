@@ -24,3 +24,18 @@ export const RecordSessionTimeResponseSchema = registry.register(
     }),
   }),
 );
+
+// WH-01 (World Home header TIME tile) - a plain read of today's running
+// total, with no side effect (unlike POST /me/session-time, which only ever
+// returns this as a byproduct of recording a new ping).
+export const TimeStatsResponseSchema = registry.register(
+  "TimeStatsResponse",
+  z.object({
+    data: z.object({
+      todaySeconds: z.number().int().nonnegative().openapi({
+        example: 1140,
+        description: "This signed-in user's total session time today (IST), from session_time_daily.",
+      }),
+    }),
+  }),
+);

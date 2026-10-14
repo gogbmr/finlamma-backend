@@ -291,6 +291,15 @@ every time).
   and never expect them on another learner's data at all. A learner can reroll their own handle
   once every 30 days via `POST /me/handle/reroll` (`RESEND_TOO_SOON` if called again before the
   cooldown elapses, with `retryAfterSeconds`/`nextRerollAvailableAt` in the error details).
+- **World/lesson `locked` state is informational, not a server-side block (D76).** `GET
+  /api/v1/worlds`' `locked` field and `GET /api/v1/worlds/{id}/lessons`' per-node `state`
+  (`done`/`current`/`available`/`locked`) reflect the sequential-unlock *display* rule only -
+  neither `POST /lessons/{id}/steps/{n}/serve` nor `.../complete` actually check world-lock
+  before accepting a request or crediting XP/VM. Build the journey-map UI from these fields (don't
+  re-derive lock state yourself), but don't treat a `locked` response as proof an underlying
+  `serve` call would also fail - it isn't one. Within an unlocked world, `current`/`available`
+  both mean the lesson genuinely is servable right now; there is no lesson-to-lesson order lock
+  beyond that.
 
 ---
 
