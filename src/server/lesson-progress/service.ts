@@ -6,6 +6,7 @@ import { logInternalError } from "@/lib/http";
 import { evaluateBadgesForUser } from "@/server/badges/service";
 import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
+import { assertLessonUnlocked } from "@/server/lessons/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import {
   completeUngradedLessonProgressIfEligible,
@@ -44,6 +45,7 @@ function minCompletionSecondsFor(
 // startedAt, never a new one.
 export async function serveUngradedLesson(user: { id: string }, lessonId: string, meta: RequestMeta) {
   const lesson = await assertUngradedLesson(lessonId);
+  await assertLessonUnlocked(lesson, user.id); // D76 - rejects LESSON_LOCKED
 
   const inserted = await startLessonProgress(user.id, lessonId);
   const row = inserted ?? (await getLessonProgress(user.id, lessonId));
@@ -78,6 +80,7 @@ export async function serveUngradedLesson(user: { id: string }, lessonId: string
 // nothing left to decide).
 export async function completeUngradedLesson(user: { id: string }, lessonId: string, meta: RequestMeta) {
   const lesson = await assertUngradedLesson(lessonId);
+  await assertLessonUnlocked(lesson, user.id); // D76 - rejects LESSON_LOCKED
 
   const existing = await getLessonProgress(user.id, lessonId);
   if (!existing) {

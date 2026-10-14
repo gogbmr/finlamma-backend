@@ -44,10 +44,18 @@ vi.mock("@/server/mentors/repo", () => ({
 const mockListPublishedLessonsByWorldId = vi.fn();
 const mockListAllLessonsForWorld = vi.fn();
 const mockHasBossQuizLesson = vi.fn();
+const mockCountPublishedLessonsByWorldId = vi.fn();
 vi.mock("@/server/lessons/repo", () => ({
   listPublishedLessonsByWorldId: (worldId: unknown) => mockListPublishedLessonsByWorldId(worldId),
   listAllLessonsForWorld: (worldId: unknown) => mockListAllLessonsForWorld(worldId),
   hasBossQuizLesson: (worldId: unknown) => mockHasBossQuizLesson(worldId),
+  countPublishedLessonsByWorldId: () => mockCountPublishedLessonsByWorldId(),
+}));
+
+const mockCountCompletedLessonsByWorldIdForUser = vi.fn();
+vi.mock("@/server/lesson-progress/repo", () => ({
+  countCompletedLessonsByWorldIdForUser: (userId: unknown) =>
+    mockCountCompletedLessonsByWorldIdForUser(userId),
 }));
 
 const mockGetWorldIdsWithPassedBossQuiz = vi.fn();
@@ -141,6 +149,11 @@ beforeEach(() => {
   // No cleared worlds by default - existing getPublicWorlds tests below
   // don't need to know about the unlock check at all.
   mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
+  // No lesson counts by default (completedLessons/totalLessons both 0) -
+  // existing getPublicWorlds tests below don't need to know about WH-07's
+  // per-world progress fields at all.
+  mockCountPublishedLessonsByWorldId.mockResolvedValue(new Map());
+  mockCountCompletedLessonsByWorldIdForUser.mockResolvedValue(new Map());
   mockGetLessonFlowScoringSettings.mockResolvedValue({
     bossQuizPassMarkPct: 60,
     tradingUnlockAfterWorldPosition: 3,
@@ -163,6 +176,7 @@ describe("getPublicWorlds", () => {
 
     expect(result).toEqual([
       {
+        id: "world_1",
         order: 1,
         title: { en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" },
         tagline: { en: "en tagline", hi: "hi tagline", hx: "hx tagline" },
@@ -171,8 +185,42 @@ describe("getPublicWorlds", () => {
         artUrl: "https://signed.example/art.png",
         mentorKey: "baby",
         locked: false,
+        completedLessons: 0,
+        totalLessons: 0,
       },
     ]);
+  });
+
+  // WH-07 (World Home per-world progress %)
+  it("fills in completedLessons/totalLessons per world from the two grouped maps", async () => {
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ id: "world_1", order: 1 }),
+      worldRow({ id: "world_2", order: 2 }),
+    ]);
+    mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+    mockCountPublishedLessonsByWorldId.mockResolvedValueOnce(
+      new Map([
+        ["world_1", 8],
+        ["world_2", 5],
+      ]),
+    );
+    mockCountCompletedLessonsByWorldIdForUser.mockResolvedValueOnce(new Map([["world_1", 3]]));
+
+    const result = await getPublicWorlds(USER_ID);
+
+    expect(result[0]).toMatchObject({ id: "world_1", completedLessons: 3, totalLessons: 8 });
+    // world_2 has no entry in the completed map - defaults to 0, not an error.
+    expect(result[1]).toMatchObject({ id: "world_2", completedLessons: 0, totalLessons: 5 });
+  });
+
+  it("defaults completedLessons/totalLessons to 0 for a world missing from both maps", async () => {
+    mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ id: "world_1" })]);
+    mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
+
+    const result = await getPublicWorlds(USER_ID);
+
+    expect(result[0]).toMatchObject({ completedLessons: 0, totalLessons: 0 });
   });
 
   it("returns artUrl: null when no art has been uploaded", async () => {

@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.0.0) on 2026-10-12.
+> Generated from `openapi/openapi.json` (version 2.1.0) on 2026-10-14.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -46,6 +46,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/stats/streak` — Get my streak stats (World Home header STREAK tile, WH-02)
 - `GET /api/v1/me/stats/xp` — Get my XP stats (World Home header XP tile, WH-04)
 - `GET /api/v1/me/stats/vmoney` — Get my V Money stats (World Home header V MONEY tile, WH-03)
+- `GET /api/v1/me/stats/time` — Get my time-studied-today stat (World Home header TIME tile, WH-01)
 - `GET /api/v1/me/profile/overview` — Get my profile overview (Profile screen ID card + quick stats, PR-01/02/05/06/07/08)
 - `GET /api/v1/me/certificates` — List my certificates (PR-10/PR-36)
 - `GET /api/v1/me/certificates/{worldId}` — Get my certificate for a world (PR-36)
@@ -998,7 +999,7 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
 
 **List published worlds**
 
-The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked.
+The published worlds, ordered - staff decide how many exist, no fixed count. Each world's `locked` field reflects this signed-in user's own progress - sequential unlock only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world is always unlocked. `id` is needed to navigate into a world (see GET /api/v1/worlds/{id}/lessons); `completedLessons`/`totalLessons` are this user's own progress through the world's published lessons. Each world's mentor (full name/bio/art) is looked up separately by `mentorKey` via GET /api/v1/mentors.
 
 **Auth:** bearerAuth
 
@@ -1010,6 +1011,7 @@ The published worlds, ordered - staff decide how many exist, no fixed count. Eac
 {
   "data": [
     {
+      "id": "00000000-0000-0000-0000-000000000000",
       "order": 1,
       "title": {
         "en": "Money World",
@@ -1025,7 +1027,9 @@ The published worlds, ordered - staff decide how many exist, no fixed count. Eac
       "displayXpTarget": 5,
       "artUrl": "https://example.com",
       "mentorKey": "baby",
-      "locked": false
+      "locked": false,
+      "completedLessons": 3,
+      "totalLessons": 8
     }
   ]
 }
@@ -1060,7 +1064,7 @@ The published worlds, ordered - staff decide how many exist, no fixed count. Eac
 
 **List a world's published lessons**
 
-The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Per-user node state (done/current/next/locked) is added once lesson_progress exists (Checkpoint 5) - for now this is the world's lesson list only, ordered by chapter then step.
+The journey-map node list for one world (WH-12): id, chapter, step, kind, title, blurb, and this signed-in learner's own per-node `state` (done/current/available/locked) - no `content`, which is only needed once a specific lesson is actually opened (see GET /api/v1/lessons/{id}). Ordered by chapter then step. See docs/ARCHITECTURE.md D76 for exactly what each state value means and how it's computed.
 
 **Auth:** bearerAuth
 
@@ -1091,7 +1095,8 @@ The journey-map node list for one world (WH-12): id, chapter, step, kind, title,
         "en": "string",
         "hi": "string",
         "hx": "string"
-      }
+      },
+      "state": "current"
     }
   ]
 }
@@ -1253,13 +1258,13 @@ For Story and Doubt Zone lessons only - these have no graded questions (docs/ARC
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1329,13 +1334,13 @@ For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson 
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1430,13 +1435,13 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1554,13 +1559,13 @@ Server-graded and server-timed - the submitted answer is checked against the que
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1797,6 +1802,51 @@ Balance and V Money earned/spent in the trailing 7 days. Balance is always summe
     "balancePaise": 21000,
     "weeklyEarnedPaise": 9000,
     "weeklySpentPaise": 0
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/me/stats/time`
+
+**Get my time-studied-today stat (World Home header TIME tile, WH-01)**
+
+Today's (IST) running total from session_time_daily, the same total POST /me/session-time returns as a byproduct of recording a ping - this is a plain read, with no side effect. Day boundaries are computed server-side in IST (Asia/Kolkata) from the server's own clock - never a client-reported date or timezone.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's time-studied-today stat
+
+```json
+{
+  "data": {
+    "todaySeconds": 1140
   }
 }
 ```

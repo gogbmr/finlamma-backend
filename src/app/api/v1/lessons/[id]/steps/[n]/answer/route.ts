@@ -60,12 +60,15 @@ registry.registerPath({
       },
     },
     403: {
-      description: "Onboarding, parental consent or legal acceptance is incomplete",
+      description:
+        "Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this " +
+        "lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, " +
+        "docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
           example: {
-            error: { code: "FORBIDDEN", message: "Complete onboarding before using this feature" },
+            error: { code: "LESSON_LOCKED", message: "This lesson isn't unlocked for you yet" },
           },
         },
       },

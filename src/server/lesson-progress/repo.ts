@@ -1,6 +1,6 @@
 import { and, count, eq, gte, inArray, lte } from "drizzle-orm";
 import { db } from "@/db/client";
-import { lessonProgress, type lessonProgressStatusEnum } from "@/db/schema";
+import { lessonProgress, lessons, type lessonProgressStatusEnum } from "@/db/schema";
 
 // Idempotent "ensure a row exists, in_progress" - called from
 // src/server/quiz-attempts/service.ts's serveStep on a lesson's first-ever
@@ -141,6 +141,29 @@ export async function getLessonProgressStatusesForUser(
     .from(lessonProgress)
     .where(and(eq(lessonProgress.userId, userId), inArray(lessonProgress.lessonId, lessonIds)));
   return new Map(rows.map((r) => [r.lessonId, r.status]));
+}
+
+// WH-07 (World Home - per-world progress %): this user's completed-lesson
+// count per world, in one grouped query joining lessons for worldId - same
+// "no per-world round trip" reasoning as countInProgressLearnersByLessonIds
+// above. Joins against lessons.status = "published" too, so a lesson that
+// was completed and later unpublished doesn't keep inflating a world's
+// progress bar forever. A world with zero completed lessons is simply
+// absent from the map - callers default a missing key to 0.
+export async function countCompletedLessonsByWorldIdForUser(userId: string): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ worldId: lessons.worldId, n: count() })
+    .from(lessonProgress)
+    .innerJoin(lessons, eq(lessons.id, lessonProgress.lessonId))
+    .where(
+      and(
+        eq(lessonProgress.userId, userId),
+        eq(lessonProgress.status, "completed"),
+        eq(lessons.status, "published"),
+      ),
+    )
+    .groupBy(lessons.worldId);
+  return new Map(rows.map((r) => [r.worldId, r.n]));
 }
 
 export async function listLessonCompletionTimestampsForUser(userId: string, since: Date): Promise<Date[]> {

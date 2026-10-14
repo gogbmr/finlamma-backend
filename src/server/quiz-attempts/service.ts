@@ -7,7 +7,7 @@ import { evaluateBadgesForUser } from "@/server/badges/service";
 import { issueCertificateIfEligible } from "@/server/certificates/service";
 import { creditLessonCompletion } from "@/server/economy/service";
 import { getPublishedLesson } from "@/server/lessons/repo";
-import { extractQuestionIds } from "@/server/lessons/service";
+import { assertLessonUnlocked, extractQuestionIds } from "@/server/lessons/service";
 import { VideoContentSchema } from "@/server/lessons/schemas";
 import { completeLessonProgress, startLessonProgress } from "@/server/lesson-progress/repo";
 import { getQuestionById, getQuestionRevision } from "@/server/questions/repo";
@@ -82,6 +82,7 @@ export async function serveStep(
   meta: RequestMeta,
 ) {
   const { lesson, questionIds } = await assertGradedLesson(lessonId);
+  await assertLessonUnlocked(lesson, user.id); // D76 - rejects LESSON_LOCKED
   assertStepInRange(stepIndex, questionIds.length);
 
   let attempt = await getLatestInProgressAttempt(user.id, lessonId);
@@ -207,6 +208,7 @@ export async function submitAnswer(
   meta: RequestMeta,
 ) {
   const { lesson, questionIds } = await assertGradedLesson(lessonId);
+  await assertLessonUnlocked(lesson, user.id); // D76 - rejects LESSON_LOCKED
   assertStepInRange(stepIndex, questionIds.length);
 
   const attempt = await getLatestInProgressAttempt(user.id, lessonId);

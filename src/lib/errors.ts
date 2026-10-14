@@ -35,6 +35,13 @@ export const ErrorCode = {
   // passed, same "temporary, not a client mistake" shape as RESEND_TOO_SOON.
   LESSON_TOO_SOON: "LESSON_TOO_SOON",
 
+  // D76 (docs/ARCHITECTURE.md): the lesson's world isn't unlocked for this
+  // learner yet (sequential unlock, D23/D24) - thrown by
+  // src/server/lessons/service.ts's assertLessonUnlocked, called from every
+  // lesson serve/answer/complete entry point. Not retryable by waiting; the
+  // learner needs to actually clear the gating world's Boss Quiz first.
+  LESSON_LOCKED: "LESSON_LOCKED",
+
   // Rewards (src/server/rewards) - the learner's V Money balance is below a
   // reward's price_vm at claim time.
   INSUFFICIENT_VMONEY: "INSUFFICIENT_VMONEY",
@@ -115,6 +122,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   RESEND_LIMIT_REACHED: 429,
   PARENT_REAPPROVAL_REQUIRED: 403,
   LESSON_TOO_SOON: 429,
+  LESSON_LOCKED: 403,
   INSUFFICIENT_VMONEY: 409,
 
   MARKET_CLOSED: 409,

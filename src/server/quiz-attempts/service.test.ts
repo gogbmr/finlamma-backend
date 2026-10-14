@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
 
 const mockGetPublishedLesson = vi.fn();
+const mockListPublishedLessonsForWorld = vi.fn();
 vi.mock("@/server/lessons/repo", () => ({
   getPublishedLesson: (id: unknown) => mockGetPublishedLesson(id),
+  listPublishedLessonsForWorld: (worldId: unknown) => mockListPublishedLessonsForWorld(worldId),
 }));
 
 const mockGetQuestionById = vi.fn();
@@ -18,17 +20,19 @@ vi.mock("@/server/questions/repo", () => ({
   getQuestionsByIds: () => Promise.resolve([]),
 }));
 
-// getWorldById/listPublishedWorlds: never actually called for most tests
-// (extractQuestionIds is a pure content parser), but @/server/lessons/service
-// (imported for extractQuestionIds) also imports this at module scope -
-// unmocked, it would pull in the real @/db/client and fail on missing env
-// vars in this unit-test environment. getNextPublishedWorldByOrder backs
-// the boss_battle notification (Phase 7) - see its own describe block below.
+// getWorldById/getNextPublishedWorldByOrder: used by submitAnswer's
+// boss_battle notification path (its own describe block below).
+// listPublishedWorlds: also used by D76's assertLessonUnlocked gate
+// (imported into the real, unmocked @/server/lessons/service for
+// extractQuestionIds AND assertLessonUnlocked) - controllable per-test, with
+// a permissive single-world default in beforeEach so every pre-existing
+// test here (which doesn't care about locking) keeps passing unchanged.
 const mockGetWorldById = vi.fn();
 const mockGetNextPublishedWorldByOrder = vi.fn();
+const mockListPublishedWorlds = vi.fn();
 vi.mock("@/server/worlds/repo", () => ({
   getWorldById: (id: unknown) => mockGetWorldById(id),
-  listPublishedWorlds: () => Promise.resolve([]),
+  listPublishedWorlds: () => mockListPublishedWorlds(),
   getNextPublishedWorldByOrder: (order: unknown) => mockGetNextPublishedWorldByOrder(order),
 }));
 
@@ -39,11 +43,14 @@ vi.mock("@/server/settings/service", () => ({
 
 const mockStartLessonProgress = vi.fn();
 const mockCompleteLessonProgress = vi.fn();
+const mockGetLessonProgressStatusesForUser = vi.fn();
 vi.mock("@/server/lesson-progress/repo", () => ({
   startLessonProgress: (userId: unknown, lessonId: unknown) =>
     mockStartLessonProgress(userId, lessonId),
   completeLessonProgress: (userId: unknown, lessonId: unknown) =>
     mockCompleteLessonProgress(userId, lessonId),
+  getLessonProgressStatusesForUser: (userId: unknown, lessonIds: unknown) =>
+    mockGetLessonProgressStatusesForUser(userId, lessonIds),
 }));
 
 const mockCompleteAttempt = vi.fn();
@@ -56,9 +63,12 @@ const mockGradeQuestionAnswer = vi.fn();
 const mockInsertAttempt = vi.fn();
 const mockInsertServedQuestionAnswer = vi.fn();
 const mockListQuestionAnswersForAttempt = vi.fn();
+const mockGetWorldIdsWithPassedBossQuiz = vi.fn();
 vi.mock("./repo", () => ({
   completeAttempt: (id: unknown, xp: unknown, accuracyPct: unknown) =>
     mockCompleteAttempt(id, xp, accuracyPct),
+  getWorldIdsWithPassedBossQuiz: (userId: unknown, passMarkPct: unknown) =>
+    mockGetWorldIdsWithPassedBossQuiz(userId, passMarkPct),
   countAttemptsForUserLesson: (userId: unknown, lessonId: unknown) =>
     mockCountAttemptsForUserLesson(userId, lessonId),
   getAttemptById: (id: unknown) => mockGetAttemptById(id),
@@ -140,6 +150,7 @@ const SCORING_SETTINGS = {
 function quizLesson(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: LESSON_ID,
+    worldId: "world_1",
     kind: "quiz",
     content: { questionIds: [Q1_ID, Q2_ID] },
     ...overrides,
@@ -244,6 +255,16 @@ beforeEach(() => {
   mockGetQuestionRevision.mockResolvedValue(questionRevisionRow());
   mockGetWorldById.mockResolvedValue(null);
   mockGetNextPublishedWorldByOrder.mockResolvedValue(null);
+  // D76 (docs/ARCHITECTURE.md) assertLessonUnlocked defaults: a single
+  // published world ("world_1", matching quizLesson()'s default worldId) at
+  // index 0 - never locked, regardless of mockGetWorldIdsWithPassedBossQuiz -
+  // and a single-lesson world (LESSON_ID) with no progress, which always
+  // computes to "current" - allowed. Tests that specifically exercise
+  // LESSON_LOCKED override these.
+  mockListPublishedWorlds.mockResolvedValue([{ id: "world_1" }]);
+  mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
+  mockListPublishedLessonsForWorld.mockResolvedValue([{ id: LESSON_ID }]);
+  mockGetLessonProgressStatusesForUser.mockResolvedValue(new Map());
   // Matches servedAnswerRow()'s default servedAt, so any test that doesn't
   // care about elapsed time gets elapsed=0 by default - tests that DO care
   // move the clock forward explicitly with vi.setSystemTime().
@@ -459,6 +480,97 @@ describe("serveStep", () => {
     const result = await serveStep(USER, LESSON_ID, 1, META);
 
     expect(result.timerSeconds).toBe(8); // the cue's own timer, not practiceQuizTimerSeconds (15)
+  });
+
+  // D76 (docs/ARCHITECTURE.md): enforcement, not just an informational UI
+  // flag - serveStep now rejects a lesson whose world isn't unlocked yet,
+  // via the exact same computeLessonStatesForWorld
+  // GET /worlds/{id}/lessons uses (src/server/lessons/service.ts).
+  describe("D76 - LESSON_LOCKED enforcement", () => {
+    it("rejects serving a lesson whose world isn't unlocked yet, before starting any attempt", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ worldId: "world_2" }));
+      // world_1 (the gating previous world) exists but hasn't been cleared.
+      mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+      await expect(serveStep(USER, LESSON_ID, 1, META)).rejects.toMatchObject({
+        code: "LESSON_LOCKED",
+      });
+      expect(mockInsertAttempt).not.toHaveBeenCalled();
+      expect(mockStartLessonProgress).not.toHaveBeenCalled();
+    });
+
+    it("rejects serving a Boss Quiz lesson in a locked world", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(
+        quizLesson({ kind: "boss_quiz", worldId: "world_2" }),
+      );
+      mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+      await expect(serveStep(USER, LESSON_ID, 1, META)).rejects.toMatchObject({
+        code: "LESSON_LOCKED",
+      });
+    });
+
+    it("rejects submitting an answer for a lesson whose world isn't unlocked yet", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ worldId: "world_2" }));
+      mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+      await expect(submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META)).rejects.toMatchObject({
+        code: "LESSON_LOCKED",
+      });
+      expect(mockGradeQuestionAnswer).not.toHaveBeenCalled();
+      expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
+    });
+
+    it("allows serving once the previous world's Boss Quiz is passed", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ worldId: "world_2" }));
+      mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+      mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set(["world_1"]));
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([{ id: LESSON_ID }]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(null);
+      mockCountAttemptsForUserLesson.mockResolvedValueOnce(0);
+      mockInsertAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(null);
+      mockGetQuestionById.mockResolvedValue(questionRow());
+      mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+
+      await expect(serveStep(USER, LESSON_ID, 1, META)).resolves.toMatchObject({ stepIndex: 1 });
+    });
+
+    it("allows serving an 'available' lesson (not the current one, but not locked either)", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ id: "lesson_2", worldId: "world_1" }));
+      mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }]);
+      // Two lessons in the world: LESSON_ID is "current" (not yet touched),
+      // "lesson_2" is "available" - still genuinely servable.
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([{ id: LESSON_ID }, { id: "lesson_2" }]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(null);
+      mockCountAttemptsForUserLesson.mockResolvedValueOnce(0);
+      mockInsertAttempt.mockResolvedValueOnce(attemptRow({ lessonId: "lesson_2" }));
+      mockGetQuestionAnswer.mockResolvedValueOnce(null);
+      mockGetQuestionById.mockResolvedValue(questionRow());
+      mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+
+      await expect(serveStep(USER, "lesson_2", 1, META)).resolves.toMatchObject({ stepIndex: 1 });
+    });
+
+    it("allows replaying a 'done' (already-completed) lesson", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }]);
+      mockListPublishedLessonsForWorld.mockResolvedValueOnce([{ id: LESSON_ID }]);
+      mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map([[LESSON_ID, "completed"]]));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(null);
+      mockCountAttemptsForUserLesson.mockResolvedValueOnce(1); // this is the 2nd attempt - a replay
+      mockInsertAttempt.mockResolvedValueOnce(attemptRow({ attemptNumber: 2, isFirstPass: false }));
+      mockGetQuestionAnswer.mockResolvedValueOnce(null);
+      mockGetQuestionById.mockResolvedValue(questionRow());
+      mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+
+      await expect(serveStep(USER, LESSON_ID, 1, META)).resolves.toMatchObject({ stepIndex: 1 });
+    });
   });
 });
 

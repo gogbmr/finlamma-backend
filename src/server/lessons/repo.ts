@@ -94,6 +94,20 @@ export async function countPublishedLessons(): Promise<number> {
   return row?.n ?? 0;
 }
 
+// WH-07 (World Home - per-world progress %): every published world's lesson
+// total, in one grouped query - same "no per-world round trip" reasoning as
+// lesson-progress/repo.ts's countInProgressLearnersByLessonIds. A world with
+// zero published lessons is simply absent from the map (not a zero-valued
+// row) - callers default a missing key to 0.
+export async function countPublishedLessonsByWorldId(): Promise<Map<string, number>> {
+  const rows = await db
+    .select({ worldId: lessons.worldId, n: count() })
+    .from(lessons)
+    .where(eq(lessons.status, "published"))
+    .groupBy(lessons.worldId);
+  return new Map(rows.map((r) => [r.worldId, r.n]));
+}
+
 export async function insertDraftLesson(input: CreateLessonDraftInput) {
   const [row] = await db.insert(lessons).values(input).returning();
   return row;

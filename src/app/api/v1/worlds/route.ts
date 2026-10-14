@@ -13,7 +13,10 @@ registry.registerPath({
     "The published worlds, ordered - staff decide how many exist, no fixed count. Each " +
     "world's `locked` field reflects this signed-in user's own progress - sequential unlock " +
     "only (clearing the previous world's Boss Quiz), never an XP/level gate. The first world " +
-    "is always unlocked.",
+    "is always unlocked. `id` is needed to navigate into a world (see GET " +
+    "/api/v1/worlds/{id}/lessons); `completedLessons`/`totalLessons` are this user's own " +
+    "progress through the world's published lessons. Each world's mentor (full name/bio/art) " +
+    "is looked up separately by `mentorKey` via GET /api/v1/mentors.",
   tags: ["Learning"],
   security: [{ bearerAuth: [] }],
   responses: {

@@ -180,6 +180,16 @@ const LessonContentSchema = z.union([
   DoubtZoneContentSchema,
 ]);
 
+// WH-12 (World Home journey map): per-node state for the current learner -
+// "done" (a completed lesson_progress row), "current" (the first incomplete
+// lesson in chapter/step order - where this learner would resume), "available"
+// (any other incomplete lesson - see src/server/lessons/service.ts's
+// getPublicLessonsForWorld for why this genuinely means POST .../serve would
+// succeed right now, not just "visually unlocked"), or "locked" (the whole
+// world isn't unlocked yet for this learner - docs/ARCHITECTURE.md D76).
+export const LessonNodeStateSchema = z.enum(["done", "current", "available", "locked"]);
+export type LessonNodeState = z.infer<typeof LessonNodeStateSchema>;
+
 export const LessonSummarySchema = registry.register(
   "LessonSummary",
   z.object({
@@ -189,6 +199,12 @@ export const LessonSummarySchema = registry.register(
     kind: LessonKindSchema,
     title: LocalizedTextSchema,
     blurb: LocalizedTextSchema,
+    state: LessonNodeStateSchema.openapi({
+      example: "current",
+      description:
+        "This signed-in user's own progress on this node - done/current/available/locked " +
+        "(docs/ARCHITECTURE.md D76).",
+    }),
   }),
 );
 

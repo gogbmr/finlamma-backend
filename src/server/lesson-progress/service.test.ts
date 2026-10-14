@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
 
 const mockGetPublishedLesson = vi.fn();
+const mockListPublishedLessonsForWorld = vi.fn();
 vi.mock("@/server/lessons/repo", () => ({
   getPublishedLesson: (id: unknown) => mockGetPublishedLesson(id),
+  listPublishedLessonsForWorld: (worldId: unknown) => mockListPublishedLessonsForWorld(worldId),
 }));
 
 const mockGetLessonFlowScoringSettings = vi.fn();
@@ -14,14 +16,41 @@ vi.mock("@/server/settings/service", () => ({
   getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
 }));
 
+// D76 (docs/ARCHITECTURE.md): assertLessonUnlocked's dependencies - the
+// real (unmocked) @/server/lessons/service is pulled in for
+// serveUngradedLesson/completeUngradedLesson's new lock-check call, exactly
+// the same "mock what it transitively needs" shape
+// quiz-attempts/service.test.ts already established for the same function.
+const mockListPublishedWorlds = vi.fn();
+vi.mock("@/server/worlds/repo", () => ({
+  listPublishedWorlds: () => mockListPublishedWorlds(),
+}));
+
+// Never actually called along this file's code paths - mocked purely so the
+// real @/server/questions/repo (which imports @/db/client at module scope)
+// is never evaluated, same reasoning as quiz-attempts/service.test.ts's
+// identical stub.
+vi.mock("@/server/questions/repo", () => ({
+  getQuestionsByIds: () => Promise.resolve([]),
+}));
+
+const mockGetWorldIdsWithPassedBossQuiz = vi.fn();
+vi.mock("@/server/quiz-attempts/repo", () => ({
+  getWorldIdsWithPassedBossQuiz: (userId: unknown, passMarkPct: unknown) =>
+    mockGetWorldIdsWithPassedBossQuiz(userId, passMarkPct),
+}));
+
 const mockStartLessonProgress = vi.fn();
 const mockGetLessonProgress = vi.fn();
 const mockCompleteUngradedLessonProgressIfEligible = vi.fn();
+const mockGetLessonProgressStatusesForUser = vi.fn();
 vi.mock("./repo", () => ({
   startLessonProgress: (userId: unknown, lessonId: unknown) => mockStartLessonProgress(userId, lessonId),
   getLessonProgress: (userId: unknown, lessonId: unknown) => mockGetLessonProgress(userId, lessonId),
   completeUngradedLessonProgressIfEligible: (userId: unknown, lessonId: unknown, minStartedAt: unknown) =>
     mockCompleteUngradedLessonProgressIfEligible(userId, lessonId, minStartedAt),
+  getLessonProgressStatusesForUser: (userId: unknown, lessonIds: unknown) =>
+    mockGetLessonProgressStatusesForUser(userId, lessonIds),
 }));
 
 const mockCreditLessonCompletion = vi.fn();
@@ -51,7 +80,7 @@ const SETTINGS = {
 };
 
 function storyLesson(overrides: Partial<Record<string, unknown>> = {}) {
-  return { id: LESSON_ID, kind: "story", xpOverride: null, vmOverride: null, ...overrides };
+  return { id: LESSON_ID, worldId: "world_1", kind: "story", xpOverride: null, vmOverride: null, ...overrides };
 }
 
 beforeEach(() => {
@@ -60,6 +89,15 @@ beforeEach(() => {
   // Default: not credited - tests that need the badge-evaluation hook to
   // fire override this with { credited: true } for that specific call.
   mockCreditLessonCompletion.mockResolvedValue({ credited: false });
+  // D76 (docs/ARCHITECTURE.md) assertLessonUnlocked defaults: a single
+  // published world ("world_1", matching storyLesson()'s default worldId) at
+  // index 0 - never locked - and a single-lesson world (LESSON_ID) with no
+  // progress, which always computes to "current" - allowed. Tests that
+  // specifically exercise LESSON_LOCKED override these.
+  mockListPublishedWorlds.mockResolvedValue([{ id: "world_1" }]);
+  mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
+  mockListPublishedLessonsForWorld.mockResolvedValue([{ id: LESSON_ID }]);
+  mockGetLessonProgressStatusesForUser.mockResolvedValue(new Map());
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-01-01T00:10:00.000Z"));
 });
@@ -107,6 +145,31 @@ describe("serveUngradedLesson", () => {
 
     expect(result.startedAt).toBe(originalStartedAt.toISOString());
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  // D76 (docs/ARCHITECTURE.md): enforcement, via the exact same
+  // computeLessonStatesForWorld GET /worlds/{id}/lessons uses
+  // (src/server/lessons/service.ts) - covers the Doubt Zone scripted node
+  // too (UNGRADED_KINDS includes "doubt_zone", same code path).
+  it("rejects serving a lesson whose world isn't unlocked yet, before starting any row", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson({ worldId: "world_2" }));
+    mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+    await expect(serveUngradedLesson(USER, LESSON_ID, META)).rejects.toMatchObject({
+      code: "LESSON_LOCKED",
+    });
+    expect(mockStartLessonProgress).not.toHaveBeenCalled();
+  });
+
+  it("rejects serving a locked Doubt Zone scripted node the same way as Story", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson({ kind: "doubt_zone", worldId: "world_2" }));
+    mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+    await expect(serveUngradedLesson(USER, LESSON_ID, META)).rejects.toMatchObject({
+      code: "LESSON_LOCKED",
+    });
   });
 });
 
@@ -271,5 +334,18 @@ describe("completeUngradedLesson", () => {
     const result = await completeUngradedLesson(USER, LESSON_ID, META);
 
     expect(result.credited).toBe(true);
+  });
+
+  // D76 (docs/ARCHITECTURE.md)
+  it("rejects completing a lesson whose world isn't unlocked yet, crediting nothing", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson({ worldId: "world_2" }));
+    mockListPublishedWorlds.mockResolvedValueOnce([{ id: "world_1" }, { id: "world_2" }]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+
+    await expect(completeUngradedLesson(USER, LESSON_ID, META)).rejects.toMatchObject({
+      code: "LESSON_LOCKED",
+    });
+    expect(mockGetLessonProgress).not.toHaveBeenCalled();
+    expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
   });
 });

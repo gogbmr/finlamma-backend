@@ -6,7 +6,7 @@ the backend, not the per-endpoint request/response shape of each call.
 
 **For per-endpoint detail** (every route, method, auth requirement, parameters, request body,
 every response code with a JSON example): `docs/API_ENDPOINTS.md`, generated from
-`/api/openapi.json` (currently `v1.4.0`). Download the contract over HTTP and generate a typed
+`/api/openapi.json` (currently `v2.1.0`). Download the contract over HTTP and generate a typed
 client from it rather than hand-copying examples from that file — see `docs/ARCHITECTURE.md`'s
 "Three separate projects" section for the `pnpm api:sync`-style workflow. This document never
 repeats a request/response shape that file already has; it links to the relevant endpoint by
@@ -209,6 +209,7 @@ generic "something went wrong" toast:
 | `RATE_LIMITED` | 429 | Yes, after a delay | Generic rate limits exist on lesson/Pulse-Check steps, reward claims, trade/SIP placement, Doubt Zone messages. Back off and retry; never surface raw "rate limited" text - show a soft "slow down a little" message. |
 | `RESEND_TOO_SOON` / `RESEND_LIMIT_REACHED` | 429 | Yes (after cooldown / next day) | Consent/reapproval resend, or (`RESEND_TOO_SOON` only) `POST /me/handle/reroll` inside its 30-day cooldown. Show a countdown or "try again tomorrow/later," not an error state - the error `details` carries `retryAfterSeconds`/`nextRerollAvailableAt` for the reroll case. |
 | `LESSON_TOO_SOON` / `NEWS_READ_TOO_SOON` | 429 | Yes, shortly | The request will succeed if simply retried once real time has passed (anti-farming, not a mistake) - don't show this as a failure at all if you can avoid it (e.g. just disable the button briefly). |
+| `LESSON_LOCKED` | 403 | No, until the gating world is cleared | A lesson serve/answer/complete call was made against a lesson whose world isn't unlocked for this learner yet (D76/D77, `docs/ARCHITECTURE.md`) - enforced server-side, not just the `state: "locked"` flag on `GET /worlds/{id}/lessons`. Shouldn't normally be reachable from the UI (don't surface locked nodes as tappable in the first place), so treat it as "something let the user reach a node they shouldn't have" rather than a routine retryable error. |
 | `IDEMPOTENCY_REPLAY` | 409 | **No - this is a real client bug** | You reused an `Idempotency-Key` for a request with different parameters than the original. Never auto-retry; this means your own idempotency-key generation is wrong. |
 | `PRICE_STALE` / `PRICE_UNAVAILABLE` | 409 | Yes, shortly | Trading only. Show "price unavailable right now, try again" - these are expected during low-liquidity moments or a relay hiccup, not exceptional. |
 | `NAV_STALE` / `NAV_UNAVAILABLE` | 409 | Yes, later | Fund orders only - a fund's NAV hasn't refreshed yet (ingested once daily). Not retryable "shortly" the way prices are; show "try again later today." |
@@ -291,6 +292,21 @@ every time).
   and never expect them on another learner's data at all. A learner can reroll their own handle
   once every 30 days via `POST /me/handle/reroll` (`RESEND_TOO_SOON` if called again before the
   cooldown elapses, with `retryAfterSeconds`/`nextRerollAvailableAt` in the error details).
+- **World/lesson `locked` state is a real, server-enforced block, not just a display hint (D76/D77).**
+  `GET /api/v1/worlds`' `locked` field and `GET /api/v1/worlds/{id}/lessons`' per-node `state`
+  (`done`/`current`/`available`/`locked`) reflect the sequential-unlock rule (clear the previous
+  world's Boss Quiz) - build the journey-map UI from these fields, don't re-derive lock state
+  yourself. Every lesson serve/answer/complete endpoint (`POST /lessons/{id}/serve|complete`,
+  `POST /lessons/{id}/steps/{n}/serve|answer` - covers Video/Story/Quiz/Boss Quiz/Role Play/Doubt
+  Zone, every kind) now rejects a locked lesson with `LESSON_LOCKED` (403, see §4's table) -
+  computed from the exact same function the listing uses, so the two can never disagree. This
+  shouldn't normally be reachable from a correctly-built UI (don't make a locked node tappable in
+  the first place), but it's a real check, not cosmetic - don't assume a `serve` call against a
+  node you haven't verified is unlocked will succeed. Within an unlocked world, `current`/
+  `available` both mean the lesson genuinely is servable right now, and `done` means it can be
+  replayed (replays never re-credit XP/VM - D26's reward-ledger idempotency is keyed on
+  `(user, lesson)`, not a specific attempt); there is no lesson-to-lesson order lock beyond the
+  whole-world gate.
 
 ---
 

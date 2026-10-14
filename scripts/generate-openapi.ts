@@ -31,6 +31,7 @@ import "../src/app/api/v1/me/current-lesson/route";
 import "../src/app/api/v1/me/stats/streak/route";
 import "../src/app/api/v1/me/stats/xp/route";
 import "../src/app/api/v1/me/stats/vmoney/route";
+import "../src/app/api/v1/me/stats/time/route";
 import "../src/app/api/v1/me/profile/overview/route";
 import "../src/app/api/v1/me/certificates/route";
 import "../src/app/api/v1/me/certificates/[worldId]/route";
@@ -101,7 +102,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "2.0.0",
+    version: "2.1.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },
