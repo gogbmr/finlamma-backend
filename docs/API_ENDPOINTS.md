@@ -1258,13 +1258,13 @@ For Story and Doubt Zone lessons only - these have no graded questions (docs/ARC
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1334,13 +1334,13 @@ For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson 
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1435,13 +1435,13 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```
@@ -1559,13 +1559,13 @@ Server-graded and server-timed - the submitted answer is checked against the que
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or this lesson's world isn't unlocked for this learner yet (LESSON_LOCKED, D76, docs/ARCHITECTURE.md) - sequential unlock only, clear the previous world's Boss Quiz first
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "LESSON_LOCKED",
+    "message": "This lesson isn't unlocked for you yet"
   }
 }
 ```

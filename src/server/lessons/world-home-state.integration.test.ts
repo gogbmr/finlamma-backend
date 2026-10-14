@@ -18,7 +18,10 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
-vi.mock("@/server/economy/service", () => ({ creditLessonCompletion: vi.fn() }));
+const mockCreditLessonCompletion = vi.fn();
+vi.mock("@/server/economy/service", () => ({
+  creditLessonCompletion: (...args: unknown[]) => mockCreditLessonCompletion(...args),
+}));
 vi.mock("@/server/certificates/service", () => ({ issueCertificateIfEligible: vi.fn() }));
 vi.mock("@/server/badges/service", () => ({ evaluateBadgesForUser: vi.fn() }));
 vi.mock("@/server/notifications/service", () => ({ notifyUser: vi.fn() }));
@@ -190,15 +193,32 @@ describe("per-node state agrees with what serve actually permits (D76)", () => {
     expect(result.map((n) => n.state)).toEqual(["done", "current"]);
   });
 
-  it("every node is 'locked' for a world whose previous world's Boss Quiz hasn't been passed", async () => {
+  it("every node is 'locked' for a world whose previous world's Boss Quiz hasn't been passed - and POST .../serve actually rejects it too (D76 enforcement)", async () => {
     const world1 = await makeWorld({ order: uniqueLowOrder() });
     await makeQuizLesson(world1.id, 8, 5, "boss_quiz"); // exists, but never attempted
     const world2 = await makeWorld({ order: uniqueLowOrder() });
-    await makeQuizLesson(world2.id, 1, 1);
+    const l1 = await makeQuizLesson(world2.id, 1, 1);
     const user = await makeUser();
 
     const result = await getPublicLessonsForWorld(world2.id, user.id);
-
     expect(result.map((n) => n.state)).toEqual(["locked"]);
+
+    // The listing and the gate must agree for the same learner - a "locked"
+    // node is now a real, enforced rejection, not just informational.
+    await expect(serveStep(user, l1.id, 1, META)).rejects.toMatchObject({ code: "LESSON_LOCKED" });
+    expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
+  });
+
+  it("a Boss Quiz lesson in a locked world is rejected the same way as any other lesson", async () => {
+    const world1 = await makeWorld({ order: uniqueLowOrder() });
+    await makeQuizLesson(world1.id, 8, 5, "boss_quiz");
+    const world2 = await makeWorld({ order: uniqueLowOrder() });
+    const bossQuiz2 = await makeQuizLesson(world2.id, 8, 5, "boss_quiz");
+    const user = await makeUser();
+
+    await expect(serveStep(user, bossQuiz2.id, 1, META)).rejects.toMatchObject({
+      code: "LESSON_LOCKED",
+    });
+    expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
   });
 });

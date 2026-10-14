@@ -28,6 +28,7 @@ import type {
   CreateLessonDraftInput,
   HotfixLessonInput,
   LessonKindCreate,
+  LessonNodeState,
   UpdateLessonDraftInput,
 } from "./schemas";
 
@@ -58,26 +59,30 @@ function toDetail(row: LessonRow) {
   };
 }
 
-// WH-12 (World Home journey map): adds this learner's per-node state on top
-// of the plain lesson list - see LessonNodeStateSchema (schemas.ts) and
-// docs/ARCHITECTURE.md D76 for what each value means and why "locked" is
-// informational only (same documented nature as worlds.locked itself,
-// D23), never enforced by POST .../serve or .../complete.
-export async function getPublicLessonsForWorld(worldId: string, userId: string) {
+// WH-12/D76 (docs/ARCHITECTURE.md): the SINGLE SOURCE OF TRUTH for a
+// world's per-lesson state - both getPublicLessonsForWorld (the listing
+// below) and assertLessonUnlocked (the serve/answer/complete enforcement
+// gate every lesson-interaction endpoint calls) go through this exact
+// function, so the journey-map UI and the gate can never disagree about
+// which lessons are reachable. Returns every published lesson in the world
+// alongside a lessonId -> state map.
+//
+// Same sequential-unlock rule as worlds/service.ts's getPublicWorlds and
+// this file's own getCurrentLesson above - recomputed here for just this
+// one world rather than calling getPublicWorlds, the same "duplicate the
+// one-line rule, don't share a round trip" pattern getCurrentLesson already
+// uses. A lesson can only ever be published while its world is (publishLesson
+// below, and unpublishWorld blocks unpublishing while a published lesson
+// still belongs to it), so a non-empty `rows` already guarantees worldId is
+// a currently-published world - worldIndex === -1 is defensive only (e.g. a
+// world unpublished in the instant between these two queries).
+async function computeLessonStatesForWorld(
+  worldId: string,
+  userId: string,
+): Promise<{ rows: LessonRow[]; states: Map<string, LessonNodeState> }> {
   const rows = await listPublishedLessonsForWorld(worldId);
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { rows, states: new Map() };
 
-  // Same sequential-unlock rule as worlds/service.ts's getPublicWorlds and
-  // this file's own getCurrentLesson above - recomputed here for just this
-  // one world rather than calling getPublicWorlds, the same "duplicate the
-  // one-line rule, don't share a round trip" pattern getCurrentLesson
-  // already uses. A lesson can only ever be published while its world is
-  // (publishLesson below, and unpublishWorld blocks unpublishing while a
-  // published lesson still belongs to it), so `rows.length > 0` already
-  // guarantees worldId is a currently-published world - worldIndex === -1
-  // is therefore defensive only (e.g. a world unpublished in the instant
-  // between these two queries), not a real case this needs to distinguish
-  // from "not found".
   const publishedWorlds = await listPublishedWorlds();
   const worldIndex = publishedWorlds.findIndex((w) => w.id === worldId);
   const settings = await getLessonFlowScoringSettings();
@@ -85,21 +90,55 @@ export async function getPublicLessonsForWorld(worldId: string, userId: string) 
   const worldLocked =
     worldIndex === -1 || (worldIndex > 0 && !clearedWorldIds.has(publishedWorlds[worldIndex - 1]!.id));
 
+  const states = new Map<string, LessonNodeState>();
   if (worldLocked) {
-    return rows.map((row) => ({ ...toSummary(row), state: "locked" as const }));
+    for (const row of rows) states.set(row.id, "locked");
+    return { rows, states };
   }
 
   const progressByLessonId = await getLessonProgressStatusesForUser(userId, rows.map((r) => r.id));
   let currentAssigned = false;
-  return rows.map((row) => {
+  for (const row of rows) {
     const status = progressByLessonId.get(row.id);
-    if (status === "completed") return { ...toSummary(row), state: "done" as const };
-    if (!currentAssigned) {
+    if (status === "completed") {
+      states.set(row.id, "done");
+    } else if (!currentAssigned) {
       currentAssigned = true;
-      return { ...toSummary(row), state: "current" as const };
+      states.set(row.id, "current");
+    } else {
+      states.set(row.id, "available");
     }
-    return { ...toSummary(row), state: "available" as const };
-  });
+  }
+  return { rows, states };
+}
+
+export async function getPublicLessonsForWorld(worldId: string, userId: string) {
+  const { rows, states } = await computeLessonStatesForWorld(worldId, userId);
+  return rows.map((row) => ({ ...toSummary(row), state: states.get(row.id)! }));
+}
+
+// D76 (docs/ARCHITECTURE.md): enforcement gate called by every lesson
+// serve/answer/complete entry point (quiz-attempts' serveStep/submitAnswer,
+// lesson-progress's serveUngradedLesson/completeUngradedLesson) BEFORE
+// doing anything else, rejecting a "locked" node with LESSON_LOCKED (403).
+// "current"/"available"/"done" (a replay) are all allowed - there is no
+// lesson-to-lesson lock within an unlocked world (only within-lesson step
+// ordering, D21), so this only ever actually blocks a lesson whose whole
+// WORLD isn't unlocked yet. Takes the lesson row the caller already fetched
+// (never re-fetches it) to avoid a duplicate round trip, and goes through
+// the exact same computeLessonStatesForWorld the public listing above uses
+// - never a separately-maintained copy of the lock rule.
+export async function assertLessonUnlocked(
+  lesson: { id: string; worldId: string },
+  userId: string,
+): Promise<void> {
+  const { states } = await computeLessonStatesForWorld(lesson.worldId, userId);
+  const state = states.get(lesson.id);
+  if (state === undefined || state === "locked") {
+    throw new AppError("LESSON_LOCKED", "This lesson isn't unlocked for you yet", {
+      lessonId: lesson.id,
+    });
+  }
 }
 
 export async function getPublicLesson(id: string) {
