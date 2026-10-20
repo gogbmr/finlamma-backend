@@ -3139,6 +3139,109 @@
           "nextCursor"
         ]
       },
+      "CancelOrderResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "symbol": {
+                "type": "string",
+                "example": "RELIANCE"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "market",
+                  "limit"
+                ]
+              },
+              "qty": {
+                "type": "integer"
+              },
+              "limitPricePaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "filled",
+                  "cancelled"
+                ]
+              },
+              "fillPricePaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "filledAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "cancelledAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "cancelReason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "user_requested",
+                  "eod_expired",
+                  null
+                ],
+                "description": "Why a cancelled order was cancelled - the learner's own cancel, or the end-of-day auto-cancel job. null for any order that isn't cancelled, and for orders cancelled before this field existed. No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a rejection is a thrown error at request time, never a row in this list.",
+                "example": null
+              }
+            },
+            "required": [
+              "id",
+              "symbol",
+              "side",
+              "type",
+              "qty",
+              "limitPricePaise",
+              "status",
+              "fillPricePaise",
+              "createdAt",
+              "filledAt",
+              "cancelledAt",
+              "cancelReason"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "PlaceFundOrderResponse": {
         "type": "object",
         "properties": {
@@ -3472,6 +3575,134 @@
                 "recentExecutions"
               ]
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreateSipPlanResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fundId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amountPaise": {
+                "type": "integer"
+              },
+              "dayOfMonth": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "paused",
+                  "cancelled"
+                ]
+              },
+              "nextDueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null once the plan is cancelled - a cancelled plan never runs again.",
+                "example": "2026-10-05"
+              },
+              "recentExecutions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "filled",
+                        "failed"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": "string",
+                      "example": "2026-09-05"
+                    },
+                    "amountPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "unitsMilli": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "failureReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Set only when status is \"failed\" - e.g. INSUFFICIENT_MARGIN.",
+                      "example": "INSUFFICIENT_MARGIN"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "dueDate",
+                    "amountPaise",
+                    "unitsMilli",
+                    "navPaise",
+                    "navDate",
+                    "failureReason",
+                    "createdAt"
+                  ]
+                },
+                "description": "Most recent executions for this plan, newest first, including any that failed - a SIP failure is always visible here, never silently skipped."
+              },
+              "replayed": {
+                "type": "boolean",
+                "description": "True only when this exact response is a replay of an already-processed request with the same Idempotency-Key - never true for a genuinely new plan."
+              }
+            },
+            "required": [
+              "id",
+              "fundId",
+              "amountPaise",
+              "dayOfMonth",
+              "status",
+              "nextDueDate",
+              "recentExecutions",
+              "replayed"
+            ]
           }
         },
         "required": [
@@ -8682,6 +8913,110 @@
         }
       }
     },
+    "/api/v1/trade/orders/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a pending order",
+        "description": "Only ever cancels the caller's own order - an id that doesn't exist, or belongs to another learner, returns a plain 404 (never 403), so an order id can't be probed to learn whether it exists. No V Money is released: a queued (`status: \"open\"`) order was never debited in the first place (CLAUDE.md, trading-rules skill) - margin is only ever checked and charged at the moment of an actual fill, never reserved ahead of it. Calling this again on an order you already cancelled is an idempotent success (the current row, unchanged). An order that has already filled, or already expired at end-of-day, can't be cancelled - `ORDER_NOT_CANCELLABLE` names its current status.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled (or already cancelled)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelOrderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order with this id (including one that belongs to another learner)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No order with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order has already filled, or already expired at end-of-day",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "ORDER_NOT_CANCELLABLE",
+                    "message": "Cannot cancel an order that is already filled",
+                    "details": {
+                      "status": "filled"
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/portfolio/summary": {
       "get": {
         "summary": "Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)",
@@ -9951,13 +10286,26 @@
       },
       "post": {
         "summary": "Create a new SIP plan",
-        "description": "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month.",
+        "description": "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month. Requires an Idempotency-Key header, same semantics as POST /trade/orders and POST /trade/funds/orders - retrying the exact same request with the same key returns the original plan (`replayed: true`), never a second plan; reusing the key with a different request is rejected.",
         "tags": [
           "Trade"
         ],
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per SIP creation attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per SIP creation attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -9997,17 +10345,17 @@
         },
         "responses": {
           "200": {
-            "description": "The newly created SIP plan",
+            "description": "The newly created SIP plan (or replayed from an identical earlier request)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SipPlanResponse"
+                  "$ref": "#/components/schemas/CreateSipPlanResponse"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid input, or below the fund's minimum SIP amount",
+            "description": "Invalid input, below the fund's minimum SIP amount, or a missing Idempotency-Key header",
             "content": {
               "application/json": {
                 "example": {
@@ -10062,6 +10410,22 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The same Idempotency-Key was reused for a different request",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "IDEMPOTENCY_REPLAY",
+                    "message": "This Idempotency-Key was already used for a different SIP plan"
                   }
                 },
                 "schema": {

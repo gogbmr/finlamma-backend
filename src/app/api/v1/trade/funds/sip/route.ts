@@ -1,7 +1,13 @@
+import { z } from "zod";
 import { requireUser } from "@/lib/auth";
+import { AppError } from "@/lib/errors";
 import { ok, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
-import { CreateSipPlanSchema, SipPlanListResponseSchema, SipPlanResponseSchema } from "@/server/fund-orders/sip-schemas";
+import {
+  CreateSipPlanResponseSchema,
+  CreateSipPlanSchema,
+  SipPlanListResponseSchema,
+} from "@/server/fund-orders/sip-schemas";
 import { createSip, listMySips } from "@/server/fund-orders/sip-service";
 import { requireFullAccess } from "@/server/onboarding/service";
 
@@ -50,10 +56,16 @@ registry.registerPath({
   description:
     "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, " +
     "admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due " +
-    "date every calendar month.",
+    "date every calendar month. Requires an Idempotency-Key header, same semantics as POST " +
+    "/trade/orders and POST /trade/funds/orders - retrying the exact same request with the " +
+    "same key returns the original plan (`replayed: true`), never a second plan; reusing the " +
+    "key with a different request is rejected.",
   tags: ["Trade"],
   security: [{ bearerAuth: [] }],
   request: {
+    headers: z.object({
+      "Idempotency-Key": z.string().min(1).openapi({ description: "Client-generated, unique per SIP creation attempt." }),
+    }),
     body: {
       content: {
         "application/json": {
@@ -65,11 +77,11 @@ registry.registerPath({
   },
   responses: {
     200: {
-      description: "The newly created SIP plan",
-      content: { "application/json": { schema: SipPlanResponseSchema } },
+      description: "The newly created SIP plan (or replayed from an identical earlier request)",
+      content: { "application/json": { schema: CreateSipPlanResponseSchema } },
     },
     400: {
-      description: "Invalid input, or below the fund's minimum SIP amount",
+      description: "Invalid input, below the fund's minimum SIP amount, or a missing Idempotency-Key header",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
@@ -104,6 +116,17 @@ registry.registerPath({
         },
       },
     },
+    409: {
+      description: "The same Idempotency-Key was reused for a different request",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: {
+            error: { code: "IDEMPOTENCY_REPLAY", message: "This Idempotency-Key was already used for a different SIP plan" },
+          },
+        },
+      },
+    },
     429: {
       description: "Too many SIP setup attempts, or the rate limiter couldn't be reached (fails closed)",
       content: {
@@ -127,7 +150,13 @@ export const GET = withErrors(async (req: Request) => {
 export const POST = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
+
+  const idempotencyKey = req.headers.get("Idempotency-Key");
+  if (!idempotencyKey) {
+    throw new AppError("VALIDATION_FAILED", "Idempotency-Key header is required");
+  }
+
   const body = await req.json();
   const input = CreateSipPlanSchema.parse(body);
-  return ok(await createSip(user, input, requestMeta(req.headers)));
+  return ok(await createSip(user, input, idempotencyKey, requestMeta(req.headers)));
 });

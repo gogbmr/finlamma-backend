@@ -9,6 +9,7 @@ import { isTradingUnlocked } from "@/server/worlds/service";
 import {
   cancelSipPlan,
   createSipPlan,
+  getSipPlanByIdempotencyKey,
   getSipPlanForUser,
   listRecentFundOrdersForSipPlan,
   listSipPlansForUser,
@@ -41,7 +42,7 @@ function computeNextDueDate(dayOfMonth: number, status: SipPlanRow["status"], no
   return `${nextYear}-${String(nextMonth).padStart(2, "0")}-${String(dayOfMonth).padStart(2, "0")}`;
 }
 
-async function shapeSipPlan(plan: SipPlanRow, now: Date) {
+async function shapeSipPlan(plan: SipPlanRow, now: Date, replayed?: boolean) {
   const executions = await listRecentFundOrdersForSipPlan(plan.id, RECENT_EXECUTIONS_LIMIT);
   return {
     id: plan.id,
@@ -61,13 +62,29 @@ async function shapeSipPlan(plan: SipPlanRow, now: Date) {
       failureReason: e.failureReason,
       createdAt: e.createdAt.toISOString(),
     })),
+    ...(replayed !== undefined ? { replayed } : {}),
   };
 }
 
 // Rate-limited (D49 audit follow-up, failOpen: false) - this creates a plan
 // that will go on to spend real V Money on every future due date, so it
 // gets the same money-spending treatment as placeOrder/placeFundOrder.
-export async function createSip(user: { id: string }, input: CreateSipPlanInput, meta: RequestMeta, now: Date = new Date()) {
+//
+// Idempotency-Key (Phase 4 Trade asks), same semantics as POST
+// /trade/funds/orders/POST /trade/orders: retrying the exact same request
+// with the same key returns the original plan (replayed: true), never a
+// second plan; reusing the key for a genuinely different request (a
+// different fund/amount/dayOfMonth) is IDEMPOTENCY_REPLAY. Checked AFTER
+// every validation (rate limit, fund lookup, trading-unlock, minimum
+// amount) so a malformed retry can't accidentally "reserve" a key before
+// the request is even known to be valid - same ordering placeOrder uses.
+export async function createSip(
+  user: { id: string },
+  input: CreateSipPlanInput,
+  idempotencyKey: string,
+  meta: RequestMeta,
+  now: Date = new Date(),
+) {
   const { allowed } = await checkRateLimit(user.id, SIP_CREATE_RATE_LIMIT, false);
   if (!allowed) {
     throw new AppError("RATE_LIMITED", "Too many SIP setup attempts - slow down and try again shortly");
@@ -84,7 +101,26 @@ export async function createSip(user: { id: string }, input: CreateSipPlanInput,
     throw new AppError("VALIDATION_FAILED", `Minimum SIP amount for this fund is ${fund.minSipPaise} paise`);
   }
 
-  const plan = await createSipPlan(user.id, input.fundId, input.amountPaise, input.dayOfMonth);
+  const plan = await createSipPlan(user.id, input.fundId, input.amountPaise, input.dayOfMonth, idempotencyKey);
+
+  if (!plan) {
+    // Conflict on (userId, idempotencyKey) - this exact key was already
+    // used. A matching body is a replay of the original result; a
+    // different body means the client reused the key for a genuinely
+    // different request, a real client bug, never silently accepted.
+    const existing = await getSipPlanByIdempotencyKey(user.id, idempotencyKey);
+    if (!existing) {
+      throw new AppError("INTERNAL", "Idempotency conflict, but no existing SIP plan was found");
+    }
+    const matches =
+      existing.fundId === input.fundId &&
+      existing.amountPaise === input.amountPaise &&
+      existing.dayOfMonth === input.dayOfMonth;
+    if (!matches) {
+      throw new AppError("IDEMPOTENCY_REPLAY", "This Idempotency-Key was already used for a different SIP plan");
+    }
+    return shapeSipPlan(existing, now, true);
+  }
 
   await logActivity({
     actorType: "user",
@@ -97,7 +133,7 @@ export async function createSip(user: { id: string }, input: CreateSipPlanInput,
     userAgent: meta.userAgent,
   });
 
-  return shapeSipPlan(plan, now);
+  return shapeSipPlan(plan, now, false);
 }
 
 // runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,

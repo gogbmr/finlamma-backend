@@ -97,8 +97,22 @@ export const sipPlans = pgTable(
     status: sipStatusEnum("status").notNull().default("active"),
     pausedAt: timestamp("paused_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    // Phase 4 Trade asks (2026-10-20), additive: Idempotency-Key for POST
+    // /trade/funds/funds/sip, same "insert and treat a conflict as
+    // already-handled" shape as orders.idempotencyKey (CLAUDE.md rule 3) -
+    // enforced by the unique index below, not an application-level "have
+    // I seen this key" check. Nullable (unlike orders.idempotencyKey)
+    // specifically so this stays additive for any SIP plan created before
+    // this column existed - Postgres treats every (userId, NULL) pair as
+    // mutually non-colliding, so old rows never collide with each other or
+    // with a new key.
+    idempotencyKey: text("idempotency_key"),
   },
-  (t) => [index("sip_plans_user_id_idx").on(t.userId), index("sip_plans_status_idx").on(t.status)],
+  (t) => [
+    index("sip_plans_user_id_idx").on(t.userId),
+    index("sip_plans_status_idx").on(t.status),
+    uniqueIndex("sip_plans_user_idempotency_idx").on(t.userId, t.idempotencyKey),
+  ],
 ).enableRLS();
 
 // Every fund BUY/SELL, manual or SIP-triggered. `sipPlanId`/`dueDate` are

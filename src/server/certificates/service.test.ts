@@ -165,6 +165,23 @@ describe("listMyCertificates", () => {
       expect.objectContaining({ worldId: "world_1", worldTitle: WORLD.title, code: "FL-MW-2026-000001" }),
     ]);
   });
+
+  it("resolves every certificate's world, even across several distinct worlds", async () => {
+    mockListCertificatesForUser.mockResolvedValueOnce([
+      { worldId: "world_1", code: "FL-MW-2026-000001", xpEarned: 1500, accuracyPct: 90, createdAt: new Date() },
+      { worldId: "world_2", code: "FL-SS-2026-000001", xpEarned: 1200, accuracyPct: 85, createdAt: new Date() },
+    ]);
+    mockGetWorldById.mockImplementation((id: string) =>
+      Promise.resolve(id === "world_1" ? WORLD : { ...WORLD, id: "world_2", title: { en: "Save Smart" } }),
+    );
+
+    const result = await listMyCertificates(USER.id);
+
+    expect(result).toEqual([
+      expect.objectContaining({ worldId: "world_1", worldTitle: WORLD.title }),
+      expect.objectContaining({ worldId: "world_2", worldTitle: { en: "Save Smart" } }),
+    ]);
+  });
 });
 
 describe("getMyCertificate", () => {

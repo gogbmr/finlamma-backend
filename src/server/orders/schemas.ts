@@ -75,6 +75,11 @@ export const OrderListResponseSchema = registry.register(
   z.object({ data: z.array(OrderPublicSchema), nextCursor: z.string().nullable() }),
 );
 
+export const CancelOrderResponseSchema = registry.register(
+  "CancelOrderResponse",
+  z.object({ data: OrderPublicSchema }),
+);
+
 // TR-13: filter query params for GET /trade/orders.
 export const ListOrdersStatusEnum = z.enum(["open", "filled", "cancelled"]);
 export type ListOrdersStatus = z.infer<typeof ListOrdersStatusEnum>;

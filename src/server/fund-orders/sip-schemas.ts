@@ -57,3 +57,19 @@ export const SipPlanListResponseSchema = registry.register(
   "SipPlanListResponse",
   z.object({ data: z.array(SipPlanPublicSchema) }),
 );
+
+// Phase 4 Trade asks - POST /trade/funds/sip's own response, distinct from
+// SipPlanResponseSchema (shared by PATCH .../{id}) because only the
+// create endpoint has an Idempotency-Key replay to report.
+export const CreateSipPlanResponseSchema = registry.register(
+  "CreateSipPlanResponse",
+  z.object({
+    data: SipPlanPublicSchema.extend({
+      replayed: z.boolean().openapi({
+        description:
+          "True only when this exact response is a replay of an already-processed request " +
+          "with the same Idempotency-Key - never true for a genuinely new plan.",
+      }),
+    }),
+  }),
+);

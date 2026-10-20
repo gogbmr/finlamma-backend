@@ -1,4 +1,5 @@
 import { logActivity } from "@/lib/activity-log";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { checkRateLimit, REWARD_CLAIM_RATE_LIMIT } from "@/lib/redis";
@@ -234,7 +235,14 @@ export async function refundRewardClaim(
 export async function listRecentClaimsForAdmin(limit = 50) {
   const claims = await listRecentRewardClaims(limit);
   const rewardIds = [...new Set(claims.map((c) => c.rewardId))];
-  const rewards = await Promise.all(rewardIds.map((id) => getRewardById(id)));
+  // runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,
+  // docs/ARCHITECTURE.md D13/D72): distinct reward ids among the last
+  // `limit` claims is unbounded as the catalog/claim volume grows - a
+  // display-only read, no V Money spent or credited here.
+  const rewards = await runWithConcurrencyLimit(
+    rewardIds.map((id) => () => getRewardById(id)),
+    DB_CONCURRENCY_LIMIT,
+  );
   const rewardById = new Map(rewards.filter((r) => r !== null).map((r) => [r.id, r]));
   return claims.map((claim) => ({
     id: claim.id,

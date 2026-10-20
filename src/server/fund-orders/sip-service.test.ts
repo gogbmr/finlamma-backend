@@ -11,6 +11,7 @@ vi.mock("@/server/worlds/service", () => ({
 }));
 
 const mockCreateSipPlan = vi.fn();
+const mockGetSipPlanByIdempotencyKey = vi.fn();
 const mockGetSipPlanForUser = vi.fn();
 const mockListSipPlansForUser = vi.fn();
 const mockPauseSipPlan = vi.fn();
@@ -19,6 +20,7 @@ const mockCancelSipPlan = vi.fn();
 const mockListRecentFundOrdersForSipPlan = vi.fn();
 vi.mock("./sip-repo", () => ({
   createSipPlan: (...args: unknown[]) => mockCreateSipPlan(...args),
+  getSipPlanByIdempotencyKey: (...args: unknown[]) => mockGetSipPlanByIdempotencyKey(...args),
   getSipPlanForUser: (...args: unknown[]) => mockGetSipPlanForUser(...args),
   listSipPlansForUser: (...args: unknown[]) => mockListSipPlansForUser(...args),
   pauseSipPlan: (...args: unknown[]) => mockPauseSipPlan(...args),
@@ -74,7 +76,7 @@ describe("createSip - rate limit", () => {
     mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, configured: false });
 
     await expect(
-      createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW),
+      createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW),
     ).rejects.toMatchObject({ code: "RATE_LIMITED" });
     expect(mockCheckRateLimit).toHaveBeenCalledWith(USER.id, expect.any(Object), false);
     expect(mockGetFundByIdInternal).not.toHaveBeenCalled();
@@ -84,7 +86,7 @@ describe("createSip - rate limit", () => {
     mockCheckRateLimit.mockResolvedValueOnce({ allowed: false, configured: true });
 
     await expect(
-      createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW),
+      createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW),
     ).rejects.toMatchObject({ code: "RATE_LIMITED" });
     expect(mockCreateSipPlan).not.toHaveBeenCalled();
   });
@@ -93,7 +95,7 @@ describe("createSip - rate limit", () => {
 describe("createSip", () => {
   it("throws NOT_FOUND for an unknown or inactive fund", async () => {
     mockGetFundByIdInternal.mockResolvedValueOnce(null);
-    await expect(createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW)).rejects.toMatchObject({
+    await expect(createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW)).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
     expect(mockCreateSipPlan).not.toHaveBeenCalled();
@@ -101,14 +103,14 @@ describe("createSip", () => {
 
   it("throws FORBIDDEN when trading isn't unlocked", async () => {
     mockIsTradingUnlocked.mockResolvedValueOnce(false);
-    await expect(createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW)).rejects.toMatchObject({
+    await expect(createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW)).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
   });
 
   it("throws VALIDATION_FAILED below the fund's minimum SIP amount", async () => {
     mockGetFundByIdInternal.mockResolvedValueOnce({ ...FUND, minSipPaise: 50000 });
-    await expect(createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW)).rejects.toMatchObject({
+    await expect(createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW)).rejects.toMatchObject({
       code: "VALIDATION_FAILED",
     });
   });
@@ -116,26 +118,50 @@ describe("createSip", () => {
   it("creates the plan, logs sip.created, and computes the next due date", async () => {
     mockCreateSipPlan.mockResolvedValueOnce(planRow());
 
-    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, NOW);
+    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW);
 
-    expect(mockCreateSipPlan).toHaveBeenCalledWith("user_1", "fund_1", 10000, 5);
+    expect(mockCreateSipPlan).toHaveBeenCalledWith("user_1", "fund_1", 10000, 5, "key1");
     expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "sip.created" }));
     // dayOfMonth (5) is before today (25) -> next due date rolls into next month
     expect(result.nextDueDate).toBe("2026-10-05");
+    expect(result.replayed).toBe(false);
+  });
+});
+
+describe("createSip - Idempotency-Key replay", () => {
+  it("a matching replay (same body) returns the original plan with replayed: true, no second activity log", async () => {
+    mockCreateSipPlan.mockResolvedValueOnce(null); // conflict - key already used
+    mockGetSipPlanByIdempotencyKey.mockResolvedValueOnce(planRow());
+
+    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, NOW);
+
+    expect(result.replayed).toBe(true);
+    expect(result.id).toBe("plan_1");
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("reusing the key for a DIFFERENT body is IDEMPOTENCY_REPLAY, never silently accepted", async () => {
+    mockCreateSipPlan.mockResolvedValueOnce(null); // conflict - key already used
+    mockGetSipPlanByIdempotencyKey.mockResolvedValueOnce(planRow({ amountPaise: 10000, dayOfMonth: 5 }));
+
+    await expect(
+      createSip(USER, { fundId: "fund_1", amountPaise: 99999, dayOfMonth: 5 }, "key1", META, NOW),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_REPLAY" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 
 describe("next due date computation", () => {
   it("uses this month when dayOfMonth is today or later", async () => {
     mockCreateSipPlan.mockResolvedValueOnce(planRow({ dayOfMonth: 25 }));
-    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 25 }, META, NOW);
+    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 25 }, "key1", META, NOW);
     expect(result.nextDueDate).toBe("2026-09-25");
   });
 
   it("rolls over the year boundary correctly (December -> January)", async () => {
     const decemberNow = new Date("2026-12-20T05:00:00.000Z");
     mockCreateSipPlan.mockResolvedValueOnce(planRow({ dayOfMonth: 5 }));
-    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, META, decemberNow);
+    const result = await createSip(USER, { fundId: "fund_1", amountPaise: 10000, dayOfMonth: 5 }, "key1", META, decemberNow);
     expect(result.nextDueDate).toBe("2027-01-05");
   });
 

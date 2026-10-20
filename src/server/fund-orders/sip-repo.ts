@@ -4,9 +4,35 @@ import { fundOrders, sipPlans } from "@/db/schema";
 
 export type SipPlanRow = typeof sipPlans.$inferSelect;
 
-export async function createSipPlan(userId: string, fundId: string, amountPaise: number, dayOfMonth: number) {
-  const [row] = await db.insert(sipPlans).values({ userId, fundId, amountPaise, dayOfMonth }).returning();
-  return row!;
+// Idempotency-Key (Phase 4 Trade asks) - insert-and-treat-conflict-as-
+// already-handled, same shape as every other idempotent write in this
+// codebase (orders.idempotencyKey, D26/D41). Returns null on a conflict
+// (this exact key was already used by this user) - the caller
+// (src/server/fund-orders/sip-service.ts's createSip) then looks up the
+// existing plan via getSipPlanByIdempotencyKey to decide replay vs.
+// IDEMPOTENCY_REPLAY.
+export async function createSipPlan(
+  userId: string,
+  fundId: string,
+  amountPaise: number,
+  dayOfMonth: number,
+  idempotencyKey: string,
+) {
+  const [row] = await db
+    .insert(sipPlans)
+    .values({ userId, fundId, amountPaise, dayOfMonth, idempotencyKey })
+    .onConflictDoNothing({ target: [sipPlans.userId, sipPlans.idempotencyKey] })
+    .returning();
+  return row ?? null;
+}
+
+export async function getSipPlanByIdempotencyKey(userId: string, idempotencyKey: string) {
+  const [row] = await db
+    .select()
+    .from(sipPlans)
+    .where(and(eq(sipPlans.userId, userId), eq(sipPlans.idempotencyKey, idempotencyKey)))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function getSipPlanForUser(id: string, userId: string) {

@@ -364,17 +364,30 @@ yet - recorded here so the mobile app's Trade tab work doesn't quietly discover 
   exists at all yet).
 - **TR-08/09/10/11** — no watchlist endpoints, and no dedicated positions-list endpoint (holdings
   exist, but not surfaced this way).
-- **TR-13** — an order-list endpoint doesn't exist; `GET /api/v1/trade/orders` is only `POST`
-  (place order) today, and a list-order schema was defined but never wired to a route.
+- ~~**TR-13** — an order-list endpoint doesn't exist~~ **Resolved, Phase 4 Trade asks (2026-10-20)**:
+  `GET /api/v1/trade/orders` (own orders, cursor-paginated, filterable by status and by the
+  caller's own `Idempotency-Key`) and `POST /api/v1/trade/orders/{id}/cancel` both now exist.
 - **TR-18** — a learner's held position (qty/avg/P&L) isn't merged into the stock-detail response;
   the data exists in `holdings`, just not joined in.
 - **TR-24/26** — no order-ticket preview endpoint (order value, available margin/balance-after-sell,
   brokerage).
 - **TR-35/36** — no funds-portfolio-summary endpoint (total value, holdings count, invested
   amount, active SIP amount) and no `category=` filter on `GET /api/v1/trade/funds`.
-- **TR-38/39** — the fund list/detail endpoints exist, but don't merge in the caller's own
-  `fund_holdings` (the "held" tag + invested amount) and have no 1Y/3Y/5Y return fields anywhere
-  in the schema.
+- ~~**TR-38/39** — don't merge in the caller's own `fund_holdings`~~ **Partially resolved, Phase 4
+  Trade asks (2026-10-20)**: `GET /api/v1/trade/funds`/`{id}` now return `heldUnitsMilli`/
+  `holdingValuePaise` (null/null if not held). Still missing: no 1Y/3Y/5Y return fields anywhere
+  in the schema (that part of TR-38/39 is still open).
+- **No reservation for a queued LIMIT order's V Money, and the app needs to explain this.** A
+  LIMIT order sitting `status: "open"` has NOT reserved any balance - margin is only ever checked
+  and charged at the moment it actually fills (D41). So once LIMIT orders are enabled in the app:
+  a learner can have several open orders that together exceed their spendable balance, and
+  whichever becomes marketable/checked first (at placement, or on a later matching-job tick)
+  fills if the balance is sufficient *at that moment*; the others simply stay open, un-filled,
+  un-cancelled, un-errored - they'll keep trying on every future matching-job tick until either
+  enough balance exists or the learner (or the EOD job) cancels them. The app needs copy for this
+  - an open order isn't stuck or broken, it's just waiting for enough V Money, which could change
+  because the learner spent it elsewhere (a different trade, a reward claim, anything) - not
+  only because the order itself hasn't become marketable yet.
 
 ## Pre-launch checklist
 - [ ] **Define a retention policy for IP addresses and user-agent strings** - founder decision,
@@ -627,3 +640,14 @@ yet - recorded here so the mobile app's Trade tab work doesn't quietly discover 
       Safe to leave alone at zero users; fix before any of these jobs runs against a real,
       growing user base - the news-notification one especially shouldn't wait for a crisis the
       way the admin shell's 22-query check did (docs/ARCHITECTURE.md D72).
+- [ ] **`vmoney_ledger.reason_localized` covers `trade`/`fund_trade` entries only - every other
+      ledger source, and every entry written before this column existed, is English-only.**
+      Phase 4 Trade asks (2026-10-20) added `{en, hi, hx}` localization for the wallet-history
+      `reason` text, but scoped it to the two sourceTypes this phase actually touches
+      (`src/server/orders/i18n.ts`, `src/server/fund-orders/i18n.ts`) - `lesson_completion`,
+      `badge_unlock`, `reward_claim`/`reward_refund`, `cheer`, `arena_league_reward`,
+      `competition_prize`, `pulse_check_attempt` all still write a plain English `reason` with no
+      localized counterpart, and `reasonLocalized` is simply `null` for those rows (the app falls
+      back to the English string). Localizing the rest is a real, larger follow-up - it touches
+      every domain that credits/debits V Money, not just Trade - tracked here rather than silently
+      assumed to be "done" because wallet history as a whole now has a `reasonLocalized` field.

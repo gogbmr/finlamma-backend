@@ -303,7 +303,10 @@ skill for the full idempotency/reversal design)
   no hidden pricing, realized_pnl_paise, idempotency_key, sip_plan_id + due_date — unique together,
   the SIP idempotency mechanism, D46, failure_reason — SIP-triggered failures only)
 - `sip_plans` (user_id, fund_id, amount_paise, day_of_month — 1-28 only, status — active/paused/
-  cancelled, paused_at, cancelled_at)
+  cancelled, paused_at, cancelled_at, idempotency_key — nullable, Phase 4 Trade asks: unique
+  together with user_id, the idempotency mechanism for `POST /trade/funds/sip`, same
+  insert-and-treat-conflict-as-already-handled shape as `orders.idempotency_key`; nullable only
+  so it stays additive for any plan created before this column existed)
 - `competitions` (name, instrument_id, virtual_capital_paise — a non-convertible sandbox balance,
   never V Money, renamed from an earlier `virtual_capital_vm` before any code existed specifically
   to avoid reading as a VM grant, see `docs/ARCHITECTURE.md` D57 — window_start, window_end, prizes
