@@ -49,5 +49,5 @@ export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
   const result = await listPublicInstruments();
-  return okWithDisclaimer(result.data, result.disclaimer);
+  return okWithDisclaimer(result.data, result.disclaimer, result.disclaimerLocalized);
 });

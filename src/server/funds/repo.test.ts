@@ -5,21 +5,37 @@
 // @/db/client's NODE_ENV=test guard).
 import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { funds } from "@/db/schema";
+import { fundHoldings, funds, users } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
+import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   getFundByIdInternal,
+  getFundHoldingForUser,
   getLatestNav,
   getNavForDate,
   getPublicFundById,
   insertNavIfNew,
   listActiveFunds,
+  listFundHoldingsForUser,
   listFundsWithSchemeCodes,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
+
+async function makeUser() {
+  const [user] = await db
+    .insert(users)
+    .values({
+      clerkUserId: uniqueClerkUserId("funds-repo-user"),
+      clerkUpdatedAt: new Date(),
+      firstName: "Aarav",
+      lastInitial: "S",
+    })
+    .returning();
+  return user!;
+}
 
 afterAll(async () => {
   await db.$client.close();
@@ -104,5 +120,36 @@ describe("insertNavIfNew / getLatestNav / getNavForDate", () => {
     const fund = await makeFund();
     expect(await getLatestNav(fund.id)).toBeNull();
     expect(await getNavForDate(fund.id, "2026-09-24")).toBeNull();
+  });
+});
+
+describe("listFundHoldingsForUser / getFundHoldingForUser", () => {
+  it("returns only this user's holdings, never another user's", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const fund = await makeFund();
+    await db.insert(fundHoldings).values({ userId: user.id, fundId: fund.id, unitsMilli: 12500, avgNavPaise: 15000 });
+    await db
+      .insert(fundHoldings)
+      .values({ userId: otherUser.id, fundId: fund.id, unitsMilli: 5000, avgNavPaise: 14000 });
+
+    const list = await listFundHoldingsForUser(user.id);
+
+    expect(list).toEqual([{ fundId: fund.id, unitsMilli: 12500, avgNavPaise: 15000 }]);
+  });
+
+  it("getFundHoldingForUser returns null when the user doesn't hold that fund", async () => {
+    const user = await makeUser();
+    const fund = await makeFund();
+
+    expect(await getFundHoldingForUser(user.id, fund.id)).toBeNull();
+  });
+
+  it("getFundHoldingForUser returns the exact (user, fund) row", async () => {
+    const user = await makeUser();
+    const fund = await makeFund();
+    await db.insert(fundHoldings).values({ userId: user.id, fundId: fund.id, unitsMilli: 7000, avgNavPaise: 16000 });
+
+    expect(await getFundHoldingForUser(user.id, fund.id)).toEqual({ unitsMilli: 7000, avgNavPaise: 16000 });
   });
 });

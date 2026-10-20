@@ -79,6 +79,6 @@ export const GET = withErrors(
     const { searchParams } = new URL(req.url);
     const timeframe = parseTimeframe(searchParams.get("tf"));
     const result = await getInstrumentCandles(symbol.toUpperCase(), timeframe);
-    return okWithDisclaimer(result.data, result.disclaimer);
+    return okWithDisclaimer(result.data, result.disclaimer, result.disclaimerLocalized);
   },
 );

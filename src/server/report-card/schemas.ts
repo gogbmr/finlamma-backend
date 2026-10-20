@@ -32,6 +32,13 @@ const EfficiencySubMetricsSchema = z.object({
 const ModuleBreakdownRowSchema = z.object({
   worldId: z.uuid(),
   worldTitle: z.string(),
+  worldTitleLocalized: LocalizedTextSchema.nullable().openapi({
+    description:
+      "Phase 4 Trade asks (additive): a {en, hi, hx} version of worldTitle. null only if the " +
+      "world itself couldn't be resolved (the same rare edge case worldTitle's own \"Unknown " +
+      "world\" fallback covers), and for any snapshot written before this field existed.",
+    example: null,
+  }),
   lessonsCompleted: z.number().int().nonnegative(),
   minutesSpent: z.number().int().nonnegative(),
   accuracyPct: z.number().int().min(0).max(100),

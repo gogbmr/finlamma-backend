@@ -134,12 +134,14 @@ describe("computeModuleBreakdown", () => {
       { worldId: "world_1", isCorrect: true },
       { worldId: "world_1", isCorrect: true },
     ];
-    const rows = computeModuleBreakdown(completions, answers, new Map([["world_1", "Money Wise"]]));
+    const titleLocalized = { en: "Money Wise", hi: "पैसे की समझ", hx: "Paisa Wise" };
+    const rows = computeModuleBreakdown(completions, answers, new Map([["world_1", titleLocalized]]));
 
     expect(rows).toEqual([
       {
         worldId: "world_1",
         worldTitle: "Money Wise",
+        worldTitleLocalized: titleLocalized,
         lessonsCompleted: 1,
         minutesSpent: 5,
         accuracyPct: 100,
@@ -159,6 +161,7 @@ describe("computeModuleBreakdown", () => {
     ];
     const rows = computeModuleBreakdown(completions, [], new Map());
     expect(rows[0]?.worldTitle).toBe("Unknown world");
+    expect(rows[0]?.worldTitleLocalized).toBeNull();
   });
 });
 

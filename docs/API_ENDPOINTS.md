@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.1.0) on 2026-10-14.
+> Generated from `openapi/openapi.json` (version 2.1.0) on 2026-10-20.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -66,6 +66,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/trade/instruments/{symbol}` — Get one instrument's detail with a live quote (TR-15/17/19/20)
 - `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
 - `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
+- `GET /api/v1/trade/orders` — My own order history (TR-13)
 - `POST /api/v1/trade/orders` — Place an order (TR-30)
 - `GET /api/v1/me/portfolio/summary` — Get my portfolio hero + equity sparkline (Profile Trades tab, PR-25)
 - `GET /api/v1/me/portfolio/stats` — Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)
@@ -2582,6 +2583,7 @@ The caller's full earn/spend ledger, newest first, cursor-paginated.
       "amountPaise": -50000,
       "sourceType": "reward_claim",
       "reason": "Reward claimed",
+      "reasonLocalized": null,
       "createdAt": "2026-01-01T00:00:00.000Z"
     }
   ],
@@ -2653,6 +2655,7 @@ The current IST week's efficiency snapshot (null until the first Monday after si
         {
           "worldId": "00000000-0000-0000-0000-000000000000",
           "worldTitle": "string",
+          "worldTitleLocalized": null,
           "lessonsCompleted": 0,
           "minutesSpent": 0,
           "accuracyPct": 0,
@@ -2757,7 +2760,12 @@ Every active instrument with its live quote merged in. Visible regardless of the
       }
     }
   ],
-  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+  "disclaimerLocalized": {
+    "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+    "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+    "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+  }
 }
 ```
 
@@ -2841,7 +2849,12 @@ Instrument fundamentals (sector, about, tip, market cap, P/E), a live quote, and
     "mcap": 1925000000000,
     "pe": 24.3
   },
-  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+  "disclaimerLocalized": {
+    "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+    "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+    "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+  }
 }
 ```
 
@@ -2912,7 +2925,12 @@ OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).
       "volume": 0
     }
   ],
-  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+  "disclaimerLocalized": {
+    "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+    "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+    "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+  }
 }
 ```
 
@@ -2967,7 +2985,7 @@ OHLCV candles for one of the app's fixed chart timeframes (1D/1W/1M/3M/1Y).
 
 **Get market status and this learner's trading-unlock progress (TR-01/34/57)**
 
-Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.
+Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated. `recommendedPollIntervalMs` (item 5, Phase 4 Trade asks) is server-controlled, so the app's refresh cadence can change without an app release.
 
 **Auth:** bearerAuth
 
@@ -2982,7 +3000,87 @@ Whether NSE is open right now, the Ops console's feed mode and global halt state
     "feedMode": "live",
     "globalHalt": true,
     "tradingUnlocked": true,
-    "worldsToGo": 2
+    "worldsToGo": 2,
+    "recommendedPollIntervalMs": 5000
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/orders`
+
+**My own order history (TR-13)**
+
+Every status included - open, filled, cancelled (with `cancelReason` distinguishing the learner's own cancel from the end-of-day auto-cancel). No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a rejected order attempt is a thrown error at request time, never a row here. `idempotencyKey` lets the app resolve an "outcome unknown" attempt (e.g. a request that timed out client-side) by looking up the exact key it sent - this is always scoped to the caller's own orders, so it can never surface another learner's order even with a guessed key. Cursor-paginated newest first, same (createdAt, id) stable-cursor shape as GET /me/portfolio/trades.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `status` | query | string (open, filled, cancelled) | no | Omit to return every status. |
+| `idempotencyKey` | query | string | no |  |
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's own orders
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "symbol": "RELIANCE",
+      "side": "buy",
+      "type": "market",
+      "qty": 0,
+      "limitPricePaise": 0,
+      "status": "open",
+      "fillPricePaise": 0,
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "filledAt": "2026-01-01T00:00:00.000Z",
+      "cancelledAt": "2026-01-01T00:00:00.000Z",
+      "cancelReason": null
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid status, limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
   }
 }
 ```
@@ -3063,6 +3161,7 @@ MARKET or LIMIT, BUY or SELL, whole shares only. Requires an Idempotency-Key hea
     "createdAt": "2026-01-01T00:00:00.000Z",
     "filledAt": "2026-01-01T00:00:00.000Z",
     "cancelledAt": "2026-01-01T00:00:00.000Z",
+    "cancelReason": null,
     "replayed": true
   }
 }
@@ -3344,7 +3443,7 @@ Realized P&L, win rate, average hold time and best/worst trade, all derived from
 
 **List active mutual funds with their latest NAV (Explore mode, TR-35/38)**
 
-Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet.
+Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet. `heldUnitsMilli`/`holdingValuePaise` (TR-38) are this learner's own position in each fund - null/null if they don't hold it.
 
 **Auth:** bearerAuth
 
@@ -3371,10 +3470,17 @@ Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI s
       "latestNav": {
         "navPaise": 1629607,
         "date": "2026-09-25"
-      }
+      },
+      "heldUnitsMilli": 12500,
+      "holdingValuePaise": 203700
     }
   ],
-  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice.",
+  "disclaimerLocalized": {
+    "en": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice.",
+    "hi": "NAV डेटा असली म्यूचुअल फंड बाज़ार की हलचल दिखाता है, सिर्फ़ वर्चुअल अभ्यास के लिए। यहाँ निवेश V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+    "hx": "NAV data real mutual fund market movement dikhaata hai, sirf virtual practice ke liye. Yahaan investments V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+  }
 }
 ```
 
@@ -3407,7 +3513,7 @@ Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI s
 
 **Get one fund's detail with its latest NAV (TR-39)**
 
-Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.
+Fund fundamentals and the latest ingested NAV, plus the trading disclaimer. `heldUnitsMilli`/`holdingValuePaise` (TR-39) are this learner's own position - null/null if they don't hold it.
 
 **Auth:** bearerAuth
 
@@ -3439,9 +3545,16 @@ Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.
     "latestNav": {
       "navPaise": 1629607,
       "date": "2026-09-25"
-    }
+    },
+    "heldUnitsMilli": 12500,
+    "holdingValuePaise": 203700
   },
-  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+  "disclaimer": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice.",
+  "disclaimerLocalized": {
+    "en": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice.",
+    "hi": "NAV डेटा असली म्यूचुअल फंड बाज़ार की हलचल दिखाता है, सिर्फ़ वर्चुअल अभ्यास के लिए। यहाँ निवेश V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+    "hx": "NAV data real mutual fund market movement dikhaata hai, sirf virtual practice ke liye. Yahaan investments V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+  }
 }
 ```
 

@@ -8,7 +8,8 @@
 // @/db/client's NODE_ENV=test guard).
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { fundNavs, funds, users } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { fundNavs, funds, users, vmoneyLedger } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
@@ -183,6 +184,16 @@ describe("placeFundOrderTx - fills, holdings and the buy/sell round trip", () =>
     expect(result.order.navPaise).toBe(10000);
     expect(result.order.navDate).toBe("2026-09-25");
     expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 50000);
+
+    const [ledgerRow] = await db
+      .select()
+      .from(vmoneyLedger)
+      .where(and(eq(vmoneyLedger.userId, user.id), eq(vmoneyLedger.sourceId, result.order.id)));
+    expect(ledgerRow!.reasonLocalized).toMatchObject({
+      en: "Bought fund units @ NAV ₹100.00 (2026-09-25)",
+    });
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hi");
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hx");
   });
 
   // D45 - the invariant the fund unit-math exists for: a BUY immediately

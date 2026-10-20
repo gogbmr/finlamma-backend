@@ -4,6 +4,7 @@ import { fundHoldings, fundOrders, sipPlans, users } from "@/db/schema";
 import { insertVmoneyLedgerEntryIfNew, sumVmoneyBalanceTx, type DbOrTx } from "@/server/economy/repo";
 import { getLatestNav } from "@/server/funds/repo";
 import { daysBetweenIstDates, istDateString } from "@/lib/ist-date";
+import { buildFundOrderReasonLocalized } from "./i18n";
 import type { BuyFundInput, SellFundInput } from "./schemas";
 
 // Founder's Checkpoint 8 requirement: "4 days, not 7 - funds price every
@@ -160,6 +161,7 @@ export async function placeFundOrderTx(
       sourceId: order!.id,
       ruleId: null,
       reason: `${input.side.toUpperCase()} fund units @ NAV ${nav.navPaise} (${nav.date})`,
+      reasonLocalized: buildFundOrderReasonLocalized(input.side, nav.navPaise, nav.date),
       amountPaise: input.side === "buy" ? -amountPaise : amountPaise,
       multiplierApplied: 1,
     });
@@ -255,6 +257,7 @@ export async function executeSipDueTx(
       sourceId: order!.id,
       ruleId: null,
       reason: `SIP BUY fund units @ NAV ${nav.navPaise} (${nav.date})`,
+      reasonLocalized: buildFundOrderReasonLocalized("buy", nav.navPaise, nav.date, true),
       amountPaise: -plan.amountPaise,
       multiplierApplied: 1,
     });

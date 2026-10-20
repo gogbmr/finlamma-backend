@@ -25,6 +25,10 @@ export async function getPublishedDocument(type: LegalDocumentType) {
 // has never been published yet (shouldn't happen once Phase 2a's seed has
 // run, but the caller shouldn't assume all three always exist).
 export async function listPublishedDocuments() {
+  // LEGAL_DOCUMENT_TYPES is a fixed 3-element compile-time constant
+  // (terms/privacy/risk_disclosure), not a runtime-length array - 3 stays
+  // under the pool's max: 4.
+  // promise-all-db-concurrency-ok: fixed 3-element constant, under max: 4
   const docs = await Promise.all(LEGAL_DOCUMENT_TYPES.map((type) => getPublishedDocument(type)));
   return docs.filter((d): d is NonNullable<typeof d> => d !== null);
 }

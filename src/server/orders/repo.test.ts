@@ -21,6 +21,7 @@ import {
   marketHolidays,
   orders,
   users,
+  vmoneyLedger,
   MARKET_CONTROLS_SINGLETON_ID,
 } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
@@ -33,8 +34,13 @@ vi.mock("@/server/trading/relay-price", () => ({
   getRelayPrice: (symbol: unknown, exchange: unknown) => mockGetRelayPrice(symbol, exchange),
 }));
 
-const { placeOrderTx, matchOpenLimitOrderTx, listOpenLimitOrdersWithInstrument, cancelAllOpenOrdersTx } =
-  await import("./repo");
+const {
+  placeOrderTx,
+  matchOpenLimitOrderTx,
+  listOpenLimitOrdersWithInstrument,
+  cancelAllOpenOrdersTx,
+  listOrdersForUserPage,
+} = await import("./repo");
 const { sumVmoneyBalance, creditVmoneyRow } = await import("@/server/economy/repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
@@ -380,6 +386,16 @@ describe("placeOrderTx - fills, holdings and the buy/sell round trip", () => {
 
     const holding = await getHoldingRow(user.id, instrument.id);
     expect(holding).toMatchObject({ qty: 3, avgPricePaise: 46290 });
+
+    const [ledgerRow] = await db
+      .select()
+      .from(vmoneyLedger)
+      .where(and(eq(vmoneyLedger.userId, user.id), eq(vmoneyLedger.sourceId, result.order.id)));
+    expect(ledgerRow!.reasonLocalized).toMatchObject({
+      en: `Bought 3 ${instrument.symbol} @ ₹462.90`,
+    });
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hi");
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hx");
   });
 
   it("a second BUY at a different price blends into a correct weighted-average cost", async () => {
@@ -781,7 +797,133 @@ describe("cancelAllOpenOrdersTx", () => {
     const [queuedRow] = await db.select().from(orders).where(eq(orders.id, queued.order.id));
     expect(queuedRow!.status).toBe("cancelled");
     expect(queuedRow!.cancelledAt?.getTime()).toBe(cancelledAt.getTime());
+    expect(queuedRow!.cancelReason).toBe("eod_expired");
     const [filledRow] = await db.select().from(orders).where(eq(orders.id, filled.order.id));
     expect(filledRow!.status).toBe("filled");
+  });
+});
+
+describe("listOrdersForUserPage", () => {
+  it("only ever returns the caller's own orders, never another user's", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const instrument = await makeInstrument();
+    await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+    await placeOrderTx(
+      otherUser.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+
+    const { data } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null });
+
+    expect(data).toHaveLength(1);
+    expect(data.every((o) => o.userId === user.id)).toBe(true);
+  });
+
+  it("a guessed Idempotency-Key never surfaces another learner's order", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const instrument = await makeInstrument();
+    const otherKey = freshIdempotencyKey();
+    await placeOrderTx(
+      otherUser.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      otherKey,
+      WEEKEND_NOW,
+    );
+
+    const { data } = await listOrdersForUserPage(user.id, {
+      limit: 20,
+      cursor: null,
+      idempotencyKey: otherKey,
+    });
+
+    expect(data).toHaveLength(0);
+  });
+
+  it("filters by status", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const openKey = freshIdempotencyKey();
+    await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      openKey,
+      WEEKEND_NOW,
+    );
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 5000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    const { data: openOnly } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null, status: "open" });
+    const { data: filledOnly } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null, status: "filled" });
+
+    expect(openOnly).toHaveLength(1);
+    expect(openOnly[0]!.status).toBe("open");
+    expect(filledOnly).toHaveLength(1);
+    expect(filledOnly[0]!.status).toBe("filled");
+  });
+
+  it("finds a specific order by its own Idempotency-Key, for resolving an outcome-unknown attempt", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const key = freshIdempotencyKey();
+    const placed = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      key,
+      WEEKEND_NOW,
+    );
+    if (placed.status !== "queued") throw new Error("expected queued");
+
+    const { data } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null, idempotencyKey: key });
+
+    expect(data).toHaveLength(1);
+    expect(data[0]!.id).toBe(placed.order.id);
+  });
+
+  it("paginates newest-first with a stable cursor", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    for (let i = 0; i < 3; i++) {
+      await placeOrderTx(
+        user.id,
+        instrument,
+        { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+        freshIdempotencyKey(),
+        WEEKEND_NOW,
+      );
+    }
+
+    const firstPage = await listOrdersForUserPage(user.id, { limit: 2, cursor: null });
+    expect(firstPage.data).toHaveLength(2);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const { decodeCursor } = await import("@/lib/http");
+    const cursor = decodeCursor<{ createdAt: string; id: string }>(firstPage.nextCursor);
+    const secondPage = await listOrdersForUserPage(user.id, { limit: 2, cursor });
+
+    expect(secondPage.data).toHaveLength(1);
+    expect(secondPage.nextCursor).toBeNull();
+    const seenIds = new Set([...firstPage.data, ...secondPage.data].map((o) => o.id));
+    expect(seenIds.size).toBe(3);
   });
 });

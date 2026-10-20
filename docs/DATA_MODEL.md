@@ -182,6 +182,10 @@ skill for the full idempotency/reversal design)
   original whole-VM `amount` column existed briefly (Migration A, additive) so `main`'s pre-Phase-4
   code could keep writing it during the rollout, then was dropped once that code was confirmed no
   longer deployed (Migration B, CLAUDE.md rule 8) — `amount_paise` has been the only column since.
+  `reason_localized` (jsonb, nullable, Phase 4 Trade asks) — a `{en, hi, hx}` version of `reason`,
+  built only for `trade`/`fund_trade` entries today (`src/server/orders/i18n.ts`,
+  `src/server/fund-orders/i18n.ts`); null for every other `source_type` and for rows written
+  before this column existed — the app falls back to the plain `reason` string whenever null.
   A reversal is a new row with a negative amount and its own distinct `source_type`/`source_id`
   (e.g. `source_type: "reversal"`, `source_id: <original row's id>`) — never an UPDATE/DELETE of
   the original, and never reusing the original's `(source_type, source_id)`, which would collide
@@ -277,7 +281,9 @@ skill for the full idempotency/reversal design)
   feed-mode/halt switch. **No volatility control.** When the market is closed, every screen shows
   the last real close; nothing ever simulates price movement near a real trade.
 - `orders` (user_id, instrument_id, side, type, qty, limit_price_paise, status, fill_price_paise,
-  realized_pnl_paise — SELL fills only, D43, idempotency_key, filled_at, cancelled_at). No
+  realized_pnl_paise — SELL fills only, D43, idempotency_key, filled_at, cancelled_at,
+  cancel_reason — nullable, `user_requested`\|`eod_expired`, Phase 4 Trade asks: added to
+  distinguish a learner's own cancel from the EOD auto-cancel job without reversing D41). No
   `reject_reason`/"rejected" status by design (D41) — a rejected order is a thrown error with zero
   DB write, never a persisted row.
 - `holdings` (user_id, instrument_id, qty, avg_price_paise, position_opened_at — reset on a 0→positive

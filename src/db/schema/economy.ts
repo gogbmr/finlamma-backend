@@ -4,6 +4,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -11,7 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { idAndTimestamps } from "./_helpers";
+import { idAndTimestamps, type LocalizedText } from "./_helpers";
 import { users } from "./users";
 
 // The economy's activity taxonomy (docs/ECONOMY.md) - deliberately its own
@@ -138,6 +139,16 @@ export const vmoneyLedger = pgTable(
     ruleId: uuid("rule_id").references(() => rewardRules.id, { onDelete: "restrict" }),
     multiplierApplied: doublePrecision("multiplier_applied"),
     reason: text("reason").notNull(),
+    // Phase 4 Trade asks (2026-10-20), additive: {en, hi, hx} for the
+    // handful of sourceTypes that bother to build one ("trade", "fund_trade"
+    // - see src/server/orders/i18n.ts / src/server/fund-orders/i18n.ts).
+    // Nullable and NOT backfilled - every other sourceType (lesson
+    // completions, badges, rewards, cheers, ...) and every row written
+    // before this column existed keeps reason as its only text; the app
+    // falls back to the plain `reason` string whenever this is null. This
+    // is deliberately narrower than "localize every ledger reason" (a much
+    // bigger, cross-domain task) - scoped to what Phase 4 Trade asked for.
+    reasonLocalized: jsonb("reason_localized").$type<LocalizedText>(),
   },
   (t) => [
     uniqueIndex("vmoney_ledger_user_source_idx").on(t.userId, t.sourceType, t.sourceId),

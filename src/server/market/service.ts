@@ -8,7 +8,7 @@ import {
 import { getTradingUnlockProgress } from "@/server/worlds/service";
 import { getCachedCandles, getCachedQuote } from "./cache";
 import { isMarketOpen } from "./hours";
-import { TRADING_DISCLAIMER } from "./schemas";
+import { TRADING_DISCLAIMER, TRADING_DISCLAIMER_LOCALIZED } from "./schemas";
 import type { MarketTimeframe, Quote } from "./types";
 
 function shapeQuote(quote: Quote | null) {
@@ -32,6 +32,9 @@ function shapeQuote(quote: Quote | null) {
 // "vendor has no data right now".
 export async function listPublicInstruments() {
   const instruments = await listActiveInstruments();
+  // getCachedQuote is Redis-backed (falling back to the market-data
+  // vendor's HTTP API on a miss), never Postgres directly.
+  // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
   const quotes = await Promise.allSettled(
     instruments.map((i) => getCachedQuote(i.symbol, i.exchange)),
   );
@@ -51,6 +54,7 @@ export async function listPublicInstruments() {
       };
     }),
     disclaimer: TRADING_DISCLAIMER,
+    disclaimerLocalized: TRADING_DISCLAIMER_LOCALIZED,
   };
 }
 
@@ -81,7 +85,22 @@ export async function getPublicInstrumentBySymbol(symbol: string) {
       quote: shapeQuote(quote),
     },
     disclaimer: TRADING_DISCLAIMER,
+    disclaimerLocalized: TRADING_DISCLAIMER_LOCALIZED,
   };
+}
+
+// Phase 4 Trade asks (2026-10-20, item 5) - a server-controlled poll
+// interval, so the app's refresh cadence can change (e.g. a slower poll
+// during a feed pause) without an app release. Pure and deterministic:
+// paused feed or a closed market have nothing moving, so there's no
+// reason to poll fast; delayed_15m is already lagged by design, so
+// polling it at live speed buys nothing.
+export function computeRecommendedPollIntervalMs(
+  marketOpen: boolean,
+  feedMode: "live" | "delayed_15m" | "paused",
+): number {
+  if (feedMode === "paused" || !marketOpen) return 60_000;
+  return feedMode === "live" ? 5_000 : 15_000;
 }
 
 // TR-01/34/57 - market-status pill, exchange-halted banner, order-pad
@@ -96,13 +115,15 @@ export async function getMarketStatus(userId: string) {
     getTradingUnlockProgress(userId),
   ]);
   const holidayDates: Set<string> = new Set(holidays.map((h) => h.date));
+  const marketOpen = isMarketOpen(new Date(), holidayDates);
 
   return {
-    marketOpen: isMarketOpen(new Date(), holidayDates),
+    marketOpen,
     feedMode: controls.feedMode,
     globalHalt: controls.globalHalt,
     tradingUnlocked: progress.unlocked,
     worldsToGo: progress.worldsToGo,
+    recommendedPollIntervalMs: computeRecommendedPollIntervalMs(marketOpen, controls.feedMode),
   };
 }
 
@@ -124,5 +145,6 @@ export async function getInstrumentCandles(symbol: string, timeframe: MarketTime
       volume: c.volume,
     })),
     disclaimer: TRADING_DISCLAIMER,
+    disclaimerLocalized: TRADING_DISCLAIMER_LOCALIZED,
   };
 }

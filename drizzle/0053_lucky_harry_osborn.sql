@@ -1,0 +1,1 @@
+ALTER TABLE "vmoney_ledger" ADD COLUMN "reason_localized" jsonb;

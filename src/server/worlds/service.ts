@@ -146,6 +146,8 @@ function validateWorldForPublish(world: WorldRow): void {
 
 export async function getWorldEditorData() {
   const rows = await listAllWorlds();
+  // The only async work per row is getSignedDownloadUrl (S3), never Postgres.
+  // promise-all-db-concurrency-ok: S3-backed, not a Postgres query
   return Promise.all(
     rows.map(async (row) => ({
       ...row,

@@ -43,6 +43,13 @@ export type EfficiencySubMetrics = {
 export type ModuleBreakdownRow = {
   worldId: string;
   worldTitle: string;
+  // Phase 4 Trade asks (2026-10-20), additive: {en, hi, hx} version of
+  // worldTitle, null only if the world itself couldn't be resolved (same
+  // "Unknown world" edge case worldTitle's own fallback covers). Stored in
+  // this same jsonb column going forward - no migration needed since jsonb
+  // has no fixed shape; a snapshot written before this field existed
+  // simply won't have it, and the app falls back to worldTitle.
+  worldTitleLocalized: LocalizedText | null;
   lessonsCompleted: number;
   minutesSpent: number;
   accuracyPct: number;

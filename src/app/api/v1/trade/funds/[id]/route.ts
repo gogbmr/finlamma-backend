@@ -10,7 +10,10 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/trade/funds/{id}",
   summary: "Get one fund's detail with its latest NAV (TR-39)",
-  description: "Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.",
+  description:
+    "Fund fundamentals and the latest ingested NAV, plus the trading disclaimer. " +
+    "`heldUnitsMilli`/`holdingValuePaise` (TR-39) are this learner's own position - null/null " +
+    "if they don't hold it.",
   tags: ["Trade"],
   security: [{ bearerAuth: [] }],
   request: { params: z.object({ id: z.uuid() }) },
@@ -56,7 +59,7 @@ export const GET = withErrors(
     const user = await requireUser(req);
     await requireFullAccess(user);
     const { id } = await params;
-    const result = await getPublicFund(id);
-    return okWithDisclaimer(result.data, result.disclaimer);
+    const result = await getPublicFund(id, user.id);
+    return okWithDisclaimer(result.data, result.disclaimer, result.disclaimerLocalized);
   },
 );

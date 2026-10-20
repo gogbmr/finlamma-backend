@@ -13,7 +13,8 @@ registry.registerPath({
     "Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, " +
     "tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real " +
     "scheme code is never included in this or any other response. `latestNav` is null if this " +
-    "fund has never been ingested yet.",
+    "fund has never been ingested yet. `heldUnitsMilli`/`holdingValuePaise` (TR-38) are this " +
+    "learner's own position in each fund - null/null if they don't hold it.",
   tags: ["Trade"],
   security: [{ bearerAuth: [] }],
   responses: {
@@ -47,6 +48,6 @@ registry.registerPath({
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  const result = await listPublicFunds();
-  return okWithDisclaimer(result.data, result.disclaimer);
+  const result = await listPublicFunds(user.id);
+  return okWithDisclaimer(result.data, result.disclaimer, result.disclaimerLocalized);
 });

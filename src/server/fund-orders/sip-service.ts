@@ -1,4 +1,5 @@
 import { logActivity } from "@/lib/activity-log";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { istDateString } from "@/lib/ist-date";
@@ -99,9 +100,16 @@ export async function createSip(user: { id: string }, input: CreateSipPlanInput,
   return shapeSipPlan(plan, now);
 }
 
+// runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,
+// docs/ARCHITECTURE.md D13/D72): shapeSipPlan does a real Postgres query
+// (listRecentFundOrdersForSipPlan) per plan, and a learner can have one
+// active SIP per fund - up to 9 today - which exceeds the pool's max: 4.
+// Found by the Phase 4 Trade audit's extended concurrency checker (it
+// previously only inspected literal array Promise.all calls, not .map()
+// over a runtime-length array - see scripts/check-promise-all-db-concurrency.ts).
 export async function listMySips(userId: string, now: Date = new Date()) {
   const plans = await listSipPlansForUser(userId);
-  return Promise.all(plans.map((p) => shapeSipPlan(p, now)));
+  return runWithConcurrencyLimit(plans.map((p) => () => shapeSipPlan(p, now)), DB_CONCURRENCY_LIMIT);
 }
 
 export async function updateSipPlanStatus(

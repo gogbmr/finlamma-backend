@@ -47,6 +47,14 @@ const OrderPublicSchema = z.object({
   createdAt: z.string().datetime(),
   filledAt: z.string().datetime().nullable(),
   cancelledAt: z.string().datetime().nullable(),
+  cancelReason: z.enum(["user_requested", "eod_expired"]).nullable().openapi({
+    description:
+      "Why a cancelled order was cancelled - the learner's own cancel, or the end-of-day " +
+      "auto-cancel job. null for any order that isn't cancelled, and for orders cancelled " +
+      "before this field existed. No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a " +
+      "rejection is a thrown error at request time, never a row in this list.",
+    example: null,
+  }),
 });
 
 export const PlaceOrderResponseSchema = registry.register(
@@ -66,3 +74,22 @@ export const OrderListResponseSchema = registry.register(
   "OrderListResponse",
   z.object({ data: z.array(OrderPublicSchema), nextCursor: z.string().nullable() }),
 );
+
+// TR-13: filter query params for GET /trade/orders.
+export const ListOrdersStatusEnum = z.enum(["open", "filled", "cancelled"]);
+export type ListOrdersStatus = z.infer<typeof ListOrdersStatusEnum>;
+
+export const ListOrdersQuerySchema = z.object({
+  status: ListOrdersStatusEnum.optional().openapi({
+    description: "Omit to return every status.",
+    example: "open",
+  }),
+  // Lets the app resolve an "outcome unknown" order attempt (e.g. the
+  // request timed out client-side after actually reaching the server) by
+  // looking up the exact Idempotency-Key it sent - never another
+  // learner's, since this is always combined with the caller's own userId
+  // (src/server/orders/repo.ts's listOrdersForUserPage).
+  idempotencyKey: z.string().min(1).optional(),
+  limit: z.string().optional().openapi({ example: "20" }),
+  cursor: z.string().optional(),
+});

@@ -1,4 +1,5 @@
 import { VideoContentSchema } from "@/server/lessons/schemas";
+import type { LocalizedText } from "@/db/schema/_helpers";
 import type { EfficiencySubMetrics, ModuleBreakdownRow, TopicMasteryRow } from "@/db/schema/report_card";
 import { letterGradeForAccuracy } from "@/server/shared/grades";
 
@@ -93,7 +94,7 @@ type LessonCompletion = { worldId: string; lessonId: string; startedAt: Date; co
 export function computeModuleBreakdown(
   completions: LessonCompletion[],
   answersWithWorld: { worldId: string; isCorrect: boolean | null }[],
-  worldTitles: Map<string, string>,
+  worldTitles: Map<string, LocalizedText | null>,
 ): ModuleBreakdownRow[] {
   const byWorld = new Map<string, { lessonsCompleted: number; seconds: number }>();
   for (const c of completions) {
@@ -115,9 +116,11 @@ export function computeModuleBreakdown(
   return [...byWorld.entries()].map(([worldId, { lessonsCompleted, seconds }]) => {
     const acc = accuracyByWorld.get(worldId);
     const accuracyPct = acc ? pct(acc.correct, acc.total) : 0;
+    const titleLocalized = worldTitles.get(worldId) ?? null;
     return {
       worldId,
-      worldTitle: worldTitles.get(worldId) ?? "Unknown world",
+      worldTitle: titleLocalized?.en ?? "Unknown world",
+      worldTitleLocalized: titleLocalized,
       lessonsCompleted,
       minutesSpent: Math.round(seconds / 60),
       accuracyPct,

@@ -6,6 +6,7 @@ import {
   vmoneyLedger,
   xpEvents,
 } from "@/db/schema";
+import type { LocalizedText } from "@/db/schema/_helpers";
 import { encodeCursor } from "@/lib/http";
 
 export type RewardActivityKind = (typeof rewardActivityKindEnum.enumValues)[number];
@@ -70,7 +71,15 @@ export async function insertXpEventIfNew(txDb: DbOrTx, input: CreditInput & { am
 // rather than being dropped yet.
 export async function insertVmoneyLedgerEntryIfNew(
   txDb: DbOrTx,
-  input: CreditInput & { amountPaise: number; multiplierApplied: number },
+  input: CreditInput & {
+    amountPaise: number;
+    multiplierApplied: number;
+    // Phase 4 Trade asks, additive - only orders/fund-orders build this
+    // today (src/server/orders/i18n.ts, src/server/fund-orders/i18n.ts).
+    // Every other caller omits it, so it stays null for them - the app
+    // falls back to the plain `reason` string whenever this is null.
+    reasonLocalized?: LocalizedText | null;
+  },
 ) {
   const [row] = await txDb
     .insert(vmoneyLedger)
@@ -241,6 +250,7 @@ export async function listVmoneyLedgerForUser(
       amountPaise: vmoneyLedger.amountPaise,
       sourceType: vmoneyLedger.sourceType,
       reason: vmoneyLedger.reason,
+      reasonLocalized: vmoneyLedger.reasonLocalized,
       createdAt: vmoneyLedger.createdAt,
     })
     .from(vmoneyLedger)

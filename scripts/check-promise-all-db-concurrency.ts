@@ -288,7 +288,31 @@ export function findConcurrencyFindings(maxAllowed: number): Finding[] {
       if (closeParenIndex === -1) continue;
       const inner = text.slice(openParenIndex + 1, closeParenIndex);
       const arrayStart = inner.indexOf("[");
-      if (arrayStart === -1) continue; // Promise.all(someVariable) - not a literal we can inspect
+      if (arrayStart === -1) {
+        // Not a literal array - but `Promise.all(someRuntimeArray.map(fn))`
+        // (or .allSettled) is exactly as unbounded a fan-out as the inline
+        // `.map(async ...)` case elementWeight already catches below, and
+        // was the actual gap that let src/server/funds/service.ts's
+        // listPublicFunds (9 concurrent getLatestNav() calls, one per
+        // seeded fund) through undetected - found during the Phase 4 Trade
+        // audit. `someRuntimeArray` can be any length at runtime, so this
+        // is always flagged regardless of how many elements it happens to
+        // have today.
+        if (/\.map\s*\(/.test(inner)) {
+          const line = lineNumberAt(text, m.index);
+          if (isSuppressed(text, line)) continue;
+          findings.push({
+            file: path.relative(process.cwd(), file),
+            line,
+            snippet: text
+              .slice(m.index, Math.min(closeParenIndex + 1, m.index + 160))
+              .replace(/\s+/g, " "),
+            estimatedConcurrency: Infinity,
+            maxAllowed,
+          });
+        }
+        continue; // Promise.all(someOtherVariable) - not a literal, not a .map() - can't tell
+      }
       const arrayEnd = findMatchingBracket(inner, arrayStart);
       if (arrayEnd === -1) continue;
 

@@ -49,6 +49,8 @@ async function toPublicMentor(row: MentorRow) {
 
 export async function getPublicMentors() {
   const rows = await listPublishedMentors();
+  // toPublicMentor only calls getSignedDownloadUrl (S3), never Postgres.
+  // promise-all-db-concurrency-ok: S3-backed, not a Postgres query
   return Promise.all(rows.map(toPublicMentor));
 }
 

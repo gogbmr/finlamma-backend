@@ -99,6 +99,9 @@ export async function getPortfolioSummary(userId: string) {
     DB_CONCURRENCY_LIMIT,
   );
 
+  // getCachedQuote is Redis-backed (falling back to the market-data
+  // vendor's HTTP API on a miss), never Postgres directly.
+  // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
   const quotes = await Promise.allSettled(
     openPositions.map((p) => getCachedQuote(p.symbol, p.exchange)),
   );
@@ -263,6 +266,9 @@ export async function getPortfolioTrades(
       : Promise.resolve({ data: [], nextCursor: null }),
   ]);
 
+  // getCachedQuote is Redis-backed (falling back to the market-data
+  // vendor's HTTP API on a miss), never Postgres directly.
+  // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
   const quotes = await Promise.allSettled(
     openPositions.map((p) => getCachedQuote(p.symbol, p.exchange)),
   );

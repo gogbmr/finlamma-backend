@@ -15,6 +15,7 @@ vi.mock("@/server/worlds/service", () => ({
 }));
 
 const mockPlaceOrderTx = vi.fn();
+const mockListOrdersForUserPage = vi.fn();
 vi.mock("./repo", () => ({
   placeOrderTx: (
     userId: unknown,
@@ -22,6 +23,7 @@ vi.mock("./repo", () => ({
     input: unknown,
     idempotencyKey: unknown,
   ) => mockPlaceOrderTx(userId, instrument, input, idempotencyKey),
+  listOrdersForUserPage: (userId: unknown, opts: unknown) => mockListOrdersForUserPage(userId, opts),
 }));
 
 const mockLogActivity = vi.fn();
@@ -35,7 +37,7 @@ vi.mock("@/lib/redis", () => ({
   TRADE_ORDER_RATE_LIMIT: { requests: 20, window: "60 s", prefix: "ratelimit:trade-order" },
 }));
 
-const { placeOrder } = await import("./service");
+const { placeOrder, listMyOrders } = await import("./service");
 
 const USER = { id: "user_1" };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -180,5 +182,44 @@ describe("placeOrder - success paths", () => {
     await placeOrder(USER, INPUT, "my-key", META);
 
     expect(mockPlaceOrderTx).toHaveBeenCalledWith(USER.id, INSTRUMENT, INPUT, "my-key");
+  });
+});
+
+describe("listMyOrders", () => {
+  it("decodes the cursor and forwards status/idempotencyKey/limit to the repo, scoped to the caller's own userId", async () => {
+    mockListOrdersForUserPage.mockResolvedValueOnce({
+      data: [
+        {
+          id: "order_1",
+          symbol: "RELIANCE",
+          side: "buy",
+          type: "market",
+          qty: 1,
+          limitPricePaise: null,
+          status: "filled",
+          fillPricePaise: 284510,
+          createdAt: new Date("2026-09-21T05:00:00.000Z"),
+          filledAt: new Date("2026-09-21T05:00:00.000Z"),
+          cancelledAt: null,
+          cancelReason: null,
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const result = await listMyOrders(USER.id, {
+      status: "filled",
+      idempotencyKey: "key1",
+      limit: 20,
+      cursor: null,
+    });
+
+    expect(mockListOrdersForUserPage).toHaveBeenCalledWith(USER.id, {
+      limit: 20,
+      cursor: null,
+      status: "filled",
+      idempotencyKey: "key1",
+    });
+    expect(result.data[0]).toMatchObject({ id: "order_1", createdAt: "2026-09-21T05:00:00.000Z" });
   });
 });
