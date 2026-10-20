@@ -5,8 +5,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
 
 const mockGetInstrumentBySymbol = vi.fn();
+const mockGetInstrumentById = vi.fn();
 vi.mock("@/server/trading/repo", () => ({
   getInstrumentBySymbol: (symbol: unknown) => mockGetInstrumentBySymbol(symbol),
+  getInstrumentById: (id: unknown) => mockGetInstrumentById(id),
 }));
 
 const mockIsTradingUnlocked = vi.fn();
@@ -15,6 +17,8 @@ vi.mock("@/server/worlds/service", () => ({
 }));
 
 const mockPlaceOrderTx = vi.fn();
+const mockListOrdersForUserPage = vi.fn();
+const mockCancelOrderTx = vi.fn();
 vi.mock("./repo", () => ({
   placeOrderTx: (
     userId: unknown,
@@ -22,6 +26,8 @@ vi.mock("./repo", () => ({
     input: unknown,
     idempotencyKey: unknown,
   ) => mockPlaceOrderTx(userId, instrument, input, idempotencyKey),
+  listOrdersForUserPage: (userId: unknown, opts: unknown) => mockListOrdersForUserPage(userId, opts),
+  cancelOrderTx: (userId: unknown, orderId: unknown) => mockCancelOrderTx(userId, orderId),
 }));
 
 const mockLogActivity = vi.fn();
@@ -35,7 +41,7 @@ vi.mock("@/lib/redis", () => ({
   TRADE_ORDER_RATE_LIMIT: { requests: 20, window: "60 s", prefix: "ratelimit:trade-order" },
 }));
 
-const { placeOrder } = await import("./service");
+const { placeOrder, listMyOrders, cancelMyOrder } = await import("./service");
 
 const USER = { id: "user_1" };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -180,5 +186,106 @@ describe("placeOrder - success paths", () => {
     await placeOrder(USER, INPUT, "my-key", META);
 
     expect(mockPlaceOrderTx).toHaveBeenCalledWith(USER.id, INSTRUMENT, INPUT, "my-key");
+  });
+});
+
+describe("listMyOrders", () => {
+  it("decodes the cursor and forwards status/idempotencyKey/limit to the repo, scoped to the caller's own userId", async () => {
+    mockListOrdersForUserPage.mockResolvedValueOnce({
+      data: [
+        {
+          id: "order_1",
+          symbol: "RELIANCE",
+          side: "buy",
+          type: "market",
+          qty: 1,
+          limitPricePaise: null,
+          status: "filled",
+          fillPricePaise: 284510,
+          createdAt: new Date("2026-09-21T05:00:00.000Z"),
+          filledAt: new Date("2026-09-21T05:00:00.000Z"),
+          cancelledAt: null,
+          cancelReason: null,
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const result = await listMyOrders(USER.id, {
+      status: "filled",
+      idempotencyKey: "key1",
+      limit: 20,
+      cursor: null,
+    });
+
+    expect(mockListOrdersForUserPage).toHaveBeenCalledWith(USER.id, {
+      limit: 20,
+      cursor: null,
+      status: "filled",
+      idempotencyKey: "key1",
+    });
+    expect(result.data[0]).toMatchObject({ id: "order_1", createdAt: "2026-09-21T05:00:00.000Z" });
+  });
+});
+
+function cancelOrderRow(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "order_1",
+    instrumentId: "inst_1",
+    side: "buy",
+    type: "limit",
+    qty: 1,
+    limitPricePaise: 5000,
+    status: "cancelled",
+    fillPricePaise: null,
+    createdAt: new Date("2026-09-21T05:00:00.000Z"),
+    filledAt: null,
+    cancelledAt: new Date("2026-09-21T06:00:00.000Z"),
+    cancelReason: "user_requested",
+    ...overrides,
+  };
+}
+
+describe("cancelMyOrder", () => {
+  it("not_found maps to NOT_FOUND regardless of why (missing, or another learner's order)", async () => {
+    mockCancelOrderTx.mockResolvedValueOnce({ status: "not_found" });
+
+    await expect(cancelMyOrder(USER.id, "order_1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("not_cancellable (already filled/expired) maps to ORDER_NOT_CANCELLABLE with the current status", async () => {
+    mockCancelOrderTx.mockResolvedValueOnce({
+      status: "not_cancellable",
+      order: cancelOrderRow({ status: "filled", fillPricePaise: 5000, filledAt: new Date(), cancelledAt: null, cancelReason: null }),
+    });
+
+    await expect(cancelMyOrder(USER.id, "order_1", META)).rejects.toMatchObject({
+      code: "ORDER_NOT_CANCELLABLE",
+      details: { status: "filled" },
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("a fresh cancel logs activity and returns the cancelled order", async () => {
+    mockCancelOrderTx.mockResolvedValueOnce({ status: "cancelled", order: cancelOrderRow() });
+    mockGetInstrumentById.mockResolvedValueOnce(INSTRUMENT);
+
+    const result = await cancelMyOrder(USER.id, "order_1", META);
+
+    expect(result).toMatchObject({ id: "order_1", symbol: "RELIANCE", status: "cancelled", cancelReason: "user_requested" });
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "order.cancelled", actorId: USER.id, targetId: "order_1" }),
+    );
+  });
+
+  it("an already-cancelled order is an idempotent success - no second activity log entry", async () => {
+    mockCancelOrderTx.mockResolvedValueOnce({ status: "already_cancelled", order: cancelOrderRow() });
+    mockGetInstrumentById.mockResolvedValueOnce(INSTRUMENT);
+
+    const result = await cancelMyOrder(USER.id, "order_1", META);
+
+    expect(result).toMatchObject({ id: "order_1", status: "cancelled" });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });

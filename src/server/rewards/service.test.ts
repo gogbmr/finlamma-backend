@@ -41,7 +41,7 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
-import { claimReward, publishReward, refundRewardClaim } from "./service";
+import { claimReward, listRecentClaimsForAdmin, publishReward, refundRewardClaim } from "./service";
 
 const ACTOR = { id: "staff_1" };
 const USER = { id: "user_1" };
@@ -178,5 +178,38 @@ describe("refundRewardClaim", () => {
 
     expect(result).toEqual({ refunded: false });
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+});
+
+describe("listRecentClaimsForAdmin", () => {
+  it("merges each claim's reward name, looking up each distinct reward id only once", async () => {
+    mockListRecentRewardClaims.mockResolvedValueOnce([
+      { id: "claim_1", userId: "u1", rewardId: "reward_1", pricePaid: 500, createdAt: new Date("2026-09-01") },
+      { id: "claim_2", userId: "u2", rewardId: "reward_1", pricePaid: 500, createdAt: new Date("2026-09-02") },
+      { id: "claim_3", userId: "u3", rewardId: "reward_2", pricePaid: 300, createdAt: new Date("2026-09-03") },
+    ]);
+    mockGetRewardById.mockImplementation((id: string) =>
+      Promise.resolve(id === "reward_1" ? { id: "reward_1", name: { en: "Sticker Pack" } } : { id: "reward_2", name: { en: "Theme" } }),
+    );
+
+    const result = await listRecentClaimsForAdmin();
+
+    expect(mockGetRewardById).toHaveBeenCalledTimes(2); // not once per claim
+    expect(result).toEqual([
+      expect.objectContaining({ id: "claim_1", rewardName: "Sticker Pack" }),
+      expect.objectContaining({ id: "claim_2", rewardName: "Sticker Pack" }),
+      expect.objectContaining({ id: "claim_3", rewardName: "Theme" }),
+    ]);
+  });
+
+  it("falls back to a placeholder name for a reward that can no longer be found", async () => {
+    mockListRecentRewardClaims.mockResolvedValueOnce([
+      { id: "claim_1", userId: "u1", rewardId: "reward_gone", pricePaid: 500, createdAt: new Date() },
+    ]);
+    mockGetRewardById.mockResolvedValueOnce(null);
+
+    const result = await listRecentClaimsForAdmin();
+
+    expect(result[0]).toMatchObject({ rewardName: "(unknown reward)" });
   });
 });

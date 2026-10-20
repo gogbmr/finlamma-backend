@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -2660,6 +2660,30 @@
                         "worldTitle": {
                           "type": "string"
                         },
+                        "worldTitleLocalized": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ],
+                          "description": "Phase 4 Trade asks (additive): a {en, hi, hx} version of worldTitle. null only if the world itself couldn't be resolved (the same rare edge case worldTitle's own \"Unknown world\" fallback covers), and for any snapshot written before this field existed.",
+                          "example": null
+                        },
                         "lessonsCompleted": {
                           "type": "integer",
                           "minimum": 0
@@ -2686,6 +2710,7 @@
                       "required": [
                         "worldId",
                         "worldTitle",
+                        "worldTitleLocalized",
                         "lessonsCompleted",
                         "minutesSpent",
                         "accuracyPct",
@@ -2963,6 +2988,19 @@
                 ],
                 "format": "date-time"
               },
+              "cancelReason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "user_requested",
+                  "eod_expired",
+                  null
+                ],
+                "description": "Why a cancelled order was cancelled - the learner's own cancel, or the end-of-day auto-cancel job. null for any order that isn't cancelled, and for orders cancelled before this field existed. No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a rejection is a thrown error at request time, never a row in this list.",
+                "example": null
+              },
               "replayed": {
                 "type": "boolean"
               }
@@ -2979,6 +3017,7 @@
               "createdAt",
               "filledAt",
               "cancelledAt",
+              "cancelReason",
               "replayed"
             ]
           }
@@ -3057,6 +3096,19 @@
                     "null"
                   ],
                   "format": "date-time"
+                },
+                "cancelReason": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "enum": [
+                    "user_requested",
+                    "eod_expired",
+                    null
+                  ],
+                  "description": "Why a cancelled order was cancelled - the learner's own cancel, or the end-of-day auto-cancel job. null for any order that isn't cancelled, and for orders cancelled before this field existed. No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a rejection is a thrown error at request time, never a row in this list.",
+                  "example": null
                 }
               },
               "required": [
@@ -3070,7 +3122,8 @@
                 "fillPricePaise",
                 "createdAt",
                 "filledAt",
-                "cancelledAt"
+                "cancelledAt",
+                "cancelReason"
               ]
             }
           },
@@ -3084,6 +3137,109 @@
         "required": [
           "data",
           "nextCursor"
+        ]
+      },
+      "CancelOrderResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "symbol": {
+                "type": "string",
+                "example": "RELIANCE"
+              },
+              "side": {
+                "type": "string",
+                "enum": [
+                  "buy",
+                  "sell"
+                ]
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "market",
+                  "limit"
+                ]
+              },
+              "qty": {
+                "type": "integer"
+              },
+              "limitPricePaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "filled",
+                  "cancelled"
+                ]
+              },
+              "fillPricePaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "filledAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "cancelledAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "cancelReason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "user_requested",
+                  "eod_expired",
+                  null
+                ],
+                "description": "Why a cancelled order was cancelled - the learner's own cancel, or the end-of-day auto-cancel job. null for any order that isn't cancelled, and for orders cancelled before this field existed. No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a rejection is a thrown error at request time, never a row in this list.",
+                "example": null
+              }
+            },
+            "required": [
+              "id",
+              "symbol",
+              "side",
+              "type",
+              "qty",
+              "limitPricePaise",
+              "status",
+              "fillPricePaise",
+              "createdAt",
+              "filledAt",
+              "cancelledAt",
+              "cancelReason"
+            ]
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "PlaceFundOrderResponse": {
@@ -3419,6 +3575,134 @@
                 "recentExecutions"
               ]
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreateSipPlanResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fundId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "amountPaise": {
+                "type": "integer"
+              },
+              "dayOfMonth": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "paused",
+                  "cancelled"
+                ]
+              },
+              "nextDueDate": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "null once the plan is cancelled - a cancelled plan never runs again.",
+                "example": "2026-10-05"
+              },
+              "recentExecutions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "filled",
+                        "failed"
+                      ]
+                    },
+                    "dueDate": {
+                      "type": "string",
+                      "example": "2026-09-05"
+                    },
+                    "amountPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "unitsMilli": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navPaise": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "navDate": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "failureReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Set only when status is \"failed\" - e.g. INSUFFICIENT_MARGIN.",
+                      "example": "INSUFFICIENT_MARGIN"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "dueDate",
+                    "amountPaise",
+                    "unitsMilli",
+                    "navPaise",
+                    "navDate",
+                    "failureReason",
+                    "createdAt"
+                  ]
+                },
+                "description": "Most recent executions for this plan, newest first, including any that failed - a SIP failure is always visible here, never silently skipped."
+              },
+              "replayed": {
+                "type": "boolean",
+                "description": "True only when this exact response is a replay of an already-processed request with the same Idempotency-Key - never true for a genuinely new plan."
+              }
+            },
+            "required": [
+              "id",
+              "fundId",
+              "amountPaise",
+              "dayOfMonth",
+              "status",
+              "nextDueDate",
+              "recentExecutions",
+              "replayed"
+            ]
           }
         },
         "required": [
@@ -7296,6 +7580,30 @@
                             "type": "string",
                             "example": "Reward claimed"
                           },
+                          "reasonLocalized": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ],
+                            "description": "Phase 4 Trade asks (additive): a {en, hi, hx} version of `reason`, built only for trade/fund-trade ledger entries so far. null for every other sourceType, and for any row written before this field existed - fall back to the plain `reason` string whenever this is null.",
+                            "example": null
+                          },
                           "createdAt": {
                             "type": "string",
                             "format": "date-time"
@@ -7306,6 +7614,7 @@
                           "amountPaise",
                           "sourceType",
                           "reason",
+                          "reasonLocalized",
                           "createdAt"
                         ]
                       }
@@ -7566,11 +7875,36 @@
                     "disclaimer": {
                       "type": "string",
                       "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    },
+                    "disclaimerLocalized": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ],
+                      "example": {
+                        "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+                        "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+                        "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+                      }
                     }
                   },
                   "required": [
                     "data",
-                    "disclaimer"
+                    "disclaimer",
+                    "disclaimerLocalized"
                   ]
                 }
               }
@@ -7808,11 +8142,36 @@
                     "disclaimer": {
                       "type": "string",
                       "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    },
+                    "disclaimerLocalized": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ],
+                      "example": {
+                        "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+                        "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+                        "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+                      }
                     }
                   },
                   "required": [
                     "data",
-                    "disclaimer"
+                    "disclaimer",
+                    "disclaimerLocalized"
                   ]
                 }
               }
@@ -7957,11 +8316,36 @@
                     "disclaimer": {
                       "type": "string",
                       "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    },
+                    "disclaimerLocalized": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ],
+                      "example": {
+                        "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+                        "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+                        "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+                      }
                     }
                   },
                   "required": [
                     "data",
-                    "disclaimer"
+                    "disclaimer",
+                    "disclaimerLocalized"
                   ]
                 }
               }
@@ -8037,7 +8421,7 @@
     "/api/v1/trade/market-status": {
       "get": {
         "summary": "Get market status and this learner's trading-unlock progress (TR-01/34/57)",
-        "description": "Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.",
+        "description": "Whether NSE is open right now, the Ops console's feed mode and global halt state, and whether this learner has unlocked the order pad - with a worldsToGo progress count when not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode (quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated. `recommendedPollIntervalMs` (item 5, Phase 4 Trade asks) is server-controlled, so the app's refresh cadence can change without an app release.",
         "tags": [
           "Trade"
         ],
@@ -8083,6 +8467,12 @@
                           "minimum": 0,
                           "description": "0 once unlocked. Otherwise how many more worlds' Boss Quizzes this learner needs to pass.",
                           "example": 2
+                        },
+                        "recommendedPollIntervalMs": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "description": "Phase 4 Trade asks (item 5): how often the app should re-poll this endpoint, in milliseconds - server-controlled so the cadence can change (e.g. during a feed pause) without an app release.",
+                          "example": 5000
                         }
                       },
                       "required": [
@@ -8090,7 +8480,8 @@
                         "feedMode",
                         "globalHalt",
                         "tradingUnlocked",
-                        "worldsToGo"
+                        "worldsToGo",
+                        "recommendedPollIntervalMs"
                       ]
                     }
                   },
@@ -8395,6 +8786,226 @@
                   "error": {
                     "code": "RATE_LIMITED",
                     "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "My own order history (TR-13)",
+        "description": "Every status included - open, filled, cancelled (with `cancelReason` distinguishing the learner's own cancel from the end-of-day auto-cancel). No 'rejected' status exists (docs/ARCHITECTURE.md D41) - a rejected order attempt is a thrown error at request time, never a row here. `idempotencyKey` lets the app resolve an \"outcome unknown\" attempt (e.g. a request that timed out client-side) by looking up the exact key it sent - this is always scoped to the caller's own orders, so it can never surface another learner's order even with a guessed key. Cursor-paginated newest first, same (createdAt, id) stable-cursor shape as GET /me/portfolio/trades.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "filled",
+                "cancelled"
+              ],
+              "description": "Omit to return every status.",
+              "example": "open"
+            },
+            "required": false,
+            "description": "Omit to return every status.",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "idempotencyKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's own orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status, limit or cursor",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid cursor"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/orders/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a pending order",
+        "description": "Only ever cancels the caller's own order - an id that doesn't exist, or belongs to another learner, returns a plain 404 (never 403), so an order id can't be probed to learn whether it exists. No V Money is released: a queued (`status: \"open\"`) order was never debited in the first place (CLAUDE.md, trading-rules skill) - margin is only ever checked and charged at the moment of an actual fill, never reserved ahead of it. Calling this again on an order you already cancelled is an idempotent success (the current row, unchanged). An order that has already filled, or already expired at end-of-day, can't be cancelled - `ORDER_NOT_CANCELLABLE` names its current status.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cancelled (or already cancelled)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelOrderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order with this id (including one that belongs to another learner)",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No order with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The order has already filled, or already expired at end-of-day",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "ORDER_NOT_CANCELLABLE",
+                    "message": "Cannot cancel an order that is already filled",
+                    "details": {
+                      "status": "filled"
+                    }
                   }
                 },
                 "schema": {
@@ -8957,7 +9568,7 @@
     "/api/v1/trade/funds": {
       "get": {
         "summary": "List active mutual funds with their latest NAV (Explore mode, TR-35/38)",
-        "description": "Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet.",
+        "description": "Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI scheme, tracked internally for realistic NAV movement (docs/ARCHITECTURE.md D45) - the real scheme code is never included in this or any other response. `latestNav` is null if this fund has never been ingested yet. `heldUnitsMilli`/`holdingValuePaise` (TR-38) are this learner's own position in each fund - null/null if they don't hold it.",
         "tags": [
           "Trade"
         ],
@@ -9063,6 +9674,24 @@
                               "date"
                             ],
                             "description": "null if this fund has never been ingested yet."
+                          },
+                          "heldUnitsMilli": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "exclusiveMinimum": 0,
+                            "description": "This learner's own held units x 1000 (3 decimal places, D45). null if they don't hold this fund at all.",
+                            "example": 12500
+                          },
+                          "holdingValuePaise": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0,
+                            "description": "heldUnitsMilli valued at latestNav, in paise. null whenever it can't be honestly priced - not held, or latestNav itself is null (never ingested yet).",
+                            "example": 203700
                           }
                         },
                         "required": [
@@ -9074,18 +9703,45 @@
                           "expenseRatioBps",
                           "minLumpSumPaise",
                           "minSipPaise",
-                          "latestNav"
+                          "latestNav",
+                          "heldUnitsMilli",
+                          "holdingValuePaise"
                         ]
                       }
                     },
                     "disclaimer": {
                       "type": "string",
                       "example": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    },
+                    "disclaimerLocalized": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ],
+                      "example": {
+                        "en": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice.",
+                        "hi": "NAV डेटा असली म्यूचुअल फंड बाज़ार की हलचल दिखाता है, सिर्फ़ वर्चुअल अभ्यास के लिए। यहाँ निवेश V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+                        "hx": "NAV data real mutual fund market movement dikhaata hai, sirf virtual practice ke liye. Yahaan investments V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+                      }
                     }
                   },
                   "required": [
                     "data",
-                    "disclaimer"
+                    "disclaimer",
+                    "disclaimerLocalized"
                   ]
                 }
               }
@@ -9129,7 +9785,7 @@
     "/api/v1/trade/funds/{id}": {
       "get": {
         "summary": "Get one fund's detail with its latest NAV (TR-39)",
-        "description": "Fund fundamentals and the latest ingested NAV, plus the trading disclaimer.",
+        "description": "Fund fundamentals and the latest ingested NAV, plus the trading disclaimer. `heldUnitsMilli`/`holdingValuePaise` (TR-39) are this learner's own position - null/null if they don't hold it.",
         "tags": [
           "Trade"
         ],
@@ -9244,6 +9900,24 @@
                             "date"
                           ],
                           "description": "null if this fund has never been ingested yet."
+                        },
+                        "heldUnitsMilli": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "exclusiveMinimum": 0,
+                          "description": "This learner's own held units x 1000 (3 decimal places, D45). null if they don't hold this fund at all.",
+                          "example": 12500
+                        },
+                        "holdingValuePaise": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "description": "heldUnitsMilli valued at latestNav, in paise. null whenever it can't be honestly priced - not held, or latestNav itself is null (never ingested yet).",
+                          "example": 203700
                         }
                       },
                       "required": [
@@ -9255,17 +9929,44 @@
                         "expenseRatioBps",
                         "minLumpSumPaise",
                         "minSipPaise",
-                        "latestNav"
+                        "latestNav",
+                        "heldUnitsMilli",
+                        "holdingValuePaise"
                       ]
                     },
                     "disclaimer": {
                       "type": "string",
                       "example": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    },
+                    "disclaimerLocalized": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ],
+                      "example": {
+                        "en": "NAV data reflects real mutual fund market movement, used for virtual practice only. Investments here use V Money, never real rupees. Nothing on this screen is investment advice.",
+                        "hi": "NAV डेटा असली म्यूचुअल फंड बाज़ार की हलचल दिखाता है, सिर्फ़ वर्चुअल अभ्यास के लिए। यहाँ निवेश V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+                        "hx": "NAV data real mutual fund market movement dikhaata hai, sirf virtual practice ke liye. Yahaan investments V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+                      }
                     }
                   },
                   "required": [
                     "data",
-                    "disclaimer"
+                    "disclaimer",
+                    "disclaimerLocalized"
                   ]
                 }
               }
@@ -9585,13 +10286,26 @@
       },
       "post": {
         "summary": "Create a new SIP plan",
-        "description": "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month.",
+        "description": "amountPaise must meet the fund's tiered minimum (₹100 for index funds, ₹500 for others, admin-editable per fund). dayOfMonth is restricted to 1-28 so every SIP has a real due date every calendar month. Requires an Idempotency-Key header, same semantics as POST /trade/orders and POST /trade/funds/orders - retrying the exact same request with the same key returns the original plan (`replayed: true`), never a second plan; reusing the key with a different request is rejected.",
         "tags": [
           "Trade"
         ],
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Client-generated, unique per SIP creation attempt."
+            },
+            "required": true,
+            "description": "Client-generated, unique per SIP creation attempt.",
+            "name": "Idempotency-Key",
+            "in": "header"
           }
         ],
         "requestBody": {
@@ -9631,17 +10345,17 @@
         },
         "responses": {
           "200": {
-            "description": "The newly created SIP plan",
+            "description": "The newly created SIP plan (or replayed from an identical earlier request)",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SipPlanResponse"
+                  "$ref": "#/components/schemas/CreateSipPlanResponse"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid input, or below the fund's minimum SIP amount",
+            "description": "Invalid input, below the fund's minimum SIP amount, or a missing Idempotency-Key header",
             "content": {
               "application/json": {
                 "example": {
@@ -9696,6 +10410,22 @@
                   "error": {
                     "code": "NOT_FOUND",
                     "message": "No fund with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The same Idempotency-Key was reused for a different request",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "IDEMPOTENCY_REPLAY",
+                    "message": "This Idempotency-Key was already used for a different SIP plan"
                   }
                 },
                 "schema": {

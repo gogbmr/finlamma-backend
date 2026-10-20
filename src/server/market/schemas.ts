@@ -16,6 +16,19 @@ export const TRADING_DISCLAIMER =
   "Prices and charts are real NSE market data, used for virtual practice only. " +
   "Trades here use V Money, never real rupees. Nothing on this screen is investment advice.";
 
+// Phase 4 Trade asks (2026-10-20), additive: a {en, hi, hx} version of
+// TRADING_DISCLAIMER, returned alongside the existing plain-string field
+// (never replacing it - old clients keep working unchanged). Hindi/Hinglish
+// copy is a best-effort draft, not yet reviewed by a native speaker
+// (docs/ROADMAP.md's pre-launch checklist).
+export const TRADING_DISCLAIMER_LOCALIZED = {
+  en: TRADING_DISCLAIMER,
+  hi: "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। " +
+    "यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+  hx: "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. " +
+    "Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai.",
+};
+
 export const TimeframeSchema = z.enum(MARKET_TIMEFRAMES).openapi({
   description: "Chart timeframe.",
   example: "1M",
@@ -50,12 +63,20 @@ const InstrumentPublicSchema = z.object({
   quote: QuoteSchema.nullable(),
 });
 
+const LocalizedTextSchema = z.object({ en: z.string(), hi: z.string(), hx: z.string() });
+
+// Phase 4 Trade asks, additive: every disclaimer response field below also
+// carries a disclaimerLocalized, the same {en, hi, hx} shape, alongside
+// the existing plain-string field (kept for compatibility).
+const DISCLAIMER_LOCALIZED_SHAPE = {
+  disclaimer: z.string().openapi({ example: TRADING_DISCLAIMER }),
+  disclaimerLocalized: LocalizedTextSchema.openapi({ example: TRADING_DISCLAIMER_LOCALIZED }),
+};
+
 export const InstrumentListResponseSchema = z.object({
   data: z.array(InstrumentPublicSchema),
-  disclaimer: z.string().openapi({ example: TRADING_DISCLAIMER }),
+  ...DISCLAIMER_LOCALIZED_SHAPE,
 });
-
-const LocalizedTextSchema = z.object({ en: z.string(), hi: z.string(), hx: z.string() });
 
 const InstrumentDetailSchema = InstrumentPublicSchema.extend({
   about: LocalizedTextSchema,
@@ -66,7 +87,7 @@ const InstrumentDetailSchema = InstrumentPublicSchema.extend({
 
 export const InstrumentDetailResponseSchema = z.object({
   data: InstrumentDetailSchema,
-  disclaimer: z.string().openapi({ example: TRADING_DISCLAIMER }),
+  ...DISCLAIMER_LOCALIZED_SHAPE,
 });
 
 const CandleSchema = z.object({
@@ -80,7 +101,7 @@ const CandleSchema = z.object({
 
 export const CandlesResponseSchema = z.object({
   data: z.array(CandleSchema),
-  disclaimer: z.string().openapi({ example: TRADING_DISCLAIMER }),
+  ...DISCLAIMER_LOCALIZED_SHAPE,
 });
 
 // TR-01/34/57 (docs/FEATURE_MAP.md): the market-status pill, the
@@ -100,6 +121,13 @@ const MarketStatusSchema = z.object({
   worldsToGo: z.number().int().nonnegative().openapi({
     description: "0 once unlocked. Otherwise how many more worlds' Boss Quizzes this learner needs to pass.",
     example: 2,
+  }),
+  recommendedPollIntervalMs: z.number().int().positive().openapi({
+    description:
+      "Phase 4 Trade asks (item 5): how often the app should re-poll this endpoint, in " +
+      "milliseconds - server-controlled so the cadence can change (e.g. during a feed pause) " +
+      "without an app release.",
+    example: 5000,
   }),
 });
 

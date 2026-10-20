@@ -1,6 +1,6 @@
 import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { funds, fundNavs } from "@/db/schema";
+import { funds, fundHoldings, fundNavs } from "@/db/schema";
 
 // Same shape as src/server/trading/repo.ts's DbOrTx - getLatestNav is read
 // INSIDE placeFundOrderTx's/executeSipDueTx's row-locked transaction
@@ -36,6 +36,29 @@ export async function listActiveFunds() {
 
 export async function getPublicFundById(id: string) {
   const [row] = await db.select(PUBLIC_FUND_COLUMNS).from(funds).where(eq(funds.id, id)).limit(1);
+  return row ?? null;
+}
+
+// TR-38/39 (Phase 4 Trade asks) - one query for every fund this learner
+// holds (never per-fund - that's exactly the bare-Promise.all-over-a-list
+// pattern this same audit fixed elsewhere), merged in-memory by fundId.
+// unitsMilli === 0 rows are skipped (D45: units x 1000) - a learner who
+// fully redeemed a fund shows as not-held, same "qty 0 holding row stays
+// but reads as unheld" convention src/server/portfolio already uses for
+// stocks.
+export async function listFundHoldingsForUser(userId: string) {
+  return db
+    .select({ fundId: fundHoldings.fundId, unitsMilli: fundHoldings.unitsMilli, avgNavPaise: fundHoldings.avgNavPaise })
+    .from(fundHoldings)
+    .where(eq(fundHoldings.userId, userId));
+}
+
+export async function getFundHoldingForUser(userId: string, fundId: string) {
+  const [row] = await db
+    .select({ unitsMilli: fundHoldings.unitsMilli, avgNavPaise: fundHoldings.avgNavPaise })
+    .from(fundHoldings)
+    .where(and(eq(fundHoldings.userId, userId), eq(fundHoldings.fundId, fundId)))
+    .limit(1);
   return row ?? null;
 }
 

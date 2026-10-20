@@ -149,10 +149,23 @@ async function computeLedgerRows(
 
   const instruments = await getInstrumentsByIds(instrumentIds);
   const [stockQuotes, fundNavs] = await Promise.all([
+    // getCachedQuote is Redis-backed (falling back to the market-data
+    // vendor's HTTP API on a miss), never Postgres directly - no bound
+    // needed against DB_CONCURRENCY_LIMIT here.
+    // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
     Promise.allSettled(
       instruments.map((i) => getCachedQuote(i.symbol, i.exchange)),
     ),
-    Promise.allSettled(fundIds.map((id) => getLatestNav(id))),
+    // getLatestNav IS a real Postgres query - fundIds can be every fund
+    // (up to 9 today), so this needs the same bound as every other
+    // multi-row DB fan-out (CLAUDE.md rule 15, docs/ARCHITECTURE.md
+    // D13/D72) - found by the Phase 4 Trade audit's extended concurrency
+    // checker (it previously only inspected literal array Promise.all
+    // calls, not .map() over a runtime-length array).
+    runWithConcurrencyLimit(
+      fundIds.map((id) => () => getLatestNav(id)),
+      DB_CONCURRENCY_LIMIT,
+    ),
   ]);
 
   const priceByInstrumentId = new Map<string, number>();
@@ -163,9 +176,8 @@ async function computeLedgerRows(
   });
   const navByFundId = new Map<string, number>();
   fundIds.forEach((fundId, i) => {
-    const result = fundNavs[i];
-    if (result?.status === "fulfilled" && result.value)
-      navByFundId.set(fundId, result.value.navPaise);
+    const nav = fundNavs[i];
+    if (nav) navByFundId.set(fundId, nav.navPaise);
   });
 
   const stockByUser = new Map<string, StockHoldingRow[]>();

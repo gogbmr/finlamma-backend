@@ -50,6 +50,7 @@ import "../src/app/api/v1/trade/instruments/[symbol]/candles/route";
 import "../src/app/api/v1/trade/market-status/route";
 import "../src/app/api/v1/relay/config/route";
 import "../src/app/api/v1/trade/orders/route";
+import "../src/app/api/v1/trade/orders/[id]/cancel/route";
 import "../src/app/api/v1/me/portfolio/summary/route";
 import "../src/app/api/v1/me/portfolio/stats/route";
 import "../src/app/api/v1/me/portfolio/trades/route";
@@ -102,7 +103,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "2.1.0",
+    version: "2.2.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

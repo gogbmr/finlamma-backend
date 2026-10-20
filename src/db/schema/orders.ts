@@ -13,6 +13,14 @@ export const orderTypeEnum = pgEnum("order_type", ["market", "limit"]);
 // (Checkpoint 6's matching job, or the end-of-day cancel job);
 // "cancelled" is set by that same EOD job or a future explicit cancel.
 export const orderStatusEnum = pgEnum("order_status", ["open", "filled", "cancelled"]);
+// Why a "cancelled" order was cancelled - set alongside cancelledAt, never
+// on its own (Phase 4 Trade asks, 2026-10-20 founder decision: keep D41's
+// "no rejected status" as-is, cover "expired" by splitting cancelled's
+// reason instead of inventing a new status). "user_requested" is the
+// learner's own POST .../cancel; "eod_expired" is cancelAllOpenOrdersTx's
+// end-of-day job. Nullable because every order cancelled before this
+// column existed has neither.
+export const orderCancelReasonEnum = pgEnum("order_cancel_reason", ["user_requested", "eod_expired"]);
 
 // Phase 4 Checkpoint 5 (docs/ARCHITECTURE.md D41, trading-rules skill).
 // `idempotencyKey` is required on every order placement (CLAUDE.md rule 3)
@@ -51,6 +59,7 @@ export const orders = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     filledAt: timestamp("filled_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: orderCancelReasonEnum("cancel_reason"),
   },
   (t) => [
     uniqueIndex("orders_user_idempotency_idx").on(t.userId, t.idempotencyKey),

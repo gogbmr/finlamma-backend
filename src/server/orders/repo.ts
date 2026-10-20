@@ -1,7 +1,9 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { holdings, instruments, orders, users } from "@/db/schema";
+import { encodeCursor } from "@/lib/http";
 import { insertVmoneyLedgerEntryIfNew, sumVmoneyBalanceTx, type DbOrTx } from "@/server/economy/repo";
+import { buildTradeReasonLocalized } from "./i18n";
 import { isMarketOpen } from "@/server/market/hours";
 import { getRelayPrice } from "@/server/trading/relay-price";
 import { getOrCreateMarketControls, listMarketHolidays } from "@/server/trading/repo";
@@ -262,6 +264,7 @@ export async function placeOrderTx(
       sourceId: order.id,
       ruleId: null,
       reason: `${input.side.toUpperCase()} ${input.qty} ${instrument.symbol} @ ${fillPricePaise}`,
+      reasonLocalized: buildTradeReasonLocalized(input.side, input.qty, instrument.symbol, fillPricePaise),
       amountPaise: input.side === "buy" ? -valuePaise : valuePaise,
       multiplierApplied: 1,
     });
@@ -388,6 +391,7 @@ export async function matchOpenLimitOrderTx(
       sourceId: order!.id,
       ruleId: null,
       reason: `${current.side.toUpperCase()} ${current.qty} ${instrument.symbol} @ ${fillPricePaise}`,
+      reasonLocalized: buildTradeReasonLocalized(current.side, current.qty, instrument.symbol, fillPricePaise),
       amountPaise: current.side === "buy" ? -valuePaise : valuePaise,
       multiplierApplied: 1,
     });
@@ -403,8 +407,111 @@ export async function matchOpenLimitOrderTx(
 export async function cancelAllOpenOrdersTx(now: Date = new Date()): Promise<number> {
   const cancelled = await db
     .update(orders)
-    .set({ status: "cancelled", cancelledAt: now })
+    .set({ status: "cancelled", cancelledAt: now, cancelReason: "eod_expired" })
     .where(eq(orders.status, "open"))
     .returning({ id: orders.id });
   return cancelled.length;
+}
+
+export type CancelOrderResult =
+  | { status: "not_found" }
+  | { status: "cancelled"; order: OrderRow }
+  | { status: "already_cancelled"; order: OrderRow }
+  | { status: "not_cancellable"; order: OrderRow };
+
+// Phase 4 Trade asks (2026-10-20): a learner cancelling their own pending
+// LIMIT order. No ledger write - placeOrderTx never debits/reserves
+// anything for a queued "open" order (D41: margin is only ever checked
+// and charged at the moment of an actual fill), so there's nothing to
+// release here. Same lock-the-order-row-first discipline as
+// matchOpenLimitOrderTx (D49) - a cancel racing the matching job's fill
+// attempt for the SAME order serializes on this lock: whichever
+// transaction commits first wins, and the loser sees the already-updated
+// status once it acquires the lock, so it can never both fill AND cancel
+// the same order. Scoped by (id, userId) together in one WHERE, not a
+// separate ownership check after the lookup - a wrong-owner id and a
+// nonexistent id both come back "not_found", so an order id can never be
+// probed to learn whether it exists. Idempotent by construction: calling
+// this twice on an already-cancelled order returns "already_cancelled"
+// (the current row, not an error) rather than re-cancelling or erroring.
+export async function cancelOrderTx(
+  userId: string,
+  orderId: string,
+  now: Date = new Date(),
+): Promise<CancelOrderResult> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, orderId), eq(orders.userId, userId)))
+      .for("update")
+      .limit(1);
+    if (!current) return { status: "not_found" };
+    if (current.status === "cancelled") return { status: "already_cancelled", order: current };
+    if (current.status === "filled") return { status: "not_cancellable", order: current };
+
+    const [updated] = await tx
+      .update(orders)
+      .set({ status: "cancelled", cancelledAt: now, cancelReason: "user_requested" })
+      .where(eq(orders.id, orderId))
+      .returning();
+    return { status: "cancelled", order: updated! };
+  });
+}
+
+export type OrderListRow = OrderRow & { symbol: string; exchange: string };
+export type OrderListCursor = { createdAt: string; id: string };
+
+// TR-13 (Phase 4 Trade asks) - a learner's own order history, every status
+// included (open/filled/cancelled - D41 still holds, no "rejected" status
+// exists to include). Cursor-paginated newest-first on (createdAt, id),
+// same stable-cursor shape as src/server/portfolio/repo.ts's
+// listClosedTradesPage. `userId` is always the caller's own id (never
+// accepted from the client) - every condition below is scoped by it,
+// including the optional idempotencyKey filter, so a guessed key can only
+// ever match a row this same learner placed; it can never surface another
+// learner's order (idempotencyKey is unique per-user, not globally, so a
+// cross-user guess simply matches nothing).
+export async function listOrdersForUserPage(
+  userId: string,
+  opts: {
+    limit: number;
+    cursor: OrderListCursor | null;
+    status?: "open" | "filled" | "cancelled";
+    idempotencyKey?: string;
+  },
+): Promise<{ data: OrderListRow[]; nextCursor: string | null }> {
+  const conditions = [eq(orders.userId, userId)];
+  if (opts.status) conditions.push(eq(orders.status, opts.status));
+  if (opts.idempotencyKey) conditions.push(eq(orders.idempotencyKey, opts.idempotencyKey));
+  if (opts.cursor) {
+    const cursorCreatedAt = new Date(opts.cursor.createdAt);
+    conditions.push(
+      or(
+        lt(orders.createdAt, cursorCreatedAt),
+        and(eq(orders.createdAt, cursorCreatedAt), lt(orders.id, opts.cursor.id)),
+      )!,
+    );
+  }
+
+  const rows = await db
+    .select({ order: orders, symbol: instruments.symbol, exchange: instruments.exchange })
+    .from(orders)
+    .innerJoin(instruments, eq(orders.instrumentId, instruments.id))
+    .where(and(...conditions))
+    .orderBy(desc(orders.createdAt), desc(orders.id))
+    .limit(opts.limit + 1);
+
+  const hasMore = rows.length > opts.limit;
+  const page = hasMore ? rows.slice(0, opts.limit) : rows;
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeCursor({ createdAt: last.order.createdAt.toISOString(), id: last.order.id } satisfies OrderListCursor)
+      : null;
+
+  return {
+    data: page.map((r) => ({ ...r.order, symbol: r.symbol, exchange: r.exchange })),
+    nextCursor,
+  };
 }

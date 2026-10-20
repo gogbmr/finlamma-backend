@@ -13,7 +13,9 @@ registry.registerPath({
     "Whether NSE is open right now, the Ops console's feed mode and global halt state, and " +
     "whether this learner has unlocked the order pad - with a worldsToGo progress count when " +
     "not yet unlocked (D25: position-based, never a specific world's id/name). Explore mode " +
-    "(quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated.",
+    "(quotes/charts/watchlist) stays visible regardless of this - only placing an order is gated. " +
+    "`recommendedPollIntervalMs` (item 5, Phase 4 Trade asks) is server-controlled, so the " +
+    "app's refresh cadence can change without an app release.",
   tags: ["Trade"],
   security: [{ bearerAuth: [] }],
   responses: {

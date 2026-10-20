@@ -19,8 +19,18 @@ export function okList<T>(data: T[], nextCursor: string | null) {
 // advice" rule) so every response carrying real prices/fundamentals also
 // carries the disclaimer text, server-driven rather than hardcoded client
 // copy that can't be updated without an app release.
-export function okWithDisclaimer<T>(data: T, disclaimer: string) {
-  return NextResponse.json({ data, disclaimer }, { status: 200 });
+// disclaimerLocalized (Phase 4 Trade asks, additive): {en, hi, hx} version
+// of `disclaimer` - optional and kept alongside the old plain-string field
+// for compatibility, never replacing it.
+export function okWithDisclaimer<T>(
+  data: T,
+  disclaimer: string,
+  disclaimerLocalized?: { en: string; hi: string; hx: string },
+) {
+  return NextResponse.json(
+    { data, disclaimer, ...(disclaimerLocalized ? { disclaimerLocalized } : {}) },
+    { status: 200 },
+  );
 }
 
 export function fail(error: AppError) {

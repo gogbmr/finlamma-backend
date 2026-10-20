@@ -1,11 +1,17 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { ok, okList, parseLimit, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
-import { PlaceOrderResponseSchema, PlaceOrderSchema } from "@/server/orders/schemas";
-import { placeOrder } from "@/server/orders/service";
+import {
+  ListOrdersQuerySchema,
+  ListOrdersStatusEnum,
+  OrderListResponseSchema,
+  PlaceOrderResponseSchema,
+  PlaceOrderSchema,
+} from "@/server/orders/schemas";
+import { listMyOrders, placeOrder } from "@/server/orders/service";
 
 registry.registerPath({
   method: "post",
@@ -107,6 +113,78 @@ registry.registerPath({
       },
     },
   },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/trade/orders",
+  summary: "My own order history (TR-13)",
+  description:
+    "Every status included - open, filled, cancelled (with `cancelReason` distinguishing the " +
+    "learner's own cancel from the end-of-day auto-cancel). No 'rejected' status exists " +
+    "(docs/ARCHITECTURE.md D41) - a rejected order attempt is a thrown error at request time, " +
+    "never a row here. `idempotencyKey` lets the app resolve an \"outcome unknown\" attempt " +
+    "(e.g. a request that timed out client-side) by looking up the exact key it sent - this is " +
+    "always scoped to the caller's own orders, so it can never surface another learner's order " +
+    "even with a guessed key. Cursor-paginated newest first, same (createdAt, id) stable-cursor " +
+    "shape as GET /me/portfolio/trades.",
+  tags: ["Trade"],
+  security: [{ bearerAuth: [] }],
+  request: { query: ListOrdersQuerySchema },
+  responses: {
+    200: {
+      description: "A page of the caller's own orders",
+      content: { "application/json": { schema: OrderListResponseSchema } },
+    },
+    400: {
+      description: "Invalid status, limit or cursor",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "VALIDATION_FAILED", message: "Invalid cursor" } },
+        },
+      },
+    },
+    401: {
+      description: "Not signed in",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "UNAUTHENTICATED", message: "Sign-in required" } },
+        },
+      },
+    },
+    403: {
+      description: "Onboarding, parental consent or legal acceptance is incomplete",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: {
+            error: { code: "FORBIDDEN", message: "Complete onboarding before using this feature" },
+          },
+        },
+      },
+    },
+  },
+});
+
+export const GET = withErrors(async (req: Request) => {
+  const user = await requireUser(req);
+  await requireFullAccess(user);
+
+  const { searchParams } = new URL(req.url);
+  const statusRaw = searchParams.get("status");
+  const status = statusRaw ? ListOrdersStatusEnum.parse(statusRaw) : undefined;
+  const idempotencyKey = searchParams.get("idempotencyKey") ?? undefined;
+  const limit = parseLimit(searchParams.get("limit"));
+
+  const { data, nextCursor } = await listMyOrders(user.id, {
+    status,
+    idempotencyKey,
+    limit,
+    cursor: searchParams.get("cursor"),
+  });
+  return okList(data, nextCursor);
 });
 
 export const POST = withErrors(async (req: Request) => {

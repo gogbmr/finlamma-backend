@@ -12,6 +12,9 @@ export default async function LegalPage() {
     return <Forbidden message="You don't have permission to manage legal documents." />;
   }
 
+  // LEGAL_DOCUMENT_TYPES is a fixed 3-element compile-time constant, not a
+  // runtime-length array - 3 concurrent queries stays under the pool's max: 4.
+  // promise-all-db-concurrency-ok: fixed 3-element constant, under max: 4
   const documents = await Promise.all(
     LEGAL_DOCUMENT_TYPES.map(async (type) => {
       const { published, draft } = await getLegalEditorData(type);

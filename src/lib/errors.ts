@@ -61,6 +61,15 @@ export const ErrorCode = {
   INSUFFICIENT_MARGIN: "INSUFFICIENT_MARGIN",
   INSUFFICIENT_HOLDINGS: "INSUFFICIENT_HOLDINGS",
 
+  // Phase 4 Trade asks (2026-10-20): POST /trade/orders/{id}/cancel - the
+  // order exists (and is the caller's own - a mismatched owner returns
+  // plain NOT_FOUND instead, so an order id can never be probed) but is
+  // already filled or already expired at end-of-day, so there's nothing
+  // left to cancel. Cancelling an already-cancelled order is NOT this -
+  // that's treated as an idempotent success (the current row is returned,
+  // no error).
+  ORDER_NOT_CANCELLABLE: "ORDER_NOT_CANCELLABLE",
+
   // Mutual funds (src/server/fund-orders, Phase 4 Checkpoint 8,
   // docs/ARCHITECTURE.md D46) - a fund has no LIMIT/MARKET distinction or
   // market-hours gate the way a stock does, only a NAV that may or may not
@@ -133,6 +142,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   PRICE_UNAVAILABLE: 409,
   INSUFFICIENT_MARGIN: 409,
   INSUFFICIENT_HOLDINGS: 409,
+  ORDER_NOT_CANCELLABLE: 409,
 
   NAV_UNAVAILABLE: 409,
   NAV_STALE: 409,

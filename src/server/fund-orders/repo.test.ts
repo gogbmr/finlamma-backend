@@ -8,14 +8,15 @@
 // @/db/client's NODE_ENV=test guard).
 import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { fundNavs, funds, users } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { fundNavs, funds, users, vmoneyLedger } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
 import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const { placeFundOrderTx, executeSipDueTx, listActiveSipPlansDueOn } = await import("./repo");
-const { createSipPlan } = await import("./sip-repo");
+const { createSipPlan, getSipPlanByIdempotencyKey } = await import("./sip-repo");
 const { sumVmoneyBalance, creditVmoneyRow } = await import("@/server/economy/repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
@@ -183,6 +184,16 @@ describe("placeFundOrderTx - fills, holdings and the buy/sell round trip", () =>
     expect(result.order.navPaise).toBe(10000);
     expect(result.order.navDate).toBe("2026-09-25");
     expect(await sumVmoneyBalance(user.id)).toBe(1_000_000 - 50000);
+
+    const [ledgerRow] = await db
+      .select()
+      .from(vmoneyLedger)
+      .where(and(eq(vmoneyLedger.userId, user.id), eq(vmoneyLedger.sourceId, result.order.id)));
+    expect(ledgerRow!.reasonLocalized).toMatchObject({
+      en: "Bought fund units @ NAV ₹100.00 (2026-09-25)",
+    });
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hi");
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hx");
   });
 
   // D45 - the invariant the fund unit-math exists for: a BUY immediately
@@ -246,7 +257,7 @@ describe("SIP execution (executeSipDueTx)", () => {
     const fund = await makeFund();
     await seedNav(fund.id, "2026-09-25", 10000);
     await grantVmoneyPaise(user.id, 1_000_000);
-    const plan = await createSipPlan(user.id, fund.id, 50000, 5);
+    const plan = (await createSipPlan(user.id, fund.id, 50000, 5, randomUUID()))!;
 
     const result = await executeSipDueTx(plan, "2026-09-25", NOW);
 
@@ -263,7 +274,7 @@ describe("SIP execution (executeSipDueTx)", () => {
     const fund = await makeFund();
     await seedNav(fund.id, "2026-09-25", 10000);
     await grantVmoneyPaise(user.id, 1_000_000);
-    const plan = await createSipPlan(user.id, fund.id, 50000, 5);
+    const plan = (await createSipPlan(user.id, fund.id, 50000, 5, randomUUID()))!;
 
     await executeSipDueTx(plan, "2026-09-25", NOW);
     const second = await executeSipDueTx(plan, "2026-09-25", NOW);
@@ -277,7 +288,7 @@ describe("SIP execution (executeSipDueTx)", () => {
     const fund = await makeFund();
     await seedNav(fund.id, "2026-09-25", 10000);
     await grantVmoneyPaise(user.id, 100); // not enough for a 50000-paise SIP
-    const plan = await createSipPlan(user.id, fund.id, 50000, 5);
+    const plan = (await createSipPlan(user.id, fund.id, 50000, 5, randomUUID()))!;
 
     const result = await executeSipDueTx(plan, "2026-09-25", NOW);
 
@@ -294,7 +305,7 @@ describe("SIP execution (executeSipDueTx)", () => {
     const fund = await makeFund();
     await seedNav(fund.id, "2026-09-25", 10000);
     await grantVmoneyPaise(user.id, 1_000_000);
-    const plan = await createSipPlan(user.id, fund.id, 50000, 5);
+    const plan = (await createSipPlan(user.id, fund.id, 50000, 5, randomUUID()))!;
 
     const first = await executeSipDueTx(plan, "2026-09-25", NOW);
     const laterNow = new Date("2026-10-05T05:00:00.000Z");
@@ -311,12 +322,42 @@ describe("listActiveSipPlansDueOn", () => {
   it("lists only active plans matching the given day of month", async () => {
     const user = await makeUser();
     const fund = await makeFund();
-    const due = await createSipPlan(user.id, fund.id, 50000, 5);
-    await createSipPlan(user.id, fund.id, 50000, 10); // different day
+    const due = (await createSipPlan(user.id, fund.id, 50000, 5, randomUUID()))!;
+    await createSipPlan(user.id, fund.id, 50000, 10, randomUUID()); // different day
 
     const results = await listActiveSipPlansDueOn(5);
 
     expect(results.some((p) => p.id === due.id)).toBe(true);
     expect(results.every((p) => p.id !== undefined)).toBe(true);
+  });
+});
+
+describe("createSipPlan - Idempotency-Key", () => {
+  it("a repeated key for the same user returns null (conflict), never a second plan", async () => {
+    const user = await makeUser();
+    const fund = await makeFund();
+    const key = randomUUID();
+
+    const first = await createSipPlan(user.id, fund.id, 50000, 5, key);
+    const second = await createSipPlan(user.id, fund.id, 50000, 5, key);
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    const existing = await getSipPlanByIdempotencyKey(user.id, key);
+    expect(existing!.id).toBe(first!.id);
+  });
+
+  it("the same key for two DIFFERENT users never collides - unique per user, not global", async () => {
+    const userA = await makeUser();
+    const userB = await makeUser();
+    const fund = await makeFund();
+    const key = randomUUID();
+
+    const planA = await createSipPlan(userA.id, fund.id, 50000, 5, key);
+    const planB = await createSipPlan(userB.id, fund.id, 50000, 5, key);
+
+    expect(planA).not.toBeNull();
+    expect(planB).not.toBeNull();
+    expect(planA!.id).not.toBe(planB!.id);
   });
 });

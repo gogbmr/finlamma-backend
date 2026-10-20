@@ -1,12 +1,19 @@
 import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
-import type { requestMeta } from "@/lib/http";
+import { decodeCursor, type requestMeta } from "@/lib/http";
 import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
-import { getInstrumentBySymbol } from "@/server/trading/repo";
+import { getInstrumentById, getInstrumentBySymbol } from "@/server/trading/repo";
 import { isTradingUnlocked } from "@/server/worlds/service";
-import { placeOrderTx, type OrderRow } from "./repo";
-import type { PlaceOrderInput } from "./schemas";
+import {
+  cancelOrderTx,
+  listOrdersForUserPage,
+  placeOrderTx,
+  type OrderListCursor,
+  type OrderListRow,
+  type OrderRow,
+} from "./repo";
+import type { ListOrdersStatus, PlaceOrderInput } from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 
@@ -23,8 +30,85 @@ function shapeOrder(order: OrderRow, symbol: string, replayed: boolean) {
     createdAt: order.createdAt.toISOString(),
     filledAt: order.filledAt ? order.filledAt.toISOString() : null,
     cancelledAt: order.cancelledAt ? order.cancelledAt.toISOString() : null,
+    cancelReason: order.cancelReason,
     replayed,
   };
+}
+
+function shapeOrderListRow(row: OrderListRow) {
+  return {
+    id: row.id,
+    symbol: row.symbol,
+    side: row.side,
+    type: row.type,
+    qty: row.qty,
+    limitPricePaise: row.limitPricePaise,
+    status: row.status,
+    fillPricePaise: row.fillPricePaise,
+    createdAt: row.createdAt.toISOString(),
+    filledAt: row.filledAt ? row.filledAt.toISOString() : null,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    cancelReason: row.cancelReason,
+  };
+}
+
+// TR-13 (Phase 4 Trade asks) - self-only by construction: userId always
+// comes from the authenticated caller (the route handler), never from a
+// query param, so there is no way to ask for another learner's orders.
+export async function listMyOrders(
+  userId: string,
+  opts: { status?: ListOrdersStatus; idempotencyKey?: string; limit: number; cursor: string | null },
+) {
+  const decodedCursor = decodeCursor<OrderListCursor>(opts.cursor);
+  const { data, nextCursor } = await listOrdersForUserPage(userId, {
+    limit: opts.limit,
+    cursor: decodedCursor,
+    status: opts.status,
+    idempotencyKey: opts.idempotencyKey,
+  });
+  return { data: data.map(shapeOrderListRow), nextCursor };
+}
+
+// Phase 4 Trade asks (2026-10-20): cancel one of the caller's own pending
+// orders. not_found covers both "no such order" and "exists but isn't
+// yours" (cancelOrderTx scopes its lookup by (id, userId) together) - the
+// same AppError either way, so an order id can never be probed to learn
+// whether it exists. already_cancelled is an idempotent success (no
+// activity log - nothing new happened); not_cancellable (already filled,
+// or already expired at end-of-day) is a distinct error naming the
+// current status, never silently treated as success.
+export async function cancelMyOrder(userId: string, orderId: string, meta: RequestMeta) {
+  const result = await cancelOrderTx(userId, orderId);
+
+  if (result.status === "not_found") {
+    throw new AppError("NOT_FOUND", "No order with this id");
+  }
+  if (result.status === "not_cancellable") {
+    throw new AppError(
+      "ORDER_NOT_CANCELLABLE",
+      `Cannot cancel an order that is already ${result.order.status}`,
+      { status: result.order.status },
+    );
+  }
+
+  const instrument = await getInstrumentById(result.order.instrumentId);
+  const symbol = instrument?.symbol ?? "";
+  const exchange = instrument?.exchange ?? "";
+
+  if (result.status === "cancelled") {
+    await logActivity({
+      actorType: "user",
+      actorId: userId,
+      action: "order.cancelled",
+      targetType: "order",
+      targetId: result.order.id,
+      metadata: { symbol, side: result.order.side, qty: result.order.qty },
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+  }
+
+  return shapeOrderListRow({ ...result.order, symbol, exchange });
 }
 
 // The order-pad's one entry point (TR-30). Rate-limited first (D49 audit

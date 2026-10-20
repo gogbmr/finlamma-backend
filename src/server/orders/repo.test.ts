@@ -21,6 +21,7 @@ import {
   marketHolidays,
   orders,
   users,
+  vmoneyLedger,
   MARKET_CONTROLS_SINGLETON_ID,
 } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
@@ -33,8 +34,14 @@ vi.mock("@/server/trading/relay-price", () => ({
   getRelayPrice: (symbol: unknown, exchange: unknown) => mockGetRelayPrice(symbol, exchange),
 }));
 
-const { placeOrderTx, matchOpenLimitOrderTx, listOpenLimitOrdersWithInstrument, cancelAllOpenOrdersTx } =
-  await import("./repo");
+const {
+  placeOrderTx,
+  matchOpenLimitOrderTx,
+  listOpenLimitOrdersWithInstrument,
+  cancelAllOpenOrdersTx,
+  cancelOrderTx,
+  listOrdersForUserPage,
+} = await import("./repo");
 const { sumVmoneyBalance, creditVmoneyRow } = await import("@/server/economy/repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
@@ -380,6 +387,16 @@ describe("placeOrderTx - fills, holdings and the buy/sell round trip", () => {
 
     const holding = await getHoldingRow(user.id, instrument.id);
     expect(holding).toMatchObject({ qty: 3, avgPricePaise: 46290 });
+
+    const [ledgerRow] = await db
+      .select()
+      .from(vmoneyLedger)
+      .where(and(eq(vmoneyLedger.userId, user.id), eq(vmoneyLedger.sourceId, result.order.id)));
+    expect(ledgerRow!.reasonLocalized).toMatchObject({
+      en: `Bought 3 ${instrument.symbol} @ ₹462.90`,
+    });
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hi");
+    expect(ledgerRow!.reasonLocalized).toHaveProperty("hx");
   });
 
   it("a second BUY at a different price blends into a correct weighted-average cost", async () => {
@@ -781,7 +798,270 @@ describe("cancelAllOpenOrdersTx", () => {
     const [queuedRow] = await db.select().from(orders).where(eq(orders.id, queued.order.id));
     expect(queuedRow!.status).toBe("cancelled");
     expect(queuedRow!.cancelledAt?.getTime()).toBe(cancelledAt.getTime());
+    expect(queuedRow!.cancelReason).toBe("eod_expired");
     const [filledRow] = await db.select().from(orders).where(eq(orders.id, filled.order.id));
     expect(filledRow!.status).toBe("filled");
+  });
+});
+
+describe("listOrdersForUserPage", () => {
+  it("only ever returns the caller's own orders, never another user's", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const instrument = await makeInstrument();
+    await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+    await placeOrderTx(
+      otherUser.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+
+    const { data } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null });
+
+    expect(data).toHaveLength(1);
+    expect(data.every((o) => o.userId === user.id)).toBe(true);
+  });
+
+  it("a guessed Idempotency-Key never surfaces another learner's order", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const instrument = await makeInstrument();
+    const otherKey = freshIdempotencyKey();
+    await placeOrderTx(
+      otherUser.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      otherKey,
+      WEEKEND_NOW,
+    );
+
+    const { data } = await listOrdersForUserPage(user.id, {
+      limit: 20,
+      cursor: null,
+      idempotencyKey: otherKey,
+    });
+
+    expect(data).toHaveLength(0);
+  });
+
+  it("filters by status", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const openKey = freshIdempotencyKey();
+    await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      openKey,
+      WEEKEND_NOW,
+    );
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 5000, ts: MARKET_OPEN_NOW.getTime() });
+    await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+
+    const { data: openOnly } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null, status: "open" });
+    const { data: filledOnly } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null, status: "filled" });
+
+    expect(openOnly).toHaveLength(1);
+    expect(openOnly[0]!.status).toBe("open");
+    expect(filledOnly).toHaveLength(1);
+    expect(filledOnly[0]!.status).toBe("filled");
+  });
+
+  it("finds a specific order by its own Idempotency-Key, for resolving an outcome-unknown attempt", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const key = freshIdempotencyKey();
+    const placed = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      key,
+      WEEKEND_NOW,
+    );
+    if (placed.status !== "queued") throw new Error("expected queued");
+
+    const { data } = await listOrdersForUserPage(user.id, { limit: 20, cursor: null, idempotencyKey: key });
+
+    expect(data).toHaveLength(1);
+    expect(data[0]!.id).toBe(placed.order.id);
+  });
+
+  it("paginates newest-first with a stable cursor", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    for (let i = 0; i < 3; i++) {
+      await placeOrderTx(
+        user.id,
+        instrument,
+        { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+        freshIdempotencyKey(),
+        WEEKEND_NOW,
+      );
+    }
+
+    const firstPage = await listOrdersForUserPage(user.id, { limit: 2, cursor: null });
+    expect(firstPage.data).toHaveLength(2);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const { decodeCursor } = await import("@/lib/http");
+    const cursor = decodeCursor<{ createdAt: string; id: string }>(firstPage.nextCursor);
+    const secondPage = await listOrdersForUserPage(user.id, { limit: 2, cursor });
+
+    expect(secondPage.data).toHaveLength(1);
+    expect(secondPage.nextCursor).toBeNull();
+    const seenIds = new Set([...firstPage.data, ...secondPage.data].map((o) => o.id));
+    expect(seenIds.size).toBe(3);
+  });
+});
+
+describe("cancelOrderTx", () => {
+  async function queueLimitOrder(
+    userId: string,
+    instrument: { id: string; symbol: string; exchange: string; halted: boolean },
+  ) {
+    const result = await placeOrderTx(
+      userId,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "limit", qty: 1, limitPricePaise: 5000 },
+      freshIdempotencyKey(),
+      WEEKEND_NOW,
+    );
+    if (result.status !== "queued") throw new Error("expected queued");
+    return result.order;
+  }
+
+  it("cancels an open order, with no ledger write at all", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const queued = await queueLimitOrder(user.id, instrument);
+    const balanceBefore = await sumVmoneyBalance(user.id);
+
+    const result = await cancelOrderTx(user.id, queued.id, MARKET_OPEN_NOW);
+
+    expect(result.status).toBe("cancelled");
+    if (result.status !== "cancelled") throw new Error("expected cancelled");
+    expect(result.order.status).toBe("cancelled");
+    expect(result.order.cancelReason).toBe("user_requested");
+    expect(result.order.cancelledAt?.getTime()).toBe(MARKET_OPEN_NOW.getTime());
+    expect(await sumVmoneyBalance(user.id)).toBe(balanceBefore); // untouched - nothing was ever reserved
+  });
+
+  it("only ever cancels the caller's own order - another user's id comes back not_found", async () => {
+    const owner = await makeUser();
+    const attacker = await makeUser();
+    const instrument = await makeInstrument();
+    const queued = await queueLimitOrder(owner.id, instrument);
+
+    const result = await cancelOrderTx(attacker.id, queued.id);
+
+    expect(result).toEqual({ status: "not_found" });
+    const [stillOpen] = await db.select().from(orders).where(eq(orders.id, queued.id));
+    expect(stillOpen!.status).toBe("open"); // untouched
+  });
+
+  it("returns not_found for a nonexistent order id - same result as a wrong-owner id", async () => {
+    const user = await makeUser();
+
+    const result = await cancelOrderTx(user.id, randomUUID());
+
+    expect(result).toEqual({ status: "not_found" });
+  });
+
+  it("a double cancel is idempotent - the second call returns the same row, not an error", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const queued = await queueLimitOrder(user.id, instrument);
+
+    const first = await cancelOrderTx(user.id, queued.id, MARKET_OPEN_NOW);
+    const second = await cancelOrderTx(user.id, queued.id, new Date(MARKET_OPEN_NOW.getTime() + 60_000));
+
+    expect(first.status).toBe("cancelled");
+    expect(second.status).toBe("already_cancelled");
+    if (second.status !== "already_cancelled") throw new Error("expected already_cancelled");
+    // the SECOND call must never overwrite cancelledAt/cancelReason from the first
+    expect(second.order.cancelledAt?.getTime()).toBe(MARKET_OPEN_NOW.getTime());
+    expect(second.order.cancelReason).toBe("user_requested");
+  });
+
+  it("cannot cancel an already-filled order", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 5000, ts: MARKET_OPEN_NOW.getTime() });
+    const filled = await placeOrderTx(
+      user.id,
+      instrument,
+      { symbol: instrument.symbol, side: "buy", type: "market", qty: 1 },
+      freshIdempotencyKey(),
+      MARKET_OPEN_NOW,
+    );
+    if (filled.status !== "filled") throw new Error("expected filled");
+
+    const result = await cancelOrderTx(user.id, filled.order.id);
+
+    expect(result.status).toBe("not_cancellable");
+    if (result.status !== "not_cancellable") throw new Error("expected not_cancellable");
+    expect(result.order.status).toBe("filled");
+  });
+
+  it("an order already expired by the EOD job comes back already_cancelled, not re-cancelled", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    const queued = await queueLimitOrder(user.id, instrument);
+    const eodAt = new Date("2026-09-21T10:05:00.000Z");
+    await cancelAllOpenOrdersTx(eodAt);
+
+    const result = await cancelOrderTx(user.id, queued.id, MARKET_OPEN_NOW);
+
+    expect(result.status).toBe("already_cancelled");
+    if (result.status !== "already_cancelled") throw new Error("expected already_cancelled");
+    expect(result.order.cancelReason).toBe("eod_expired"); // never overwritten to user_requested
+    expect(result.order.cancelledAt?.getTime()).toBe(eodAt.getTime());
+  });
+
+  // Same PGlite-single-connection honesty caveat as the matchOpenLimitOrderTx
+  // race test above (D49): two db.transaction() calls against one PGlite
+  // session can never genuinely interleave, so this proves "never both
+  // succeed, whichever order they're invoked in" (idempotent/safe under
+  // repeated or near-simultaneous invocation), not a true interleaved-race
+  // regression test - that needs a real multi-connection Postgres, same
+  // tracked gap as docs/ROADMAP.md's pre-launch checklist.
+  it("a cancel racing a concurrent fill attempt never lets both succeed", async () => {
+    const user = await makeUser();
+    const instrument = await makeInstrument();
+    await grantVmoneyPaise(user.id, 1_000_000);
+    const queued = await queueLimitOrder(user.id, instrument);
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 4000, ts: MARKET_OPEN_NOW.getTime() }); // marketable (buy limit 5000 >= 4000)
+
+    const [cancelResult, matchResult] = await Promise.all([
+      cancelOrderTx(user.id, queued.id, MARKET_OPEN_NOW),
+      matchOpenLimitOrderTx(queued.id, instrument, MARKET_OPEN_NOW),
+    ]);
+
+    // Exactly one of the two actually changed the order's fate; the other
+    // must observe that and back off cleanly - never both "succeed".
+    const outcomes = [cancelResult.status, matchResult.status];
+    const oneWon =
+      (outcomes[0] === "cancelled" && outcomes[1] === "already_settled") ||
+      (outcomes[0] === "already_cancelled" && outcomes[1] === "filled");
+    expect(oneWon).toBe(true);
+
+    const [finalRow] = await db.select().from(orders).where(eq(orders.id, queued.id));
+    expect(["cancelled", "filled"]).toContain(finalRow!.status);
   });
 });

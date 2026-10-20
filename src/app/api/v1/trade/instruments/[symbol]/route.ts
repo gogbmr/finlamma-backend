@@ -60,6 +60,6 @@ export const GET = withErrors(
     await requireFullAccess(user);
     const { symbol } = await params;
     const result = await getPublicInstrumentBySymbol(symbol.toUpperCase());
-    return okWithDisclaimer(result.data, result.disclaimer);
+    return okWithDisclaimer(result.data, result.disclaimer, result.disclaimerLocalized);
   },
 );

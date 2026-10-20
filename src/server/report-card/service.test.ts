@@ -228,6 +228,13 @@ describe("computeAndStoreWeeklySnapshot", () => {
         strengthNoteId: "tpl_1",
         gapNoteId: "tpl_1",
         habitNoteId: "tpl_1",
+        moduleBreakdown: [
+          expect.objectContaining({
+            worldId: "world_1",
+            worldTitle: "Money Wise",
+            worldTitleLocalized: { en: "Money Wise" },
+          }),
+        ],
       }),
     );
   });

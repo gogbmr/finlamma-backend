@@ -97,6 +97,8 @@ export const WalletResponseSchema = z.object({
   }),
 });
 
+const LocalizedTextSchema = z.object({ en: z.string(), hi: z.string(), hx: z.string() });
+
 const VmoneyLedgerEntrySchema = z.object({
   id: z.uuid(),
   amountPaise: z.number().int().openapi({
@@ -105,6 +107,14 @@ const VmoneyLedgerEntrySchema = z.object({
   }),
   sourceType: z.string().openapi({ example: "reward_claim" }),
   reason: z.string().openapi({ example: "Reward claimed" }),
+  reasonLocalized: LocalizedTextSchema.nullable().openapi({
+    description:
+      "Phase 4 Trade asks (additive): a {en, hi, hx} version of `reason`, built only for " +
+      "trade/fund-trade ledger entries so far. null for every other sourceType, and for any " +
+      "row written before this field existed - fall back to the plain `reason` string whenever " +
+      "this is null.",
+    example: null,
+  }),
   createdAt: z.string().datetime(),
 });
 

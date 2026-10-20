@@ -2,6 +2,56 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-20 — v2.2.0
+
+Minor bump: 2 new operations, new fields on seven existing response schemas, one new error
+response, and one **behaviour change** on an existing endpoint (below) since v2.1.0. Confirmed
+with the app team before publishing that nothing live calls that endpoint yet, so it ships as a
+minor bump rather than a major one. Covers order history, order cancellation, fund holdings and
+trade-side localization. Branch `phase-4-trade-asks`.
+
+**Order history & cancellation**
+- **New endpoint**: `GET /api/v1/trade/orders` — the caller's own orders, cursor-paginated,
+  filterable by `status` and by the `Idempotency-Key` used to place one.
+- **New endpoint**: `POST /api/v1/trade/orders/{id}/cancel` — cancels the caller's own pending
+  order. No ledger write (nothing is reserved against an open order, so there's nothing to
+  release). Scoped by order id *and* caller together, so a wrong-owner or nonexistent id both
+  return a plain `404 NOT_FOUND`, never `403` — an id can't be probed for existence. Idempotent: an
+  already-cancelled order just returns its current state; an already-filled or already-expired one
+  gets the new `409 ORDER_NOT_CANCELLABLE`, naming its actual status.
+- `PlaceOrderResponse`/`OrderListResponse` gained `cancelReason` (`user_requested` | `eod_expired`
+  | `null`) on each order.
+
+**Fund holdings & localized disclaimers**
+- `GET /api/v1/trade/funds`, `GET /api/v1/trade/funds/{id}` — each fund now also reports the
+  caller's own `heldUnitsMilli` and `holdingValuePaise` (0 when not held), and the list/detail
+  responses gained `disclaimerLocalized: { en, hi, hx }` (mutual-fund risk disclosure, three
+  languages).
+- `GET /api/v1/trade/instruments`, `GET /api/v1/trade/instruments/{symbol}`,
+  `GET /api/v1/trade/instruments/{symbol}/candles` — same `disclaimerLocalized` addition for stock
+  trading.
+- `GET /api/v1/trade/market-status` — gained `recommendedPollIntervalMs`, so the app's polling
+  cadence is server-driven rather than a hardcoded client constant.
+- `GET /api/v1/me/wallet/history` — each row gained `reasonLocalized: { en, hi, hx } | null` —
+  localized only for `trade`/`fund_trade` ledger entries; every other ledger source stays
+  English-only for now, a known follow-up, not an oversight.
+- `GET /api/v1/me/report-card` — `moduleBreakdown[]` rows gained `worldTitleLocalized`.
+
+**Behaviour change: `POST /api/v1/trade/funds/sip` now requires an Idempotency-Key**
+- This endpoint already shipped in v1.0.0 without this requirement. A request that omits the
+  header now gets `400 VALIDATION_FAILED` where it previously succeeded — this is not additive,
+  it will break any existing caller that doesn't send the header. Confirmed with the app team
+  before publishing that nothing live calls this endpoint yet, which is the only reason this ships
+  as a minor bump rather than a major one.
+- Same `409 IDEMPOTENCY_REPLAY` semantics as `POST /trade/orders`/`POST /trade/funds/orders`:
+  replaying the same key returns the original result rather than creating a second plan.
+
+**Not a shape change, but worth recording here**: three unrelated `Promise.all`-based concurrent
+DB-read call sites flagged by `scripts/check-promise-all-db-concurrency.ts` (an admin worlds page,
+certificate issuance, and the rewards admin claims list) were switched to
+`runWithConcurrencyLimit`. All three were display-only reads, not reachable from this contract at
+all — no request/response shape changed.
+
 ## 2026-10-14 — v2.1.0
 
 Minor bump: purely additive, 1 new operation, new fields on two existing response schemas, and

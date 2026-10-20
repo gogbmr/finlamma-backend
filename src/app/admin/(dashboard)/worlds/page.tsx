@@ -2,6 +2,7 @@ import { Globe2 } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getLessonEditorData } from "@/server/lessons/service";
@@ -32,8 +33,13 @@ export default async function WorldsPage() {
   // fixed count (D25), but each world's lesson count stays small enough in
   // practice for fetching every world's list up front to remain cheap, and
   // it avoids a separate on-demand Server Action just for this.
-  const lessonsByWorld = await Promise.all(
-    worlds.map((w) => getLessonEditorData(w.id)),
+  // runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,
+  // docs/ARCHITECTURE.md D13/D72): world count is unbounded by design
+  // (D25), and getLessonEditorData is a real Postgres read, no V Money
+  // involved - a display-only admin page.
+  const lessonsByWorld = await runWithConcurrencyLimit(
+    worlds.map((w) => () => getLessonEditorData(w.id)),
+    DB_CONCURRENCY_LIMIT,
   );
   const doubtZoneLessonsByWorldId: Record<
     string,

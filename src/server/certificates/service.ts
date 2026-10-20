@@ -1,4 +1,5 @@
 import { logActivity } from "@/lib/activity-log";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import { logInternalError } from "@/lib/http";
@@ -110,7 +111,14 @@ function displayName(user: UserRow): string {
 
 export async function listMyCertificates(userId: string) {
   const rows = await listCertificatesForUser(userId);
-  const worlds = await Promise.all(rows.map((r) => getWorldById(r.worldId)));
+  // runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,
+  // docs/ARCHITECTURE.md D13/D72): worlds are staff-created with no fixed
+  // count (D25), so this is unbounded as the catalog grows - a
+  // display-only read (certificate + world title), no V Money here.
+  const worlds = await runWithConcurrencyLimit(
+    rows.map((r) => () => getWorldById(r.worldId)),
+    DB_CONCURRENCY_LIMIT,
+  );
   return rows.map((row, i) => ({
     worldId: row.worldId,
     worldTitle: worlds[i]?.title ?? null,

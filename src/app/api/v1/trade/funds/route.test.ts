@@ -11,7 +11,7 @@ vi.mock("@/server/onboarding/service", () => ({
 
 const mockListPublicFunds = vi.fn();
 vi.mock("@/server/funds/service", () => ({
-  listPublicFunds: () => mockListPublicFunds(),
+  listPublicFunds: (userId: unknown) => mockListPublicFunds(userId),
 }));
 
 import { GET } from "./route";
@@ -60,5 +60,6 @@ describe("GET /api/v1/trade/funds", () => {
     expect(body.data[0].name).toBe("Finlamma Test Fund");
     expect(JSON.stringify(body)).not.toContain("amfiSchemeCode");
     expect(body.disclaimer).toBe("test disclaimer");
+    expect(mockListPublicFunds).toHaveBeenCalledWith(USER.id);
   });
 });

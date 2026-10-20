@@ -11,7 +11,7 @@ vi.mock("@/server/onboarding/service", () => ({
 
 const mockGetPublicFund = vi.fn();
 vi.mock("@/server/funds/service", () => ({
-  getPublicFund: (id: unknown) => mockGetPublicFund(id),
+  getPublicFund: (id: unknown, userId: unknown) => mockGetPublicFund(id, userId),
 }));
 
 import { GET } from "./route";
@@ -58,6 +58,6 @@ describe("GET /api/v1/trade/funds/{id}", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.name).toBe("Finlamma Test Fund");
-    expect(mockGetPublicFund).toHaveBeenCalledWith("fund-1");
+    expect(mockGetPublicFund).toHaveBeenCalledWith("fund-1", USER.id);
   });
 });

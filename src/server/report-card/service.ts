@@ -242,11 +242,22 @@ export async function computeAndStoreWeeklySnapshot(
   const efficiencyScore = computeEfficiencyScore(subMetrics);
 
   const worldIds = [...new Set(allCompletions.map((c) => c.worldId))];
-  const worldTitlePairs = await Promise.all(
-    worldIds.map(
-      async (id) =>
-        [id, (await getWorldById(id))?.title.en ?? "Unknown world"] as const,
-    ),
+  // runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,
+  // docs/ARCHITECTURE.md D13/D72): getWorldById is a real Postgres query,
+  // and worldIds is a runtime-length set (every distinct world this
+  // learner has a completion in this week) - unbounded as the world
+  // catalog grows (D25: worlds are staff-created with no fixed count).
+  // Found manually during the Phase 4 Trade audit's concurrency sweep -
+  // the extended checker (scripts/check-promise-all-db-concurrency.ts)
+  // still misses this one: the nested `[id, ...] as const` tuple literal
+  // inside the .map() callback confuses its "find the array literal"
+  // logic into parsing THAT as the outer array, a known heuristic
+  // limitation, not a fix worth chasing further (documented, not silently
+  // ignored - flagged to the founder alongside the other out-of-Trade
+  // findings this phase surfaced).
+  const worldTitlePairs = await runWithConcurrencyLimit(
+    worldIds.map((id) => async () => [id, (await getWorldById(id))?.title ?? null] as const),
+    DB_CONCURRENCY_LIMIT,
   );
   const moduleBreakdown = computeModuleBreakdown(
     allCompletions,

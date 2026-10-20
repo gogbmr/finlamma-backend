@@ -30,6 +30,7 @@ vi.mock("./hours", () => ({
 }));
 
 const {
+  computeRecommendedPollIntervalMs,
   getInstrumentCandles,
   getMarketStatus,
   getPublicInstrumentBySymbol,
@@ -86,6 +87,9 @@ describe("listPublicInstruments", () => {
     expect(result.data).toHaveLength(1);
     expect(result.data[0]).toMatchObject({ symbol: "RELIANCE", quote: { pricePaise: 284510 } });
     expect(result.disclaimer).toMatch(/investment advice/i);
+    expect(result.disclaimerLocalized).toMatchObject({ en: result.disclaimer });
+    expect(result.disclaimerLocalized.hi).toBeTruthy();
+    expect(result.disclaimerLocalized.hx).toBeTruthy();
   });
 
   it("never lets one symbol's failed quote fetch break the whole list", async () => {
@@ -135,6 +139,7 @@ describe("getPublicInstrumentBySymbol", () => {
     expect(result.data.about).toEqual({ en: "a", hi: "a", hx: "a" });
     expect(result.data.quote?.pricePaise).toBe(284510);
     expect(result.disclaimer).toMatch(/investment advice/i);
+    expect(result.disclaimerLocalized).toMatchObject({ en: result.disclaimer });
   });
 });
 
@@ -184,6 +189,7 @@ describe("getMarketStatus", () => {
       globalHalt: false,
       tradingUnlocked: false,
       worldsToGo: 2,
+      recommendedPollIntervalMs: 5000,
     });
     expect(mockIsMarketOpen).toHaveBeenCalledWith(expect.any(Date), new Set(["2026-10-02"]));
     expect(mockGetTradingUnlockProgress).toHaveBeenCalledWith("user_1");
@@ -203,5 +209,24 @@ describe("getMarketStatus", () => {
 
     expect(result.feedMode).toBe("paused");
     expect(result.globalHalt).toBe(true);
+    expect(result.recommendedPollIntervalMs).toBe(60_000);
+  });
+});
+
+describe("computeRecommendedPollIntervalMs", () => {
+  it("polls fast when the market is open and the feed is live", () => {
+    expect(computeRecommendedPollIntervalMs(true, "live")).toBe(5_000);
+  });
+
+  it("polls slower when open but delayed - already lagged, no benefit polling at live speed", () => {
+    expect(computeRecommendedPollIntervalMs(true, "delayed_15m")).toBe(15_000);
+  });
+
+  it("polls slowly when the feed is paused, even if the market is open", () => {
+    expect(computeRecommendedPollIntervalMs(true, "paused")).toBe(60_000);
+  });
+
+  it("polls slowly when the market is closed, regardless of feed mode", () => {
+    expect(computeRecommendedPollIntervalMs(false, "live")).toBe(60_000);
   });
 });
