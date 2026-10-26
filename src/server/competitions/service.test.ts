@@ -103,7 +103,11 @@ vi.mock("@/lib/activity-log", () => ({
 }));
 
 const {
+  COMPETITION_ENTRY_WINDOW_PCT_KEY,
+  COMPETITION_MAX_TRADES_KEY,
+  COMPETITION_MIN_QUALIFYING_TRADES_KEY,
   enterCurrentCompetition,
+  getCurrentCompetitionView,
   getMyCompetitionStatus,
   placeCompetitionTrade,
   rankEntriesByRoi,
@@ -174,6 +178,56 @@ describe("rankEntriesByRoi - pure ranking", () => {
     const ranked = rankEntriesByRoi(entries, 2000, 10_000_000);
     // Ending value 9,999,000 + 2,000 = 10,001,000 -> +0.01% (1 basis point), not a huge move.
     expect(ranked[0]!.roiPctBasisPoints).toBe(1);
+  });
+});
+
+describe("getCurrentCompetitionView", () => {
+  beforeEach(() => {
+    mockGetCurrentCompetition.mockResolvedValue(competitionRow());
+    mockListEntriesForCompetition.mockResolvedValue([]);
+    mockGetInstrumentById.mockResolvedValue({ id: "inst_1", symbol: "TST", exchange: "NSE", name: "Test Co" });
+    mockGetSettingNumber.mockImplementation((_key: string, fallback: number) => Promise.resolve(fallback));
+  });
+
+  it("returns null when there's no active competition", async () => {
+    mockGetCurrentCompetition.mockResolvedValue(null);
+
+    expect(await getCurrentCompetitionView(NOW)).toBeNull();
+  });
+
+  it("throws NOT_FOUND if the competition's instrument record is missing", async () => {
+    mockGetInstrumentById.mockResolvedValue(null);
+
+    await expect(getCurrentCompetitionView(NOW)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("includes the instrument's symbol/exchange/name so the app can show and quote it", async () => {
+    const view = await getCurrentCompetitionView(NOW);
+
+    expect(view!.instrument).toEqual({ symbol: "TST", exchange: "NSE", name: "Test Co" });
+  });
+
+  it("exposes the SAME enforced limits that trade placement, settlement and the entry window actually use", async () => {
+    mockGetSettingNumber.mockImplementation((key: string) => {
+      if (key === COMPETITION_MAX_TRADES_KEY) return Promise.resolve(7);
+      if (key === COMPETITION_MIN_QUALIFYING_TRADES_KEY) return Promise.resolve(3);
+      if (key === COMPETITION_ENTRY_WINDOW_PCT_KEY) return Promise.resolve(25);
+      throw new Error(`unexpected settings key ${key}`);
+    });
+
+    const view = await getCurrentCompetitionView(NOW);
+
+    // Same settings_kv key placeCompetitionTrade's maxTrades check reads.
+    expect(view!.maxTrades).toBe(7);
+    // Same settings_kv key settleOneCompetition's qualifying-trades filter reads.
+    expect(view!.minQualifyingTrades).toBe(3);
+    // Same formula enterCurrentCompetition's entry-window check uses: windowStart + span * pct/100.
+    const competition = competitionRow();
+    const expectedDeadline = new Date(
+      competition.windowStart.getTime() +
+        (competition.windowEnd.getTime() - competition.windowStart.getTime()) * (25 / 100),
+    );
+    expect(view!.entryClosesAt).toBe(expectedDeadline.toISOString());
   });
 });
 

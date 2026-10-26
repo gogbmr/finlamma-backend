@@ -10,11 +10,14 @@ registry.registerPath({
   path: "/api/v1/arena/competitions/current",
   summary: "Get the current Monthly Competition (AR-14)",
   description:
-    "The competition hero card: name, instrument, virtual capital (a non-convertible sandbox " +
-    "balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands and " +
-    "rules text. Null when no competition is currently published and within its window - the " +
-    "app should show an empty state, not an error. Live LTP/% change isn't included here - use " +
-    "GET /trade/instruments/{symbol} for that.",
+    "The competition hero card: name, instrument (symbol/exchange/display name - pass `symbol` " +
+    "to GET /trade/instruments/{symbol} for a live quote), virtual capital (a non-convertible " +
+    "sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands, " +
+    "rules text, and the enforced limits (`maxTrades`, `minQualifyingTrades`, `entryClosesAt`) - " +
+    "the same settings_kv values trade placement, settlement and the entry-window check actually " +
+    "use, not a second hardcoded copy. Null when no competition is currently published and " +
+    "within its window - the app should show an empty state, not an error. Live LTP/% change " +
+    "isn't included here - use GET /trade/instruments/{symbol} for that.",
   tags: ["Arena"],
   security: [{ bearerAuth: [] }],
   responses: {
