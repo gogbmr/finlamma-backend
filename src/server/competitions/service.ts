@@ -3,6 +3,7 @@ import type { LocalizedText } from "@/db/schema/_helpers";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
 import { getSettingNumber, setSettingJson } from "@/lib/settings";
 import { getHandlesForUserIds } from "@/server/peer-handles/service";
@@ -124,10 +125,13 @@ export function rankEntriesByRoi(
 
 // --- Learner-facing views ---
 
+export type CompetitionInstrumentSummary = { symbol: string; exchange: string; name: string };
+
 export type CurrentCompetitionView = {
   id: string;
   name: { en: string; hi: string; hx: string };
   instrumentId: string;
+  instrument: CompetitionInstrumentSummary;
   virtualCapitalPaise: number;
   windowStart: string;
   windowEnd: string;
@@ -135,19 +139,40 @@ export type CurrentCompetitionView = {
   prizes: CompetitionRow["prizes"];
   rules: { en: string; hi: string; hx: string };
   playersCount: number;
+  maxTrades: number;
+  minQualifyingTrades: number;
+  entryClosesAt: string;
 };
 
 // AR-14's hero card, minus live LTP/%-change - the app already has a
 // dedicated instrument-quote endpoint (GET /trade/instruments/{symbol}) for
-// that, so this doesn't duplicate a live market-data fetch just for display.
+// that, so this doesn't duplicate a live market-data fetch just for display;
+// `instrument.symbol` is what the app passes to that endpoint. maxTrades/
+// minQualifyingTrades/entryClosesAt read the exact same settings_kv keys (and
+// the same entryWindowDeadline formula) that placeCompetitionTrade,
+// settleOneCompetition and enterCurrentCompetition actually enforce below -
+// single source of truth, not a second copy of the limits that could drift.
 export async function getCurrentCompetitionView(now: Date = new Date()): Promise<CurrentCompetitionView | null> {
   const competition = await getCurrentCompetition(now);
   if (!competition) return null;
-  const entries = await listEntriesForCompetition(competition.id);
+
+  const [entries, instrument, maxTrades, minQualifyingTrades, entryWindowPct] = await runWithConcurrencyLimit(
+    [
+      () => listEntriesForCompetition(competition.id),
+      () => getInstrumentById(competition.instrumentId),
+      () => getSettingNumber(COMPETITION_MAX_TRADES_KEY, DEFAULT_COMPETITION_MAX_TRADES),
+      () => getSettingNumber(COMPETITION_MIN_QUALIFYING_TRADES_KEY, DEFAULT_COMPETITION_MIN_QUALIFYING_TRADES),
+      () => getSettingNumber(COMPETITION_ENTRY_WINDOW_PCT_KEY, DEFAULT_COMPETITION_ENTRY_WINDOW_PCT),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
+  if (!instrument) throw new AppError("NOT_FOUND", "Competition instrument not found");
+
   return {
     id: competition.id,
     name: competition.name,
     instrumentId: competition.instrumentId,
+    instrument: { symbol: instrument.symbol, exchange: instrument.exchange, name: instrument.name },
     virtualCapitalPaise: competition.virtualCapitalPaise,
     windowStart: competition.windowStart.toISOString(),
     windowEnd: competition.windowEnd.toISOString(),
@@ -155,6 +180,9 @@ export async function getCurrentCompetitionView(now: Date = new Date()): Promise
     prizes: competition.prizes,
     rules: competition.rules,
     playersCount: entries.length,
+    maxTrades,
+    minQualifyingTrades,
+    entryClosesAt: entryWindowDeadline(competition, entryWindowPct).toISOString(),
   };
 }
 

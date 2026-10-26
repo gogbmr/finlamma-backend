@@ -214,7 +214,7 @@ generic "something went wrong" toast:
 | `PRICE_STALE` / `PRICE_UNAVAILABLE` | 409 | Yes, shortly | Trading only. Show "price unavailable right now, try again" - these are expected during low-liquidity moments or a relay hiccup, not exceptional. |
 | `NAV_STALE` / `NAV_UNAVAILABLE` | 409 | Yes, later | Fund orders only - a fund's NAV hasn't refreshed yet (ingested once daily). Not retryable "shortly" the way prices are; show "try again later today." |
 | `MARKET_CLOSED` / `MARKET_HALTED` / `SYMBOL_HALTED` / `MARKET_PAUSED` | 409 | No, until hours/halt change | Show the specific reason, not a generic failure - the app should also proactively disable the trade button using `GET /api/v1/trade/market-status` rather than relying on this error as the primary signal. |
-| `COMPETITION_ENTRY_CLOSED` / `COMPETITION_MAX_TRADES_REACHED` | 409 | No | Monthly Competition only - entry window closed (first half of the competition's window only) or the per-entry trade cap (currently 10) was hit. Show the specific reason; don't let the UI suggest "just try again." |
+| `COMPETITION_ENTRY_CLOSED` / `COMPETITION_MAX_TRADES_REACHED` | 409 | No | Monthly Competition only - entry window closed, or the per-entry trade cap was hit. `GET /arena/competitions/current` returns the actual `entryClosesAt` timestamp and `maxTrades` cap (don't hardcode either - they're admin-tunable). Show the specific reason; don't let the UI suggest "just try again." |
 | `INSUFFICIENT_MARGIN` / `INSUFFICIENT_HOLDINGS` / `INSUFFICIENT_VMONEY` | 409 | No, until balance changes | Show the real reason (not enough V Money / not enough shares to sell) - never silently round the requested amount down. |
 | `PARENT_REAPPROVAL_REQUIRED` | 403 | After parent acts | See §3 - distinct screen from the first-time consent flow. |
 | `ACCOUNT_DELETION_PENDING` | 403 | No, ever | `DELETE /me` was already called (possibly from another device/session) - every endpoint now returns this instead of its normal response. Show "your account is being deleted" and sign the app out; there's no path back from this state. Reconciliation usually finishes within seconds, so this should be rare to actually observe outside of a near-simultaneous double-delete. |
@@ -277,9 +277,10 @@ every time).
 - **Daily/period caps exist in several places** and are enforced server-side regardless of what
   the UI shows: Pulse Check VM is capped per day (`dailyCapReached` on the attempt result),
   consent/reapproval resends are capped per day, and the Monthly Competition caps total trades per
-  entry (currently 10) and requires a minimum qualifying-trade count (currently 5) before an entry
-  is even eligible for ranking - don't assume "I can always place one more trade" inside a
-  competition.
+  entry (`maxTrades` on `GET /arena/competitions/current`) and requires a minimum qualifying-trade
+  count (`minQualifyingTrades`, same endpoint) before an entry is even eligible for ranking - both
+  are admin-tunable, so read them from the response rather than hardcoding a number; don't assume
+  "I can always place one more trade" inside a competition.
 - **Rejections never create a persisted row** (orders, fund orders except a SIP's own unattended
   failure, reward claims, cheers). A rejected attempt is just an error response - there's no
   "pending/rejected" order status to poll for; either the call succeeded (you'll see the created

@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.2.0) on 2026-10-20.
+> Generated from `openapi/openapi.json` (version 2.2.0) on 2026-10-26.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -5941,7 +5941,7 @@ Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: 
 
 **Get the current Monthly Competition (AR-14)**
 
-The competition hero card: name, instrument, virtual capital (a non-convertible sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands and rules text. Null when no competition is currently published and within its window - the app should show an empty state, not an error. Live LTP/% change isn't included here - use GET /trade/instruments/{symbol} for that.
+The competition hero card: name, instrument (symbol/exchange/display name - pass `symbol` to GET /trade/instruments/{symbol} for a live quote), virtual capital (a non-convertible sandbox balance - docs/ARCHITECTURE.md D57, never V Money), window, days left, prize bands, rules text, and the enforced limits (`maxTrades`, `minQualifyingTrades`, `entryClosesAt`) - the same settings_kv values trade placement, settlement and the entry-window check actually use, not a second hardcoded copy. Null when no competition is currently published and within its window - the app should show an empty state, not an error. Live LTP/% change isn't included here - use GET /trade/instruments/{symbol} for that.
 
 **Auth:** bearerAuth
 
@@ -5959,6 +5959,11 @@ The competition hero card: name, instrument, virtual capital (a non-convertible 
       "hx": "string"
     },
     "instrumentId": "00000000-0000-0000-0000-000000000000",
+    "instrument": {
+      "symbol": "RELIANCE",
+      "exchange": "NSE",
+      "name": "Reliance Industries Ltd"
+    },
     "virtualCapitalPaise": 10000000,
     "windowStart": "2026-01-01T00:00:00.000Z",
     "windowEnd": "2026-01-01T00:00:00.000Z",
@@ -5976,7 +5981,10 @@ The competition hero card: name, instrument, virtual capital (a non-convertible 
       "hi": "string",
       "hx": "string"
     },
-    "playersCount": 340
+    "playersCount": 340,
+    "maxTrades": 10,
+    "minQualifyingTrades": 5,
+    "entryClosesAt": "2026-10-16T00:00:00.000Z"
   }
 }
 ```

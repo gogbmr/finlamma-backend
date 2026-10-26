@@ -17,12 +17,22 @@ const PrizeBandSchema = z.object({
   badgeId: z.uuid().nullable(),
 });
 
+const CompetitionInstrumentSummarySchema = z.object({
+  symbol: z.string().openapi({
+    example: "RELIANCE",
+    description: "Pass this to GET /trade/instruments/{symbol} to fetch a live quote for this competition's instrument.",
+  }),
+  exchange: z.string().openapi({ example: "NSE" }),
+  name: z.string().openapi({ example: "Reliance Industries Ltd", description: "Display name." }),
+});
+
 export const CurrentCompetitionResponseSchema = z.object({
   data: z
     .object({
       id: z.uuid(),
       name: LocalizedTextSchema,
       instrumentId: z.uuid(),
+      instrument: CompetitionInstrumentSummarySchema,
       virtualCapitalPaise: z.number().int().positive().openapi({
         example: 10000000,
         description: "₹1,00,000 in paise - a sandbox balance, never V Money (docs/ARCHITECTURE.md D57).",
@@ -33,6 +43,18 @@ export const CurrentCompetitionResponseSchema = z.object({
       prizes: z.array(PrizeBandSchema),
       rules: LocalizedTextSchema,
       playersCount: z.number().int().nonnegative().openapi({ example: 340 }),
+      maxTrades: z.number().int().positive().openapi({
+        example: 10,
+        description: "The enforced per-entry trade cap for this competition - the same settings_kv value POST /arena/competitions/current/trades checks (COMPETITION_MAX_TRADES_REACHED past it).",
+      }),
+      minQualifyingTrades: z.number().int().positive().openapi({
+        example: 5,
+        description: "Minimum trades an entry needs before it's eligible for ranking/prizes at settlement (docs/ARCHITECTURE.md D59) - the same settings_kv value settlement checks.",
+      }),
+      entryClosesAt: z.string().datetime().openapi({
+        example: "2026-10-16T00:00:00.000Z",
+        description: "Entry closes at this timestamp (the configured % of the competition window) - entering after this fails with COMPETITION_ENTRY_CLOSED.",
+      }),
     })
     .nullable()
     .openapi({ description: "Null when no competition is currently published and within its window." }),
