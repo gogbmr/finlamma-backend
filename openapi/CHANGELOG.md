@@ -2,6 +2,22 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-26 — v2.3.0
+
+Minor bump: purely additive, new fields on one existing response schema - nothing removed and
+nothing changed incompatibly since v2.2.0. Branch `competition-fields`.
+
+**Monthly Competition hero card**
+- `GET /api/v1/arena/competitions/current` — the response gained:
+  - `instrument: { symbol, exchange, name }` — the competition's instrument, so the app can show
+    what's being traded and fetch a live quote via `GET /trade/instruments/{symbol}` (pass
+    `instrument.symbol`).
+  - `maxTrades`, `minQualifyingTrades` (integers) and `entryClosesAt` (timestamp) — the enforced
+    per-entry trade cap, minimum qualifying-trade count for ranking/prizes, and entry-window
+    deadline. These are read from the exact same `settings_kv` values the server already enforces
+    for trade placement, settlement and the entry window, not a second hardcoded copy, so the app
+    no longer needs to guess or hardcode these numbers.
+
 ## 2026-10-20 — v2.2.0
 
 Minor bump: 2 new operations, new fields on seven existing response schemas, one new error
