@@ -39,6 +39,12 @@ type MentorRow = NonNullable<Awaited<ReturnType<typeof getMentorById>>>;
 
 async function toPublicMentor(row: MentorRow) {
   return {
+    // App asks batch, item A13 (BLOCKING): POST /doubt-zone/threads needs a
+    // UUID mentorId, but this endpoint only ever returned `key`. Every
+    // mentor row already has a real uuid `id` (idAndTimestamps()) - this
+    // was just never selected into the public shape before. `key` stays
+    // unchanged, still the stable slug other callers already rely on.
+    id: row.id,
     key: row.key,
     order: row.order,
     name: row.name,
