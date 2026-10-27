@@ -143,7 +143,22 @@ export async function createSip(
 // Found by the Phase 4 Trade audit's extended concurrency checker (it
 // previously only inspected literal array Promise.all calls, not .map()
 // over a runtime-length array - see scripts/check-promise-all-db-concurrency.ts).
-export async function listMySips(userId: string, now: Date = new Date()) {
+//
+// App asks batch, item A16: an optional idempotencyKey filter, same
+// semantics as GET /trade/orders?idempotencyKey= - lets the app resolve an
+// "outcome unknown" SIP-creation attempt. Self-only by construction
+// (getSipPlanByIdempotencyKey is always scoped to this userId), so a
+// guessed key can never surface another learner's plan; a non-matching key
+// simply returns an empty list rather than an error.
+export async function listMySips(
+  userId: string,
+  opts: { idempotencyKey?: string } = {},
+  now: Date = new Date(),
+) {
+  if (opts.idempotencyKey) {
+    const plan = await getSipPlanByIdempotencyKey(userId, opts.idempotencyKey);
+    return plan ? [await shapeSipPlan(plan, now)] : [];
+  }
   const plans = await listSipPlansForUser(userId);
   return runWithConcurrencyLimit(plans.map((p) => () => shapeSipPlan(p, now)), DB_CONCURRENCY_LIMIT);
 }

@@ -1,5 +1,6 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { encodeCursor } from "@/lib/http";
 import { fundHoldings, fundOrders, sipPlans, users } from "@/db/schema";
 import { insertVmoneyLedgerEntryIfNew, sumVmoneyBalanceTx, type DbOrTx } from "@/server/economy/repo";
 import { getLatestNav } from "@/server/funds/repo";
@@ -172,6 +173,55 @@ export async function placeFundOrderTx(
 
 export async function listFundHoldings(userId: string) {
   return db.select().from(fundHoldings).where(and(eq(fundHoldings.userId, userId), sql`${fundHoldings.unitsMilli} > 0`));
+}
+
+export type FundOrderListCursor = { createdAt: string; id: string };
+
+// App asks batch, item A16 - same semantics as src/server/orders/repo.ts's
+// listOrdersForUserPage: self-only by construction (userId is always the
+// authenticated caller's own id, never client-supplied), cursor-paginated
+// newest-first on (createdAt, id), with an optional idempotencyKey filter
+// that lets the app resolve an "outcome unknown" fund-order attempt. A
+// guessed key can never surface another learner's order - it's always
+// combined with this same userId condition.
+export async function listFundOrdersForUserPage(
+  userId: string,
+  opts: {
+    limit: number;
+    cursor: FundOrderListCursor | null;
+    status?: "filled" | "failed";
+    idempotencyKey?: string;
+  },
+): Promise<{ data: FundOrderRow[]; nextCursor: string | null }> {
+  const conditions = [eq(fundOrders.userId, userId)];
+  if (opts.status) conditions.push(eq(fundOrders.status, opts.status));
+  if (opts.idempotencyKey) conditions.push(eq(fundOrders.idempotencyKey, opts.idempotencyKey));
+  if (opts.cursor) {
+    const cursorCreatedAt = new Date(opts.cursor.createdAt);
+    conditions.push(
+      or(
+        lt(fundOrders.createdAt, cursorCreatedAt),
+        and(eq(fundOrders.createdAt, cursorCreatedAt), lt(fundOrders.id, opts.cursor.id)),
+      )!,
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(fundOrders)
+    .where(and(...conditions))
+    .orderBy(desc(fundOrders.createdAt), desc(fundOrders.id))
+    .limit(opts.limit + 1);
+
+  const hasMore = rows.length > opts.limit;
+  const page = hasMore ? rows.slice(0, opts.limit) : rows;
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeCursor({ createdAt: last.createdAt.toISOString(), id: last.id } satisfies FundOrderListCursor)
+      : null;
+
+  return { data: page, nextCursor };
 }
 
 // --- SIP execution (src/inngest/functions/sip-execution.ts) ---

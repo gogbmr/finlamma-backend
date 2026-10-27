@@ -18,9 +18,19 @@ registry.registerPath({
   description:
     "Every plan's next due date, status, and its most recent executions - a failed execution " +
     "(e.g. insufficient balance on the due date) is always visible here, never silently " +
-    "skipped (docs/ARCHITECTURE.md D46).",
+    "skipped (docs/ARCHITECTURE.md D46). `idempotencyKey` (app ask A16, same semantics as GET " +
+    "/trade/orders?idempotencyKey=) narrows this to the single plan created with that exact " +
+    "key, letting the app resolve an \"outcome unknown\" SIP-creation attempt - scoped to the " +
+    "caller's own plans, so a guessed key simply returns an empty list.",
   tags: ["Trade"],
   security: [{ bearerAuth: [] }],
+  request: {
+    query: z.object({
+      idempotencyKey: z.string().min(1).optional().openapi({
+        description: "Omit to list every plan.",
+      }),
+    }),
+  },
   responses: {
     200: {
       description: "The caller's SIP plans",
@@ -144,7 +154,9 @@ registry.registerPath({
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  return ok(await listMySips(user.id));
+  const { searchParams } = new URL(req.url);
+  const idempotencyKey = searchParams.get("idempotencyKey") ?? undefined;
+  return ok(await listMySips(user.id, { idempotencyKey }));
 });
 
 export const POST = withErrors(async (req: Request) => {

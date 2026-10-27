@@ -31,7 +31,7 @@ export type SellFundInput = z.infer<typeof SellFundSchema>;
 export const PlaceFundOrderSchema = z.discriminatedUnion("side", [BuyFundSchema, SellFundSchema]);
 export type PlaceFundOrderInput = z.infer<typeof PlaceFundOrderSchema>;
 
-const FundOrderPublicSchema = z.object({
+export const FundOrderPublicSchema = z.object({
   id: z.uuid(),
   fundId: z.uuid(),
   side: z.enum(["buy", "sell"]),
@@ -53,4 +53,25 @@ export const PlaceFundOrderResponseSchema = registry.register(
       }),
     }),
   }),
+);
+
+// App asks batch, item A16: GET /trade/funds/orders - same semantics as
+// GET /trade/orders (TR-13). Self-only, cursor-paginated newest-first,
+// idempotencyKey lets the app resolve an "outcome unknown" attempt.
+export const ListFundOrdersStatusEnum = z.enum(["filled", "failed"]);
+export type ListFundOrdersStatus = z.infer<typeof ListFundOrdersStatusEnum>;
+
+export const ListFundOrdersQuerySchema = z.object({
+  status: ListFundOrdersStatusEnum.optional().openapi({
+    description: "Omit to return every status.",
+    example: "filled",
+  }),
+  idempotencyKey: z.string().min(1).optional(),
+  limit: z.string().optional().openapi({ example: "20" }),
+  cursor: z.string().optional(),
+});
+
+export const FundOrderListResponseSchema = registry.register(
+  "FundOrderListResponse",
+  z.object({ data: z.array(FundOrderPublicSchema), nextCursor: z.string().nullable() }),
 );

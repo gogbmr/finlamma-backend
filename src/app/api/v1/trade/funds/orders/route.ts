@@ -1,10 +1,16 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { ok, okList, parseLimit, requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
-import { PlaceFundOrderResponseSchema, PlaceFundOrderSchema } from "@/server/fund-orders/schemas";
-import { placeFundOrder } from "@/server/fund-orders/service";
+import {
+  FundOrderListResponseSchema,
+  ListFundOrdersQuerySchema,
+  ListFundOrdersStatusEnum,
+  PlaceFundOrderResponseSchema,
+  PlaceFundOrderSchema,
+} from "@/server/fund-orders/schemas";
+import { listMyFundOrders, placeFundOrder } from "@/server/fund-orders/service";
 import { requireFullAccess } from "@/server/onboarding/service";
 
 registry.registerPath({
@@ -103,6 +109,75 @@ registry.registerPath({
       },
     },
   },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/v1/trade/funds/orders",
+  summary: "My own fund-order history (app ask A16, same semantics as GET /trade/orders)",
+  description:
+    "Every status included (filled/failed - failed only ever exists for an unattended SIP " +
+    "execution, D45/D46; a manual order rejection is a thrown error at request time, never a " +
+    "row here). `idempotencyKey` lets the app resolve an \"outcome unknown\" fund-order attempt " +
+    "by looking up the exact key it sent - always scoped to the caller's own orders, so a " +
+    "guessed key can never surface another learner's order. Cursor-paginated newest first.",
+  tags: ["Trade"],
+  security: [{ bearerAuth: [] }],
+  request: { query: ListFundOrdersQuerySchema },
+  responses: {
+    200: {
+      description: "A page of the caller's own fund orders",
+      content: { "application/json": { schema: FundOrderListResponseSchema } },
+    },
+    400: {
+      description: "Invalid status, limit or cursor",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "VALIDATION_FAILED", message: "Invalid cursor" } },
+        },
+      },
+    },
+    401: {
+      description: "Not signed in",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: { error: { code: "UNAUTHENTICATED", message: "Sign-in required" } },
+        },
+      },
+    },
+    403: {
+      description: "Onboarding, parental consent or legal acceptance is incomplete",
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+          example: {
+            error: { code: "FORBIDDEN", message: "Complete onboarding before using this feature" },
+          },
+        },
+      },
+    },
+  },
+});
+
+export const GET = withErrors(async (req: Request) => {
+  const user = await requireUser(req);
+  await requireFullAccess(user);
+
+  const { searchParams } = new URL(req.url);
+  const statusRaw = searchParams.get("status");
+  const status = statusRaw ? ListFundOrdersStatusEnum.parse(statusRaw) : undefined;
+  const idempotencyKey = searchParams.get("idempotencyKey") ?? undefined;
+  const limit = parseLimit(searchParams.get("limit"));
+
+  const { data, nextCursor } = await listMyFundOrders(user.id, {
+    status,
+    idempotencyKey,
+    limit,
+    cursor: searchParams.get("cursor"),
+  });
+  return okList(data, nextCursor);
 });
 
 export const POST = withErrors(async (req: Request) => {

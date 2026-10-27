@@ -11,9 +11,11 @@ vi.mock("@/server/worlds/service", () => ({
 }));
 
 const mockPlaceFundOrderTx = vi.fn();
+const mockListFundOrdersForUserPage = vi.fn();
 vi.mock("./repo", () => ({
   placeFundOrderTx: (userId: unknown, fund: unknown, input: unknown, idempotencyKey: unknown) =>
     mockPlaceFundOrderTx(userId, fund, input, idempotencyKey),
+  listFundOrdersForUserPage: (userId: unknown, opts: unknown) => mockListFundOrdersForUserPage(userId, opts),
 }));
 
 const mockLogActivity = vi.fn();
@@ -27,7 +29,7 @@ vi.mock("@/lib/redis", () => ({
   TRADE_ORDER_RATE_LIMIT: { requests: 20, window: "60 s", prefix: "ratelimit:trade-order" },
 }));
 
-const { placeFundOrder } = await import("./service");
+const { listMyFundOrders, placeFundOrder } = await import("./service");
 
 const USER = { id: "user_1" };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -157,5 +159,29 @@ describe("placeFundOrder - success paths", () => {
 
     expect(result).toMatchObject({ id: "order_1", replayed: true });
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+});
+
+// App asks batch, item A16 - same shape as src/server/orders/
+// service.test.ts's listMyOrders tests.
+describe("listMyFundOrders", () => {
+  it("decodes the cursor and forwards status/idempotencyKey/limit to the repo, scoped to the caller's own userId", async () => {
+    mockListFundOrdersForUserPage.mockResolvedValueOnce({ data: [orderRow()], nextCursor: null });
+
+    const result = await listMyFundOrders("user_1", {
+      status: "filled",
+      idempotencyKey: "key1",
+      limit: 20,
+      cursor: null,
+    });
+
+    expect(mockListFundOrdersForUserPage).toHaveBeenCalledWith("user_1", {
+      limit: 20,
+      cursor: null,
+      status: "filled",
+      idempotencyKey: "key1",
+    });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: "order_1", fundId: "fund_1" });
   });
 });

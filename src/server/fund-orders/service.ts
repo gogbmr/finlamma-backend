@@ -1,11 +1,11 @@
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
-import type { requestMeta } from "@/lib/http";
+import { decodeCursor, type requestMeta } from "@/lib/http";
 import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
 import { getFundByIdInternal } from "@/server/funds/repo";
 import { isTradingUnlocked } from "@/server/worlds/service";
-import { placeFundOrderTx, type FundOrderRow } from "./repo";
-import type { PlaceFundOrderInput } from "./schemas";
+import { listFundOrdersForUserPage, placeFundOrderTx, type FundOrderListCursor, type FundOrderRow } from "./repo";
+import type { ListFundOrdersStatus, PlaceFundOrderInput } from "./schemas";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 
@@ -23,6 +23,22 @@ function shapeFundOrder(order: FundOrderRow, replayed: boolean) {
     createdAt: order.createdAt.toISOString(),
     replayed,
   };
+}
+
+// App asks batch, item A16 - self-only by construction, same shape as
+// src/server/orders/service.ts's listMyOrders.
+export async function listMyFundOrders(
+  userId: string,
+  opts: { status?: ListFundOrdersStatus; idempotencyKey?: string; limit: number; cursor: string | null },
+) {
+  const decodedCursor = decodeCursor<FundOrderListCursor>(opts.cursor);
+  const { data, nextCursor } = await listFundOrdersForUserPage(userId, {
+    limit: opts.limit,
+    cursor: decodedCursor,
+    status: opts.status,
+    idempotencyKey: opts.idempotencyKey,
+  });
+  return { data: data.map((order) => shapeFundOrder(order, false)), nextCursor };
 }
 
 // The fund order pad's one entry point - mirrors src/server/orders/
