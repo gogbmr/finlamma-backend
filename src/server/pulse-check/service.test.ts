@@ -137,7 +137,13 @@ describe("startAttempt", () => {
 
     const result = await startAttempt(USER, META, NOW);
 
-    expect(result).toEqual({ attemptId: "attempt_1", editionId: "edition_1", totalSteps: 2, resumed: false });
+    expect(result).toEqual({
+      attemptId: "attempt_1",
+      editionId: "edition_1",
+      totalSteps: 2,
+      resumed: false,
+      resumeStepIndex: null, // app ask A15: null for a freshly created attempt
+    });
     expect(mockLogActivity).toHaveBeenCalledWith(expect.objectContaining({ action: "pulse_check.attempt_started" }));
   });
 
@@ -152,10 +158,17 @@ describe("startAttempt", () => {
   it("resumes an existing in-progress attempt rather than creating a new one, and does not log a fresh start", async () => {
     mockGetEditionByDate.mockResolvedValueOnce({ id: "edition_1", questionIds: ["q1"] });
     mockGetInProgressAttempt.mockResolvedValueOnce({ id: "attempt_existing" });
+    mockListAnswersForAttempt.mockResolvedValueOnce([{ stepIndex: 1, answeredAt: null }]);
 
     const result = await startAttempt(USER, META, NOW);
 
-    expect(result).toEqual({ attemptId: "attempt_existing", editionId: "edition_1", totalSteps: 1, resumed: true });
+    expect(result).toEqual({
+      attemptId: "attempt_existing",
+      editionId: "edition_1",
+      totalSteps: 1,
+      resumed: true,
+      resumeStepIndex: 1, // app ask A15: step 1 was served but not yet answered
+    });
     expect(mockInsertAttempt).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
@@ -179,6 +192,40 @@ describe("getCurrentPulseCheck", () => {
     const result = await getCurrentPulseCheck(USER.id, NOW);
 
     expect(result.alreadyCompletedToday).toBe(true);
+  });
+
+  // App asks batch, items A14/A15.
+  it("adds paise-suffixed siblings next to the existing whole-VM fields, same values", async () => {
+    mockGetEditionByDate.mockResolvedValueOnce(null);
+
+    const result = await getCurrentPulseCheck(USER.id, NOW);
+
+    expect(result.baseVmPerQuestion).toBe(30);
+    expect(result.baseVmPerQuestionPaise).toBe(3000);
+    expect(result.maxVmPayoutPaise).toBe(result.maxVmPayout * 100);
+  });
+
+  it("resumeStepIndex is null when there's no in-progress attempt", async () => {
+    mockGetEditionByDate.mockResolvedValueOnce({ id: "edition_1", questionIds: ["q1"] });
+    mockGetInProgressAttempt.mockResolvedValueOnce(null);
+    mockGetCompletedAttemptForEdition.mockResolvedValueOnce(null);
+
+    const result = await getCurrentPulseCheck(USER.id, NOW);
+
+    expect(result.resumeStepIndex).toBeNull();
+    expect(mockListAnswersForAttempt).not.toHaveBeenCalled();
+  });
+
+  it("resumeStepIndex resolves the next unanswered step for an in-progress attempt", async () => {
+    mockGetEditionByDate.mockResolvedValueOnce({ id: "edition_1", questionIds: ["q1", "q2"] });
+    mockGetInProgressAttempt.mockResolvedValueOnce({ id: "attempt_1" });
+    mockGetCompletedAttemptForEdition.mockResolvedValueOnce(null);
+    mockListAnswersForAttempt.mockResolvedValueOnce([{ stepIndex: 1, answeredAt: new Date() }]);
+
+    const result = await getCurrentPulseCheck(USER.id, NOW);
+
+    expect(result.inProgressAttemptId).toBe("attempt_1");
+    expect(result.resumeStepIndex).toBe(2);
   });
 });
 
