@@ -10,15 +10,21 @@ vi.mock("@/server/onboarding/service", () => ({
 }));
 
 const mockPlaceCompetitionTrade = vi.fn();
+const mockListMyCompetitionTrades = vi.fn();
 vi.mock("@/server/competitions/service", () => ({
   placeCompetitionTrade: (user: unknown, input: unknown, key: unknown, meta: unknown) =>
     mockPlaceCompetitionTrade(user, input, key, meta),
+  listMyCompetitionTrades: (user: unknown, opts: unknown) => mockListMyCompetitionTrades(user, opts),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const USER = { id: "u1" };
 const VALID_BODY = { side: "buy", qty: 5 };
+
+function makeGetRequest(query: string = ""): Request {
+  return new Request(`http://localhost/api/v1/arena/competitions/current/trades${query}`);
+}
 
 function makeRequest(body: unknown, idempotencyKey: string | null = "test-key") {
   const headers = new Headers({ "content-type": "application/json" });
@@ -109,5 +115,52 @@ describe("POST /api/v1/arena/competitions/current/trades", () => {
     expect(mockPlaceCompetitionTrade).toHaveBeenCalledWith(USER, VALID_BODY, "abc-123", expect.any(Object));
     const body = await res.json();
     expect(body.data.id).toBe("trade_1");
+  });
+});
+
+describe("GET /api/v1/arena/competitions/current/trades", () => {
+  it("returns 401 when not signed in", async () => {
+    mockRequireUser.mockRejectedValueOnce(new AppError("UNAUTHENTICATED", "Sign-in required"));
+
+    const res = await GET(makeGetRequest());
+
+    expect(res.status).toBe(401);
+    expect(mockListMyCompetitionTrades).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when no competition is currently active", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockRequireFullAccess.mockResolvedValueOnce(undefined);
+    mockListMyCompetitionTrades.mockRejectedValueOnce(new AppError("NOT_FOUND", "No active competition right now"));
+
+    const res = await GET(makeGetRequest());
+
+    expect(res.status).toBe(404);
+  });
+
+  it("lists the caller's own trades with default paging", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockRequireFullAccess.mockResolvedValueOnce(undefined);
+    mockListMyCompetitionTrades.mockResolvedValueOnce({
+      data: [{ id: "trade_1", side: "buy", qty: 5, fillPricePaise: 10000, realizedPnlPaise: null, filledAt: "2026-10-05T00:00:00.000Z" }],
+      nextCursor: null,
+    });
+
+    const res = await GET(makeGetRequest());
+
+    expect(res.status).toBe(200);
+    expect(mockListMyCompetitionTrades).toHaveBeenCalledWith(USER, { idempotencyKey: undefined, limit: 20, cursor: null });
+    const body = await res.json();
+    expect(body.data).toHaveLength(1);
+  });
+
+  it("passes the idempotencyKey filter through (app ask A11)", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockRequireFullAccess.mockResolvedValueOnce(undefined);
+    mockListMyCompetitionTrades.mockResolvedValueOnce({ data: [], nextCursor: null });
+
+    await GET(makeGetRequest("?idempotencyKey=client-key-123"));
+
+    expect(mockListMyCompetitionTrades).toHaveBeenCalledWith(USER, expect.objectContaining({ idempotencyKey: "client-key-123" }));
   });
 });

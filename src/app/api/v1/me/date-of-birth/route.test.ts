@@ -59,6 +59,20 @@ describe("PATCH /api/v1/me/date-of-birth", () => {
     expect(res.status).toBe(409);
   });
 
+  // App asks batch, section C2.
+  it("returns 403 AGE_BELOW_MINIMUM for an under-13 date", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockSetDateOfBirth.mockRejectedValueOnce(
+      new AppError("AGE_BELOW_MINIMUM", "You must be at least 13 years old to use Finlamma"),
+    );
+
+    const res = await PATCH(makeRequest({ dateOfBirth: "2018-01-01" }));
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("AGE_BELOW_MINIMUM");
+  });
+
   it("sets the date of birth and returns the status", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockSetDateOfBirth.mockResolvedValueOnce({

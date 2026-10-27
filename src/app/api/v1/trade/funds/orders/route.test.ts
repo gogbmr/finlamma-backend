@@ -10,14 +10,20 @@ vi.mock("@/server/onboarding/service", () => ({
 }));
 
 const mockPlaceFundOrder = vi.fn();
+const mockListMyFundOrders = vi.fn();
 vi.mock("@/server/fund-orders/service", () => ({
   placeFundOrder: (user: unknown, input: unknown, key: unknown, meta: unknown) =>
     mockPlaceFundOrder(user, input, key, meta),
+  listMyFundOrders: (userId: unknown, opts: unknown) => mockListMyFundOrders(userId, opts),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const USER = { id: "u1" };
+
+function makeGetRequest(query: string = ""): Request {
+  return new Request(`http://localhost/api/v1/trade/funds/orders${query}`);
+}
 
 function makeRequest(body: unknown, idempotencyKey: string | null = "test-key") {
   const headers = new Headers({ "content-type": "application/json" });
@@ -89,5 +95,50 @@ describe("POST /api/v1/trade/funds/orders", () => {
     expect(mockPlaceFundOrder).toHaveBeenCalledWith(USER, VALID_BODY, "abc-123", expect.any(Object));
     const body = await res.json();
     expect(body.data.id).toBe("order_1");
+  });
+});
+
+describe("GET /api/v1/trade/funds/orders", () => {
+  it("returns 401 when not signed in", async () => {
+    mockRequireUser.mockRejectedValueOnce(new AppError("UNAUTHENTICATED", "Sign-in required"));
+
+    const res = await GET(makeGetRequest());
+
+    expect(res.status).toBe(401);
+    expect(mockListMyFundOrders).not.toHaveBeenCalled();
+  });
+
+  it("lists the caller's own fund orders with default paging", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockRequireFullAccess.mockResolvedValueOnce(undefined);
+    mockListMyFundOrders.mockResolvedValueOnce({
+      data: [{ id: "forder_1", fundId: "fund_1", status: "filled" }],
+      nextCursor: null,
+    });
+
+    const res = await GET(makeGetRequest());
+
+    expect(res.status).toBe(200);
+    expect(mockListMyFundOrders).toHaveBeenCalledWith(USER.id, {
+      status: undefined,
+      idempotencyKey: undefined,
+      limit: 20,
+      cursor: null,
+    });
+    const body = await res.json();
+    expect(body.data).toHaveLength(1);
+  });
+
+  it("passes the idempotencyKey filter through, for resolving an outcome-unknown attempt (app ask A16)", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockRequireFullAccess.mockResolvedValueOnce(undefined);
+    mockListMyFundOrders.mockResolvedValueOnce({ data: [], nextCursor: null });
+
+    await GET(makeGetRequest("?idempotencyKey=client-key-123"));
+
+    expect(mockListMyFundOrders).toHaveBeenCalledWith(
+      USER.id,
+      expect.objectContaining({ idempotencyKey: "client-key-123" }),
+    );
   });
 });

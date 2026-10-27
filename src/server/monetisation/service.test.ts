@@ -273,6 +273,23 @@ describe("getMyMonetisationStatus", () => {
     mockIsMinor.mockReturnValue(true);
   });
 
+  // App asks batch, item C4.
+  it("defaults doubtZoneEnabled to false when unseeded", async () => {
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2000-01-01" });
+
+    expect(result.doubtZoneEnabled).toBe(false);
+  });
+
+  it("threads doubtZoneEnabled: true through once an admin has enabled it", async () => {
+    mockGetSettingJson.mockImplementation((key: string) =>
+      Promise.resolve(key === "doubt_zone_enabled" ? true : null),
+    );
+
+    const result = await getMyMonetisationStatus({ id: "user-1", dateOfBirth: "2000-01-01" });
+
+    expect(result.doubtZoneEnabled).toBe(true);
+  });
+
   it("shows no ads before the configured world position is cleared, even with no entitlement", async () => {
     mockCountLeadingClearedWorlds.mockResolvedValueOnce({ cleared: 1, worldsToGo: 2 });
 

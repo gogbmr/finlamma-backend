@@ -13,7 +13,7 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
-import { getDoubtZoneSafetySettings, updateDoubtZoneSafetySettings } from "./settings";
+import { getDoubtZoneEnabled, getDoubtZoneSafetySettings, updateDoubtZoneSafetySettings } from "./settings";
 import { DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS, DOUBT_ZONE_SAFETY_SETTINGS_KEY } from "./schemas";
 
 const ACTOR = { id: "staff_1" };
@@ -71,5 +71,26 @@ describe("updateDoubtZoneSafetySettings", () => {
         userAgent: "test-agent",
       }),
     );
+  });
+});
+
+// App asks batch, item C4.
+describe("getDoubtZoneEnabled", () => {
+  it("defaults to false when unseeded", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(null);
+
+    expect(await getDoubtZoneEnabled()).toBe(false);
+  });
+
+  it("defaults to false (fails closed) when the stored value isn't a boolean", async () => {
+    mockGetSettingJson.mockResolvedValueOnce("yes");
+
+    expect(await getDoubtZoneEnabled()).toBe(false);
+  });
+
+  it("returns the stored boolean once an admin has set it", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(true);
+
+    expect(await getDoubtZoneEnabled()).toBe(true);
   });
 });

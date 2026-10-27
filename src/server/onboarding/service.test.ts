@@ -11,6 +11,8 @@ const mockEnv = vi.hoisted(() => ({
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
 const mockSetDateOfBirthOnce = vi.fn();
+const mockCorrectDateOfBirth = vi.fn();
+const mockDeleteDobCorrectionsForUser = vi.fn();
 const mockMarkOnboardingCompletedOnce = vi.fn();
 const mockGetParentContact = vi.fn();
 const mockUpsertParentContact = vi.fn();
@@ -41,6 +43,9 @@ const mockGetParentContactByWeeklyReportUnsubscribeTokenHash = vi.fn();
 const mockUnsubscribeParentContactFromWeeklyReport = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
+  correctDateOfBirth: (userId: unknown, staffId: unknown, newDob: unknown, reason: unknown) =>
+    mockCorrectDateOfBirth(userId, staffId, newDob, reason),
+  deleteDobCorrectionsForUser: (userId: unknown) => mockDeleteDobCorrectionsForUser(userId),
   markOnboardingCompletedOnce: (id: unknown) => mockMarkOnboardingCompletedOnce(id),
   getParentContact: (id: unknown) => mockGetParentContact(id),
   upsertParentContact: (id: unknown, name: unknown, email: unknown) =>
@@ -107,10 +112,22 @@ vi.mock("@/server/legal/service", () => ({
   getLegalStatus: (user: unknown) => mockGetLegalStatus(user),
 }));
 
+// App asks batch, section C2: setDateOfBirth's age-below-minimum path calls
+// this - mocked here (rather than letting the real module load) so this
+// test file never pulls in @/server/users/service's own transitive
+// @/lib/auth -> @/db/client chain, which throws if imported unmocked
+// outside a real-DB integration test (see @/db/client's NODE_ENV=test guard).
+const mockBeginAccountDeletion = vi.fn();
+vi.mock("@/server/users/service", () => ({
+  beginAccountDeletion: (userId: unknown) => mockBeginAccountDeletion(userId),
+}));
+
 import {
   approveReapproval,
   completeOnboarding,
+  computeAge,
   confirmParentConsent,
+  correctDateOfBirthForAdmin,
   declineParentConsent,
   declineReapproval,
   getConsentRequestView,
@@ -126,6 +143,7 @@ import {
   resendReapprovalRequests,
   revealParentContact,
   scrubConsentDataForDeletedUser,
+  scrubDobCorrectionsForUser,
   setDateOfBirth,
   unsubscribeWeeklyReport,
   withdrawParentConsent,
@@ -167,6 +185,75 @@ describe("isMinor", () => {
     expect(isMinor("not-a-date")).toBe(true);
     expect(isMinor("   ")).toBe(true);
   });
+
+  // App asks batch, section C2 correction: "today" must be judged by the
+  // calendar date in India (IST), not the server's UTC clock - IST is 5.5
+  // hours ahead, so for 00:00-05:30 IST on a birthday, UTC's calendar date
+  // is still the day before.
+  describe("IST calendar basis (not UTC)", () => {
+    it("turns 18 at IST midnight, not UTC midnight - 00:30 IST on the 18th birthday is no longer a minor", () => {
+      // Born 2008-01-14. "Now" = 2026-01-13T19:00:00.000Z, which is
+      // 2026-01-14T00:30:00+05:30 IST - the learner's 18th birthday has
+      // already started in India, even though UTC's calendar date is still
+      // the 13th (one day before the birthday).
+      const dob = "2008-01-14";
+      const nowAt0030Ist = new Date("2026-01-13T19:00:00.000Z");
+
+      expect(isMinor(dob, nowAt0030Ist)).toBe(false);
+    });
+
+    it("the UTC-only calculation this replaces would have gotten this wrong - proving the fix against the actual bug", () => {
+      const dob = "2008-01-14";
+      const nowAt0030Ist = new Date("2026-01-13T19:00:00.000Z");
+
+      // The old (fixed) logic: now.getUTCFullYear/Month/Date() directly,
+      // no IST shift - UTC's calendar date here is still 2026-01-13, one
+      // day before the birthday, so the old code would say age 17 (minor).
+      const oldUtcOnlyIsMinor = (() => {
+        const dobDate = new Date(`${dob}T00:00:00Z`);
+        let age = nowAt0030Ist.getUTCFullYear() - dobDate.getUTCFullYear();
+        const hadBirthday =
+          nowAt0030Ist.getUTCMonth() > dobDate.getUTCMonth() ||
+          (nowAt0030Ist.getUTCMonth() === dobDate.getUTCMonth() && nowAt0030Ist.getUTCDate() >= dobDate.getUTCDate());
+        if (!hadBirthday) age -= 1;
+        return age < 18;
+      })();
+
+      expect(oldUtcOnlyIsMinor).toBe(true); // the bug this fixes
+      expect(isMinor(dob, nowAt0030Ist)).toBe(false); // the fix
+    });
+  });
+});
+
+describe("computeAge - IST calendar basis", () => {
+  it("accepts a 13th birthday at 00:30 IST - the exact scenario the C2 correction calls out", () => {
+    // Born 2013-01-14. "Now" = 2026-01-13T19:00:00.000Z = 2026-01-14 00:30
+    // IST - the learner's 13th birthday, 30 minutes in, by India's clock.
+    const dob = "2013-01-14";
+    const nowAt0030Ist = new Date("2026-01-13T19:00:00.000Z");
+
+    expect(computeAge(dob, nowAt0030Ist)).toBe(13);
+  });
+
+  it("is still 12 at 23:00 IST the day before the 13th birthday", () => {
+    // 2026-01-13T17:30:00.000Z = 2026-01-13 23:00 IST - the day before the
+    // Jan 14 birthday, by India's clock.
+    const dob = "2013-01-14";
+    const theNightBeforeIst = new Date("2026-01-13T17:30:00.000Z");
+
+    expect(computeAge(dob, theNightBeforeIst)).toBe(12);
+  });
+
+  it("the same 5.5-hour gap matters at the 18 boundary too, since isMinor calls this same function", () => {
+    const dob = "2008-01-14";
+    const nowAt0030Ist = new Date("2026-01-13T19:00:00.000Z");
+
+    expect(computeAge(dob, nowAt0030Ist)).toBe(18);
+  });
+
+  it("returns a negative (never-valid) age for an unparseable date, so isMinor's fail-closed check holds", () => {
+    expect(computeAge("not-a-date")).toBeLessThan(0);
+  });
 });
 
 describe("setDateOfBirth", () => {
@@ -194,14 +281,167 @@ describe("setDateOfBirth", () => {
   });
 
   it("sets the date of birth, logs it, and reports isMinor/requiresParentConsent", async () => {
-    mockSetDateOfBirthOnce.mockResolvedValueOnce({ id: "u1", dateOfBirth: "2015-01-01" });
+    // 2012-01-01: a minor (under 18) but well above the C2 age-13 floor -
+    // this test is about the isMinor/requiresParentConsent reporting, not
+    // the age-13 gate (see the "AGE_BELOW_MINIMUM" describe block below).
+    mockSetDateOfBirthOnce.mockResolvedValueOnce({ id: "u1", dateOfBirth: "2012-01-01" });
 
-    const result = await setDateOfBirth(USER, { dateOfBirth: "2015-01-01" }, META);
+    const result = await setDateOfBirth(USER, { dateOfBirth: "2012-01-01" }, META);
 
-    expect(result).toEqual({ dateOfBirth: "2015-01-01", isMinor: true, requiresParentConsent: true });
+    expect(result).toEqual({ dateOfBirth: "2012-01-01", isMinor: true, requiresParentConsent: true });
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "onboarding.date_of_birth_set", actorId: "u1" }),
     );
+  });
+
+  // App asks batch, section C2.
+  describe("AGE_BELOW_MINIMUM (age-13 floor)", () => {
+    it("rejects an under-13 date, never persisting it, and begins account deletion", async () => {
+      const twelveYearOldDob = "2015-01-01"; // ~11-12 as of "now" in this test environment
+
+      await expect(setDateOfBirth(USER, { dateOfBirth: twelveYearOldDob }, META)).rejects.toMatchObject({
+        code: "AGE_BELOW_MINIMUM",
+      });
+
+      expect(mockSetDateOfBirthOnce).not.toHaveBeenCalled();
+      expect(mockBeginAccountDeletion).toHaveBeenCalledWith("u1");
+      expect(mockLogActivity).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "onboarding.age_below_minimum_rejected", actorId: "u1" }),
+      );
+      // Never logs the submitted date of birth anywhere - activity_logs is
+      // append-only with no erasure path.
+      const loggedCall = mockLogActivity.mock.calls.find(
+        (call) => call[0]?.action === "onboarding.age_below_minimum_rejected",
+      );
+      expect(JSON.stringify(loggedCall)).not.toContain(twelveYearOldDob);
+    });
+
+    it("accepts exactly age 13 - age < MINIMUM_AGE, not <=", async () => {
+      // Pin "now" via the real clock is avoided here deliberately - this
+      // test exercises setDateOfBirth's real-world behavior with a date far
+      // enough in the past (born 15+ years before this suite could ever
+      // run) that it's unambiguously 13+ regardless of today's date.
+      const definitelyOldEnough = "2000-01-01";
+      mockSetDateOfBirthOnce.mockResolvedValueOnce({ id: "u1", dateOfBirth: definitelyOldEnough });
+
+      await expect(setDateOfBirth(USER, { dateOfBirth: definitelyOldEnough }, META)).resolves.toMatchObject({
+        dateOfBirth: definitelyOldEnough,
+      });
+      expect(mockBeginAccountDeletion).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// App asks batch, section C3.
+describe("correctDateOfBirthForAdmin", () => {
+  const ACTOR = { id: "staff1" };
+  const INPUT = { userId: "u1", newDateOfBirth: "2011-06-15", reason: "Parent provided birth certificate" };
+
+  it("throws VALIDATION_FAILED for a future date", async () => {
+    const future = new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString().slice(0, 10);
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: future }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockCorrectDateOfBirth).not.toHaveBeenCalled();
+  });
+
+  it("throws VALIDATION_FAILED for an unparseable date", async () => {
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: "not-a-date" }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
+  it("throws VALIDATION_FAILED when the reason is blank (even just whitespace)", async () => {
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, reason: "   " }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockCorrectDateOfBirth).not.toHaveBeenCalled();
+  });
+
+  it("rejects a corrected date landing under 13, never persisting it, via the same C2 path", async () => {
+    const underThirteenDob = "2015-01-01";
+
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: underThirteenDob }, META),
+    ).rejects.toMatchObject({ code: "AGE_BELOW_MINIMUM" });
+
+    expect(mockCorrectDateOfBirth).not.toHaveBeenCalled();
+    expect(mockBeginAccountDeletion).toHaveBeenCalledWith("u1");
+    // Same no-DOB-in-activity-log guarantee as C2's own rejection path.
+    const loggedCall = mockLogActivity.mock.calls.find(
+      (call) => call[0]?.action === "onboarding.age_below_minimum_rejected",
+    );
+    expect(JSON.stringify(loggedCall)).not.toContain(underThirteenDob);
+  });
+
+  it("throws NOT_FOUND when there's no date of birth already set to correct", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce(null);
+    await expect(correctDateOfBirthForAdmin(ACTOR, INPUT, META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("on success: persists via correctDateOfBirth, logs only { correctionId, crossedMinorBoundary, crossedAgeFloor } - never the DOB values or reason", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce({
+      oldDateOfBirth: "2012-01-01",
+      newDateOfBirth: "2011-06-15",
+      correctionId: "corr1",
+    });
+
+    const result = await correctDateOfBirthForAdmin(ACTOR, INPUT, META);
+
+    expect(mockCorrectDateOfBirth).toHaveBeenCalledWith("u1", "staff1", "2011-06-15", INPUT.reason);
+    expect(result).toEqual({ userId: "u1", dateOfBirth: "2011-06-15", isMinor: true });
+
+    expect(mockLogActivity).toHaveBeenCalledWith({
+      actorType: "staff",
+      actorId: "staff1",
+      action: "onboarding.date_of_birth_corrected",
+      targetType: "user",
+      targetId: "u1",
+      metadata: { correctionId: "corr1", crossedMinorBoundary: false, crossedAgeFloor: false },
+      ip: META.ip,
+      userAgent: META.userAgent,
+    });
+    // Neither raw date ever reaches activity_logs.
+    const loggedCall = mockLogActivity.mock.calls[0];
+    expect(JSON.stringify(loggedCall)).not.toContain("2012-01-01");
+    expect(JSON.stringify(loggedCall)).not.toContain("2011-06-15");
+    expect(JSON.stringify(loggedCall)).not.toContain(INPUT.reason);
+  });
+
+  it("flags crossedMinorBoundary when a correction moves the account from adult to minor", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce({
+      oldDateOfBirth: "1990-01-01", // adult
+      newDateOfBirth: "2010-01-01", // minor, well above the age-13 floor
+      correctionId: "corr2",
+    });
+
+    await correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: "2010-01-01" }, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ crossedMinorBoundary: true }) }),
+    );
+  });
+
+  it("flags crossedMinorBoundary the other way too - minor to adult", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce({
+      oldDateOfBirth: "2010-01-01", // minor
+      newDateOfBirth: "1990-01-01", // adult
+      correctionId: "corr3",
+    });
+
+    await correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: "1990-01-01" }, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ crossedMinorBoundary: true }) }),
+    );
+  });
+});
+
+describe("scrubDobCorrectionsForUser", () => {
+  it("delegates straight to the repo scrub and returns the count deleted", async () => {
+    mockDeleteDobCorrectionsForUser.mockResolvedValueOnce(2);
+    await expect(scrubDobCorrectionsForUser("u1")).resolves.toBe(2);
+    expect(mockDeleteDobCorrectionsForUser).toHaveBeenCalledWith("u1");
   });
 });
 

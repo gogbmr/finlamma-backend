@@ -111,7 +111,7 @@ beforeEach(() => {
   // "11111111-...", already published - existing publish-success tests
   // below don't need to know about the D18 question-reference gate at all.
   mockGetQuestionsByIds.mockResolvedValue([
-    { id: "11111111-1111-4111-8111-111111111111", status: "published" },
+    { id: "11111111-1111-4111-8111-111111111111", status: "published", format: "single_select" },
   ]);
   mockCountInProgressLearnersByLessonIds.mockResolvedValue(new Map());
   mockGetLessonFlowScoringSettings.mockResolvedValue({ bossQuizPassMarkPct: 70 });
@@ -266,6 +266,39 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
       blurb: lessonRow().blurb,
       content: lessonRow().content,
     });
+  });
+
+  // App asks batch, item A12.
+  it("backfills content.video.url (all null) for a video lesson saved before that field existed", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(
+      lessonRow({ kind: "video", content: { lengthSeconds: 48, scenes: [], cues: [] } }),
+    );
+
+    const result = await getPublicLesson("lesson_1");
+
+    expect(result.content).toEqual({
+      lengthSeconds: 48,
+      scenes: [],
+      cues: [],
+      video: { url: { en: null, hi: null, hx: null } },
+    });
+  });
+
+  it("never overwrites an already-set content.video.url", async () => {
+    const withUrl = { lengthSeconds: 48, scenes: [], cues: [], video: { url: { en: "https://x/a.mp4", hi: null, hx: null } } };
+    mockGetPublishedLesson.mockResolvedValueOnce(lessonRow({ kind: "video", content: withUrl }));
+
+    const result = await getPublicLesson("lesson_1");
+
+    expect(result.content).toEqual(withUrl);
+  });
+
+  it("never adds content.video.url for a non-video kind", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(lessonRow()); // kind: "quiz"
+
+    const result = await getPublicLesson("lesson_1");
+
+    expect(result.content).toEqual(lessonRow().content);
   });
 
   it("throws NOT_FOUND for an unknown/unpublished lesson id", async () => {
@@ -623,8 +656,8 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
     // unconsumed and leaking into later tests (exactly what happened before
     // this override was added - see git history for the diagnosis).
     mockGetQuestionsByIds.mockResolvedValueOnce([
-      { id: "11111111-1111-4111-8111-111111111111", status: "published" },
-      { id: "22222222-2222-4222-8222-222222222222", status: "published" },
+      { id: "11111111-1111-4111-8111-111111111111", status: "published", format: "single_select" },
+      { id: "22222222-2222-4222-8222-222222222222", status: "published", format: "single_select" },
     ]);
     mockGetWorldById.mockResolvedValueOnce(worldRow());
     mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "published" }));
@@ -870,7 +903,7 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
         lessonRow({ kind: "quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
       );
       mockGetQuestionsByIds.mockResolvedValueOnce([
-        { id: "11111111-1111-4111-8111-111111111111", status: "published" },
+        { id: "11111111-1111-4111-8111-111111111111", status: "published", format: "single_select" },
       ]);
       mockGetWorldById.mockResolvedValueOnce(worldRow());
       mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "published" }));
@@ -878,6 +911,26 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
       const result = await publishLesson(ACTOR, "lesson_1", META);
 
       expect(result.status).toBe("published");
+    });
+
+    // App asks batch, section B.
+    it("blocks publish when a quiz-like lesson references a question in an app-unrenderable format", async () => {
+      mockGetLessonById.mockResolvedValueOnce(
+        lessonRow({ kind: "quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
+      );
+      mockGetQuestionsByIds.mockResolvedValueOnce([
+        { id: "11111111-1111-4111-8111-111111111111", status: "published", format: "ordering" },
+      ]);
+
+      await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+        code: "VALIDATION_FAILED",
+        details: {
+          questionProblems: [
+            'question 11111111-1111-4111-8111-111111111111 uses the "ordering" format, which the app doesn\'t support yet',
+          ],
+        },
+      });
+      expect(mockPublishLessonRow).not.toHaveBeenCalled();
     });
   });
 });

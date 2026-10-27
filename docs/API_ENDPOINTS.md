@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.3.0) on 2026-10-26.
+> Generated from `openapi/openapi.json` (version 2.3.0) on 2026-10-27.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -10,6 +10,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 **System**
 
 - `GET /api/v1/health` — Health check
+- `GET /api/v1/health/details` — Full diagnostic health payload (staff only, app ask C1)
 
 **Users**
 
@@ -66,6 +67,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/trade/instruments/{symbol}` — Get one instrument's detail with a live quote (TR-15/17/19/20)
 - `GET /api/v1/trade/instruments/{symbol}/candles` — Get candlestick history for an instrument (TR-05/16)
 - `GET /api/v1/trade/market-status` — Get market status and this learner's trading-unlock progress (TR-01/34/57)
+- `GET /api/v1/trade/indices` — List the NIFTY 50 / BANK NIFTY / SENSEX index strip (TR-04)
 - `GET /api/v1/trade/orders` — My own order history (TR-13)
 - `POST /api/v1/trade/orders` — Place an order (TR-30)
 - `POST /api/v1/trade/orders/{id}/cancel` — Cancel a pending order
@@ -73,7 +75,9 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/me/portfolio/stats` — Get my trading stats grid + win/loss split (Profile Trades tab, PR-26/PR-27)
 - `GET /api/v1/me/portfolio/trades` — Get my trade history, filterable All/Open/Closed (Profile Trades tab, PR-28)
 - `GET /api/v1/trade/funds` — List active mutual funds with their latest NAV (Explore mode, TR-35/38)
+- `GET /api/v1/trade/funds/summary` — My fund-portfolio folio summary (app ask A2)
 - `GET /api/v1/trade/funds/{id}` — Get one fund's detail with its latest NAV (TR-39)
+- `GET /api/v1/trade/funds/orders` — My own fund-order history (app ask A16, same semantics as GET /trade/orders)
 - `POST /api/v1/trade/funds/orders` — Buy (lump sum) or sell (redeem) fund units
 - `GET /api/v1/trade/funds/sip` — List my SIP plans, including recent execution history (TR-37)
 - `POST /api/v1/trade/funds/sip` — Create a new SIP plan
@@ -88,6 +92,8 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/news/feed` — Get the published news feed (NW-01..07)
 - `GET /api/v1/news/{id}` — Get a published news story's full detail (NW-08)
 - `POST /api/v1/news/{id}/read` — Mark a news story as read (NW-09)
+- `POST /api/v1/news/{id}/bookmark` — Bookmark a news story (app ask A8)
+- `DELETE /api/v1/news/{id}/bookmark` — Remove a news story bookmark (app ask A8)
 - `GET /api/v1/news/desk-picks` — Get the currently active News Desk picks (NW-05, NW-46)
 
 **Pulse Check**
@@ -119,6 +125,7 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 - `GET /api/v1/users/{userId}/public-profile` — Get a learner's public Arena profile (AR-20)
 - `GET /api/v1/arena/competitions/current` — Get the current Monthly Competition (AR-14)
 - `POST /api/v1/arena/competitions/current/enter` — Enter the current Monthly Competition (AR-14)
+- `GET /api/v1/arena/competitions/current/trades` — My own trades in the current Monthly Competition (app ask A11)
 - `POST /api/v1/arena/competitions/current/trades` — Place a trade inside the current Monthly Competition (AR-14)
 - `GET /api/v1/arena/competitions/current/me` — Get my status in the current Monthly Competition (AR-15)
 - `GET /api/v1/arena/competitions/current/leaderboard` — Get the current Monthly Competition's ranked board (AR-16)
@@ -154,13 +161,47 @@ REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endp
 
 **Health check**
 
-Confirms the API is running and can reach the database. Used by uptime monitors.
+Confirms the API is running, can reach the database, and has every migration applied. Used by uptime monitors - deliberately returns nothing beyond `status` (app ask C1); the full diagnostic payload (service config, mock/vendor status, commit SHA, content warnings) is behind staff auth at GET /api/v1/health/details.
 
 **Auth:** none
 
 **Responses**
 
 - **200** — Service is healthy
+
+```json
+{
+  "data": {
+    "status": "ok"
+  }
+}
+```
+
+- **503** — Database is unreachable, migrations are pending, or the Clerk keys are misconfigured
+
+```json
+{
+  "error": {
+    "code": "SERVICE_UNAVAILABLE",
+    "message": "Database is unreachable"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/health/details`
+
+**Full diagnostic health payload (staff only, app ask C1)**
+
+Everything GET /api/v1/health used to return publicly - service config, mock/vendor status, commit SHA, content warnings - now gated behind an active staff session. Open to any active staff member, not a specific permission, since this is operational visibility (same spirit as the Ops console's always-visible halt banner), not a money/PII-sensitive view. Unlike the public endpoint, migrations/clerkKeys are reported as data here, never a 503 - a staff member diagnosing an issue wants the full picture, not to be blocked by it.
+
+**Auth:** clerkSession
+
+**Responses**
+
+- **200** — The full diagnostic payload
 
 ```json
 {
@@ -187,13 +228,24 @@ Confirms the API is running and can reach the database. Used by uptime monitors.
 }
 ```
 
-- **503** — Database is unreachable
+- **401** — Not signed in
 
 ```json
 {
   "error": {
-    "code": "SERVICE_UNAVAILABLE",
-    "message": "Database is unreachable"
+    "code": "UNAUTHENTICATED",
+    "message": "Staff sign-in required"
+  }
+}
+```
+
+- **403** — No active staff account for this session
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "No active staff account for this session"
   }
 }
 ```
@@ -699,7 +751,7 @@ For a minor whose parent already consented once, but a later material legal-docu
 
 **Set my date of birth (once)**
 
-Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.
+Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason. Rejects with AGE_BELOW_MINIMUM (app ask C2) if the submitted date puts the learner under 13 - the date is never persisted, and the account is immediately queued for deletion the same way DELETE /me works, so a retry with a different date hits ACCOUNT_DELETION_PENDING instead of this endpoint again.
 
 **Auth:** bearerAuth
 
@@ -736,6 +788,17 @@ Collected once at onboarding - determines whether the account needs parental con
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — The submitted date puts the learner below the minimum age (13) - never retryable with a different date
+
+```json
+{
+  "error": {
+    "code": "AGE_BELOW_MINIMUM",
+    "message": "You must be at least 13 years old to use Finlamma"
   }
 }
 ```
@@ -880,6 +943,7 @@ The published Lamma mentors, ordered by their display order - staff decide how m
 {
   "data": [
     {
+      "id": "00000000-0000-0000-0000-000000000000",
       "key": "baby",
       "order": 1,
       "name": {
@@ -944,6 +1008,7 @@ A single mentor stage by its stable key (e.g. "baby"). 404 if not published.
 ```json
 {
   "data": {
+    "id": "00000000-0000-0000-0000-000000000000",
     "key": "baby",
     "order": 1,
     "name": {
@@ -1168,7 +1233,14 @@ Full content for a single published lesson - what the Lesson Flow engine renders
     "content": {
       "lengthSeconds": 0,
       "scenes": [],
-      "cues": []
+      "cues": [],
+      "video": {
+        "url": {
+          "en": null,
+          "hi": null,
+          "hx": null
+        }
+      }
     }
   }
 }
@@ -1320,7 +1392,8 @@ For Story and Doubt Zone lessons only (see POST .../serve). Requires the lesson 
     "lessonId": "00000000-0000-0000-0000-000000000000",
     "status": "completed",
     "completedAt": "2026-01-01T00:00:00.000Z",
-    "credited": true
+    "credited": true,
+    "vmAwardedPaise": 5000
   }
 }
 ```
@@ -1534,7 +1607,8 @@ Server-graded and server-timed - the submitted answer is checked against the que
     "feverActive": true,
     "comboAfter": 0,
     "isAttemptComplete": true,
-    "totalXpPreview": 0
+    "totalXpPreview": 0,
+    "vmAwardedPaise": 5000
   }
 }
 ```
@@ -1641,7 +1715,14 @@ Powers World Home's Resume banner (WH-06). Progress-aware: walks published world
     "content": {
       "lengthSeconds": 0,
       "scenes": [],
-      "cues": []
+      "cues": [],
+      "video": {
+        "url": {
+          "en": null,
+          "hi": null,
+          "hx": null
+        }
+      }
     }
   }
 }
@@ -2323,6 +2404,7 @@ Every published badge with the caller's own progress and unlock state. A locked 
       "category": "learning",
       "vmReward": 100,
       "iconKey": "string",
+      "iconUrl": "https://example.com",
       "target": 10,
       "progress": 7,
       "unlocked": true,
@@ -2758,7 +2840,14 @@ Every active instrument with its live quote merged in. Visible regardless of the
         "previousClosePaise": 283260,
         "volume": 5231400,
         "asOf": "2026-01-01T00:00:00.000Z"
-      }
+      },
+      "sparkline": [
+        283000,
+        283400,
+        284100,
+        283800,
+        284510
+      ]
     }
   ],
   "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
@@ -3003,6 +3092,66 @@ Whether NSE is open right now, the Ops console's feed mode and global halt state
     "tradingUnlocked": true,
     "worldsToGo": 2,
     "recommendedPollIntervalMs": 5000
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/indices`
+
+**List the NIFTY 50 / BANK NIFTY / SENSEX index strip (TR-04)**
+
+Index-level value + change for a fixed set of indices - not tradeable instruments, so there's no DB row per index (docs/DATA_MODEL.md); values come from the same market-data provider and cache path as every other quote in this API. An index the vendor has no data for right now is simply omitted from the list, never returned with a synthetic value.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — Current index strip
+
+```json
+{
+  "data": {
+    "indices": [
+      {
+        "symbol": "NIFTY50",
+        "name": "NIFTY 50",
+        "valuePaise": 2450035,
+        "changePaise": 12500,
+        "changePercent": 0.51,
+        "asOf": "2026-01-01T00:00:00.000Z"
+      }
+    ]
+  },
+  "disclaimer": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+  "disclaimerLocalized": {
+    "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+    "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+    "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
   }
 }
 ```
@@ -3348,6 +3497,8 @@ Cash balance, current holdings market value, all-time trading P&L (realized + un
     "totalValuePaise": 108420,
     "allTimePnlPaise": 8420,
     "allTimePnlPct": 8.4,
+    "dayPnlPaise": 1250,
+    "dayPnlPercent": 1.1,
     "equityBarsPaise": [
       34000,
       41000,
@@ -3597,6 +3748,54 @@ Every fund shown here is a fictional Finlamma-branded wrapper over a real AMFI s
 
 ---
 
+### `GET /api/v1/trade/funds/summary`
+
+**My fund-portfolio folio summary (app ask A2)**
+
+Aggregated across every fund this learner currently holds: total invested (cost basis), total current value at the latest ingested NAV, and overall returns. A held fund that's never been ingested a NAV yet contributes its cost basis to the current-value total (zero gain/loss for that one holding) rather than being dropped or guessed at. Zero values when the learner holds no funds.
+
+**Auth:** bearerAuth
+
+**Responses**
+
+- **200** — The caller's fund folio summary
+
+```json
+{
+  "data": {
+    "totalInvestedPaise": 150000,
+    "totalCurrentValuePaise": 162000,
+    "overallReturnsPaise": 12000,
+    "overallReturnsPercent": 8
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
 ### `GET /api/v1/trade/funds/{id}`
 
 **Get one fund's detail with its latest NAV (TR-39)**
@@ -3675,6 +3874,83 @@ Fund fundamentals and the latest ingested NAV, plus the trading disclaimer. `hel
   "error": {
     "code": "NOT_FOUND",
     "message": "No fund with this id"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/trade/funds/orders`
+
+**My own fund-order history (app ask A16, same semantics as GET /trade/orders)**
+
+Every status included (filled/failed - failed only ever exists for an unattended SIP execution, D45/D46; a manual order rejection is a thrown error at request time, never a row here). `idempotencyKey` lets the app resolve an "outcome unknown" fund-order attempt by looking up the exact key it sent - always scoped to the caller's own orders, so a guessed key can never surface another learner's order. Cursor-paginated newest first.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `status` | query | string (filled, failed) | no | Omit to return every status. |
+| `idempotencyKey` | query | string | no |  |
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's own fund orders
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "fundId": "00000000-0000-0000-0000-000000000000",
+      "side": "buy",
+      "status": "filled",
+      "amountPaise": 0,
+      "unitsMilli": 0,
+      "navPaise": 0,
+      "navDate": "string",
+      "realizedPnlPaise": 0,
+      "createdAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid status, limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
   }
 }
 ```
@@ -3805,9 +4081,15 @@ BUY takes an amountPaise (₹ to invest) and units are derived from the latest i
 
 **List my SIP plans, including recent execution history (TR-37)**
 
-Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46).
+Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46). `idempotencyKey` (app ask A16, same semantics as GET /trade/orders?idempotencyKey=) narrows this to the single plan created with that exact key, letting the app resolve an "outcome unknown" SIP-creation attempt - scoped to the caller's own plans, so a guessed key simply returns an empty list.
 
 **Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `idempotencyKey` | query | string | no | Omit to list every plan. |
 
 **Responses**
 
@@ -4205,7 +4487,8 @@ Published stories only, newest first, cursor-paginated. Each row includes whethe
       "outlet": "mock",
       "featured": true,
       "publishedAt": "2026-01-01T00:00:00.000Z",
-      "read": true
+      "read": true,
+      "bookmarked": true
     }
   ],
   "nextCursor": "string"
@@ -4304,6 +4587,7 @@ Full body, jargon term and the minimum read time (minReadSeconds) the app must r
   "sourceUrl": "https://example.com",
   "publishedAt": "2026-01-01T00:00:00.000Z",
   "read": true,
+  "bookmarked": true,
   "minReadSeconds": 25
 }
 ```
@@ -4428,6 +4712,115 @@ Server-validated, not client-trusted: the reported dwellSeconds is checked again
 
 ---
 
+### `POST /api/v1/news/{id}/bookmark`
+
+**Bookmark a news story (app ask A8)**
+
+Idempotent - bookmarking an already-bookmarked story is a no-op, never a second row.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The news story's id |
+
+**Responses**
+
+- **200** — The story is now bookmarked
+
+```json
+{
+  "bookmarked": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+- **404** — No published news story with this id
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No published news story with this id"
+  }
+}
+```
+
+
+---
+
+### `DELETE /api/v1/news/{id}/bookmark`
+
+**Remove a news story bookmark (app ask A8)**
+
+Idempotent - removing a bookmark that doesn't exist is a no-op, never an error.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `id` | path | string | yes | The news story's id |
+
+**Responses**
+
+- **200** — The story is no longer bookmarked
+
+```json
+{
+  "bookmarked": true
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding, parental consent or legal acceptance is incomplete
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Complete onboarding before using this feature"
+  }
+}
+```
+
+
+---
+
 ### `GET /api/v1/news/desk-picks`
 
 **Get the currently active News Desk picks (NW-05, NW-46)**
@@ -4511,9 +4904,12 @@ The CTA card's data: question count, per-question timer, max VM payout (best-cas
   "questionCount": 0,
   "perQuestionTimerSeconds": 0,
   "baseVmPerQuestion": 0,
+  "baseVmPerQuestionPaise": 0,
   "maxVmPayout": 0,
+  "maxVmPayoutPaise": 0,
   "alreadyCompletedToday": true,
-  "inProgressAttemptId": "00000000-0000-0000-0000-000000000000"
+  "inProgressAttemptId": "00000000-0000-0000-0000-000000000000",
+  "resumeStepIndex": 0
 }
 ```
 
@@ -4559,7 +4955,8 @@ Builds today's edition on first use if it doesn't exist yet (a random selection 
   "attemptId": "00000000-0000-0000-0000-000000000000",
   "editionId": "00000000-0000-0000-0000-000000000000",
   "totalSteps": 0,
-  "resumed": true
+  "resumed": true,
+  "resumeStepIndex": 0
 }
 ```
 
@@ -4742,6 +5139,7 @@ Server-graded and server-timed, same anti-cheat design as lesson-flow's steps/{n
   "speedBonusAwarded": true,
   "comboAfter": 0,
   "vmAwarded": 0,
+  "vmAwardedPaise": 0,
   "correctAnswer": null,
   "explanation": {
     "en": "string",
@@ -4940,7 +5338,8 @@ Self-contained - never depends on the source stories still being published (docs
       "isCorrect": true,
       "timedOut": true,
       "speedBonusAwarded": true,
-      "vmAwarded": 0
+      "vmAwarded": 0,
+      "vmAwardedPaise": 0
     }
   ]
 }
@@ -5247,6 +5646,8 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
     "notEnoughPlayers": false,
     "weekStartDate": "2026-09-28",
     "poolSize": 214,
+    "promoteCount": 54,
+    "demoteCount": 54,
     "rows": [
       {
         "rank": 1,
@@ -5266,6 +5667,20 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
       "rank": 0,
       "xp": 0,
       "rankDelta": 3
+    },
+    "seasonRewards": {
+      "promote": {
+        "vmAmountPaise": 50000,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      },
+      "safe": {
+        "vmAmountPaise": 50000,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      },
+      "demote": {
+        "vmAmountPaise": 50000,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      }
     }
   }
 }
@@ -5399,6 +5814,8 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
     "notEnoughPlayers": false,
     "weekStartDate": "2026-09-28",
     "poolSize": 214,
+    "promoteCount": 54,
+    "demoteCount": 54,
     "rows": [
       {
         "rank": 1,
@@ -5418,6 +5835,20 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
       "rank": 0,
       "xp": 0,
       "rankDelta": 3
+    },
+    "seasonRewards": {
+      "promote": {
+        "vmAmountPaise": 50000,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      },
+      "safe": {
+        "vmAmountPaise": 50000,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      },
+      "demote": {
+        "vmAmountPaise": 50000,
+        "badgeId": "00000000-0000-0000-0000-000000000000"
+      }
     }
   }
 }
@@ -5867,7 +6298,8 @@ Opened by tapping any other learner's name/avatar in Arena. A strict allowlist: 
           "hi": "string",
           "hx": "string"
         },
-        "iconKey": "string"
+        "iconKey": "string",
+        "iconUrl": "https://example.com"
       }
     ],
     "chips": [
@@ -6078,6 +6510,89 @@ Creates the caller's entry, seeded with the competition's virtual capital (never
   "error": {
     "code": "COMPETITION_ENTRY_CLOSED",
     "message": "Entry for this competition has closed"
+  }
+}
+```
+
+
+---
+
+### `GET /api/v1/arena/competitions/current/trades`
+
+**My own trades in the current Monthly Competition (app ask A11)**
+
+Same semantics as GET /trade/orders?idempotencyKey= - cursor-paginated newest first, scoped to the caller's own entry in the currently active competition. `idempotencyKey` lets the app resolve an "outcome unknown" trade attempt by looking up the exact key it sent; a guessed key can never surface another learner's trade.
+
+**Auth:** bearerAuth
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `idempotencyKey` | query | string | no | Lets the app resolve an "outcome unknown" trade attempt. Omit to list every trade. |
+| `limit` | query | string | no |  |
+| `cursor` | query | string | no |  |
+
+**Responses**
+
+- **200** — A page of the caller's own trades in the current competition
+
+```json
+{
+  "data": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "side": "buy",
+      "qty": 0,
+      "fillPricePaise": 0,
+      "realizedPnlPaise": 0,
+      "filledAt": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "nextCursor": "string"
+}
+```
+
+- **400** — Invalid limit or cursor
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_FAILED",
+    "message": "Invalid cursor"
+  }
+}
+```
+
+- **401** — Not signed in
+
+```json
+{
+  "error": {
+    "code": "UNAUTHENTICATED",
+    "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — Onboarding incomplete, or the caller hasn't entered this competition
+
+```json
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "Enter the competition before trading in it"
+  }
+}
+```
+
+- **404** — No active competition right now
+
+```json
+{
+  "error": {
+    "code": "NOT_FOUND",
+    "message": "No active competition right now"
   }
 }
 ```
@@ -6852,7 +7367,7 @@ Every field is optional - only what's provided changes. quietHours: null clears 
 
 **Get my notification feed (PR-29)**
 
-The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language.
+The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language. `data` is a discriminated union keyed on `kind` (app ask A9) - exactly 6 kinds ever fire, confirmed against every real notifyUser() call site in the codebase: `boss_battle` carries `{ worldId }` (the next world this learner just unlocked), `market_news` carries `{ newsStoryId }` (pass to GET /api/v1/news/{id} for the full story), and `streak_risk`/`session_goal`/`cheer_received`/`league_rank_change` all carry `data: null` - none of those four kinds has ever passed a data argument.
 
 **Auth:** bearerAuth
 
@@ -6872,12 +7387,12 @@ The caller's own notifications only, newest first, cursor-paginated, already res
   "data": [
     {
       "id": "00000000-0000-0000-0000-000000000000",
-      "kind": "streak_risk",
       "title": "string",
       "body": "string",
-      "data": {},
       "readAt": "2026-01-01T00:00:00.000Z",
-      "createdAt": "2026-01-01T00:00:00.000Z"
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "kind": "streak_risk",
+      "data": null
     }
   ],
   "nextCursor": "string"
@@ -7002,7 +7517,8 @@ Returns the caller's current entitlements (e.g. ad_free), whether ads should sho
   ],
   "showAds": true,
   "nonPersonalizedAdsRequired": true,
-  "canSubscribe": true
+  "canSubscribe": true,
+  "doubtZoneEnabled": true
 }
 ```
 

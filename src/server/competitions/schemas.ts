@@ -75,16 +75,32 @@ export const PlaceCompetitionTradeRequestSchema = z.object({
   qty: z.number().int().positive().openapi({ example: 5, description: "Whole shares only." }),
 });
 
+const CompetitionTradePublicSchema = z.object({
+  id: z.uuid(),
+  side: z.enum(["buy", "sell"]),
+  qty: z.number().int().positive(),
+  fillPricePaise: z.number().int().positive(),
+  realizedPnlPaise: z.number().int().nullable(),
+  filledAt: z.string().datetime(),
+});
+
 export const CompetitionTradeResponseSchema = z.object({
-  data: z.object({
-    id: z.uuid(),
-    side: z.enum(["buy", "sell"]),
-    qty: z.number().int().positive(),
-    fillPricePaise: z.number().int().positive(),
-    realizedPnlPaise: z.number().int().nullable(),
-    filledAt: z.string().datetime(),
-    replayed: z.boolean(),
+  data: CompetitionTradePublicSchema.extend({ replayed: z.boolean() }),
+});
+
+// App asks batch, item A11: GET /arena/competitions/current/trades - same
+// semantics as GET /trade/orders (TR-13).
+export const ListCompetitionTradesQuerySchema = z.object({
+  idempotencyKey: z.string().min(1).optional().openapi({
+    description: "Lets the app resolve an \"outcome unknown\" trade attempt. Omit to list every trade.",
   }),
+  limit: z.string().optional().openapi({ example: "20" }),
+  cursor: z.string().optional(),
+});
+
+export const CompetitionTradeListResponseSchema = z.object({
+  data: z.array(CompetitionTradePublicSchema),
+  nextCursor: z.string().nullable(),
 });
 
 export const MyCompetitionStatusResponseSchema = z.object({

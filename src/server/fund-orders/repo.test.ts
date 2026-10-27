@@ -15,7 +15,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { placeFundOrderTx, executeSipDueTx, listActiveSipPlansDueOn } = await import("./repo");
+const { placeFundOrderTx, executeSipDueTx, listActiveSipPlansDueOn, listFundOrdersForUserPage } = await import("./repo");
 const { createSipPlan, getSipPlanByIdempotencyKey } = await import("./sip-repo");
 const { sumVmoneyBalance, creditVmoneyRow } = await import("@/server/economy/repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
@@ -359,5 +359,64 @@ describe("createSipPlan - Idempotency-Key", () => {
     expect(planA).not.toBeNull();
     expect(planB).not.toBeNull();
     expect(planA!.id).not.toBe(planB!.id);
+  });
+});
+
+// App asks batch, item A16 - same semantics as src/server/orders/
+// repo.test.ts's listOrdersForUserPage tests.
+describe("listFundOrdersForUserPage", () => {
+  it("looks up a single order by idempotencyKey, scoped to this user", async () => {
+    const user = await makeUser();
+    const otherUser = await makeUser();
+    const fund = await makeFund();
+    await seedNav(fund.id, "2026-09-25", 10000);
+    await grantVmoneyPaise(user.id, 1_000_000);
+    await grantVmoneyPaise(otherUser.id, 1_000_000);
+    const key = freshIdempotencyKey();
+    await placeFundOrderTx(user.id, fund, { fundId: fund.id, side: "buy", amountPaise: 50000 }, key, NOW);
+    // Another user guessing the same key never matches - idempotencyKey is
+    // unique per-user, not global.
+    await placeFundOrderTx(otherUser.id, fund, { fundId: fund.id, side: "buy", amountPaise: 60000 }, key, NOW);
+
+    const { data } = await listFundOrdersForUserPage(user.id, { limit: 20, cursor: null, idempotencyKey: key });
+
+    expect(data).toHaveLength(1);
+    expect(data[0]!.amountPaise).toBe(50000);
+  });
+
+  it("paginates newest-first with a stable cursor", async () => {
+    const user = await makeUser();
+    const fund = await makeFund();
+    await seedNav(fund.id, "2026-09-25", 10000);
+    await grantVmoneyPaise(user.id, 10_000_000);
+    for (let i = 0; i < 3; i++) {
+      await placeFundOrderTx(user.id, fund, { fundId: fund.id, side: "buy", amountPaise: 10000 }, freshIdempotencyKey(), NOW);
+    }
+
+    const page1 = await listFundOrdersForUserPage(user.id, { limit: 2, cursor: null });
+    expect(page1.data).toHaveLength(2);
+    expect(page1.nextCursor).not.toBeNull();
+
+    const { decodeCursor } = await import("@/lib/http");
+    const page2 = await listFundOrdersForUserPage(user.id, {
+      limit: 2,
+      cursor: decodeCursor(page1.nextCursor),
+    });
+    expect(page2.data).toHaveLength(1);
+    expect(page2.nextCursor).toBeNull();
+  });
+
+  it("filters by status", async () => {
+    const user = await makeUser();
+    const fund = await makeFund();
+    await seedNav(fund.id, "2026-09-25", 10000);
+    await grantVmoneyPaise(user.id, 1_000_000);
+    await placeFundOrderTx(user.id, fund, { fundId: fund.id, side: "buy", amountPaise: 10000 }, freshIdempotencyKey(), NOW);
+
+    const filled = await listFundOrdersForUserPage(user.id, { limit: 20, cursor: null, status: "filled" });
+    const failed = await listFundOrdersForUserPage(user.id, { limit: 20, cursor: null, status: "failed" });
+
+    expect(filled.data).toHaveLength(1);
+    expect(failed.data).toHaveLength(0);
   });
 });

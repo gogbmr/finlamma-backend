@@ -40,6 +40,12 @@ vi.mock("@/server/notifications/service", () => ({ notifyUser: () => Promise.res
 // captureEvent call (docs/ARCHITECTURE.md D69) would otherwise pull in the
 // real @/lib/analytics -> @/lib/env unmocked here too.
 vi.mock("@/lib/analytics", () => ({ captureEvent: () => {} }));
+// Same reasoning again - this file imports the real ./service (arena),
+// which statically imports @/server/badges/service (getMyBadges, used by
+// getMyProfile elsewhere in that module, not by sendCheer) - that module's
+// own app-ask-A10 @/lib/s3 import would otherwise pull in the real
+// @/lib/env unmocked here too, even though this test never calls it.
+vi.mock("@/lib/s3", () => ({ getSignedDownloadUrl: () => Promise.resolve(null), uploadObject: () => Promise.resolve() }));
 
 const { sendCheer } = await import("./service");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };

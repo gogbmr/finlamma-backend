@@ -11,6 +11,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Consumer Clerk session token, sent as `Authorization: Bearer <token>`."
+      },
+      "clerkSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__session",
+        "description": "The signed-in staff member's Clerk session cookie - never a bearer token."
       }
     },
     "schemas": {
@@ -55,6 +61,29 @@
                   "ok"
                 ],
                 "example": "ok"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "HealthDetailsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ok"
+                ],
+                "example": "ok"
               },
               "database": {
                 "type": "string",
@@ -70,7 +99,7 @@
                   "pending"
                 ],
                 "example": "ok",
-                "description": "Whether the latest migration in drizzle/ has actually been applied to this database (pnpm db:migrate) - catches deploying code that depends on a migration nobody ran yet."
+                "description": "Whether the latest migration in drizzle/ has actually been applied to this database (pnpm db:migrate) - catches deploying code that depends on a migration nobody ran yet. Reported as data here (never a thrown error) - see GET /api/v1/health for the public check that actually fails closed on this."
               },
               "clerkKeys": {
                 "type": "string",
@@ -90,12 +119,12 @@
                   "unpublished"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'placeholder' means at least one currently published Terms/Privacy/Risk-disclosure document is still the seeded pre-legal-review filler text (see scripts/seed-legal-documents.ts); 'unpublished' means one of the three types has no published version at all. Both must be resolved (a real version published through the admin Legal document editor) before launch."
+                "description": "'placeholder' means at least one currently published Terms/Privacy/Risk-disclosure document is still the seeded pre-legal-review filler text (see scripts/seed-legal-documents.ts); 'unpublished' means one of the three types has no published version at all. Both must be resolved before launch."
               },
               "version": {
                 "type": "string",
                 "example": "2d303f6",
-                "description": "The deployed commit's short SHA (Vercel's VERCEL_GIT_COMMIT_SHA, first 7 characters), so confirming what's actually live doesn't require the Vercel dashboard. 'local' outside Vercel (local dev, tests)."
+                "description": "The deployed commit's short SHA (Vercel's VERCEL_GIT_COMMIT_SHA, first 7 characters). 'local' outside Vercel (local dev, tests)."
               },
               "consentPiiHmacKey": {
                 "type": "string",
@@ -104,7 +133,7 @@
                   "missing"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented - see src/server/onboarding/service.ts's scrubConsentDataForDeletedUser."
+                "description": "'missing' means CONSENT_PII_HMAC_KEY isn't configured, so account deletion still scrubs a minor's parent-contact PII but can't store the HMAC proof of which parent consented."
               },
               "relaySecret": {
                 "type": "string",
@@ -113,7 +142,7 @@
                   "missing"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'missing' means RELAY_SHARED_SECRET isn't configured, so GET /api/v1/relay/config fails closed (SERVICE_UNAVAILABLE) for every call - the market relay can't fetch its instrument list/feed mode/holidays until it's set. See docs/ARCHITECTURE.md D40."
+                "description": "'missing' means RELAY_SHARED_SECRET isn't configured, so GET /api/v1/relay/config fails closed for every call - the market relay can't fetch its instrument list/feed mode/holidays."
               },
               "storage": {
                 "type": "string",
@@ -122,7 +151,7 @@
                   "missing"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'missing' means at least one of the S3_ENDPOINT/S3_REGION/S3_BUCKET/S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY env vars isn't configured, so src/lib/s3.ts fails closed (SERVICE_UNAVAILABLE) on any upload/download/signed-URL call - e.g. mentor art, lesson media. Introduced after Phase 2b Checkpoint 1 shipped storage plumbing with no way to notice a missing key from outside the deployment's env vars."
+                "description": "'missing' means at least one of the S3_* env vars isn't configured, so src/lib/s3.ts fails closed on any upload/download/signed-URL call."
               },
               "redis": {
                 "type": "string",
@@ -132,7 +161,7 @@
                   "unconfigured"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'unconfigured' means UPSTASH_REDIS_REST_URL/TOKEN aren't set, 'unreachable' means they're set but a live PING failed. Unlike storage, src/lib/redis.ts's rate limiter fails OPEN when this isn't 'ok' (docs/ROADMAP.md Phase 3 checkpoint 1) - the lesson step serve/answer endpoints stay usable, but this field is how that gap is visible from outside the deployment's env vars."
+                "description": "'unconfigured' means UPSTASH_REDIS_REST_URL/TOKEN aren't set, 'unreachable' means they're set but a live PING failed."
               },
               "worldsMissingBossQuiz": {
                 "type": "array",
@@ -153,12 +182,12 @@
                   ]
                 },
                 "example": [],
-                "description": "A non-fatal warning (never causes a 503): published worlds with no published Boss Quiz lesson. Sequential world-unlock (GET /api/v1/worlds) can never clear past one of these for any learner, since there's nothing to pass. See docs/ARCHITECTURE.md D24 and STATUS.md."
+                "description": "Published worlds with no published Boss Quiz lesson - sequential world-unlock can never clear past one of these."
               },
               "tradingUnlockWorldMissing": {
                 "type": "boolean",
                 "example": false,
-                "description": "A non-fatal warning (never causes a 503): true when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition (default 3) - trading stays locked for every learner until enough worlds are published. See docs/ARCHITECTURE.md D25."
+                "description": "True when fewer published worlds exist than settings_kv.lesson_flow_scoring.tradingUnlockAfterWorldPosition."
               },
               "tradingHalt": {
                 "type": "string",
@@ -167,7 +196,7 @@
                   "active"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): 'active' means market_controls.global_halt is currently on - the order pad rejects every order for every learner. Meant to catch a halt left on by mistake outside the admin Ops console's own persistent banner (docs/ARCHITECTURE.md D47)."
+                "description": "'active' means market_controls.global_halt is currently on - the order pad rejects every order."
               },
               "market": {
                 "type": "string",
@@ -177,7 +206,7 @@
                   "unconfigured"
                 ],
                 "example": "mock",
-                "description": "A non-fatal warning (never causes a 503): 'configured' means a real market-data vendor (currently Twelve Data) is in effect - TWELVEDATA_API_KEY is set (or MARKET_DATA_PROVIDER explicitly picked it). 'mock' means deterministic fixture prices are in effect - either no key is configured yet (docs/ARCHITECTURE.md D38/D39 - the founder is still confirming Twelve Data's NSE tier cost) or MARKET_DATA_PROVIDER=mock was set explicitly. 'unconfigured' means MARKET_DATA_PROVIDER=twelvedata was explicitly set but TWELVEDATA_API_KEY is missing - a real misconfiguration (explicitly wants live data but has no key), distinct from the intentional 'mock' fallback. Never a live vendor ping - see getMarketDataProviderKind's comment for why (avoids burning API credits on every health check)."
+                "description": "'configured' means a real market-data vendor is in effect; 'mock' means fixture prices; 'unconfigured' is a real misconfiguration."
               },
               "push": {
                 "type": "string",
@@ -187,7 +216,7 @@
                   "unconfigured"
                 ],
                 "example": "mock",
-                "description": "A non-fatal warning (never causes a 503): 'configured' means a real push vendor (Expo) is in effect - EXPO_ACCESS_TOKEN is set (or PUSH_PROVIDER explicitly picked it). 'mock' means push sends are only logged, never actually delivered - either no token is configured yet (there's no mobile app to push to as of Phase 7) or PUSH_PROVIDER=mock was set explicitly. 'unconfigured' means PUSH_PROVIDER=expo was explicitly set but EXPO_ACCESS_TOKEN is missing - a real misconfiguration, distinct from the intentional 'mock' fallback. Never a live vendor call - see getPushProviderKind's comment."
+                "description": "'configured' means a real push vendor (Expo) is in effect; 'mock' means sends are only logged."
               },
               "appUrl": {
                 "type": "string",
@@ -198,7 +227,7 @@
                   "mismatched_host"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): APP_URL feeds every parent-consent/withdraw/re-approval email link (src/server/onboarding/service.ts) and this deployment's own metadataBase/robots.txt/sitemap.xml - a wrong value silently breaks all of them with nothing else catching it (the exact gap found at Phase 9 production verification, 2026-10-04). 'empty' means APP_URL couldn't be parsed to a hostname at all. 'localhost' means it's still pointed at the local-dev placeholder from .env.example. 'mismatched_host' means this is a real Vercel deployment and APP_URL's hostname doesn't match the host Vercel actually deployed to (VERCEL_PROJECT_PRODUCTION_URL in production, VERCEL_URL in preview) - e.g. a stale custom-domain value left over from before a domain change. Config-only, no network call."
+                "description": "APP_URL feeds every parent-consent/withdraw/re-approval email link and this deployment's own metadataBase/robots.txt/sitemap.xml."
               },
               "inngest": {
                 "type": "string",
@@ -207,7 +236,7 @@
                   "unconfigured"
                 ],
                 "example": "ok",
-                "description": "A non-fatal warning (never causes a 503): checked only on a real Vercel deployment (env.VERCEL_ENV set) - local dev always reports 'ok' since src/lib/inngest.ts's client auto-detects Dev mode there. 'unconfigured' means a Vercel deployment (production or preview) is missing INNGEST_SIGNING_KEY, so the /api/inngest route's Cloud-mode serve() handler will refuse every request (including legitimate ones from Inngest) until it's set. Background jobs (the weekly report card, parent re-approval emails) simply never run while this is 'unconfigured'."
+                "description": "'unconfigured' on a real Vercel deployment means INNGEST_SIGNING_KEY is missing - background jobs never run."
               },
               "timestamp": {
                 "type": "string",
@@ -688,56 +717,291 @@
         ]
       },
       "Notification": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "streak_risk",
-              "boss_battle",
-              "market_news",
-              "session_goal",
-              "cheer_received",
-              "league_rank_change"
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "readAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "streak_risk"
+                ]
+              },
+              "data": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "body",
+              "readAt",
+              "createdAt",
+              "kind",
+              "data"
             ]
           },
-          "title": {
-            "type": "string"
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "readAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "boss_battle"
+                ]
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "worldId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "The next world this learner just unlocked by passing a Boss Quiz."
+                  }
+                },
+                "required": [
+                  "worldId"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "body",
+              "readAt",
+              "createdAt",
+              "kind",
+              "data"
+            ]
           },
-          "body": {
-            "type": "string"
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "readAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "market_news"
+                ]
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "newsStoryId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Pass to GET /api/v1/news/{id} for the full story."
+                  }
+                },
+                "required": [
+                  "newsStoryId"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "body",
+              "readAt",
+              "createdAt",
+              "kind",
+              "data"
+            ]
           },
-          "data": {
-            "type": [
-              "object",
-              "null"
-            ],
-            "additionalProperties": {}
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "readAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "session_goal"
+                ]
+              },
+              "data": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "body",
+              "readAt",
+              "createdAt",
+              "kind",
+              "data"
+            ]
           },
-          "readAt": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time"
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "readAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "cheer_received"
+                ]
+              },
+              "data": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "body",
+              "readAt",
+              "createdAt",
+              "kind",
+              "data"
+            ]
           },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "title": {
+                "type": "string"
+              },
+              "body": {
+                "type": "string"
+              },
+              "readAt": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "league_rank_change"
+                ]
+              },
+              "data": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "body",
+              "readAt",
+              "createdAt",
+              "kind",
+              "data"
+            ]
           }
-        },
-        "required": [
-          "id",
-          "kind",
-          "title",
-          "body",
-          "data",
-          "readAt",
-          "createdAt"
         ]
       },
       "NotificationsListResponse": {
@@ -1244,6 +1508,10 @@
       "Mentor": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "key": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9_]*$",
@@ -1312,6 +1580,7 @@
           }
         },
         "required": [
+          "id",
           "key",
           "order",
           "name",
@@ -1746,6 +2015,49 @@
                       ]
                     },
                     "default": []
+                  },
+                  "video": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "object",
+                        "properties": {
+                          "en": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "hi": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "hx": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "en",
+                          "hi",
+                          "hx"
+                        ]
+                      }
+                    },
+                    "default": {
+                      "url": {
+                        "en": null,
+                        "hi": null,
+                        "hx": null
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ]
                   }
                 },
                 "required": [
@@ -2114,6 +2426,14 @@
                   "null"
                 ],
                 "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+              },
+              "vmAwardedPaise": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "example": 5000
               }
             },
             "required": [
@@ -2128,7 +2448,8 @@
               "feverActive",
               "comboAfter",
               "isAttemptComplete",
-              "totalXpPreview"
+              "totalXpPreview",
+              "vmAwardedPaise"
             ]
           }
         },
@@ -2417,6 +2738,14 @@
               "null"
             ]
           },
+          "iconUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Short-lived signed URL to a staff-uploaded icon image, or null if none uploaded yet."
+          },
           "target": {
             "type": "integer",
             "exclusiveMinimum": 0,
@@ -2446,6 +2775,7 @@
           "category",
           "vmReward",
           "iconKey",
+          "iconUrl",
           "target",
           "progress",
           "unlocked",
@@ -3332,6 +3662,101 @@
           "data"
         ]
       },
+      "FundOrderListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "fundId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "side": {
+                  "type": "string",
+                  "enum": [
+                    "buy",
+                    "sell"
+                  ]
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "filled",
+                    "failed"
+                  ]
+                },
+                "amountPaise": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "The ₹ that actually moved. null only for a failed SIP execution."
+                },
+                "unitsMilli": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "Units x 1000 (3 decimal places, D45)."
+                },
+                "navPaise": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "description": "The exact NAV this fill used - never hidden pricing."
+                },
+                "navDate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Which NAV date was used, e.g. \"2026-09-25\"."
+                },
+                "realizedPnlPaise": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              },
+              "required": [
+                "id",
+                "fundId",
+                "side",
+                "status",
+                "amountPaise",
+                "unitsMilli",
+                "navPaise",
+                "navDate",
+                "realizedPnlPaise",
+                "createdAt"
+              ]
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
       "SipPlanResponse": {
         "type": "object",
         "properties": {
@@ -3821,13 +4246,18 @@
           "canSubscribe": {
             "type": "boolean",
             "description": "docs/ARCHITECTURE.md D67: false for a known-or-unknown-age minor - the subscribe purchase path must not be offered to this account at all; a parent must subscribe from their own device/account."
+          },
+          "doubtZoneEnabled": {
+            "type": "boolean",
+            "description": "Server-side kill switch for the Doubt Zone feature. The app should hide/disable Doubt Zone entirely when false."
           }
         },
         "required": [
           "entitlements",
           "showAds",
           "nonPersonalizedAdsRequired",
-          "canSubscribe"
+          "canSubscribe",
+          "doubtZoneEnabled"
         ]
       },
       "RevenueCatWebhookResponse": {
@@ -3923,6 +4353,10 @@
           "read": {
             "type": "boolean",
             "description": "Whether the caller has already read this story"
+          },
+          "bookmarked": {
+            "type": "boolean",
+            "description": "Whether the caller has bookmarked this story"
           }
         },
         "required": [
@@ -3934,7 +4368,8 @@
           "outlet",
           "featured",
           "publishedAt",
-          "read"
+          "read",
+          "bookmarked"
         ]
       },
       "NewsStoryDetail": {
@@ -4078,6 +4513,10 @@
           "read": {
             "type": "boolean"
           },
+          "bookmarked": {
+            "type": "boolean",
+            "description": "Whether the caller has bookmarked this story"
+          },
           "minReadSeconds": {
             "type": "integer",
             "description": "The dwellSeconds the app must report to POST .../read for this to count",
@@ -4096,6 +4535,7 @@
           "sourceUrl",
           "publishedAt",
           "read",
+          "bookmarked",
           "minReadSeconds"
         ]
       },
@@ -4211,9 +4651,15 @@
           "baseVmPerQuestion": {
             "type": "integer"
           },
+          "baseVmPerQuestionPaise": {
+            "type": "integer"
+          },
           "maxVmPayout": {
             "type": "integer",
             "description": "Best-case total: every question correct and fast, plus the all-correct bonus, before today's daily cap"
+          },
+          "maxVmPayoutPaise": {
+            "type": "integer"
           },
           "alreadyCompletedToday": {
             "type": "boolean"
@@ -4224,6 +4670,14 @@
               "null"
             ],
             "format": "uuid"
+          },
+          "resumeStepIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "exclusiveMinimum": 0,
+            "description": "The next step to serve for the in-progress attempt. null when inProgressAttemptId is null."
           }
         },
         "required": [
@@ -4232,9 +4686,12 @@
           "questionCount",
           "perQuestionTimerSeconds",
           "baseVmPerQuestion",
+          "baseVmPerQuestionPaise",
           "maxVmPayout",
+          "maxVmPayoutPaise",
           "alreadyCompletedToday",
-          "inProgressAttemptId"
+          "inProgressAttemptId",
+          "resumeStepIndex"
         ]
       }
     },
@@ -4244,7 +4701,7 @@
     "/api/v1/health": {
       "get": {
         "summary": "Health check",
-        "description": "Confirms the API is running and can reach the database. Used by uptime monitors.",
+        "description": "Confirms the API is running, can reach the database, and has every migration applied. Used by uptime monitors - deliberately returns nothing beyond `status` (app ask C1); the full diagnostic payload (service config, mock/vendor status, commit SHA, content warnings) is behind staff auth at GET /api/v1/health/details.",
         "tags": [
           "System"
         ],
@@ -4260,13 +4717,71 @@
             }
           },
           "503": {
-            "description": "Database is unreachable",
+            "description": "Database is unreachable, migrations are pending, or the Clerk keys are misconfigured",
             "content": {
               "application/json": {
                 "example": {
                   "error": {
                     "code": "SERVICE_UNAVAILABLE",
                     "message": "Database is unreachable"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/health/details": {
+      "get": {
+        "summary": "Full diagnostic health payload (staff only, app ask C1)",
+        "description": "Everything GET /api/v1/health used to return publicly - service config, mock/vendor status, commit SHA, content warnings - now gated behind an active staff session. Open to any active staff member, not a specific permission, since this is operational visibility (same spirit as the Ops console's always-visible halt banner), not a money/PII-sensitive view. Unlike the public endpoint, migrations/clerkKeys are reported as data here, never a 503 - a staff member diagnosing an issue wants the full picture, not to be blocked by it.",
+        "tags": [
+          "System"
+        ],
+        "security": [
+          {
+            "clerkSession": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The full diagnostic payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthDetailsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Staff sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "No active staff account for this session",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "No active staff account for this session"
                   }
                 },
                 "schema": {
@@ -4758,7 +5273,7 @@
     "/api/v1/me/date-of-birth": {
       "patch": {
         "summary": "Set my date of birth (once)",
-        "description": "Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.",
+        "description": "Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason. Rejects with AGE_BELOW_MINIMUM (app ask C2) if the submitted date puts the learner under 13 - the date is never persisted, and the account is immediately queued for deletion the same way DELETE /me works, so a retry with a different date hits ACCOUNT_DELETION_PENDING instead of this endpoint again.",
         "tags": [
           "Onboarding"
         ],
@@ -4795,6 +5310,22 @@
                   "error": {
                     "code": "UNAUTHENTICATED",
                     "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The submitted date puts the learner below the minimum age (13) - never retryable with a different date",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "AGE_BELOW_MINIMUM",
+                    "message": "You must be at least 13 years old to use Finlamma"
                   }
                 },
                 "schema": {
@@ -5584,13 +6115,23 @@
                         "credited": {
                           "type": "boolean",
                           "description": "True only the first time this lesson was completed for this user - a later idempotent replay of an already-completed lesson returns credited: false (no re-credit)."
+                        },
+                        "vmAwardedPaise": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "description": "V Money actually credited this call, in paise. null whenever credited is false (no re-credit happened, or no active reward rule).",
+                          "example": 5000
                         }
                       },
                       "required": [
                         "lessonId",
                         "status",
                         "completedAt",
-                        "credited"
+                        "credited",
+                        "vmAwardedPaise"
                       ]
                     }
                   },
@@ -7858,6 +8399,20 @@
                               "volume",
                               "asOf"
                             ]
+                          },
+                          "sparkline": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            },
+                            "description": "Closing price per 1D candle, in paise, oldest first.",
+                            "example": [
+                              283000,
+                              283400,
+                              284100,
+                              283800,
+                              284510
+                            ]
                           }
                         },
                         "required": [
@@ -7868,7 +8423,8 @@
                           "tags",
                           "lotSize",
                           "halted",
-                          "quote"
+                          "quote",
+                          "sparkline"
                         ]
                       }
                     },
@@ -8527,6 +9083,150 @@
         }
       }
     },
+    "/api/v1/trade/indices": {
+      "get": {
+        "summary": "List the NIFTY 50 / BANK NIFTY / SENSEX index strip (TR-04)",
+        "description": "Index-level value + change for a fixed set of indices - not tradeable instruments, so there's no DB row per index (docs/DATA_MODEL.md); values come from the same market-data provider and cache path as every other quote in this API. An index the vendor has no data for right now is simply omitted from the list, never returned with a synthetic value.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current index strip",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "indices": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "symbol": {
+                                "type": "string",
+                                "description": "Our own index code, not a vendor-specific symbol.",
+                                "example": "NIFTY50"
+                              },
+                              "name": {
+                                "type": "string",
+                                "example": "NIFTY 50"
+                              },
+                              "valuePaise": {
+                                "type": "integer",
+                                "description": "Index level, in paise (CLAUDE.md rule 2's integer-money convention applied to index points for consistency with every other price field in this API - an index level is not actually currency).",
+                                "example": 2450035
+                              },
+                              "changePaise": {
+                                "type": "integer",
+                                "example": 12500
+                              },
+                              "changePercent": {
+                                "type": "number",
+                                "example": 0.51
+                              },
+                              "asOf": {
+                                "type": "string",
+                                "format": "date-time",
+                                "description": "When this value was captured by the market-data vendor."
+                              }
+                            },
+                            "required": [
+                              "symbol",
+                              "name",
+                              "valuePaise",
+                              "changePaise",
+                              "changePercent",
+                              "asOf"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "indices"
+                      ]
+                    },
+                    "disclaimer": {
+                      "type": "string",
+                      "example": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice."
+                    },
+                    "disclaimerLocalized": {
+                      "type": "object",
+                      "properties": {
+                        "en": {
+                          "type": "string"
+                        },
+                        "hi": {
+                          "type": "string"
+                        },
+                        "hx": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "en",
+                        "hi",
+                        "hx"
+                      ],
+                      "example": {
+                        "en": "Prices and charts are real NSE market data, used for virtual practice only. Trades here use V Money, never real rupees. Nothing on this screen is investment advice.",
+                        "hi": "कीमतें और चार्ट असली NSE बाज़ार डेटा हैं, सिर्फ़ वर्चुअल अभ्यास के लिए इस्तेमाल होते हैं। यहाँ ट्रेड V Money से होते हैं, असली रुपयों से नहीं। इस स्क्रीन पर कुछ भी निवेश सलाह नहीं है।",
+                        "hx": "Prices aur charts real NSE market data hain, sirf virtual practice ke liye. Yahaan trades V Money se hote hain, real rupees se nahi. Is screen par kuch bhi investment advice nahi hai."
+                      }
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "disclaimer",
+                    "disclaimerLocalized"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/relay/config": {
       "get": {
         "summary": "Get the market relay's config (market relay only, X-Relay-Secret)",
@@ -9066,6 +9766,16 @@
                           "description": "allTimePnlPaise as a percentage of total paise ever spent on BUY fills. 0 if nothing has ever been bought.",
                           "example": 8.4
                         },
+                        "dayPnlPaise": {
+                          "type": "integer",
+                          "description": "Today's unrealized change only - sum of qty * (livePrice - previousClosePaise) across open positions.",
+                          "example": 1250
+                        },
+                        "dayPnlPercent": {
+                          "type": "number",
+                          "description": "dayPnlPaise as a percentage of yesterday's closing market value of current holdings. 0 if that value is 0.",
+                          "example": 1.1
+                        },
                         "equityBarsPaise": {
                           "type": "array",
                           "items": {
@@ -9095,6 +9805,8 @@
                         "totalValuePaise",
                         "allTimePnlPaise",
                         "allTimePnlPct",
+                        "dayPnlPaise",
+                        "dayPnlPercent",
                         "equityBarsPaise"
                       ]
                     }
@@ -9782,6 +10494,101 @@
         }
       }
     },
+    "/api/v1/trade/funds/summary": {
+      "get": {
+        "summary": "My fund-portfolio folio summary (app ask A2)",
+        "description": "Aggregated across every fund this learner currently holds: total invested (cost basis), total current value at the latest ingested NAV, and overall returns. A held fund that's never been ingested a NAV yet contributes its cost basis to the current-value total (zero gain/loss for that one holding) rather than being dropped or guessed at. Zero values when the learner holds no funds.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's fund folio summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "totalInvestedPaise": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Sum of each held fund's unitsMilli valued at its own avgNavPaise (cost basis).",
+                          "example": 150000
+                        },
+                        "totalCurrentValuePaise": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Sum of each held fund's unitsMilli valued at its latest ingested NAV. A fund that's never been ingested a NAV yet contributes its cost basis here (zero gain/loss for that one holding) rather than being dropped from the total or guessed at.",
+                          "example": 162000
+                        },
+                        "overallReturnsPaise": {
+                          "type": "integer",
+                          "example": 12000
+                        },
+                        "overallReturnsPercent": {
+                          "type": "number",
+                          "example": 8,
+                          "description": "0 when nothing is invested."
+                        }
+                      },
+                      "required": [
+                        "totalInvestedPaise",
+                        "totalCurrentValuePaise",
+                        "overallReturnsPaise",
+                        "overallReturnsPercent"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/trade/funds/{id}": {
       "get": {
         "summary": "Get one fund's detail with its latest NAV (TR-39)",
@@ -10225,18 +11032,146 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/trade/funds/sip": {
+      },
       "get": {
-        "summary": "List my SIP plans, including recent execution history (TR-37)",
-        "description": "Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46).",
+        "summary": "My own fund-order history (app ask A16, same semantics as GET /trade/orders)",
+        "description": "Every status included (filled/failed - failed only ever exists for an unattended SIP execution, D45/D46; a manual order rejection is a thrown error at request time, never a row here). `idempotencyKey` lets the app resolve an \"outcome unknown\" fund-order attempt by looking up the exact key it sent - always scoped to the caller's own orders, so a guessed key can never surface another learner's order. Cursor-paginated newest first.",
         "tags": [
           "Trade"
         ],
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "filled",
+                "failed"
+              ],
+              "description": "Omit to return every status.",
+              "example": "filled"
+            },
+            "required": false,
+            "description": "Omit to return every status.",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": false,
+            "name": "idempotencyKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's own fund orders",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundOrderListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid status, limit or cursor",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid cursor"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/trade/funds/sip": {
+      "get": {
+        "summary": "List my SIP plans, including recent execution history (TR-37)",
+        "description": "Every plan's next due date, status, and its most recent executions - a failed execution (e.g. insufficient balance on the due date) is always visible here, never silently skipped (docs/ARCHITECTURE.md D46). `idempotencyKey` (app ask A16, same semantics as GET /trade/orders?idempotencyKey=) narrows this to the single plan created with that exact key, letting the app resolve an \"outcome unknown\" SIP-creation attempt - scoped to the caller's own plans, so a guessed key simply returns an empty list.",
+        "tags": [
+          "Trade"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Omit to list every plan."
+            },
+            "required": false,
+            "description": "Omit to list every plan.",
+            "name": "idempotencyKey",
+            "in": "query"
           }
         ],
         "responses": {
@@ -10912,6 +11847,178 @@
         }
       }
     },
+    "/api/v1/news/{id}/bookmark": {
+      "post": {
+        "summary": "Bookmark a news story (app ask A8)",
+        "description": "Idempotent - bookmarking an already-bookmarked story is a no-op, never a second row.",
+        "tags": [
+          "News"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The news story's id"
+            },
+            "required": true,
+            "description": "The news story's id",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The story is now bookmarked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bookmarked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "bookmarked"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No published news story with this id",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No published news story with this id"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a news story bookmark (app ask A8)",
+        "description": "Idempotent - removing a bookmark that doesn't exist is a no-op, never an error.",
+        "tags": [
+          "News"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "The news story's id"
+            },
+            "required": true,
+            "description": "The news story's id",
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The story is no longer bookmarked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bookmarked": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "bookmarked"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding, parental consent or legal acceptance is incomplete",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Complete onboarding before using this feature"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/news/desk-picks": {
       "get": {
         "summary": "Get the currently active News Desk picks (NW-05, NW-46)",
@@ -11073,13 +12180,21 @@
                     "resumed": {
                       "type": "boolean",
                       "description": "true if this returned an already-in-progress attempt rather than creating a new one"
+                    },
+                    "resumeStepIndex": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "exclusiveMinimum": 0
                     }
                   },
                   "required": [
                     "attemptId",
                     "editionId",
                     "totalSteps",
-                    "resumed"
+                    "resumed",
+                    "resumeStepIndex"
                   ]
                 }
               }
@@ -11437,6 +12552,10 @@
                       "type": "integer",
                       "description": "This question's own score (base+speed+combo), whole VM, before the multiplier/daily cap are applied at finish"
                     },
+                    "vmAwardedPaise": {
+                      "type": "integer",
+                      "description": "Additive paise-suffixed sibling of vmAwarded (app ask A14) - same value, same meaning, just in paise."
+                    },
                     "correctAnswer": {},
                     "explanation": {
                       "type": "object",
@@ -11464,6 +12583,7 @@
                     "speedBonusAwarded",
                     "comboAfter",
                     "vmAwarded",
+                    "vmAwardedPaise",
                     "explanation"
                   ]
                 }
@@ -11798,6 +12918,12 @@
                               "integer",
                               "null"
                             ]
+                          },
+                          "vmAwardedPaise": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
@@ -11805,7 +12931,8 @@
                           "isCorrect",
                           "timedOut",
                           "speedBonusAwarded",
-                          "vmAwarded"
+                          "vmAwarded",
+                          "vmAwardedPaise"
                         ]
                       }
                     }
@@ -12155,6 +13282,18 @@
                           "minimum": 0,
                           "example": 214
                         },
+                        "promoteCount": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 54,
+                          "description": "Top N ranks promote."
+                        },
+                        "demoteCount": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 54,
+                          "description": "Bottom N ranks demote."
+                        },
                         "rows": {
                           "type": "array",
                           "items": {
@@ -12270,6 +13409,82 @@
                             "rankDelta"
                           ],
                           "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
+                        },
+                        "seasonRewards": {
+                          "type": "object",
+                          "properties": {
+                            "promote": {
+                              "type": "object",
+                              "properties": {
+                                "vmAmountPaise": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "example": 50000
+                                },
+                                "badgeId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "description": "null until an admin sets up the Arena crest badge, or for a zone that never awards one."
+                                }
+                              },
+                              "required": [
+                                "vmAmountPaise",
+                                "badgeId"
+                              ]
+                            },
+                            "safe": {
+                              "type": "object",
+                              "properties": {
+                                "vmAmountPaise": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "example": 50000
+                                },
+                                "badgeId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "description": "null until an admin sets up the Arena crest badge, or for a zone that never awards one."
+                                }
+                              },
+                              "required": [
+                                "vmAmountPaise",
+                                "badgeId"
+                              ]
+                            },
+                            "demote": {
+                              "type": "object",
+                              "properties": {
+                                "vmAmountPaise": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "example": 50000
+                                },
+                                "badgeId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "description": "null until an admin sets up the Arena crest badge, or for a zone that never awards one."
+                                }
+                              },
+                              "required": [
+                                "vmAmountPaise",
+                                "badgeId"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "promote",
+                            "safe",
+                            "demote"
+                          ]
                         }
                       },
                       "required": [
@@ -12279,8 +13494,11 @@
                         "notEnoughPlayers",
                         "weekStartDate",
                         "poolSize",
+                        "promoteCount",
+                        "demoteCount",
                         "rows",
-                        "self"
+                        "self",
+                        "seasonRewards"
                       ]
                     }
                   },
@@ -12574,6 +13792,18 @@
                           "minimum": 0,
                           "example": 214
                         },
+                        "promoteCount": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 54,
+                          "description": "Top N ranks promote."
+                        },
+                        "demoteCount": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "example": 54,
+                          "description": "Bottom N ranks demote."
+                        },
                         "rows": {
                           "type": "array",
                           "items": {
@@ -12689,6 +13919,82 @@
                             "rankDelta"
                           ],
                           "description": "The caller's own rank/xp, even if outside `rows` (AR-06)."
+                        },
+                        "seasonRewards": {
+                          "type": "object",
+                          "properties": {
+                            "promote": {
+                              "type": "object",
+                              "properties": {
+                                "vmAmountPaise": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "example": 50000
+                                },
+                                "badgeId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "description": "null until an admin sets up the Arena crest badge, or for a zone that never awards one."
+                                }
+                              },
+                              "required": [
+                                "vmAmountPaise",
+                                "badgeId"
+                              ]
+                            },
+                            "safe": {
+                              "type": "object",
+                              "properties": {
+                                "vmAmountPaise": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "example": 50000
+                                },
+                                "badgeId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "description": "null until an admin sets up the Arena crest badge, or for a zone that never awards one."
+                                }
+                              },
+                              "required": [
+                                "vmAmountPaise",
+                                "badgeId"
+                              ]
+                            },
+                            "demote": {
+                              "type": "object",
+                              "properties": {
+                                "vmAmountPaise": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "example": 50000
+                                },
+                                "badgeId": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ],
+                                  "format": "uuid",
+                                  "description": "null until an admin sets up the Arena crest badge, or for a zone that never awards one."
+                                }
+                              },
+                              "required": [
+                                "vmAmountPaise",
+                                "badgeId"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "promote",
+                            "safe",
+                            "demote"
+                          ]
                         }
                       },
                       "required": [
@@ -12698,8 +14004,11 @@
                         "notEnoughPlayers",
                         "weekStartDate",
                         "poolSize",
+                        "promoteCount",
+                        "demoteCount",
                         "rows",
-                        "self"
+                        "self",
+                        "seasonRewards"
                       ]
                     }
                   },
@@ -13593,13 +14902,21 @@
                                   "string",
                                   "null"
                                 ]
+                              },
+                              "iconUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "format": "uri"
                               }
                             },
                             "required": [
                               "id",
                               "name",
                               "description",
-                              "iconKey"
+                              "iconKey",
+                              "iconUrl"
                             ]
                           }
                         },
@@ -14367,6 +15684,181 @@
                   "error": {
                     "code": "RATE_LIMITED",
                     "message": "Too many order attempts - slow down and try again shortly"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "My own trades in the current Monthly Competition (app ask A11)",
+        "description": "Same semantics as GET /trade/orders?idempotencyKey= - cursor-paginated newest first, scoped to the caller's own entry in the currently active competition. `idempotencyKey` lets the app resolve an \"outcome unknown\" trade attempt by looking up the exact key it sent; a guessed key can never surface another learner's trade.",
+        "tags": [
+          "Arena"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Lets the app resolve an \"outcome unknown\" trade attempt. Omit to list every trade."
+            },
+            "required": false,
+            "description": "Lets the app resolve an \"outcome unknown\" trade attempt. Omit to list every trade.",
+            "name": "idempotencyKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "20"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's own trades in the current competition",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "buy",
+                              "sell"
+                            ]
+                          },
+                          "qty": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "fillPricePaise": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "realizedPnlPaise": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "filledAt": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "side",
+                          "qty",
+                          "fillPricePaise",
+                          "realizedPnlPaise",
+                          "filledAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limit or cursor",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "VALIDATION_FAILED",
+                    "message": "Invalid cursor"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "UNAUTHENTICATED",
+                    "message": "Sign-in required"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Onboarding incomplete, or the caller hasn't entered this competition",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "FORBIDDEN",
+                    "message": "Enter the competition before trading in it"
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No active competition right now",
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": {
+                    "code": "NOT_FOUND",
+                    "message": "No active competition right now"
                   }
                 },
                 "schema": {
@@ -15418,7 +16910,7 @@
     "/api/v1/me/notifications": {
       "get": {
         "summary": "Get my notification feed (PR-29)",
-        "description": "The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language.",
+        "description": "The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language. `data` is a discriminated union keyed on `kind` (app ask A9) - exactly 6 kinds ever fire, confirmed against every real notifyUser() call site in the codebase: `boss_battle` carries `{ worldId }` (the next world this learner just unlocked), `market_news` carries `{ newsStoryId }` (pass to GET /api/v1/news/{id} for the full story), and `streak_risk`/`session_goal`/`cheer_received`/`league_rank_change` all carry `data: null` - none of those four kinds has ever passed a data argument.",
         "tags": [
           "Notifications"
         ],

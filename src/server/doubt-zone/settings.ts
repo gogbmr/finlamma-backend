@@ -2,7 +2,9 @@ import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import {
+  DEFAULT_DOUBT_ZONE_ENABLED,
   DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS,
+  DOUBT_ZONE_ENABLED_KEY,
   DOUBT_ZONE_SAFETY_SETTINGS_KEY,
   DoubtZoneSafetySettingsSchema,
   type DoubtZoneSafetySettings,
@@ -52,4 +54,14 @@ export async function updateDoubtZoneSafetySettings(
     userAgent: meta.userAgent,
   });
   return input;
+}
+
+// App asks batch, item C4: the server-side kill switch exposed to the app
+// via GET /me/entitlements's doubtZoneEnabled field. Defaults to false
+// (disabled) when unseeded or when a stored value isn't a plain boolean -
+// a shape drift must fail closed (feature off) the same way the safety
+// settings above fail to their safe default, never fail open.
+export async function getDoubtZoneEnabled(): Promise<boolean> {
+  const raw = await getSettingJson(DOUBT_ZONE_ENABLED_KEY);
+  return typeof raw === "boolean" ? raw : DEFAULT_DOUBT_ZONE_ENABLED;
 }

@@ -1,10 +1,12 @@
 import { captureEvent } from "@/lib/analytics";
 import { logActivity } from "@/lib/activity-log";
+import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { logInternalError } from "@/lib/http";
 import { getSettingJson } from "@/lib/settings";
 import { isMinor } from "@/server/onboarding/service";
 import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { countLeadingClearedWorlds } from "@/server/worlds/service";
+import { getDoubtZoneEnabled } from "@/server/doubt-zone/settings";
 import { getRevenueCatProvider } from "./provider";
 import {
   findUserById,
@@ -205,11 +207,18 @@ export function treatAsMinorForMonetisation(dateOfBirth: string | null): boolean
 }
 
 export async function getMyMonetisationStatus(user: { id: string; dateOfBirth: string | null }) {
-  const [rows, adsSettings, scoringSettings] = await Promise.all([
-    getEntitlementsForUser(user.id),
-    getAdsSettings(),
-    getLessonFlowScoringSettings(),
-  ]);
+  // runWithConcurrencyLimit, not a bare Promise.all (CLAUDE.md rule 15,
+  // docs/ARCHITECTURE.md D13/D72) - app ask C4's doubtZoneEnabled read
+  // pushed this past 3 concurrent DB-querying calls.
+  const [rows, adsSettings, scoringSettings, doubtZoneEnabled] = await runWithConcurrencyLimit(
+    [
+      () => getEntitlementsForUser(user.id),
+      () => getAdsSettings(),
+      () => getLessonFlowScoringSettings(),
+      () => getDoubtZoneEnabled(),
+    ],
+    DB_CONCURRENCY_LIMIT,
+  );
 
   const now = new Date();
   const shapedEntitlements = rows.map((row) => ({
@@ -234,6 +243,7 @@ export async function getMyMonetisationStatus(user: { id: string; dateOfBirth: s
     showAds: pastAdsWorldGate && !hasActiveAdFree,
     nonPersonalizedAdsRequired: treatAsMinor,
     canSubscribe: !treatAsMinor,
+    doubtZoneEnabled,
   };
 }
 

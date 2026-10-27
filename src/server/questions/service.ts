@@ -14,6 +14,7 @@ import {
 } from "./repo";
 import {
   answerSchemaForFormat,
+  isFormatAppRenderable,
   payloadSchemaForFormat,
   validateAnswerBounds,
   type CreateQuestionDraftInput,
@@ -131,12 +132,29 @@ function validateQuestionForPublish(question: QuestionRow): void {
   );
 }
 
+// App asks batch, section B (root gate): the app can't render this format
+// interactively yet (APP_RENDERABLE_QUESTION_FORMATS), so publishing it
+// would put a question live that no learner can actually answer. Only
+// checked at publish, not on every draft save/hotfix - a staff member must
+// be able to author and iterate on a not-yet-renderable format in draft
+// (e.g. preparing content ahead of an app release) without being blocked
+// before they even try to publish.
+function assertFormatAppRenderable(format: string): void {
+  if (isFormatAppRenderable(format)) return;
+  throw new AppError(
+    "VALIDATION_FAILED",
+    `Cannot publish: the app doesn't support the "${format}" question format yet`,
+    { format },
+  );
+}
+
 export async function publishQuestion(actor: { id: string }, id: string, meta: RequestMeta) {
   const question = await getQuestionById(id);
   if (!question) throw new AppError("NOT_FOUND", "Question not found");
   if (question.status !== "draft") {
     throw new AppError("CONFLICT", "Question is not a draft");
   }
+  assertFormatAppRenderable(question.format);
   validateQuestionForPublish(question);
 
   const published = await publishQuestionRow(id, actor.id);

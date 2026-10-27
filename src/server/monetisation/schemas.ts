@@ -99,5 +99,11 @@ export const MyEntitlementsResponseSchema = registry.register(
         "purchase path must not be offered to this account at all; a parent must subscribe " +
         "from their own device/account.",
     }),
+    // App asks batch, item C4: a server-side kill switch for the whole
+    // Doubt Zone feature (settings_kv "doubt_zone_enabled"), independent of
+    // any individual learner's account state - defaults to false.
+    doubtZoneEnabled: z.boolean().openapi({
+      description: "Server-side kill switch for the Doubt Zone feature. The app should hide/disable Doubt Zone entirely when false.",
+    }),
   }),
 );

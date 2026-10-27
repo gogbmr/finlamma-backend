@@ -213,6 +213,27 @@ describe("publishQuestion - translation-completeness gate", () => {
     await expect(publishQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({ code: "CONFLICT" });
     expect(mockPublishQuestionRow).not.toHaveBeenCalled();
   });
+
+  // App asks batch, section B (root gate): the app can't render this
+  // format interactively yet.
+  it("refuses to publish a question in a format the app doesn't support yet, naming the format", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ format: "ordering" }));
+
+    await expect(publishQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { format: "ordering" },
+    });
+    expect(mockPublishQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("still allows publishing a single_select question", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ format: "single_select" }));
+    mockPublishQuestionRow.mockResolvedValueOnce(questionRow({ status: "published" }));
+
+    const result = await publishQuestion(ACTOR, "question_1", META);
+
+    expect(result.status).toBe("published");
+  });
 });
 
 // D20 (docs/ARCHITECTURE.md): direct edit of a PUBLISHED question's

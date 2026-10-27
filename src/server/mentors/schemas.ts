@@ -17,6 +17,10 @@ export const MentorKeySchema = z
 export const MentorPublicSchema = registry.register(
   "Mentor",
   z.object({
+    // App asks batch, item A13 (BLOCKING): POST /doubt-zone/threads needs a
+    // UUID mentorId - this is that same mentor row's real id, additive
+    // alongside the existing `key` (unchanged, still the stable slug).
+    id: z.uuid(),
     key: MentorKeySchema,
     order: z.number().int().openapi({ example: 1 }),
     name: LocalizedTextSchema.openapi({

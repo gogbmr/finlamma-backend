@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getWorldById, listPublishedWorlds } from "@/server/worlds/repo";
 import { getQuestionsByIds } from "@/server/questions/repo";
+import { isFormatAppRenderable } from "@/server/questions/schemas";
 import {
   countInProgressLearnersByLessonIds,
   getLessonProgressStatusesForUser,
@@ -46,6 +47,18 @@ function toSummary(row: LessonRow) {
   };
 }
 
+// App asks batch, item A12: `content.video.url` is a new, additive field -
+// `content` is stored raw JSONB and returned as-is (no re-validation on
+// read), so a video lesson authored before this field existed simply
+// doesn't have the key yet. Backfilled here, read-side, so every video
+// lesson's response carries it (all-null, as the ask expects) without
+// needing every existing lesson to be re-saved through the editor first.
+function withVideoUrlDefault(kind: string, content: unknown): unknown {
+  if (kind !== "video" || typeof content !== "object" || content === null) return content;
+  if ("video" in content) return content;
+  return { ...content, video: { url: { en: null, hi: null, hx: null } } };
+}
+
 function toDetail(row: LessonRow) {
   return {
     id: row.id,
@@ -55,7 +68,7 @@ function toDetail(row: LessonRow) {
     kind: row.kind,
     title: row.title,
     blurb: row.blurb,
-    content: row.content,
+    content: withVideoUrlDefault(row.kind, row.content),
   };
 }
 
@@ -275,6 +288,14 @@ async function assertQuestionReferencesValid(kind: string, content: unknown): Pr
     const q = foundById.get(qid);
     if (!q) questionProblems.push(`question ${qid} does not exist`);
     else if (q.status !== "published") questionProblems.push(`question ${qid} is not published`);
+    // App asks batch, section B (defense in depth - questions/service.ts's
+    // publishQuestion is the root gate that should already prevent this for
+    // any question published after this fix shipped): refuse to publish a
+    // lesson that would put an app-unrenderable question in front of a
+    // learner, naming the exact format.
+    else if (!isFormatAppRenderable(q.format)) {
+      questionProblems.push(`question ${qid} uses the "${q.format}" format, which the app doesn't support yet`);
+    }
   }
   if (questionProblems.length > 0) {
     throw new AppError("VALIDATION_FAILED", `Cannot publish: ${questionProblems.join("; ")}`, {

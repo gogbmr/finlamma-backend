@@ -115,6 +115,13 @@ export const DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS: DoubtZoneSafetySettings = {
 
 export const DOUBT_ZONE_SAFETY_SETTINGS_KEY = "doubt_zone_safety";
 
+// App asks batch, item C4: a server-side kill switch for the whole Doubt
+// Zone feature, independent of the safety-classifier settings above.
+// Defaults to false (disabled) when unseeded - see
+// src/server/doubt-zone/settings.ts's getDoubtZoneEnabled.
+export const DOUBT_ZONE_ENABLED_KEY = "doubt_zone_enabled";
+export const DEFAULT_DOUBT_ZONE_ENABLED = false;
+
 // classifyMessageSafety's (./safety.ts) output shape.
 export const SafetyCategorySchema = z.enum([
   "none",

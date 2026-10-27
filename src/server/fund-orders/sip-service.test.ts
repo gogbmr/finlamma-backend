@@ -167,7 +167,7 @@ describe("next due date computation", () => {
 
   it("is null for a cancelled plan - it never runs again", async () => {
     mockListSipPlansForUser.mockResolvedValueOnce([planRow({ status: "cancelled" })]);
-    const [result] = await listMySips("user_1", NOW);
+    const [result] = await listMySips("user_1", {}, NOW);
     expect(result!.nextDueDate).toBeNull();
   });
 });
@@ -189,10 +189,30 @@ describe("listMySips", () => {
       },
     ]);
 
-    const [result] = await listMySips("user_1", NOW);
+    const [result] = await listMySips("user_1", {}, NOW);
 
     expect(result!.recentExecutions).toHaveLength(1);
     expect(result!.recentExecutions[0]).toMatchObject({ status: "failed", failureReason: "INSUFFICIENT_MARGIN" });
+  });
+
+  it("looks up a single plan by idempotencyKey, scoped to this user (app ask A16)", async () => {
+    mockGetSipPlanByIdempotencyKey.mockResolvedValueOnce(planRow({ id: "plan_1" }));
+    mockListRecentFundOrdersForSipPlan.mockResolvedValueOnce([]);
+
+    const result = await listMySips("user_1", { idempotencyKey: "key1" }, NOW);
+
+    expect(mockGetSipPlanByIdempotencyKey).toHaveBeenCalledWith("user_1", "key1");
+    expect(mockListSipPlansForUser).not.toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+    expect(result[0]!.id).toBe("plan_1");
+  });
+
+  it("returns an empty list, never an error, when the idempotencyKey matches nothing", async () => {
+    mockGetSipPlanByIdempotencyKey.mockResolvedValueOnce(null);
+
+    const result = await listMySips("user_1", { idempotencyKey: "guessed" }, NOW);
+
+    expect(result).toEqual([]);
   });
 });
 

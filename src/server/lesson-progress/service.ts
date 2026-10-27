@@ -92,6 +92,7 @@ export async function completeUngradedLesson(user: { id: string }, lessonId: str
       status: "completed" as const,
       completedAt: existing.completedAt!.toISOString(),
       credited: false,
+      vmAwardedPaise: null,
     };
   }
 
@@ -111,6 +112,7 @@ export async function completeUngradedLesson(user: { id: string }, lessonId: str
         status: "completed" as const,
         completedAt: refreshed.completedAt!.toISOString(),
         credited: false,
+        vmAwardedPaise: null,
       };
     }
     const startedAt = (refreshed ?? existing).startedAt;
@@ -135,7 +137,7 @@ export async function completeUngradedLesson(user: { id: string }, lessonId: str
 
   // Story/Doubt Zone have no accuracy concept at all (D23/D28) - reaching
   // this point (served, minimum time elapsed) already IS "successful".
-  const { credited } = await creditLessonCompletion(
+  const { credited, vmAwardedPaise } = await creditLessonCompletion(
     user,
     { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
     true,
@@ -162,5 +164,6 @@ export async function completeUngradedLesson(user: { id: string }, lessonId: str
     status: "completed" as const,
     completedAt: completed.completedAt!.toISOString(),
     credited: true,
+    vmAwardedPaise,
   };
 }

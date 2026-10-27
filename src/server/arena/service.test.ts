@@ -189,6 +189,40 @@ describe("getLeaderboard", () => {
     expect(result.rows).toHaveLength(25);
   });
 
+  // App asks batch, item A7.
+  it("reports promoteCount/demoteCount from the same Math.max(1, round(poolSize/4)) formula computeZonesForRankedList uses", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce(
+      Array.from({ length: 25 }, (_, i) => ({ userId: `u${i}`, xp: i })),
+    );
+
+    const result = await getLeaderboard({ id: "u24", state: null }, "global");
+
+    expect(result.poolSize).toBe(25);
+    expect(result.promoteCount).toBe(Math.max(1, Math.round(25 / 4)));
+    expect(result.demoteCount).toBe(Math.max(1, Math.round(25 / 4)));
+  });
+
+  // App asks batch, item A6.
+  it("reports seasonRewards from the exact settlement-reading settings, converted to paise - demote always 0, crest only on promote", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce(
+      Array.from({ length: 25 }, (_, i) => ({ userId: `u${i}`, xp: i })),
+    );
+    mockGetSettingNumber.mockImplementation((key: string, fallback: number) => {
+      if (key === "arena_promote_vm_reward") return Promise.resolve(500);
+      if (key === "arena_safe_vm_reward") return Promise.resolve(0);
+      return Promise.resolve(fallback);
+    });
+    mockGetSettingJson.mockResolvedValueOnce("badge-123");
+
+    const result = await getLeaderboard({ id: "u24", state: null }, "global");
+
+    expect(result.seasonRewards).toEqual({
+      promote: { vmAmountPaise: 50000, badgeId: "badge-123" },
+      safe: { vmAmountPaise: 0, badgeId: null },
+      demote: { vmAmountPaise: 0, badgeId: null },
+    });
+  });
+
   it("caps returned rows at the top 50 but still surfaces the caller's own rank outside that window", async () => {
     mockWeeklyXpByScope.mockResolvedValueOnce(
       Array.from({ length: 60 }, (_, i) => ({ userId: `u${i}`, xp: 60 - i })),

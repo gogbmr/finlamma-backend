@@ -87,7 +87,7 @@ describe("getPortfolioSummary", () => {
     ]);
     mockSumBuyCostBasisPaise.mockResolvedValueOnce(20000);
     mockSumRealizedPnlPaise.mockResolvedValueOnce(0);
-    mockGetCachedQuote.mockResolvedValueOnce({ pricePaise: 12000 });
+    mockGetCachedQuote.mockResolvedValueOnce({ pricePaise: 12000, previousClosePaise: 11500 });
 
     const result = await getPortfolioSummary("u1");
 
@@ -97,6 +97,8 @@ describe("getPortfolioSummary", () => {
     expect(result.allTimePnlPaise).toBe(4000); // unrealized 2*(12000-10000)
     expect(result.allTimePnlPct).toBe(20); // 4000/20000*100
     expect(result.equityBarsPaise).toEqual([4000]);
+    expect(result.dayPnlPaise).toBe(1000); // 2*(12000-11500)
+    expect(result.dayPnlPercent).toBe(4.35); // 1000 / (2*11500) * 100
   });
 
   it("treats a failed/missing quote as no market value for that position, not an error", async () => {
@@ -114,6 +116,21 @@ describe("getPortfolioSummary", () => {
     expect(result.holdingsMarketValuePaise).toBe(0);
     expect(result.allTimePnlPaise).toBe(0);
     expect(result.allTimePnlPct).toBe(0);
+    expect(result.dayPnlPaise).toBe(0);
+    expect(result.dayPnlPercent).toBe(0);
+  });
+
+  it("day P&L is 0 when nothing is held (app ask A3)", async () => {
+    mockSumVmoneyBalance.mockResolvedValueOnce(50000);
+    mockListOpenPositions.mockResolvedValueOnce([]);
+    mockListFilledOrdersChronological.mockResolvedValueOnce([]);
+    mockSumBuyCostBasisPaise.mockResolvedValueOnce(0);
+    mockSumRealizedPnlPaise.mockResolvedValueOnce(0);
+
+    const result = await getPortfolioSummary("u1");
+
+    expect(result.dayPnlPaise).toBe(0);
+    expect(result.dayPnlPercent).toBe(0);
   });
 });
 

@@ -169,6 +169,7 @@ function buildAnswerResponse(
   revision: { answer: unknown; explanation: unknown },
   totalSteps: number,
   attempt: { status: string; totalXpPreview: number | null },
+  vmAwardedPaise: number | null = null,
 ) {
   return {
     attemptId: row.attemptId,
@@ -184,6 +185,10 @@ function buildAnswerResponse(
     comboAfter: row.comboAfter!,
     isAttemptComplete: attempt.status === "completed",
     totalXpPreview: attempt.totalXpPreview,
+    // App asks batch, item A5: null on every step except the one that
+    // actually completed the attempt this call (never a per-step preview -
+    // see the `vmAwardedPaise` local in submitAnswer for why).
+    vmAwardedPaise,
   };
 }
 
@@ -282,6 +287,11 @@ export async function submitAnswer(
   let attemptAfter = attempt;
   let isAttemptComplete = false;
   let totalXpPreview: number | null = null;
+  // App asks batch, item A5: filled only on the completing step, same
+  // "null until the attempt actually completes" convention as
+  // totalXpPreview - never a per-step preview, since VM here is a flat
+  // per-lesson reward (reward_rules.defaultVm), not computed per question.
+  let vmAwardedPaise: number | null = null;
   if (stepIndex === questionIds.length) {
     const allAnswers = await listQuestionAnswersForAttempt(attempt.id);
     const sum = allAnswers.reduce((s, a) => s + (a.xpAwardedPreview ?? 0), 0);
@@ -316,12 +326,14 @@ export async function submitAnswer(
       const passMark =
         lesson.kind === "boss_quiz" ? settings.bossQuizPassMarkPct : settings.lessonPassMarkPct;
       const successful = accuracyPct >= passMark;
-      const { credited } = await creditLessonCompletion(
+      const creditResult = await creditLessonCompletion(
         user,
         { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
         successful,
         meta,
       );
+      const { credited } = creditResult;
+      vmAwardedPaise = creditResult.vmAwardedPaise;
       // docs/ARCHITECTURE.md D69: fires on every successful completion
       // (first pass or a retry), `isFirstPass` keyed off the same
       // `credited` idempotency flag the reward ledger already uses.
@@ -417,5 +429,5 @@ export async function submitAnswer(
     });
   }
 
-  return buildAnswerResponse(graded, servedRevision, questionIds.length, attemptAfter);
+  return buildAnswerResponse(graded, servedRevision, questionIds.length, attemptAfter, vmAwardedPaise);
 }

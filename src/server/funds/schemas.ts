@@ -74,3 +74,23 @@ export const FundDetailResponseSchema = z.object({
   data: PublicFundSchema,
   ...FUND_DISCLAIMER_LOCALIZED_SHAPE,
 });
+
+// App asks batch, item A2: the fund-portfolio folio summary - aggregated
+// across every fund this learner currently holds (unitsMilli > 0).
+export const FundFolioSummarySchema = z.object({
+  totalInvestedPaise: z.number().int().nonnegative().openapi({
+    description: "Sum of each held fund's unitsMilli valued at its own avgNavPaise (cost basis).",
+    example: 150000,
+  }),
+  totalCurrentValuePaise: z.number().int().nonnegative().openapi({
+    description:
+      "Sum of each held fund's unitsMilli valued at its latest ingested NAV. A fund that's " +
+      "never been ingested a NAV yet contributes its cost basis here (zero gain/loss for that " +
+      "one holding) rather than being dropped from the total or guessed at.",
+    example: 162000,
+  }),
+  overallReturnsPaise: z.number().int().openapi({ example: 12000 }),
+  overallReturnsPercent: z.number().openapi({ example: 8, description: "0 when nothing is invested." }),
+});
+
+export const FundFolioSummaryResponseSchema = z.object({ data: FundFolioSummarySchema });

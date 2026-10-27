@@ -3,22 +3,30 @@ import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
+import { roleHasPermission } from "@/server/staff/repo";
 import { getConsentReviewList } from "@/server/onboarding/service";
 import { ConsentReviewTable } from "./consent-review-table";
+import { DobCorrectionForm } from "./dob-correction-form";
 
 export default async function ConsentReviewPage({
   searchParams,
 }: {
   searchParams: Promise<{ includeDeleted?: string }>;
 }) {
+  let staff;
   try {
-    await requireStaff("consent.view");
+    staff = await requireStaff("consent.view");
   } catch {
     return <Forbidden message="You don't have permission to view parental consent status." />;
   }
 
   const params = await searchParams;
   const includeDeleted = params.includeDeleted === "1";
+
+  // consent.correct_dob is super_admin only (app asks batch, section C3) -
+  // hidden here for everyone else, but the server action re-checks it
+  // itself regardless (admin-page skill rule 2: never rely on hiding alone).
+  const canCorrectDob = await roleHasPermission(staff.roleId, "consent.correct_dob");
 
   const rows = await getConsentReviewList(100, includeDeleted);
 
@@ -37,6 +45,8 @@ export default async function ConsentReviewPage({
       >
         {includeDeleted ? "Hide deleted accounts" : "Show deleted accounts"}
       </Link>
+
+      {canCorrectDob && <DobCorrectionForm />}
 
       <ConsentReviewTable
         rows={rows.map((r) => ({

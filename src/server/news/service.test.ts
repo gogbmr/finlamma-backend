@@ -35,17 +35,21 @@ vi.mock("./providers", () => ({
   getNewsProvider: () => mockGetNewsProvider(),
 }));
 
+const mockDeleteBookmark = vi.fn();
+const mockGetExistingBookmark = vi.fn();
 const mockGetExistingRead = vi.fn();
 const mockGetPublishedStoryById = vi.fn();
 const mockGetRawIngestedCount = vi.fn();
 const mockGetStoryById = vi.fn();
 const mockGetStoryStatusCounts = vi.fn();
 const mockGetUndraftedRawCount = vi.fn();
+const mockInsertBookmarkIfNew = vi.fn();
 const mockInsertDraftStoryWithQuestion = vi.fn();
 const mockInsertRawItemsIfNew = vi.fn();
 const mockInsertReadIfNew = vi.fn();
 const mockListActiveDeskPicks = vi.fn();
 const mockListAllStories = vi.fn();
+const mockListBookmarkedStoryIdsForUser = vi.fn();
 const mockListPublishedStories = vi.fn();
 const mockListPublishedStoriesPendingNotification = vi.fn();
 const mockListReadStoryIdsForUser = vi.fn();
@@ -57,18 +61,22 @@ const mockUpdateStoryQualityOverrideRow = vi.fn();
 const mockUpdateStoryStatusRow = vi.fn();
 const mockUpdateStoryTopicRow = vi.fn();
 vi.mock("./repo", () => ({
+  deleteBookmark: (userId: unknown, storyId: unknown) => mockDeleteBookmark(userId, storyId),
+  getExistingBookmark: (userId: unknown, storyId: unknown) => mockGetExistingBookmark(userId, storyId),
   getExistingRead: (userId: unknown, storyId: unknown) => mockGetExistingRead(userId, storyId),
   getPublishedStoryById: (id: unknown) => mockGetPublishedStoryById(id),
   getRawIngestedCount: () => mockGetRawIngestedCount(),
   getStoryById: (id: unknown) => mockGetStoryById(id),
   getStoryStatusCounts: () => mockGetStoryStatusCounts(),
   getUndraftedRawCount: () => mockGetUndraftedRawCount(),
+  insertBookmarkIfNew: (userId: unknown, storyId: unknown) => mockInsertBookmarkIfNew(userId, storyId),
   insertDraftStoryWithQuestion: (input: unknown) => mockInsertDraftStoryWithQuestion(input),
   insertRawItemsIfNew: (source: unknown, items: unknown) => mockInsertRawItemsIfNew(source, items),
   insertReadIfNew: (userId: unknown, storyId: unknown, dwell: unknown) =>
     mockInsertReadIfNew(userId, storyId, dwell),
   listActiveDeskPicks: () => mockListActiveDeskPicks(),
   listAllStories: () => mockListAllStories(),
+  listBookmarkedStoryIdsForUser: (userId: unknown, ids: unknown) => mockListBookmarkedStoryIdsForUser(userId, ids),
   listPublishedStories: (opts: unknown) => mockListPublishedStories(opts),
   listPublishedStoriesPendingNotification: (limit: unknown) => mockListPublishedStoriesPendingNotification(limit),
   listReadStoryIdsForUser: (userId: unknown, ids: unknown) => mockListReadStoryIdsForUser(userId, ids),
@@ -87,6 +95,7 @@ vi.mock("@/server/notifications/service", () => ({
 }));
 
 import {
+  bookmarkNewsStory,
   broadcastPendingNewsNotifications,
   draftPendingStories,
   getNewsDeskPicksForApp,
@@ -96,10 +105,11 @@ import {
   getNewsStoryDetail,
   ingestLatestNews,
   markNewsStoryRead,
+  unbookmarkNewsStory,
   updateNewsQuizGeneratorSettings,
   updateNewsStoryStatusForAdmin,
 } from "./service";
-import { DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS } from "./schemas";
+import { DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, type NewsQuizGeneratorSettings } from "./schemas";
 
 const ACTOR = { id: "staff_1" };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -107,6 +117,10 @@ const META = { ip: "1.2.3.4", userAgent: "test-agent" };
 beforeEach(() => {
   vi.clearAllMocks();
   mockFindAdviceLikePhrases.mockReturnValue([]);
+  // No bookmarks by default - existing feed/detail tests below don't need
+  // to know about the A8 bookmark field at all.
+  mockListBookmarkedStoryIdsForUser.mockResolvedValue(new Set());
+  mockGetExistingBookmark.mockResolvedValue(null);
 });
 
 describe("ingestLatestNews", () => {
@@ -269,6 +283,34 @@ describe("news quiz generator settings", () => {
       expect.objectContaining({ action: "news.quiz_generator_settings_updated" }),
     );
   });
+
+  // App asks batch, section B: the News Desk's own "toggle" gate.
+  it("refuses to enable a format the app doesn't support yet, naming it", async () => {
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["single_select", "ordering"] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+    await expect(updateNewsQuizGeneratorSettings(ACTOR, next, META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { unsupportedFormats: ["ordering"] },
+    });
+    expect(mockSetSettingJson).not.toHaveBeenCalled();
+  });
+
+  it("names every unsupported format, not just the first", async () => {
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["ordering", "sort_buckets"] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+    await expect(updateNewsQuizGeneratorSettings(ACTOR, next, META)).rejects.toMatchObject({
+      details: { unsupportedFormats: ["ordering", "sort_buckets"] },
+    });
+  });
+
+  it("still allows saving enabledFormats: ['single_select']", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(null);
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["single_select"] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+    const result = await updateNewsQuizGeneratorSettings(ACTOR, next, META);
+
+    expect(result).toEqual(next);
+  });
 });
 
 const PUBLISHED_STORY = {
@@ -308,6 +350,26 @@ describe("getNewsFeed", () => {
 
     expect(result.data[0].read).toBe(false);
   });
+
+  // App asks batch, item A8.
+  it("marks bookmarked stories from listBookmarkedStoryIdsForUser", async () => {
+    mockListPublishedStories.mockResolvedValueOnce({ data: [PUBLISHED_STORY], nextCursor: null });
+    mockListReadStoryIdsForUser.mockResolvedValueOnce(new Set());
+    mockListBookmarkedStoryIdsForUser.mockResolvedValueOnce(new Set(["story_1"]));
+
+    const result = await getNewsFeed("user_1", { limit: 20, cursor: null, category: null });
+
+    expect(result.data[0].bookmarked).toBe(true);
+  });
+
+  it("a story not in the bookmarked set shows bookmarked: false", async () => {
+    mockListPublishedStories.mockResolvedValueOnce({ data: [PUBLISHED_STORY], nextCursor: null });
+    mockListReadStoryIdsForUser.mockResolvedValueOnce(new Set());
+
+    const result = await getNewsFeed("user_1", { limit: 20, cursor: null, category: null });
+
+    expect(result.data[0].bookmarked).toBe(false);
+  });
 });
 
 describe("getNewsStoryDetail", () => {
@@ -319,12 +381,64 @@ describe("getNewsStoryDetail", () => {
 
     expect(result.minReadSeconds).toBe(20);
     expect(result.read).toBe(false);
+    expect(result.bookmarked).toBe(false);
+  });
+
+  it("reports bookmarked: true once a bookmark exists (app ask A8)", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+    mockGetExistingRead.mockResolvedValueOnce(null);
+    mockGetExistingBookmark.mockResolvedValueOnce({ id: "bookmark_1" });
+
+    const result = await getNewsStoryDetail("user_1", "story_1");
+
+    expect(result.bookmarked).toBe(true);
   });
 
   it("throws NOT_FOUND for a draft/hidden/nonexistent story", async () => {
     mockGetPublishedStoryById.mockResolvedValueOnce(null);
 
     await expect(getNewsStoryDetail("user_1", "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+// App asks batch, item A8.
+describe("bookmarkNewsStory", () => {
+  it("bookmarks and returns { bookmarked: true }", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+
+    const result = await bookmarkNewsStory({ id: "user_1" }, "story_1");
+
+    expect(result).toEqual({ bookmarked: true });
+    expect(mockInsertBookmarkIfNew).toHaveBeenCalledWith("user_1", "story_1");
+  });
+
+  it("is idempotent - bookmarking an already-bookmarked story still returns { bookmarked: true }", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(PUBLISHED_STORY);
+    mockInsertBookmarkIfNew.mockResolvedValueOnce(null); // conflict - already bookmarked
+
+    const result = await bookmarkNewsStory({ id: "user_1" }, "story_1");
+
+    expect(result).toEqual({ bookmarked: true });
+  });
+
+  it("throws NOT_FOUND for a draft/hidden/nonexistent story", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce(null);
+
+    await expect(bookmarkNewsStory({ id: "user_1" }, "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockInsertBookmarkIfNew).not.toHaveBeenCalled();
+  });
+});
+
+describe("unbookmarkNewsStory", () => {
+  it("removes the bookmark and returns { bookmarked: false }", async () => {
+    const result = await unbookmarkNewsStory({ id: "user_1" }, "story_1");
+
+    expect(result).toEqual({ bookmarked: false });
+    expect(mockDeleteBookmark).toHaveBeenCalledWith("user_1", "story_1");
+  });
+
+  it("is idempotent - unbookmarking a story that isn't bookmarked still returns { bookmarked: false }, never an error", async () => {
+    await expect(unbookmarkNewsStory({ id: "user_1" }, "story_1")).resolves.toEqual({ bookmarked: false });
   });
 });
 

@@ -140,6 +140,8 @@ function visibleZone(
   return zone === "demote" ? null : zone;
 }
 
+export type SeasonRewardView = { vmAmountPaise: number; badgeId: string | null };
+
 export type LeaderboardView = {
   requestedScope: string;
   scope: string;
@@ -147,8 +149,20 @@ export type LeaderboardView = {
   notEnoughPlayers: boolean;
   weekStartDate: string;
   poolSize: number;
+  // App asks batch, item A7: the exact boundary ranks the prototype's own
+  // `Math.max(1, Math.round(n/4))` formula (computeZonesForRankedList)
+  // already applies against this same poolSize - so the app's zone
+  // dividers can never disagree with what rows[].zone actually shows.
+  promoteCount: number;
+  demoteCount: number;
   rows: LeaderboardRowView[];
   self: { rank: number; xp: number; rankDelta: number | null } | null;
+  // App asks batch, item A6: what this week's settlement would pay for
+  // each zone outcome - the exact admin-tunable settings
+  // settleArenaLeaguesForWeek itself reads, never a duplicated/guessed
+  // copy. demote never pays anything (no demoteVmReward setting exists -
+  // D55); the crest badge is only ever awarded on promote.
+  seasonRewards: { promote: SeasonRewardView; safe: SeasonRewardView; demote: SeasonRewardView };
 };
 
 async function requestedScopeForUser(
@@ -256,6 +270,15 @@ async function buildLeaderboardView(
     });
   }
 
+  // App asks batch, items A6/A7 - same settings/formula settlement itself
+  // uses, read sequentially (never a bare Promise.all of 3+ DB-querying
+  // calls, CLAUDE.md rule 15).
+  const zoneN = Math.max(1, Math.round(rows.length / 4));
+  const promoteVmReward = await getSettingNumber(ARENA_PROMOTE_VM_REWARD_KEY, DEFAULT_ARENA_PROMOTE_VM_REWARD);
+  const safeVmReward = await getSettingNumber(ARENA_SAFE_VM_REWARD_KEY, DEFAULT_ARENA_SAFE_VM_REWARD);
+  const crestBadgeIdRaw = await getSettingJson(ARENA_CREST_BADGE_ID_KEY);
+  const crestBadgeId = typeof crestBadgeIdRaw === "string" ? crestBadgeIdRaw : null;
+
   return {
     requestedScope: encodeScope(requested),
     scope: encodeScope(resolution.resolved),
@@ -263,6 +286,8 @@ async function buildLeaderboardView(
     notEnoughPlayers: resolution.notEnoughPlayers,
     weekStartDate,
     poolSize: rows.length,
+    promoteCount: zoneN,
+    demoteCount: zoneN,
     rows: viewRows,
     self: selfRanked
       ? {
@@ -271,6 +296,11 @@ async function buildLeaderboardView(
           rankDelta: rankDeltaFor(selfRanked.userId, selfRanked.rank),
         }
       : null,
+    seasonRewards: {
+      promote: { vmAmountPaise: promoteVmReward * VM_TO_LEDGER_PAISE, badgeId: crestBadgeId },
+      safe: { vmAmountPaise: safeVmReward * VM_TO_LEDGER_PAISE, badgeId: null },
+      demote: { vmAmountPaise: 0, badgeId: null },
+    },
   };
 }
 
@@ -814,6 +844,7 @@ export async function getPublicProfile(
         name: b.name,
         description: b.description,
         iconKey: b.iconKey,
+        iconUrl: b.iconUrl, // app ask A10
       })),
     chips: chips.map((c) => ({ id: c.id, name: c.name, iconKey: c.iconKey })),
     weekXp,

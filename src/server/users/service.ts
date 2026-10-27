@@ -9,6 +9,7 @@ import { scrubDoubtZoneContentForUser } from "@/server/doubt-zone/service";
 import {
   getOnboardingConsentState,
   scrubConsentDataForDeletedUser,
+  scrubDobCorrectionsForUser,
   type OnboardingConsentState,
 } from "@/server/onboarding/service";
 import { assignRandomHandleIfMissing, getMyHandle } from "@/server/peer-handles/service";
@@ -91,8 +92,22 @@ export async function updateMe(user: UserRow, input: UpdateMeInput, meta: Reques
 // account the instant the marker is set (ACCOUNT_DELETION_PENDING) - so a
 // half-deleted account can never keep being used while reconciliation
 // finishes in the background, typically within seconds.
+// The async pipeline shared by every trigger that needs an account gone -
+// a learner's own DELETE /me below, and (app asks batch, section C2)
+// onboarding's age-below-minimum rejection, which needs the exact same
+// Clerk-delete + DB-anonymize + scrub work, just from a system-initiated
+// caller with its own activity-log action name rather than this one's
+// "user.deletion_requested". Marking deletionRequestedAt also means the
+// very next request on this account hits requireUser's
+// ACCOUNT_DELETION_PENDING gate (src/lib/auth.ts) - the actual mechanism
+// that makes a retry-with-a-different-date impossible for C2.
+export async function beginAccountDeletion(userId: string): Promise<void> {
+  await markDeletionRequested(userId);
+  await inngest.send({ name: "account/deletion.requested", data: { userId } });
+}
+
 export async function deleteMe(user: UserRow, meta: RequestMeta): Promise<void> {
-  await markDeletionRequested(user.id);
+  await beginAccountDeletion(user.id);
 
   await logActivity({
     actorType: "user",
@@ -103,8 +118,6 @@ export async function deleteMe(user: UserRow, meta: RequestMeta): Promise<void> 
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
-
-  await inngest.send({ name: "account/deletion.requested", data: { userId: user.id } });
 }
 
 // The actual deletion work, shared by three triggers: the Inngest event
@@ -120,7 +133,8 @@ export async function deleteMe(user: UserRow, meta: RequestMeta): Promise<void> 
 //   completed, not just the narrower "Clerk succeeded, DB failed" case.
 // - anonymizeUserFromClerk: guarded by `deletedAt IS NULL`.
 // - scrubConsentDataForDeletedUser: guarded by `parent_contacts.scrubbed_at`.
-// - deleteAllPushTokensForUser / scrubDoubtZoneContentForUser: deleting/
+// - deleteAllPushTokensForUser / scrubDoubtZoneContentForUser /
+//   scrubDobCorrectionsForUser (app asks batch, section C3): deleting/
 //   overwriting already-gone rows is a harmless no-op either way.
 // Activity-log metadata here is deliberately userId-only, never an email or
 // name, per the founder's explicit instruction for this reconciliation path.
@@ -140,6 +154,7 @@ export async function reconcileAccountDeletion(
   await scrubConsentDataForDeletedUser(userId, meta);
   await deleteAllPushTokensForUser(userId);
   await scrubDoubtZoneContentForUser(userId);
+  await scrubDobCorrectionsForUser(userId);
 
   await logActivity({
     actorType: "system",

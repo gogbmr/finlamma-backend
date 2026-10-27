@@ -4,23 +4,28 @@ import type { requestMeta } from "@/lib/http";
 import { decodeCursor, encodeCursor, logInternalError } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import { notifyUser } from "@/server/notifications/service";
+import { isFormatAppRenderable } from "@/server/questions/schemas";
 import { findAdviceLikePhrases } from "@/server/trading/advice-language";
 import { draftNewsStoryFromRaw } from "./ai";
 import { computeQualityGrade } from "./grading";
 import { getNewsProvider } from "./providers";
 import { computeMinReadSeconds } from "./reading-time";
 import {
+  deleteBookmark,
+  getExistingBookmark,
   getExistingRead,
   getPublishedStoryById,
   getRawIngestedCount,
   getStoryById,
   getStoryStatusCounts,
   getUndraftedRawCount,
+  insertBookmarkIfNew,
   insertDraftStoryWithQuestion,
   insertRawItemsIfNew,
   insertReadIfNew,
   listActiveDeskPicks,
   listAllStories,
+  listBookmarkedStoryIdsForUser,
   listPublishedStories,
   listPublishedStoriesPendingNotification,
   listReadStoryIdsForUser,
@@ -170,6 +175,13 @@ export async function getNewsFeed(
     userId,
     data.map((s) => s.id),
   );
+  // App asks batch, item A8 - sequential, not concurrent with the read-ids
+  // lookup above (CLAUDE.md rule 15 applies to concurrent calls, not two
+  // plain sequential awaits).
+  const bookmarkedIds = await listBookmarkedStoryIdsForUser(
+    userId,
+    data.map((s) => s.id),
+  );
   return {
     data: data.map((s) => ({
       id: s.id,
@@ -181,6 +193,7 @@ export async function getNewsFeed(
       featured: s.featured,
       publishedAt: (s.publishedAt ?? s.createdAt).toISOString(),
       read: readIds.has(s.id),
+      bookmarked: bookmarkedIds.has(s.id),
     })),
     nextCursor: nextCursor ? encodeCursor(nextCursor) : null,
   };
@@ -190,7 +203,9 @@ export async function getNewsStoryDetail(userId: string, id: string) {
   const story = await getPublishedStoryById(id);
   if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
 
-  const [existingRead] = await Promise.all([getExistingRead(userId, id)]);
+  const existingRead = await getExistingRead(userId, id);
+  // App asks batch, item A8.
+  const existingBookmark = await getExistingBookmark(userId, id);
   return {
     id: story.id,
     headline: story.content.headline,
@@ -203,8 +218,25 @@ export async function getNewsStoryDetail(userId: string, id: string) {
     sourceUrl: story.sourceUrl,
     publishedAt: (story.publishedAt ?? story.createdAt).toISOString(),
     read: existingRead !== null,
+    bookmarked: existingBookmark !== null,
     minReadSeconds: computeMinReadSeconds(story.content.body.map((p) => p.en)),
   };
+}
+
+// App asks batch, item A8: idempotent either direction - bookmarking an
+// already-bookmarked story, or unbookmarking one that isn't, both simply
+// reflect the resulting state, never an error.
+export async function bookmarkNewsStory(user: { id: string }, storyId: string) {
+  const story = await getPublishedStoryById(storyId);
+  if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
+
+  await insertBookmarkIfNew(user.id, storyId);
+  return { bookmarked: true };
+}
+
+export async function unbookmarkNewsStory(user: { id: string }, storyId: string) {
+  await deleteBookmark(user.id, storyId);
+  return { bookmarked: false };
 }
 
 // NW-09: server-validated, not client-trusted - the client's own
@@ -363,11 +395,27 @@ export async function getNewsQuizGeneratorSettings(): Promise<NewsQuizGeneratorS
 // other "changes what every learner's session looks like/earns" constant
 // (lesson_flow_scoring, vm_issuance_multiplier) - not news.manage/publish,
 // since this isn't about a specific story, it's a global Pulse Check knob.
+// App asks batch, section B: refuse to enable a format in Pulse Check's
+// daily pool that the app can't render interactively yet - the News
+// Desk's own "generator/toggle" flow, same shared allowlist
+// questions/service.ts's publishQuestion gate uses. Named per-format so
+// the admin UI can point at exactly which one(s) to remove.
+function assertEnabledFormatsAppRenderable(enabledFormats: string[]): void {
+  const unsupported = enabledFormats.filter((f) => !isFormatAppRenderable(f));
+  if (unsupported.length === 0) return;
+  throw new AppError(
+    "VALIDATION_FAILED",
+    `Cannot enable format${unsupported.length > 1 ? "s" : ""} the app doesn't support yet: ${unsupported.join(", ")}`,
+    { unsupportedFormats: unsupported },
+  );
+}
+
 export async function updateNewsQuizGeneratorSettings(
   actor: { id: string },
   input: NewsQuizGeneratorSettings,
   meta: RequestMeta,
 ): Promise<NewsQuizGeneratorSettings> {
+  assertEnabledFormatsAppRenderable(input.enabledFormats);
   const previous = await getNewsQuizGeneratorSettings();
   await setSettingJson(
     NEWS_QUIZ_GENERATOR_SETTINGS_KEY,

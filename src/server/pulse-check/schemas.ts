@@ -44,9 +44,17 @@ export const PulseCheckCurrentResponseSchema = z.object({
   questionCount: z.number().int(),
   perQuestionTimerSeconds: z.number().int(),
   baseVmPerQuestion: z.number().int(),
+  // App asks batch, item A14: additive paise-suffixed siblings only - the
+  // existing whole-VM fields above are unchanged, same values, same units.
+  baseVmPerQuestionPaise: z.number().int(),
   maxVmPayout: z.number().int().openapi({ description: "Best-case total: every question correct and fast, plus the all-correct bonus, before today's daily cap" }),
+  maxVmPayoutPaise: z.number().int(),
   alreadyCompletedToday: z.boolean(),
   inProgressAttemptId: z.uuid().nullable(),
+  // App asks batch, item A15.
+  resumeStepIndex: z.number().int().positive().nullable().openapi({
+    description: "The next step to serve for the in-progress attempt. null when inProgressAttemptId is null.",
+  }),
 }).openapi("PulseCheckCurrent");
 
 export const PulseCheckStartResponseSchema = z.object({
@@ -54,6 +62,9 @@ export const PulseCheckStartResponseSchema = z.object({
   editionId: z.uuid(),
   totalSteps: z.number().int(),
   resumed: z.boolean().openapi({ description: "true if this returned an already-in-progress attempt rather than creating a new one" }),
+  // App asks batch, item A15: meaningful only when resumed is true; null
+  // for a freshly created attempt (which always starts at step 1).
+  resumeStepIndex: z.number().int().positive().nullable(),
 });
 
 const PulseCheckQuestionSchema = z.object({
@@ -82,6 +93,7 @@ export const PulseCheckAnswerResponseSchema = z.object({
   speedBonusAwarded: z.boolean(),
   comboAfter: z.number().int(),
   vmAwarded: z.number().int().openapi({ description: "This question's own score (base+speed+combo), whole VM, before the multiplier/daily cap are applied at finish" }),
+  vmAwardedPaise: z.number().int().openapi({ description: "Additive paise-suffixed sibling of vmAwarded (app ask A14) - same value, same meaning, just in paise." }),
   correctAnswer: z.unknown(),
   explanation: LocalizedTextSchema,
 });
@@ -110,6 +122,7 @@ export const PulseCheckResultResponseSchema = z.object({
       timedOut: z.boolean().nullable(),
       speedBonusAwarded: z.boolean().nullable(),
       vmAwarded: z.number().int().nullable(),
+      vmAwardedPaise: z.number().int().nullable(), // app ask A14: additive paise sibling
     }),
   ),
 });

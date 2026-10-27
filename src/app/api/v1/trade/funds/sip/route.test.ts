@@ -21,8 +21,8 @@ import { GET, POST } from "./route";
 const USER = { id: "u1" };
 const VALID_BODY = { fundId: "00000000-0000-0000-0000-000000000000", amountPaise: 10000, dayOfMonth: 5 };
 
-function makeGetRequest() {
-  return new Request("http://localhost/api/v1/trade/funds/sip");
+function makeGetRequest(query = "") {
+  return new Request(`http://localhost/api/v1/trade/funds/sip${query}`);
 }
 
 function makePostRequest(body: unknown, idempotencyKey: string | null = "test-key") {
@@ -56,7 +56,17 @@ describe("GET /api/v1/trade/funds/sip", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data).toHaveLength(1);
-    expect(mockListMySips).toHaveBeenCalledWith(USER.id);
+    expect(mockListMySips).toHaveBeenCalledWith(USER.id, { idempotencyKey: undefined });
+  });
+
+  it("passes the idempotencyKey filter through (app ask A16)", async () => {
+    mockRequireUser.mockResolvedValueOnce(USER);
+    mockRequireFullAccess.mockResolvedValueOnce(undefined);
+    mockListMySips.mockResolvedValueOnce([{ id: "plan_1", status: "active" }]);
+
+    await GET(makeGetRequest("?idempotencyKey=client-key-123"));
+
+    expect(mockListMySips).toHaveBeenCalledWith(USER.id, { idempotencyKey: "client-key-123" });
   });
 });
 

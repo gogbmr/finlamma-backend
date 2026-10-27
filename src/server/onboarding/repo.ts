@@ -2,6 +2,7 @@ import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   consentRecords,
+  dobCorrections,
   legalAcceptances,
   legalReapprovalRequests,
   parentContacts,
@@ -19,6 +20,53 @@ export async function setDateOfBirthOnce(userId: string, dateOfBirth: string) {
     .where(and(eq(users.id, userId), isNull(users.dateOfBirth)))
     .returning();
   return updated ?? null;
+}
+
+// App asks batch, section C3 - the staff DOB-correction tool. Updates
+// users.dateOfBirth AND writes the dob_corrections audit row in ONE
+// transaction (same "never a partial multi-table write" convention as
+// every other money/compliance mutation in this codebase - D41/D46-style),
+// row-locked so a concurrent correction (or a learner's own first-time
+// setDateOfBirthOnce call, impossible in practice once set, but belt-and-
+// braces) can't race it. Unlike setDateOfBirthOnce, deliberately NOT
+// guarded by `isNull(dateOfBirth)` - correcting an already-set value is
+// the whole point; returns null if there's nothing to correct yet (DOB
+// never set) or the account is already deleted/anonymized.
+export async function correctDateOfBirth(
+  userId: string,
+  staffId: string,
+  newDateOfBirth: string,
+  reason: string,
+): Promise<{ oldDateOfBirth: string; newDateOfBirth: string; correctionId: string } | null> {
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ id: users.id, dateOfBirth: users.dateOfBirth, deletedAt: users.deletedAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update")
+      .limit(1);
+    if (!current || current.dateOfBirth === null || current.deletedAt !== null) return null;
+
+    await tx.update(users).set({ dateOfBirth: newDateOfBirth }).where(eq(users.id, userId));
+    const [correction] = await tx
+      .insert(dobCorrections)
+      .values({ userId, staffId, oldDateOfBirth: current.dateOfBirth, newDateOfBirth, reason })
+      .returning();
+
+    return { oldDateOfBirth: current.dateOfBirth, newDateOfBirth, correctionId: correction!.id };
+  });
+}
+
+// Account-deletion scrub (called from scrubConsentDataForDeletedUser below)
+// - deletes this user's own correction-history rows outright, never
+// anonymizes in place, since (unlike consent_records) this table carries
+// no evidentiary purpose once the account itself is gone.
+export async function deleteDobCorrectionsForUser(userId: string): Promise<number> {
+  const deleted = await db
+    .delete(dobCorrections)
+    .where(eq(dobCorrections.userId, userId))
+    .returning({ id: dobCorrections.id });
+  return deleted.length;
 }
 
 // Idempotent (unlike setDateOfBirthOnce): the World Home mentor-intro modal

@@ -141,12 +141,12 @@ export async function creditLessonCompletion(
   lesson: { id: string; kind: string; xpOverride: number | null; vmOverride: number | null },
   successful: boolean,
   meta: RequestMeta,
-): Promise<{ credited: boolean }> {
-  if (!successful) return { credited: false };
+): Promise<{ credited: boolean; vmAwardedPaise: number | null }> {
+  if (!successful) return { credited: false, vmAwardedPaise: null };
 
   const activityKind = activityKindForLessonKind(lesson.kind);
   const rule = await getRewardRule(activityKind);
-  if (!rule || !rule.active) return { credited: false };
+  if (!rule || !rule.active) return { credited: false, vmAwardedPaise: null };
 
   const xpAmount = lesson.xpOverride ?? rule.defaultXp;
   const vmBaseAmount = lesson.vmOverride ?? rule.defaultVm;
@@ -189,7 +189,13 @@ export async function creditLessonCompletion(
     // mark attempt never reaches this branch at all.
     await recordLearningActivity(user.id);
   }
-  return { credited };
+  // App asks batch, item A5: a read-only preview of what was (or would
+  // have been) credited this call - never a second source of truth, the
+  // real credit already happened above via creditLessonCompletionRow.
+  // null whenever nothing was actually credited this call (already
+  // credited by an earlier attempt, no active reward rule, etc.) - never
+  // the amount a retry WOULD have earned, since that never happened.
+  return { credited, vmAwardedPaise: credited ? vmAmountPaise : null };
 }
 
 // PR-21 (Profile - Wallet): balance, VM earned this (IST) calendar month,

@@ -10,7 +10,14 @@ registry.registerPath({
   method: "get",
   path: "/api/v1/me/notifications",
   summary: "Get my notification feed (PR-29)",
-  description: "The caller's own notifications only, newest first, cursor-paginated, already resolved to their own language.",
+  description:
+    "The caller's own notifications only, newest first, cursor-paginated, already resolved to " +
+    "their own language. `data` is a discriminated union keyed on `kind` (app ask A9) - exactly " +
+    "6 kinds ever fire, confirmed against every real notifyUser() call site in the codebase: " +
+    "`boss_battle` carries `{ worldId }` (the next world this learner just unlocked), " +
+    "`market_news` carries `{ newsStoryId }` (pass to GET /api/v1/news/{id} for the full " +
+    "story), and `streak_risk`/`session_goal`/`cheer_received`/`league_rank_change` all carry " +
+    "`data: null` - none of those four kinds has ever passed a data argument.",
   tags: ["Notifications"],
   security: [{ bearerAuth: [] }],
   request: {

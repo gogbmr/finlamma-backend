@@ -102,6 +102,7 @@ describe("getPublicMentors / getPublicMentorByKey", () => {
 
     expect(result).toEqual([
       {
+        id: "mentor_1", // app ask A13 (BLOCKING): doubt-zone needs a UUID mentorId
         key: "baby",
         order: 1,
         name: { en: "Baby Lamma", hi: "बेबी लामा", hx: "Baby Lamma" },

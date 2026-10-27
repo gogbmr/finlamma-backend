@@ -57,6 +57,15 @@ const PERMISSIONS = [
       "Every view of a parent's contact details is logged.",
   },
   {
+    key: "consent.correct_dob",
+    description:
+      "Correct a learner's already-set date of birth (app asks batch, section C3) - super_admin " +
+      "only at launch. A correction that crosses the minor/adult boundary re-evaluates the " +
+      "parental-consent gate live; one that results in an under-13 account runs the same " +
+      "AGE_BELOW_MINIMUM rejection and account-deletion path as setting the date for the first " +
+      "time. Every correction is logged with old/new value and a required reason.",
+  },
+  {
     key: "doubt_zone.moderate",
     description:
       "View and act on flagged Doubt Zone AI messages only - a message the safety classifier " +
@@ -205,6 +214,7 @@ const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
     "news.publish",
     "doubt_zone.moderate",
     "analytics.view",
+    "consent.correct_dob",
   ],
   user_manager: ["consent.view", "doubt_zone.moderate"],
   content_uploader: ["mentor.manage", "world.manage", "lesson.manage", "news.manage"],

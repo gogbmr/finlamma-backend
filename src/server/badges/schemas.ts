@@ -44,6 +44,12 @@ export const BadgeSchema = registry.register(
     category: BadgeCategoryEnum,
     vmReward: z.number().int().nonnegative().openapi({ example: 100 }),
     iconKey: z.string().nullable(),
+    // App asks batch, item A10: a staff-uploaded icon image, same pattern
+    // as mentors' artUrl - a signed download URL, null until uploaded.
+    // Additive, independent of iconKey above (unchanged).
+    iconUrl: z.url().nullable().openapi({
+      description: "Short-lived signed URL to a staff-uploaded icon image, or null if none uploaded yet.",
+    }),
     target: z.number().int().positive().openapi({
       example: 10,
       description: "The criteria threshold - shown so the app can render \"7/10\" progress.",

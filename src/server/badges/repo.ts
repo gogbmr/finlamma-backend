@@ -54,6 +54,12 @@ export async function unpublishBadgeRow(id: string) {
   return row ?? null;
 }
 
+// App asks batch, item A10 - same shape as mentors' setMentorArtKey.
+export async function setBadgeIconImageKey(id: string, iconImageKey: string) {
+  const [row] = await db.update(badges).set({ iconImageKey }).where(eq(badges.id, id)).returning();
+  return row ?? null;
+}
+
 export async function listUnlockedBadgeIdsForUser(userId: string): Promise<Set<string>> {
   const rows = await db.select({ badgeId: userBadges.badgeId }).from(userBadges).where(eq(userBadges.userId, userId));
   return new Set(rows.map((r) => r.badgeId));

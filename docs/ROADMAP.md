@@ -499,6 +499,27 @@ yet - recorded here so the mobile app's Trade tab work doesn't quietly discover 
       technical side (fail-closed classification, always-logged reveal, deterministic redirect
       copy) is built; the human process behind it is not, and that gap matters as much as the code
       for a feature that talks to minors about their wellbeing.
+- [ ] **BLOCKING: build Doubt Zone's server-side output safety layer** (app asks batch, section D -
+      design approved 2026-10-27, not built this batch since it needs a real `ANTHROPIC_API_KEY` to
+      build and test properly; see the BLOCKING item above for that same gap at the input/classifier
+      level). Four pieces:
+      - **Output classification before release**: buffer the model's full reply server-side and run
+        it through a classifier (mirroring the input-side `classifyMessageSafety`) before it ever
+        reaches the client - the app already buffers its own render, so this adds no UX loss.
+      - **PII redaction folded into the input classifier**, biased to over-redact (a false-positive
+        redaction costs nothing; a missed one leaks a child's name/school/address into a stored
+        message). **Fail closed**: if redaction itself fails (classifier error, timeout), block the
+        message outright - never store or forward the raw, unredacted text as a fallback.
+      - **90-day default retention** on Doubt Zone message content via `settings_kv` (same pattern
+        as every other admin-tunable retention window in this codebase) enforced by a nightly
+        Inngest scrub job - moderation metadata (flag status, classifier reasoning, timestamps)
+        is kept past the 90 days; only the message content itself is scrubbed.
+      - **Open item for the child-safety reviewer** (the same reviewer named in the
+        `doubt_zone.moderate` policy blocker above): whether a flagged safeguarding case needs an
+        exception to the 90-day content scrub - a genuine self-harm/abuse signal may need to stay
+        retrievable past 90 days for escalation purposes, which would mean the scrub job has to
+        skip (not just delay) any message still attached to an open flag. Not decided; needs that
+        reviewer's input before this is built.
 - [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
       up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
       reset of this one, then `pnpm db:migrate` + the full seed sequence

@@ -17,6 +17,23 @@ export const QuestionFormatSchema = z.enum([
 ]);
 export type QuestionFormat = z.infer<typeof QuestionFormatSchema>;
 
+// App asks batch, section B: the ONE shared config constant naming every
+// format the app can actually render interactively today - widening it
+// later (once the app ships a UI component for another format) is a
+// one-line change here. Used by both admin publish gates that must refuse
+// a question in an unsupported format: publishQuestion (questions/
+// service.ts, the root gate - every question, lesson-embedded or
+// Pulse-Check-eligible, goes through it) and
+// updateNewsQuizGeneratorSettings (news/service.ts's enabledFormats
+// toggle). Every format above still exists as a real, gradeable backend
+// format (scoring, validation, DB schema) - this constant is purely about
+// the APP's current rendering capability, not what the backend supports.
+export const APP_RENDERABLE_QUESTION_FORMATS: readonly QuestionFormat[] = ["single_select"];
+
+export function isFormatAppRenderable(format: string): boolean {
+  return (APP_RENDERABLE_QUESTION_FORMATS as readonly string[]).includes(format);
+}
+
 // --- single_select: pick one of N options (covers MCQ, "options", and a
 // tile-grid-style pick-the-odd-one-out, per FEATURE_MAP LF-08/09/16 - all
 // three are structurally "a set of choices + one correct index"). ---

@@ -111,6 +111,17 @@ async function ensureTodaysEdition(at: Date) {
   return inserted ?? (await getEditionByDate(todayIst));
 }
 
+// App asks batch, item A15: the next step to serve for an in-progress
+// attempt - the first served-but-not-yet-answered step if one exists
+// (resume into the exact same in-flight step, same idempotent-serve
+// reasoning as quiz-attempts' D21), otherwise one past the last answered
+// step.
+async function computeResumeStepIndex(attemptId: string): Promise<number> {
+  const answers = await listAnswersForAttempt(attemptId);
+  const unanswered = answers.find((a) => !a.answeredAt);
+  return unanswered ? unanswered.stepIndex : answers.length + 1;
+}
+
 export async function getCurrentPulseCheck(userId: string, at: Date = new Date()) {
   const todayIst = istDateString(at);
   const edition = await getEditionByDate(todayIst);
@@ -121,15 +132,24 @@ export async function getCurrentPulseCheck(userId: string, at: Date = new Date()
     ? await Promise.all([getInProgressAttempt(userId, edition.id), getCompletedAttemptForEdition(userId, edition.id)])
     : [null, null];
 
+  const baseVmPerQuestionPaise = quizSettings.baseVmPerQuestion * VM_TO_LEDGER_PAISE;
+  const maxVmPayout = computeMaxVmPayout(quizSettings.questionCount, quizSettings.baseVmPerQuestion, scoring);
+
   return {
     editionId: edition?.id ?? null,
     date: todayIst,
     questionCount: quizSettings.questionCount,
     perQuestionTimerSeconds: quizSettings.perQuestionTimerSeconds,
     baseVmPerQuestion: quizSettings.baseVmPerQuestion,
-    maxVmPayout: computeMaxVmPayout(quizSettings.questionCount, quizSettings.baseVmPerQuestion, scoring),
+    // App asks batch, item A14: additive paise-suffixed siblings only -
+    // the existing whole-VM fields above are unchanged.
+    baseVmPerQuestionPaise,
+    maxVmPayout,
+    maxVmPayoutPaise: maxVmPayout * VM_TO_LEDGER_PAISE,
     alreadyCompletedToday: completed !== null,
     inProgressAttemptId: inProgress?.id ?? null,
+    // App asks batch, item A15: null when there's nothing to resume.
+    resumeStepIndex: inProgress ? await computeResumeStepIndex(inProgress.id) : null,
   };
 }
 
@@ -138,7 +158,15 @@ export async function startAttempt(user: { id: string }, meta: RequestMeta, at: 
 
   const existing = await getInProgressAttempt(user.id, edition.id);
   if (existing) {
-    return { attemptId: existing.id, editionId: edition.id, totalSteps: edition.questionIds.length, resumed: true };
+    return {
+      attemptId: existing.id,
+      editionId: edition.id,
+      totalSteps: edition.questionIds.length,
+      resumed: true,
+      // App asks batch, item A15: only meaningful when resumed - a fresh
+      // attempt always starts at step 1, which the app already knows.
+      resumeStepIndex: await computeResumeStepIndex(existing.id),
+    };
   }
 
   const created = await insertAttempt(user.id, edition.id);
@@ -152,7 +180,13 @@ export async function startAttempt(user: { id: string }, meta: RequestMeta, at: 
     ip: meta.ip,
     userAgent: meta.userAgent,
   });
-  return { attemptId: created.id, editionId: edition.id, totalSteps: edition.questionIds.length, resumed: false };
+  return {
+    attemptId: created.id,
+    editionId: edition.id,
+    totalSteps: edition.questionIds.length,
+    resumed: false,
+    resumeStepIndex: null,
+  };
 }
 
 async function requireOwnAttempt(user: { id: string }, attemptId: string) {
@@ -298,6 +332,7 @@ export async function submitAnswer(
       speedBonusAwarded: servedRow.speedBonusAwarded ?? false,
       comboAfter: servedRow.comboAfter ?? 0,
       vmAwarded: Math.round((servedRow.vmAwardedPaise ?? 0) / VM_TO_LEDGER_PAISE),
+      vmAwardedPaise: servedRow.vmAwardedPaise ?? 0, // app ask A14: additive paise sibling
       correctAnswer: revision.answer,
       explanation: revision.explanation,
     };
@@ -357,6 +392,7 @@ export async function submitAnswer(
     speedBonusAwarded: finalRow.speedBonusAwarded ?? false,
     comboAfter: finalRow.comboAfter ?? 0,
     vmAwarded: Math.round((finalRow.vmAwardedPaise ?? 0) / VM_TO_LEDGER_PAISE),
+    vmAwardedPaise: finalRow.vmAwardedPaise ?? 0, // app ask A14: additive paise sibling
     correctAnswer: revision.answer,
     explanation: revision.explanation,
   };
@@ -485,6 +521,7 @@ export async function getResult(user: { id: string }, attemptId: string) {
       timedOut: a.timedOut,
       speedBonusAwarded: a.speedBonusAwarded,
       vmAwarded: a.vmAwardedPaise === null ? null : Math.round(a.vmAwardedPaise / VM_TO_LEDGER_PAISE),
+      vmAwardedPaise: a.vmAwardedPaise, // app ask A14: additive paise sibling
     })),
   };
 }

@@ -68,6 +68,15 @@ export const SubmitAnswerResponseSchema = registry.register(
       totalXpPreview: z.number().int().nullable().openapi({
         description: "Sum of every step's xpAwardedPreview for this attempt - filled only once complete.",
       }),
+      // App asks batch, item A5: V Money actually credited by THIS call,
+      // in paise. null on every step except the one that completes the
+      // attempt and passes - this is a flat per-lesson reward
+      // (reward_rules.defaultVm), never a per-question preview like
+      // xpAwardedPreview, and it's the real credit, not a guess at what a
+      // retry would earn.
+      vmAwardedPaise: z.number().int().nonnegative().nullable().openapi({
+        example: 5000,
+      }),
     }),
   }),
 );

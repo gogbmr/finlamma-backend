@@ -248,7 +248,7 @@ beforeEach(() => {
   // Default: not credited - tests that need the post-credit hooks
   // (certificate issuance, badge evaluation) to fire override this with
   // { credited: true } for that specific call.
-  mockCreditLessonCompletion.mockResolvedValue({ credited: false });
+  mockCreditLessonCompletion.mockResolvedValue({ credited: false, vmAwardedPaise: null });
   // Default: the servedRevision requested always resolves to the matching
   // snapshot - tests that specifically exercise a hotfix-between-serve-and-
   // answer scenario override this per-call.
@@ -766,6 +766,9 @@ describe("submitAnswer", () => {
     expect(mockCompleteAttempt).toHaveBeenCalledWith(ATTEMPT_ID, 53, 50);
     expect(result.isAttemptComplete).toBe(true);
     expect(result.totalXpPreview).toBe(53);
+    // App asks batch, item A5: nothing credited here (50% accuracy fails
+    // the default pass mark), so vmAwardedPaise is null, not a guess.
+    expect(result.vmAwardedPaise).toBeNull();
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "quiz_attempt.completed" }),
     );
@@ -791,6 +794,43 @@ describe("submitAnswer", () => {
     await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
 
     expect(mockCompleteAttempt).toHaveBeenCalledWith(ATTEMPT_ID, expect.any(Number), 100);
+  });
+
+  // App asks batch, item A5.
+  it("returns the actual vmAwardedPaise credited on the completing, passing step - never a per-step preview", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+    mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+      Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+    );
+    mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+      servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+      servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+    ]);
+    mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+    mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true, vmAwardedPaise: 5000 });
+
+    const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+    expect(result.vmAwardedPaise).toBe(5000);
+  });
+
+  it("never previews vmAwardedPaise on a non-completing step - null, not a guess", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 1, timerSeconds: 10 }));
+    mockGetQuestionById.mockResolvedValueOnce(questionRow());
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+    mockGradeQuestionAnswer.mockImplementationOnce((input) => Promise.resolve(servedAnswerRow(input)));
+
+    const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
+
+    expect(result.isAttemptComplete).toBe(false);
+    expect(result.vmAwardedPaise).toBeNull();
+    expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
   });
 
   it("computes 0% accuracy when every step was wrong", async () => {
