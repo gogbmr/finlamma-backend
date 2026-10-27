@@ -40,6 +40,7 @@ const {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetCachedCandles.mockResolvedValue([]);
 });
 
 function instrumentRow(overrides: Partial<Record<string, unknown>> = {}) {
@@ -115,6 +116,30 @@ describe("listPublicInstruments", () => {
     const result = await listPublicInstruments();
 
     expect(result.data[0]!.quote).toBeNull();
+  });
+
+  it("includes a 1D-candle sparkline per instrument (app ask A4)", async () => {
+    mockListActiveInstruments.mockResolvedValueOnce([instrumentRow()]);
+    mockGetCachedQuote.mockResolvedValueOnce(quote());
+    mockGetCachedCandles.mockResolvedValueOnce([
+      { timestamp: new Date(), openPaise: 100, highPaise: 110, lowPaise: 90, closePaise: 283000, volume: 1 },
+      { timestamp: new Date(), openPaise: 100, highPaise: 110, lowPaise: 90, closePaise: 284510, volume: 1 },
+    ]);
+
+    const result = await listPublicInstruments();
+
+    expect(result.data[0]!.sparkline).toEqual([283000, 284510]);
+    expect(mockGetCachedCandles).toHaveBeenCalledWith("RELIANCE", "NSE", "1D");
+  });
+
+  it("gives an empty sparkline (never throwing) when the candle fetch fails", async () => {
+    mockListActiveInstruments.mockResolvedValueOnce([instrumentRow()]);
+    mockGetCachedQuote.mockResolvedValueOnce(quote());
+    mockGetCachedCandles.mockRejectedValueOnce(new Error("vendor down"));
+
+    const result = await listPublicInstruments();
+
+    expect(result.data[0]!.sparkline).toEqual([]);
   });
 });
 

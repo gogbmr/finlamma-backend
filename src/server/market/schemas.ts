@@ -63,6 +63,19 @@ const InstrumentPublicSchema = z.object({
   quote: QuoteSchema.nullable(),
 });
 
+// App asks batch, item A4: the watchlist sparkline - close price per 1D
+// candle (~20-30 points covering a day), same market-data source/cache
+// path as the candle chart (getCachedCandles). Empty array, never null,
+// when the vendor has no candle data right now. List-only (TR-02/08's
+// watchlist screen) - the stock-detail screen already has the full candle
+// chart endpoint, so the detail schema below deliberately doesn't repeat it.
+const InstrumentListItemSchema = InstrumentPublicSchema.extend({
+  sparkline: z.array(z.number().int()).openapi({
+    description: "Closing price per 1D candle, in paise, oldest first.",
+    example: [283000, 283400, 284100, 283800, 284510],
+  }),
+});
+
 const LocalizedTextSchema = z.object({ en: z.string(), hi: z.string(), hx: z.string() });
 
 // Phase 4 Trade asks, additive: every disclaimer response field below also
@@ -74,7 +87,7 @@ const DISCLAIMER_LOCALIZED_SHAPE = {
 };
 
 export const InstrumentListResponseSchema = z.object({
-  data: z.array(InstrumentPublicSchema),
+  data: z.array(InstrumentListItemSchema),
   ...DISCLAIMER_LOCALIZED_SHAPE,
 });
 

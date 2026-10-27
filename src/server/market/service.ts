@@ -32,16 +32,20 @@ function shapeQuote(quote: Quote | null) {
 // "vendor has no data right now".
 export async function listPublicInstruments() {
   const instruments = await listActiveInstruments();
-  // getCachedQuote is Redis-backed (falling back to the market-data
-  // vendor's HTTP API on a miss), never Postgres directly.
+  // getCachedQuote/getCachedCandles are Redis-backed (falling back to the
+  // market-data vendor's HTTP API on a miss), never Postgres directly.
   // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
-  const quotes = await Promise.allSettled(
-    instruments.map((i) => getCachedQuote(i.symbol, i.exchange)),
-  );
+  const [quotes, candleSets] = await Promise.all([
+    Promise.allSettled(instruments.map((i) => getCachedQuote(i.symbol, i.exchange))),
+    // App asks batch, item A4: reuse the existing 1D candle cache for the
+    // watchlist sparkline - no new provider call shape needed.
+    Promise.allSettled(instruments.map((i) => getCachedCandles(i.symbol, i.exchange, "1D"))),
+  ]);
 
   return {
     data: instruments.map((instrument, i) => {
-      const result = quotes[i];
+      const quoteResult = quotes[i];
+      const candleResult = candleSets[i];
       return {
         symbol: instrument.symbol,
         exchange: instrument.exchange,
@@ -50,7 +54,9 @@ export async function listPublicInstruments() {
         tags: instrument.tags,
         lotSize: instrument.lotSize,
         halted: instrument.halted,
-        quote: result?.status === "fulfilled" ? shapeQuote(result.value) : null,
+        quote: quoteResult?.status === "fulfilled" ? shapeQuote(quoteResult.value) : null,
+        sparkline:
+          candleResult?.status === "fulfilled" ? candleResult.value.map((c) => c.closePaise) : [],
       };
     }),
     disclaimer: TRADING_DISCLAIMER,
