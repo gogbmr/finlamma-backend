@@ -88,7 +88,7 @@ beforeEach(() => {
   mockGetLessonFlowScoringSettings.mockResolvedValue(SETTINGS);
   // Default: not credited - tests that need the badge-evaluation hook to
   // fire override this with { credited: true } for that specific call.
-  mockCreditLessonCompletion.mockResolvedValue({ credited: false });
+  mockCreditLessonCompletion.mockResolvedValue({ credited: false, vmAwardedPaise: null });
   // D76 (docs/ARCHITECTURE.md) assertLessonUnlocked defaults: a single
   // published world ("world_1", matching storyLesson()'s default worldId) at
   // index 0 - never locked - and a single-lesson world (LESSON_ID) with no
@@ -214,6 +214,7 @@ describe("completeUngradedLesson", () => {
       status: "completed",
       completedAt: completedAt.toISOString(),
       credited: true,
+      vmAwardedPaise: null,
     });
     expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
       USER,
@@ -251,6 +252,7 @@ describe("completeUngradedLesson", () => {
       status: "completed",
       completedAt: completedAt.toISOString(),
       credited: false,
+      vmAwardedPaise: null,
     });
     expect(mockCompleteUngradedLessonProgressIfEligible).not.toHaveBeenCalled();
     expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
@@ -272,6 +274,7 @@ describe("completeUngradedLesson", () => {
       status: "completed",
       completedAt: completedAt.toISOString(),
       credited: false,
+      vmAwardedPaise: null,
     });
     expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
   });
@@ -334,6 +337,32 @@ describe("completeUngradedLesson", () => {
     const result = await completeUngradedLesson(USER, LESSON_ID, META);
 
     expect(result.credited).toBe(true);
+  });
+
+  // App asks batch, item A5.
+  it("returns the actual vmAwardedPaise credited this call, next to credited: true", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson());
+    const startedAt = new Date("2026-01-01T00:05:00.000Z");
+    mockGetLessonProgress.mockResolvedValueOnce({ status: "in_progress", startedAt });
+    mockCompleteUngradedLessonProgressIfEligible.mockResolvedValueOnce({
+      status: "completed",
+      completedAt: new Date(),
+    });
+    mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true, vmAwardedPaise: 5000 });
+
+    const result = await completeUngradedLesson(USER, LESSON_ID, META);
+
+    expect(result).toMatchObject({ credited: true, vmAwardedPaise: 5000 });
+  });
+
+  it("returns vmAwardedPaise: null on an idempotent replay (nothing credited)", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(storyLesson());
+    const completedAt = new Date("2026-01-01T00:09:59.000Z");
+    mockGetLessonProgress.mockResolvedValueOnce({ status: "completed", completedAt });
+
+    const result = await completeUngradedLesson(USER, LESSON_ID, META);
+
+    expect(result).toMatchObject({ credited: false, vmAwardedPaise: null });
   });
 
   // D76 (docs/ARCHITECTURE.md)

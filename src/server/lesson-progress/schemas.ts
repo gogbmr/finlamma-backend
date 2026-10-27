@@ -27,5 +27,11 @@ export const CompleteUngradedLessonResponseSchema = z.object({
         "True only the first time this lesson was completed for this user - a later idempotent " +
         "replay of an already-completed lesson returns credited: false (no re-credit).",
     }),
+    // App asks batch, item A5: read-only, next to `credited` - never a
+    // second source of truth for the actual ledger credit above.
+    vmAwardedPaise: z.number().int().nonnegative().nullable().openapi({
+      description: "V Money actually credited this call, in paise. null whenever credited is false (no re-credit happened, or no active reward rule).",
+      example: 5000,
+    }),
   }),
 });

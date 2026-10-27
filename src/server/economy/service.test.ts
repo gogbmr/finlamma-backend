@@ -165,7 +165,7 @@ describe("creditLessonCompletion", () => {
   it("does not credit when successful is false", async () => {
     const result = await creditLessonCompletion(USER, LESSON, false, META);
 
-    expect(result).toEqual({ credited: false });
+    expect(result).toEqual({ credited: false, vmAwardedPaise: null });
     expect(mockGetRewardRule).not.toHaveBeenCalled();
     expect(mockCreditLessonCompletionRow).not.toHaveBeenCalled();
   });
@@ -175,7 +175,7 @@ describe("creditLessonCompletion", () => {
 
     const result = await creditLessonCompletion(USER, LESSON, true, META);
 
-    expect(result).toEqual({ credited: false });
+    expect(result).toEqual({ credited: false, vmAwardedPaise: null });
     expect(mockCreditLessonCompletionRow).not.toHaveBeenCalled();
   });
 
@@ -190,7 +190,7 @@ describe("creditLessonCompletion", () => {
 
     const result = await creditLessonCompletion(USER, LESSON, true, META);
 
-    expect(result).toEqual({ credited: false });
+    expect(result).toEqual({ credited: false, vmAwardedPaise: null });
     expect(mockCreditLessonCompletionRow).not.toHaveBeenCalled();
   });
 
@@ -210,7 +210,7 @@ describe("creditLessonCompletion", () => {
 
     const result = await creditLessonCompletion(USER, LESSON, true, META);
 
-    expect(result).toEqual({ credited: true });
+    expect(result).toEqual({ credited: true, vmAwardedPaise: 4500 }); // App asks batch item A5
     expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
       expect.objectContaining({ userId: "user_1", sourceType: "lesson_completion", sourceId: "lesson_1", ruleId: "rule_1", amount: 20 }),
       expect.objectContaining({ amountPaise: 4500, multiplierApplied: 1.5 }),
@@ -266,7 +266,7 @@ describe("creditLessonCompletion", () => {
 
     const result = await creditLessonCompletion(USER, LESSON, true, META);
 
-    expect(result).toEqual({ credited: false });
+    expect(result).toEqual({ credited: false, vmAwardedPaise: null });
     expect(mockLogActivity).not.toHaveBeenCalled();
     expect(mockRecordLearningActivity).not.toHaveBeenCalled();
   });
