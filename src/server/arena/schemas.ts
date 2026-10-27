@@ -36,6 +36,11 @@ const LeaderboardRowSchema = z.object({
   }),
 });
 
+const SeasonRewardSchema = z.object({
+  vmAmountPaise: z.number().int().nonnegative().openapi({ example: 50000 }),
+  badgeId: z.uuid().nullable().openapi({ description: "null until an admin sets up the Arena crest badge, or for a zone that never awards one." }),
+});
+
 export const ArenaLeaderboardResponseSchema = z.object({
   data: z.object({
     requestedScope: z.string().openapi({
@@ -60,6 +65,12 @@ export const ArenaLeaderboardResponseSchema = z.object({
     }),
     weekStartDate: z.string().openapi({ example: "2026-09-28", description: "Monday IST, this week." }),
     poolSize: z.number().int().nonnegative().openapi({ example: 214 }),
+    // App asks batch, item A7: the exact zone boundary this scope's rows[]
+    // were assigned from (Math.max(1, Math.round(poolSize/4)) - the
+    // prototype's own formula, unchanged) - so the app's zone dividers can
+    // never disagree with what rows[].zone already shows.
+    promoteCount: z.number().int().positive().openapi({ example: 54, description: "Top N ranks promote." }),
+    demoteCount: z.number().int().positive().openapi({ example: 54, description: "Bottom N ranks demote." }),
     rows: z.array(LeaderboardRowSchema),
     self: z
       .object({
@@ -69,6 +80,16 @@ export const ArenaLeaderboardResponseSchema = z.object({
       })
       .nullable()
       .openapi({ description: "The caller's own rank/xp, even if outside `rows` (AR-06)." }),
+    // App asks batch, item A6: what this week's settlement would actually
+    // pay for each zone - the same admin-tunable settings the weekly
+    // settlement job reads, never a duplicated/guessed copy. demote always
+    // pays 0 VM (D55 - no demoteVmReward setting exists); the crest badge
+    // is only ever awarded on promote.
+    seasonRewards: z.object({
+      promote: SeasonRewardSchema,
+      safe: SeasonRewardSchema,
+      demote: SeasonRewardSchema,
+    }),
   }),
 });
 
