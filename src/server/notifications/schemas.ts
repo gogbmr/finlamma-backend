@@ -71,20 +71,68 @@ export type UpdateNotificationPrefsInput = z.infer<typeof UpdateNotificationPref
 
 // --- Notification feed (learner-facing) ---
 
+// App asks batch, item A9: the exact `data` shape per notification kind,
+// confirmed directly against every real notifyUser() call site in the
+// codebase (src/server/arena/service.ts, src/server/daily-goals/service.ts,
+// src/server/news/service.ts, src/server/quiz-attempts/service.ts,
+// src/server/streaks/service.ts) - not guessed. Only boss_battle and
+// market_news ever carry data today; the other four kinds never pass a
+// data argument at all, so `data` is always null for them. A discriminated
+// union on `kind`, so this is enforced in the generated OpenAPI contract
+// (oneOf) rather than left as an opaque `Record<string, unknown>` -
+// src/server/notifications/service.ts's notifyUser itself still takes a
+// plain `Record<string, unknown> | undefined` for data (no caller-side
+// type safety changed, this is a response-documentation fix only).
+const SHARED_NOTIFICATION_FIELDS = {
+  id: z.string().uuid(),
+  // Already resolved to the caller's own language - see threadDisclosureMessage
+  // in src/server/doubt-zone/schemas.ts for the same "resolve server-side"
+  // convention.
+  title: z.string(),
+  body: z.string(),
+  readAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+};
+
+function noDataNotificationSchema<K extends string>(kind: K) {
+  return z.object({
+    ...SHARED_NOTIFICATION_FIELDS,
+    kind: z.literal(kind),
+    data: z.null(),
+  });
+}
+
+const StreakRiskNotificationSchema = noDataNotificationSchema("streak_risk");
+const SessionGoalNotificationSchema = noDataNotificationSchema("session_goal");
+const CheerReceivedNotificationSchema = noDataNotificationSchema("cheer_received");
+const LeagueRankChangeNotificationSchema = noDataNotificationSchema("league_rank_change");
+
+const BossBattleNotificationSchema = z.object({
+  ...SHARED_NOTIFICATION_FIELDS,
+  kind: z.literal("boss_battle"),
+  data: z.object({
+    worldId: z.uuid().openapi({ description: "The next world this learner just unlocked by passing a Boss Quiz." }),
+  }),
+});
+
+const MarketNewsNotificationSchema = z.object({
+  ...SHARED_NOTIFICATION_FIELDS,
+  kind: z.literal("market_news"),
+  data: z.object({
+    newsStoryId: z.uuid().openapi({ description: "Pass to GET /api/v1/news/{id} for the full story." }),
+  }),
+});
+
 export const NotificationResponseSchema = registry.register(
   "Notification",
-  z.object({
-    id: z.string().uuid(),
-    kind: NotificationKindSchema,
-    // Already resolved to the caller's own language - see threadDisclosureMessage
-    // in src/server/doubt-zone/schemas.ts for the same "resolve server-side"
-    // convention.
-    title: z.string(),
-    body: z.string(),
-    data: z.record(z.string(), z.unknown()).nullable(),
-    readAt: z.string().datetime().nullable(),
-    createdAt: z.string().datetime(),
-  }),
+  z.discriminatedUnion("kind", [
+    StreakRiskNotificationSchema,
+    BossBattleNotificationSchema,
+    MarketNewsNotificationSchema,
+    SessionGoalNotificationSchema,
+    CheerReceivedNotificationSchema,
+    LeagueRankChangeNotificationSchema,
+  ]),
 );
 
 export const NotificationsListResponseSchema = registry.register(
