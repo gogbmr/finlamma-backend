@@ -56,6 +56,7 @@ import "../src/app/api/v1/me/portfolio/summary/route";
 import "../src/app/api/v1/me/portfolio/stats/route";
 import "../src/app/api/v1/me/portfolio/trades/route";
 import "../src/app/api/v1/trade/funds/route";
+import "../src/app/api/v1/trade/funds/summary/route";
 import "../src/app/api/v1/trade/funds/[id]/route";
 import "../src/app/api/v1/trade/funds/orders/route";
 import "../src/app/api/v1/trade/funds/sip/route";

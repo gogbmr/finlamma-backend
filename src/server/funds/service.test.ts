@@ -13,7 +13,7 @@ vi.mock("./repo", () => ({
   getFundHoldingForUser: (userId: unknown, fundId: unknown) => mockGetFundHoldingForUser(userId, fundId),
 }));
 
-const { listPublicFunds, getPublicFund } = await import("./service");
+const { listPublicFunds, getPublicFund, getFundFolioSummary } = await import("./service");
 
 const FUND = { id: "fund-1", name: "Finlamma Test Fund", active: true };
 const USER_ID = "user-1";
@@ -112,5 +112,65 @@ describe("getPublicFund", () => {
     const result = await getPublicFund("fund-1", USER_ID);
 
     expect(result.data).toMatchObject({ heldUnitsMilli: 12500, holdingValuePaise: 203700 });
+  });
+});
+
+// App asks batch, item A2.
+describe("getFundFolioSummary", () => {
+  it("is all zeroes when the learner holds no funds", async () => {
+    mockListFundHoldingsForUser.mockResolvedValueOnce([]);
+
+    const result = await getFundFolioSummary(USER_ID);
+
+    expect(result.data).toEqual({
+      totalInvestedPaise: 0,
+      totalCurrentValuePaise: 0,
+      overallReturnsPaise: 0,
+      overallReturnsPercent: 0,
+    });
+  });
+
+  it("sums invested/current value and computes returns across every held fund", async () => {
+    mockListFundHoldingsForUser.mockResolvedValueOnce([
+      { fundId: "fund-1", unitsMilli: 10000, avgNavPaise: 10000 }, // invested 100000
+      { fundId: "fund-2", unitsMilli: 5000, avgNavPaise: 20000 }, // invested 100000
+    ]);
+    mockGetLatestNav.mockImplementation((fundId: string) =>
+      Promise.resolve(fundId === "fund-1" ? { navPaise: 12000, date: "2026-10-01" } : { navPaise: 20000, date: "2026-10-01" }),
+    );
+
+    const result = await getFundFolioSummary(USER_ID);
+
+    // fund-1 current value: 10000 * 12000 / 1000 = 120000
+    // fund-2 current value: 5000 * 20000 / 1000 = 100000
+    expect(result.data).toEqual({
+      totalInvestedPaise: 200000,
+      totalCurrentValuePaise: 220000,
+      overallReturnsPaise: 20000,
+      overallReturnsPercent: 10,
+    });
+  });
+
+  it("skips a fully-redeemed (unitsMilli <= 0) holding", async () => {
+    mockListFundHoldingsForUser.mockResolvedValueOnce([{ fundId: "fund-1", unitsMilli: 0, avgNavPaise: 10000 }]);
+
+    const result = await getFundFolioSummary(USER_ID);
+
+    expect(result.data.totalInvestedPaise).toBe(0);
+    expect(mockGetLatestNav).not.toHaveBeenCalled();
+  });
+
+  it("counts a held fund with no ingested NAV yet at its cost basis (zero gain/loss), never dropped or guessed", async () => {
+    mockListFundHoldingsForUser.mockResolvedValueOnce([{ fundId: "fund-1", unitsMilli: 10000, avgNavPaise: 10000 }]);
+    mockGetLatestNav.mockResolvedValueOnce(null);
+
+    const result = await getFundFolioSummary(USER_ID);
+
+    expect(result.data).toEqual({
+      totalInvestedPaise: 100000,
+      totalCurrentValuePaise: 100000,
+      overallReturnsPaise: 0,
+      overallReturnsPercent: 0,
+    });
   });
 });

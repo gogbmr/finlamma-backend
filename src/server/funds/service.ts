@@ -69,6 +69,35 @@ export async function listPublicFunds(userId: string) {
   return { data, disclaimer: FUND_DISCLAIMER, disclaimerLocalized: FUND_DISCLAIMER_LOCALIZED };
 }
 
+// App asks batch, item A2 - same concurrency-limited fan-out pattern as
+// listPublicFunds above (one getLatestNav call per DISTINCT held fund,
+// never a bare Promise.all, CLAUDE.md rule 15).
+export async function getFundFolioSummary(userId: string) {
+  const holdings = (await listFundHoldingsForUser(userId)).filter((h) => h.unitsMilli > 0);
+  const navs = await runWithConcurrencyLimit(
+    holdings.map((h) => () => getLatestNav(h.fundId)),
+    DB_CONCURRENCY_LIMIT,
+  );
+
+  let totalInvestedPaise = 0;
+  let totalCurrentValuePaise = 0;
+  holdings.forEach((holding, i) => {
+    const investedPaise = Math.round((holding.unitsMilli * holding.avgNavPaise) / 1000);
+    totalInvestedPaise += investedPaise;
+    const nav = navs[i];
+    // A fund never ingested a NAV yet contributes its cost basis (zero
+    // gain/loss for that one holding) rather than being dropped from the
+    // total or given a fabricated current value.
+    totalCurrentValuePaise += nav ? Math.round((holding.unitsMilli * nav.navPaise) / 1000) : investedPaise;
+  });
+
+  const overallReturnsPaise = totalCurrentValuePaise - totalInvestedPaise;
+  const overallReturnsPercent =
+    totalInvestedPaise > 0 ? Number(((overallReturnsPaise / totalInvestedPaise) * 100).toFixed(2)) : 0;
+
+  return { data: { totalInvestedPaise, totalCurrentValuePaise, overallReturnsPaise, overallReturnsPercent } };
+}
+
 export async function getPublicFund(id: string, userId: string) {
   const fund = await getPublicFundById(id);
   if (!fund || !fund.active) throw new AppError("NOT_FOUND", "No fund with this id");
