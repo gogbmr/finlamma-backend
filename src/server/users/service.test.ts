@@ -37,9 +37,11 @@ vi.mock("@/lib/inngest", () => ({
 
 const mockScrubConsentData = vi.fn();
 const mockGetOnboardingConsentState = vi.fn();
+const mockScrubDobCorrectionsForUser = vi.fn();
 vi.mock("@/server/onboarding/service", () => ({
   scrubConsentDataForDeletedUser: (userId: unknown, meta: unknown) => mockScrubConsentData(userId, meta),
   getOnboardingConsentState: (user: unknown) => mockGetOnboardingConsentState(user),
+  scrubDobCorrectionsForUser: (userId: unknown) => mockScrubDobCorrectionsForUser(userId),
 }));
 
 const mockDeleteAllPushTokensForUser = vi.fn();
@@ -217,6 +219,7 @@ describe("syncUserFromClerkEvent", () => {
       mockScrubConsentData.mockResolvedValue(undefined);
       mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
       mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
+      mockScrubDobCorrectionsForUser.mockResolvedValue(0);
     });
 
     it("reconciles the account and logs both the reconciliation and the webhook receipt", async () => {
@@ -231,6 +234,7 @@ describe("syncUserFromClerkEvent", () => {
       expect(mockScrubConsentData).toHaveBeenCalledWith("u1", { ip: null, userAgent: null });
       expect(mockDeleteAllPushTokensForUser).toHaveBeenCalledWith("u1");
       expect(mockScrubDoubtZoneContentForUser).toHaveBeenCalledWith("u1");
+      expect(mockScrubDobCorrectionsForUser).toHaveBeenCalledWith("u1");
       expect(mockLogActivity).toHaveBeenCalledWith(
         expect.objectContaining({ actorType: "system", action: "user.deletion_reconciled", targetId: "u1" }),
       );
@@ -469,6 +473,7 @@ describe("reconcileAccountDeletion", () => {
     mockScrubConsentData.mockResolvedValue(undefined);
     mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
     mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
+    mockScrubDobCorrectionsForUser.mockResolvedValue(0);
   });
 
   it("is a no-op when the account is already fully deleted", async () => {
@@ -510,6 +515,7 @@ describe("reconcileAccountDeletion", () => {
     expect(mockScrubConsentData).toHaveBeenCalledWith("u1", META);
     expect(mockDeleteAllPushTokensForUser).toHaveBeenCalledWith("u1");
     expect(mockScrubDoubtZoneContentForUser).toHaveBeenCalledWith("u1");
+    expect(mockScrubDobCorrectionsForUser).toHaveBeenCalledWith("u1");
     expect(result).toEqual({ alreadyDone: false });
 
     const loggedCall = mockLogActivity.mock.calls.find(
@@ -556,6 +562,7 @@ describe("runAccountDeletionReconciliationSweep", () => {
     mockScrubConsentData.mockResolvedValue(undefined);
     mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
     mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
+    mockScrubDobCorrectionsForUser.mockResolvedValue(0);
 
     const result = await runAccountDeletionReconciliationSweep();
 
@@ -577,6 +584,7 @@ describe("runAccountDeletionReconciliationSweep", () => {
     mockScrubConsentData.mockResolvedValue(undefined);
     mockDeleteAllPushTokensForUser.mockResolvedValue(undefined);
     mockScrubDoubtZoneContentForUser.mockResolvedValue(0);
+    mockScrubDobCorrectionsForUser.mockResolvedValue(0);
 
     const result = await runAccountDeletionReconciliationSweep();
 

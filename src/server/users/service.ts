@@ -9,6 +9,7 @@ import { scrubDoubtZoneContentForUser } from "@/server/doubt-zone/service";
 import {
   getOnboardingConsentState,
   scrubConsentDataForDeletedUser,
+  scrubDobCorrectionsForUser,
   type OnboardingConsentState,
 } from "@/server/onboarding/service";
 import { assignRandomHandleIfMissing, getMyHandle } from "@/server/peer-handles/service";
@@ -132,7 +133,8 @@ export async function deleteMe(user: UserRow, meta: RequestMeta): Promise<void> 
 //   completed, not just the narrower "Clerk succeeded, DB failed" case.
 // - anonymizeUserFromClerk: guarded by `deletedAt IS NULL`.
 // - scrubConsentDataForDeletedUser: guarded by `parent_contacts.scrubbed_at`.
-// - deleteAllPushTokensForUser / scrubDoubtZoneContentForUser: deleting/
+// - deleteAllPushTokensForUser / scrubDoubtZoneContentForUser /
+//   scrubDobCorrectionsForUser (app asks batch, section C3): deleting/
 //   overwriting already-gone rows is a harmless no-op either way.
 // Activity-log metadata here is deliberately userId-only, never an email or
 // name, per the founder's explicit instruction for this reconciliation path.
@@ -152,6 +154,7 @@ export async function reconcileAccountDeletion(
   await scrubConsentDataForDeletedUser(userId, meta);
   await deleteAllPushTokensForUser(userId);
   await scrubDoubtZoneContentForUser(userId);
+  await scrubDobCorrectionsForUser(userId);
 
   await logActivity({
     actorType: "system",

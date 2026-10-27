@@ -224,6 +224,38 @@ export const consentRecords = pgTable(
   ],
 ).enableRLS();
 
+// App asks batch, section C3: the staff DOB-correction tool's audit trail.
+// Deliberately NOT activity_logs - that table is append-only with no
+// erasure path (CLAUDE.md rule 5), and a date of birth is personal data
+// about a (possibly still a) minor, same category as users.dateOfBirth
+// itself. Unlike consentRecords/parentContacts (anonymized in place, since
+// they're retained as consent EVIDENCE even after deletion), this table
+// serves no evidentiary purpose once the account is gone - the
+// account-deletion/anonymization flow (src/server/onboarding/service.ts)
+// deletes these rows outright rather than nulling fields in place.
+// activity_logs still gets ONE row per correction, but only
+// { userId, correctionId, crossedMinorBoundary, crossedAgeFloor } -
+// never the actual dates or the free-text reason (both live here instead,
+// and only here).
+export const dobCorrections = pgTable(
+  "dob_corrections",
+  {
+    ...idAndTimestamps(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Nullable (not the correcting staff member's id as a hard dependency)
+    // so this audit row survives a later staff account removal - same
+    // "set null, don't cascade-delete audit history" convention as
+    // legalDocuments.publishedBy above.
+    staffId: uuid("staff_id").references(() => staffMembers.id, { onDelete: "set null" }),
+    oldDateOfBirth: date("old_date_of_birth", { mode: "string" }).notNull(),
+    newDateOfBirth: date("new_date_of_birth", { mode: "string" }).notNull(),
+    reason: text("reason").notNull(),
+  },
+  (t) => [index("dob_corrections_user_id_idx").on(t.userId)],
+).enableRLS();
+
 export const legalReapprovalStatusEnum = pgEnum("legal_reapproval_status", [
   "pending",
   "approved",

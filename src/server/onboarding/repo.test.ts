@@ -7,10 +7,13 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import {
   consentRecords,
+  dobCorrections,
   legalAcceptances,
   legalDocuments,
   legalReapprovalRequests,
   parentContacts,
+  roles,
+  staffMembers,
   users,
 } from "@/db/schema";
 import { createTestDb, type TestDb } from "@/test/db";
@@ -21,13 +24,27 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 const {
   anonymizeParentContact,
   approveReapprovalAndRecordAcceptance,
+  correctDateOfBirth,
   declineReapprovalAndRefuseConsent,
+  deleteDobCorrectionsForUser,
   getParentContactByWeeklyReportUnsubscribeTokenHash,
   scrubParentContactDataTx,
   setParentContactWeeklyReportOptIn,
   unsubscribeParentContactFromWeeklyReport,
 } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
+
+// staffId is a real FK to staff_members (app asks batch, section C3) - seeded
+// once here, not per-test, same pattern as src/server/legal/repo.test.ts.
+const [dobTestRole] = await db
+  .insert(roles)
+  .values({ key: "super_admin", name: "Super Admin" })
+  .returning();
+const [dobTestStaff] = await db
+  .insert(staffMembers)
+  .values({ clerkUserId: uniqueClerkUserId("onboarding-repo-test-staff"), roleId: dobTestRole.id })
+  .returning();
+const dobStaffId = dobTestStaff.id;
 
 // The vi.mock factory above runs once for this file, so this is a single
 // PGlite instance shared by every test below - never recreated per `it()`.
@@ -400,5 +417,86 @@ describe("getParentContactByWeeklyReportUnsubscribeTokenHash", () => {
 
   it("returns null for an unknown hash", async () => {
     expect(await getParentContactByWeeklyReportUnsubscribeTokenHash("no-such-hash")).toBeNull();
+  });
+});
+
+async function makeUserWithDateOfBirth(dateOfBirth: string | null = "2012-01-01") {
+  const [user] = await db
+    .insert(users)
+    .values({
+      clerkUserId: uniqueClerkUserId("dob-correction"),
+      clerkUpdatedAt: new Date(),
+      firstName: "Aarav",
+      lastInitial: "S",
+      email: null,
+      dateOfBirth,
+    })
+    .returning();
+  return user;
+}
+
+describe("correctDateOfBirth", () => {
+  it("updates users.dateOfBirth and writes the audit row in one go", async () => {
+    const user = await makeUserWithDateOfBirth("2012-01-01");
+
+    const result = await correctDateOfBirth(user.id, dobStaffId, "2011-06-15", "Parent provided correct birth certificate");
+
+    expect(result).toEqual({
+      oldDateOfBirth: "2012-01-01",
+      newDateOfBirth: "2011-06-15",
+      correctionId: expect.any(String),
+    });
+
+    const [updatedUser] = await db.select().from(users).where(eq(users.id, user.id));
+    expect(updatedUser.dateOfBirth).toBe("2011-06-15");
+
+    const [correctionRow] = await db
+      .select()
+      .from(dobCorrections)
+      .where(eq(dobCorrections.id, result!.correctionId));
+    expect(correctionRow.userId).toBe(user.id);
+    expect(correctionRow.staffId).toBe(dobStaffId);
+    expect(correctionRow.oldDateOfBirth).toBe("2012-01-01");
+    expect(correctionRow.newDateOfBirth).toBe("2011-06-15");
+    expect(correctionRow.reason).toBe("Parent provided correct birth certificate");
+  });
+
+  it("returns null when the account has no date of birth set yet", async () => {
+    const user = await makeUserWithDateOfBirth(null);
+
+    const result = await correctDateOfBirth(user.id, dobStaffId, "2011-06-15", "any reason");
+
+    expect(result).toBeNull();
+    const [row] = await db.select().from(users).where(eq(users.id, user.id));
+    expect(row.dateOfBirth).toBeNull();
+  });
+
+  it("returns null when the account is already deleted", async () => {
+    const user = await makeUserWithDateOfBirth("2012-01-01");
+    await db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, user.id));
+
+    const result = await correctDateOfBirth(user.id, dobStaffId, "2011-06-15", "any reason");
+
+    expect(result).toBeNull();
+  });
+});
+
+describe("deleteDobCorrectionsForUser", () => {
+  it("deletes every dob_corrections row for the user and returns the count", async () => {
+    const user = await makeUserWithDateOfBirth("2012-01-01");
+    await correctDateOfBirth(user.id, dobStaffId, "2011-06-15", "first correction");
+    await correctDateOfBirth(user.id, dobStaffId, "2011-07-20", "second correction");
+
+    const deletedCount = await deleteDobCorrectionsForUser(user.id);
+
+    expect(deletedCount).toBe(2);
+    const remaining = await db.select().from(dobCorrections).where(eq(dobCorrections.userId, user.id));
+    expect(remaining).toHaveLength(0);
+  });
+
+  it("is a harmless no-op when there is nothing to delete", async () => {
+    const user = await makeUserWithDateOfBirth("2012-01-01");
+
+    expect(await deleteDobCorrectionsForUser(user.id)).toBe(0);
   });
 });

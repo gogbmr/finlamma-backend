@@ -11,6 +11,8 @@ const mockEnv = vi.hoisted(() => ({
 vi.mock("@/lib/env", () => ({ env: mockEnv }));
 
 const mockSetDateOfBirthOnce = vi.fn();
+const mockCorrectDateOfBirth = vi.fn();
+const mockDeleteDobCorrectionsForUser = vi.fn();
 const mockMarkOnboardingCompletedOnce = vi.fn();
 const mockGetParentContact = vi.fn();
 const mockUpsertParentContact = vi.fn();
@@ -41,6 +43,9 @@ const mockGetParentContactByWeeklyReportUnsubscribeTokenHash = vi.fn();
 const mockUnsubscribeParentContactFromWeeklyReport = vi.fn();
 vi.mock("./repo", () => ({
   setDateOfBirthOnce: (id: unknown, dob: unknown) => mockSetDateOfBirthOnce(id, dob),
+  correctDateOfBirth: (userId: unknown, staffId: unknown, newDob: unknown, reason: unknown) =>
+    mockCorrectDateOfBirth(userId, staffId, newDob, reason),
+  deleteDobCorrectionsForUser: (userId: unknown) => mockDeleteDobCorrectionsForUser(userId),
   markOnboardingCompletedOnce: (id: unknown) => mockMarkOnboardingCompletedOnce(id),
   getParentContact: (id: unknown) => mockGetParentContact(id),
   upsertParentContact: (id: unknown, name: unknown, email: unknown) =>
@@ -122,6 +127,7 @@ import {
   completeOnboarding,
   computeAge,
   confirmParentConsent,
+  correctDateOfBirthForAdmin,
   declineParentConsent,
   declineReapproval,
   getConsentRequestView,
@@ -137,6 +143,7 @@ import {
   resendReapprovalRequests,
   revealParentContact,
   scrubConsentDataForDeletedUser,
+  scrubDobCorrectionsForUser,
   setDateOfBirth,
   unsubscribeWeeklyReport,
   withdrawParentConsent,
@@ -322,6 +329,119 @@ describe("setDateOfBirth", () => {
       });
       expect(mockBeginAccountDeletion).not.toHaveBeenCalled();
     });
+  });
+});
+
+// App asks batch, section C3.
+describe("correctDateOfBirthForAdmin", () => {
+  const ACTOR = { id: "staff1" };
+  const INPUT = { userId: "u1", newDateOfBirth: "2011-06-15", reason: "Parent provided birth certificate" };
+
+  it("throws VALIDATION_FAILED for a future date", async () => {
+    const future = new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString().slice(0, 10);
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: future }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockCorrectDateOfBirth).not.toHaveBeenCalled();
+  });
+
+  it("throws VALIDATION_FAILED for an unparseable date", async () => {
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: "not-a-date" }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+  });
+
+  it("throws VALIDATION_FAILED when the reason is blank (even just whitespace)", async () => {
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, reason: "   " }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockCorrectDateOfBirth).not.toHaveBeenCalled();
+  });
+
+  it("rejects a corrected date landing under 13, never persisting it, via the same C2 path", async () => {
+    const underThirteenDob = "2015-01-01";
+
+    await expect(
+      correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: underThirteenDob }, META),
+    ).rejects.toMatchObject({ code: "AGE_BELOW_MINIMUM" });
+
+    expect(mockCorrectDateOfBirth).not.toHaveBeenCalled();
+    expect(mockBeginAccountDeletion).toHaveBeenCalledWith("u1");
+    // Same no-DOB-in-activity-log guarantee as C2's own rejection path.
+    const loggedCall = mockLogActivity.mock.calls.find(
+      (call) => call[0]?.action === "onboarding.age_below_minimum_rejected",
+    );
+    expect(JSON.stringify(loggedCall)).not.toContain(underThirteenDob);
+  });
+
+  it("throws NOT_FOUND when there's no date of birth already set to correct", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce(null);
+    await expect(correctDateOfBirthForAdmin(ACTOR, INPUT, META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("on success: persists via correctDateOfBirth, logs only { correctionId, crossedMinorBoundary, crossedAgeFloor } - never the DOB values or reason", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce({
+      oldDateOfBirth: "2012-01-01",
+      newDateOfBirth: "2011-06-15",
+      correctionId: "corr1",
+    });
+
+    const result = await correctDateOfBirthForAdmin(ACTOR, INPUT, META);
+
+    expect(mockCorrectDateOfBirth).toHaveBeenCalledWith("u1", "staff1", "2011-06-15", INPUT.reason);
+    expect(result).toEqual({ userId: "u1", dateOfBirth: "2011-06-15", isMinor: true });
+
+    expect(mockLogActivity).toHaveBeenCalledWith({
+      actorType: "staff",
+      actorId: "staff1",
+      action: "onboarding.date_of_birth_corrected",
+      targetType: "user",
+      targetId: "u1",
+      metadata: { correctionId: "corr1", crossedMinorBoundary: false, crossedAgeFloor: false },
+      ip: META.ip,
+      userAgent: META.userAgent,
+    });
+    // Neither raw date ever reaches activity_logs.
+    const loggedCall = mockLogActivity.mock.calls[0];
+    expect(JSON.stringify(loggedCall)).not.toContain("2012-01-01");
+    expect(JSON.stringify(loggedCall)).not.toContain("2011-06-15");
+    expect(JSON.stringify(loggedCall)).not.toContain(INPUT.reason);
+  });
+
+  it("flags crossedMinorBoundary when a correction moves the account from adult to minor", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce({
+      oldDateOfBirth: "1990-01-01", // adult
+      newDateOfBirth: "2010-01-01", // minor, well above the age-13 floor
+      correctionId: "corr2",
+    });
+
+    await correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: "2010-01-01" }, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ crossedMinorBoundary: true }) }),
+    );
+  });
+
+  it("flags crossedMinorBoundary the other way too - minor to adult", async () => {
+    mockCorrectDateOfBirth.mockResolvedValueOnce({
+      oldDateOfBirth: "2010-01-01", // minor
+      newDateOfBirth: "1990-01-01", // adult
+      correctionId: "corr3",
+    });
+
+    await correctDateOfBirthForAdmin(ACTOR, { ...INPUT, newDateOfBirth: "1990-01-01" }, META);
+
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ crossedMinorBoundary: true }) }),
+    );
+  });
+});
+
+describe("scrubDobCorrectionsForUser", () => {
+  it("delegates straight to the repo scrub and returns the count deleted", async () => {
+    mockDeleteDobCorrectionsForUser.mockResolvedValueOnce(2);
+    await expect(scrubDobCorrectionsForUser("u1")).resolves.toBe(2);
+    expect(mockDeleteDobCorrectionsForUser).toHaveBeenCalledWith("u1");
   });
 });
 

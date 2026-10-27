@@ -32,6 +32,8 @@ import {
   getReapprovalRequestByTokenHash,
   getUserDateOfBirth,
   getUserFirstName,
+  correctDateOfBirth as correctDateOfBirthRow,
+  deleteDobCorrectionsForUser,
   isUserDeleted,
   listCandidatesForReapproval,
   listConsentRecordsForReview,
@@ -197,10 +199,40 @@ async function sendConsentEmailOrLog(params: {
   await sendEmail({ to: params.to, subject: params.subject, react: params.react });
 }
 
+// App asks batch, sections C2/C3: shared by setDateOfBirth (a learner's own
+// first submission) and correctDateOfBirthForAdmin (a staff correction
+// that lands under 13) - the exact same reject-and-delete path either way,
+// so C3 never duplicates C2's logic. Always throws; never returns.
+// beginAccountDeletion marks deletionRequestedAt and fires the same async
+// Clerk-delete/DB-anonymize pipeline a learner's own DELETE /me uses - the
+// real reason a retry (with a different date, or another correction) can't
+// work: the very next request on this account hits requireUser's
+// ACCOUNT_DELETION_PENDING gate (src/lib/auth.ts) instead of reaching
+// either caller again.
+async function rejectAgeBelowMinimum(userId: string, meta: RequestMeta): Promise<never> {
+  await beginAccountDeletion(userId);
+  await logActivity({
+    actorType: "user",
+    actorId: userId,
+    action: "onboarding.age_below_minimum_rejected",
+    targetType: "user",
+    targetId: userId,
+    // Deliberately no dateOfBirth/age in metadata - activity_logs is
+    // append-only with no erasure path, and the submitted/corrected date is
+    // never persisted anywhere else either (data minimisation - an
+    // accepted limitation, documented in docs/ROADMAP.md, is that a
+    // rejected account's email can sign up again with no record blocking
+    // it).
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  throw new AppError("AGE_BELOW_MINIMUM", `You must be at least ${MINIMUM_AGE} years old to use Finlamma`);
+}
+
 // Set-once: a second call always fails, even with the same value - see
 // docs/PRODUCT_SPEC.md's Onboarding & parental consent section. Only staff
-// can correct a mistake after this, with a logged reason (Checkpoint B/a
-// later admin action, not built here).
+// (consent.correct_dob, super_admin only - see correctDateOfBirthForAdmin
+// below) can correct a mistake after this.
 export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, meta: RequestMeta) {
   if (user.dateOfBirth) {
     throw new AppError("CONFLICT", "Date of birth is already set - contact support to correct it");
@@ -213,29 +245,9 @@ export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, m
 
   // App asks batch, section C2: checked BEFORE any persistence, so a
   // rejected date is never written anywhere, not even transiently. Exactly
-  // 13 is accepted (age < MINIMUM_AGE, not <=). beginAccountDeletion marks
-  // deletionRequestedAt and fires the same async Clerk-delete/DB-anonymize
-  // pipeline a learner's own DELETE /me uses - the real reason a retry with
-  // a different date can't work: the very next request on this account
-  // hits requireUser's ACCOUNT_DELETION_PENDING gate (src/lib/auth.ts)
-  // instead of reaching this function again.
+  // 13 is accepted (age < MINIMUM_AGE, not <=).
   if (computeAge(input.dateOfBirth) < MINIMUM_AGE) {
-    await beginAccountDeletion(user.id);
-    await logActivity({
-      actorType: "user",
-      actorId: user.id,
-      action: "onboarding.age_below_minimum_rejected",
-      targetType: "user",
-      targetId: user.id,
-      // Deliberately no dateOfBirth/age in metadata - activity_logs is
-      // append-only with no erasure path, and the submitted date is never
-      // persisted anywhere else either (data minimisation - an accepted
-      // limitation, documented in docs/ROADMAP.md, is that a rejected
-      // account's email can sign up again with no record blocking it).
-      ip: meta.ip,
-      userAgent: meta.userAgent,
-    });
-    throw new AppError("AGE_BELOW_MINIMUM", `You must be at least ${MINIMUM_AGE} years old to use Finlamma`);
+    await rejectAgeBelowMinimum(user.id, meta);
   }
 
   const updated = await setDateOfBirthOnce(user.id, input.dateOfBirth);
@@ -833,6 +845,94 @@ export async function revealParentContact(
   });
 
   return contact;
+}
+
+export type CorrectDateOfBirthInput = {
+  userId: string;
+  newDateOfBirth: string;
+  reason: string;
+};
+
+// App asks batch, section C3: the staff DOB-correction tool. Caller
+// (the admin Server Action) must already have checked consent.correct_dob
+// (super_admin only at launch, per design review - not user_manager).
+//
+// If the corrected date results in an under-13 account, runs the EXACT
+// SAME rejection+cleanup path as C2 (rejectAgeBelowMinimum) - the
+// corrected date is never persisted either, same "never create an
+// under-13 account" rule whether the bad date came from the learner's own
+// submission or from a staff correction.
+//
+// isMinor/parentConsentStatus (getOnboardingConsentState) are always
+// LIVE-recomputed from users.dateOfBirth - crossing the minor/adult
+// boundary either direction needs no separate "re-trigger" step here; the
+// very next GET /me (or any requireFullAccess-gated call) already sees the
+// corrected state (a newly-minor account's parentConsentStatus simply
+// recomputes to "not_requested", which is what shows the "request
+// consent" screen - there's no parent contact to proactively email until
+// the learner/parent actually submits one). The one case intentionally
+// left alone (design review, ROADMAP.md's open question): minor -> adult
+// with consent already given keeps its existing consent_records row
+// untouched, as evidence - never deleted, never touched by this function.
+export async function correctDateOfBirthForAdmin(
+  actor: { id: string },
+  input: CorrectDateOfBirthInput,
+  meta: RequestMeta,
+) {
+  const dob = new Date(`${input.newDateOfBirth}T00:00:00Z`);
+  if (Number.isNaN(dob.getTime()) || dob.getTime() > Date.now()) {
+    throw new AppError("VALIDATION_FAILED", "Date of birth must be a valid date in the past");
+  }
+  if (!input.reason.trim()) {
+    throw new AppError("VALIDATION_FAILED", "A reason is required");
+  }
+
+  if (computeAge(input.newDateOfBirth) < MINIMUM_AGE) {
+    await rejectAgeBelowMinimum(input.userId, meta);
+  }
+
+  const result = await correctDateOfBirthRow(input.userId, actor.id, input.newDateOfBirth, input.reason);
+  if (!result) {
+    throw new AppError("NOT_FOUND", "No account with a date of birth already set to correct");
+  }
+
+  const wasMinorBefore = isMinor(result.oldDateOfBirth);
+  const isMinorAfter = isMinor(result.newDateOfBirth);
+  const wasBelowFloorBefore = computeAge(result.oldDateOfBirth) < MINIMUM_AGE;
+  const isBelowFloorAfter = computeAge(result.newDateOfBirth) < MINIMUM_AGE;
+
+  // Deliberately no dateOfBirth values or the free-text reason here -
+  // both live only in dob_corrections (see src/db/schema/compliance.ts),
+  // never in append-only activity_logs. correctionId lets staff cross-
+  // reference the two tables without duplicating the sensitive fields.
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "onboarding.date_of_birth_corrected",
+    targetType: "user",
+    targetId: input.userId,
+    metadata: {
+      correctionId: result.correctionId,
+      crossedMinorBoundary: wasMinorBefore !== isMinorAfter,
+      crossedAgeFloor: wasBelowFloorBefore !== isBelowFloorAfter,
+    },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+
+  return {
+    userId: input.userId,
+    dateOfBirth: result.newDateOfBirth,
+    isMinor: isMinorAfter,
+  };
+}
+
+// Account-deletion scrub (src/server/users/service.ts
+// reconcileAccountDeletion) - thin wrapper so the users domain never
+// reaches into onboarding's repo directly, same cross-domain-via-service
+// convention scrubDoubtZoneContentForUser already follows.
+export async function scrubDobCorrectionsForUser(userId: string): Promise<number> {
+  return deleteDobCorrectionsForUser(userId);
 }
 
 // The access gate every XP/VM/trading/social endpoint from Phase 2b onward
