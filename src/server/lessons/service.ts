@@ -46,6 +46,18 @@ function toSummary(row: LessonRow) {
   };
 }
 
+// App asks batch, item A12: `content.video.url` is a new, additive field -
+// `content` is stored raw JSONB and returned as-is (no re-validation on
+// read), so a video lesson authored before this field existed simply
+// doesn't have the key yet. Backfilled here, read-side, so every video
+// lesson's response carries it (all-null, as the ask expects) without
+// needing every existing lesson to be re-saved through the editor first.
+function withVideoUrlDefault(kind: string, content: unknown): unknown {
+  if (kind !== "video" || typeof content !== "object" || content === null) return content;
+  if ("video" in content) return content;
+  return { ...content, video: { url: { en: null, hi: null, hx: null } } };
+}
+
 function toDetail(row: LessonRow) {
   return {
     id: row.id,
@@ -55,7 +67,7 @@ function toDetail(row: LessonRow) {
     kind: row.kind,
     title: row.title,
     blurb: row.blurb,
-    content: row.content,
+    content: withVideoUrlDefault(row.kind, row.content),
   };
 }
 

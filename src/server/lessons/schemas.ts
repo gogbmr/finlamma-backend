@@ -53,10 +53,22 @@ const VideoCueSchema = z.object({
   timerSeconds: z.number().int().positive(),
 });
 
+// App asks batch, item A12: hosting is undecided (field only) - each
+// language slot is a plain string | null, all null is the expected,
+// current state. Additive: `.default()` backfills this on any
+// create/update through the admin editor; service.ts's toDetail also
+// backfills it read-side for a lesson saved before this field existed.
+const VideoUrlSchema = z.object({
+  en: z.string().nullable(),
+  hi: z.string().nullable(),
+  hx: z.string().nullable(),
+});
+
 export const VideoContentSchema = z.object({
   lengthSeconds: z.number().positive(),
   scenes: z.array(SceneSchema).default([]),
   cues: z.array(VideoCueSchema).default([]),
+  video: z.object({ url: VideoUrlSchema }).default({ url: { en: null, hi: null, hx: null } }),
 });
 export type VideoContent = z.infer<typeof VideoContentSchema>;
 
@@ -153,6 +165,7 @@ export const LESSON_CONTENT_TEMPLATES: Record<LessonKindCreate, unknown> = {
       },
     ],
     cues: [],
+    video: { url: { en: null, hi: null, hx: null } },
   } satisfies VideoContent,
   story: {
     lengthSeconds: 360,

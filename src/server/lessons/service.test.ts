@@ -268,6 +268,39 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
     });
   });
 
+  // App asks batch, item A12.
+  it("backfills content.video.url (all null) for a video lesson saved before that field existed", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(
+      lessonRow({ kind: "video", content: { lengthSeconds: 48, scenes: [], cues: [] } }),
+    );
+
+    const result = await getPublicLesson("lesson_1");
+
+    expect(result.content).toEqual({
+      lengthSeconds: 48,
+      scenes: [],
+      cues: [],
+      video: { url: { en: null, hi: null, hx: null } },
+    });
+  });
+
+  it("never overwrites an already-set content.video.url", async () => {
+    const withUrl = { lengthSeconds: 48, scenes: [], cues: [], video: { url: { en: "https://x/a.mp4", hi: null, hx: null } } };
+    mockGetPublishedLesson.mockResolvedValueOnce(lessonRow({ kind: "video", content: withUrl }));
+
+    const result = await getPublicLesson("lesson_1");
+
+    expect(result.content).toEqual(withUrl);
+  });
+
+  it("never adds content.video.url for a non-video kind", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(lessonRow()); // kind: "quiz"
+
+    const result = await getPublicLesson("lesson_1");
+
+    expect(result.content).toEqual(lessonRow().content);
+  });
+
   it("throws NOT_FOUND for an unknown/unpublished lesson id", async () => {
     mockGetPublishedLesson.mockResolvedValueOnce(null);
 
