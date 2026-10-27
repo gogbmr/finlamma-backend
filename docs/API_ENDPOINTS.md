@@ -751,7 +751,7 @@ For a minor whose parent already consented once, but a later material legal-docu
 
 **Set my date of birth (once)**
 
-Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason.
+Collected once at onboarding - determines whether the account needs parental consent. Can only be set once through this endpoint; a second call fails with CONFLICT. Only staff can correct a mistake after that, with a logged reason. Rejects with AGE_BELOW_MINIMUM (app ask C2) if the submitted date puts the learner under 13 - the date is never persisted, and the account is immediately queued for deletion the same way DELETE /me works, so a retry with a different date hits ACCOUNT_DELETION_PENDING instead of this endpoint again.
 
 **Auth:** bearerAuth
 
@@ -788,6 +788,17 @@ Collected once at onboarding - determines whether the account needs parental con
   "error": {
     "code": "UNAUTHENTICATED",
     "message": "Sign-in required"
+  }
+}
+```
+
+- **403** — The submitted date puts the learner below the minimum age (13) - never retryable with a different date
+
+```json
+{
+  "error": {
+    "code": "AGE_BELOW_MINIMUM",
+    "message": "You must be at least 13 years old to use Finlamma"
   }
 }
 ```

@@ -10,7 +10,9 @@ import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
 import { sendEmail } from "@/lib/email";
 import { logInternalError, type requestMeta } from "@/lib/http";
+import { istDateString } from "@/lib/ist-date";
 import { getSettingNumber } from "@/lib/settings";
+import { beginAccountDeletion } from "@/server/users/service";
 import { getLegalDocumentById, listPublishedDocuments } from "@/server/legal/repo";
 import { getLegalStatus } from "@/server/legal/service";
 import {
@@ -61,6 +63,12 @@ type MeUser = {
   onboardingCompletedAt?: Date | null;
 };
 
+// App asks batch, section C2: a COPPA-style floor, independent of the
+// existing 18-year minor/parental-consent boundary - decided, not staff-
+// editable (a product/legal line, not a tunable constant like the
+// lesson-scoring numbers).
+const MINIMUM_AGE = 13;
+
 const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const DEFAULT_RESEND_DAILY_CAP = 5;
@@ -80,29 +88,42 @@ function todayUtc(): string {
 
 // Calendar-accurate age from a YYYY-MM-DD date of birth - not a 365.25-day
 // approximation, since being off by even a day matters right around a
-// birthday. Both sides are plain calendar dates (no timezone in
-// `dateOfBirth`), so UTC field comparisons are the correct, unambiguous way
-// to do this regardless of the server's local timezone.
+// birthday. "Today" is the calendar date IN INDIA (Asia/Kolkata), not the
+// server's UTC clock (app asks batch, section C2 correction) - IST is
+// 5.5 hours ahead of UTC, so for the first 5.5 hours of a learner's actual
+// birthday (00:00-05:30 IST), UTC's calendar date is still YESTERDAY. A
+// UTC-based check would wrongly judge a child turning 13 at IST midnight as
+// still 12 until 05:30 IST - the exact bug this fixes, at both the 13 and
+// 18 boundaries (isMinor below calls this same function, so both move
+// together). Building a UTC-midnight Date from istDateString(now)'s
+// calendar-date string lets the field-comparison arithmetic stay exactly
+// the same as before; only which "today" feeds it has changed.
 //
-// Fails closed (treats an unparseable date as a minor) rather than letting
-// an Invalid Date silently resolve the wrong way - `new Date("garbage...")`
-// produces NaN throughout the arithmetic below, and `NaN < 18` is `false`
-// in JS, which would otherwise report "not a minor" for exactly the input
-// where age genuinely can't be determined. Every real call site today
-// (onboarding's z.iso.date()-validated input, users.dateOfBirth's Postgres
-// `date` column type, or an explicit truthy-guard before calling this)
-// already prevents an invalid value from reaching here - this guard exists
-// so that stays true even if a future caller's input isn't pre-validated
-// the same way (`/phase-audit 8` finding).
-export function isMinor(dateOfBirth: string): boolean {
+// Fails closed (returns a negative, never-valid age for an unparseable
+// date) rather than letting an Invalid Date silently resolve the wrong
+// way - every real call site today (onboarding's z.iso.date()-validated
+// input, users.dateOfBirth's Postgres `date` column type, or an explicit
+// truthy-guard before calling this) already prevents an invalid value from
+// reaching here - this guard exists so that stays true even if a future
+// caller's input isn't pre-validated the same way (`/phase-audit 8`
+// finding). `now` is injectable so tests can pin an exact instant (e.g.
+// 00:30 IST on a 13th birthday); every real caller passes the server's own
+// clock.
+export function computeAge(dateOfBirth: string, now: Date = new Date()): number {
   const dob = new Date(`${dateOfBirth}T00:00:00Z`);
-  if (Number.isNaN(dob.getTime())) return true;
-  const now = new Date();
-  let age = now.getUTCFullYear() - dob.getUTCFullYear();
+  if (Number.isNaN(dob.getTime())) return -1;
+  const todayIst = new Date(`${istDateString(now)}T00:00:00Z`);
+  let age = todayIst.getUTCFullYear() - dob.getUTCFullYear();
   const hadBirthdayThisYear =
-    now.getUTCMonth() > dob.getUTCMonth() ||
-    (now.getUTCMonth() === dob.getUTCMonth() && now.getUTCDate() >= dob.getUTCDate());
+    todayIst.getUTCMonth() > dob.getUTCMonth() ||
+    (todayIst.getUTCMonth() === dob.getUTCMonth() && todayIst.getUTCDate() >= dob.getUTCDate());
   if (!hadBirthdayThisYear) age -= 1;
+  return age;
+}
+
+export function isMinor(dateOfBirth: string, now: Date = new Date()): boolean {
+  const age = computeAge(dateOfBirth, now);
+  if (age < 0) return true; // unparseable - fails closed, same as before
   return age < 18;
 }
 
@@ -188,6 +209,33 @@ export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, m
   const dob = new Date(`${input.dateOfBirth}T00:00:00Z`);
   if (Number.isNaN(dob.getTime()) || dob.getTime() > Date.now()) {
     throw new AppError("VALIDATION_FAILED", "Date of birth must be a valid date in the past");
+  }
+
+  // App asks batch, section C2: checked BEFORE any persistence, so a
+  // rejected date is never written anywhere, not even transiently. Exactly
+  // 13 is accepted (age < MINIMUM_AGE, not <=). beginAccountDeletion marks
+  // deletionRequestedAt and fires the same async Clerk-delete/DB-anonymize
+  // pipeline a learner's own DELETE /me uses - the real reason a retry with
+  // a different date can't work: the very next request on this account
+  // hits requireUser's ACCOUNT_DELETION_PENDING gate (src/lib/auth.ts)
+  // instead of reaching this function again.
+  if (computeAge(input.dateOfBirth) < MINIMUM_AGE) {
+    await beginAccountDeletion(user.id);
+    await logActivity({
+      actorType: "user",
+      actorId: user.id,
+      action: "onboarding.age_below_minimum_rejected",
+      targetType: "user",
+      targetId: user.id,
+      // Deliberately no dateOfBirth/age in metadata - activity_logs is
+      // append-only with no erasure path, and the submitted date is never
+      // persisted anywhere else either (data minimisation - an accepted
+      // limitation, documented in docs/ROADMAP.md, is that a rejected
+      // account's email can sign up again with no record blocking it).
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
+    throw new AppError("AGE_BELOW_MINIMUM", `You must be at least ${MINIMUM_AGE} years old to use Finlamma`);
   }
 
   const updated = await setDateOfBirthOnce(user.id, input.dateOfBirth);

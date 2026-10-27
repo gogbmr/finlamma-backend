@@ -108,6 +108,15 @@ export const ErrorCode = {
   // the background. See docs/MOBILE_INTEGRATION.md for the app-facing
   // "your account is being deleted" screen this should trigger.
   ACCOUNT_DELETION_PENDING: "ACCOUNT_DELETION_PENDING",
+
+  // App asks batch, section C2 (docs/ROADMAP.md): thrown by
+  // src/server/onboarding/service.ts's setDateOfBirth when the computed age
+  // (IST calendar basis, same as isMinor) is under 13 - the submitted date
+  // is never persisted, and the account is immediately queued for deletion
+  // (the same async Clerk+DB pipeline as a learner-initiated DELETE /me) -
+  // never retryable with a different date, since the very next request on
+  // this account hits ACCOUNT_DELETION_PENDING instead.
+  AGE_BELOW_MINIMUM: "AGE_BELOW_MINIMUM",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -155,6 +164,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   COMPETITION_MAX_TRADES_REACHED: 409,
 
   ACCOUNT_DELETION_PENDING: 403,
+
+  AGE_BELOW_MINIMUM: 403,
 };
 
 export class AppError extends Error {
