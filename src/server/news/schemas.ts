@@ -15,6 +15,8 @@ const StoryPreviewSchema = z.object({
   featured: z.boolean(),
   publishedAt: z.string().datetime(),
   read: z.boolean().openapi({ description: "Whether the caller has already read this story" }),
+  // App asks batch, item A8.
+  bookmarked: z.boolean().openapi({ description: "Whether the caller has bookmarked this story" }),
 }).openapi("NewsStoryPreview");
 
 export const NewsFeedResponseSchema = z.object({
@@ -34,6 +36,8 @@ export const NewsStoryDetailResponseSchema = z.object({
   sourceUrl: z.url(),
   publishedAt: z.string().datetime(),
   read: z.boolean(),
+  // App asks batch, item A8.
+  bookmarked: z.boolean().openapi({ description: "Whether the caller has bookmarked this story" }),
   minReadSeconds: z
     .number()
     .int()
@@ -53,6 +57,13 @@ export type MarkNewsReadInput = z.infer<typeof MarkNewsReadRequestSchema>;
 export const MarkNewsReadResponseSchema = z.object({
   read: z.boolean(),
   alreadyRead: z.boolean().openapi({ description: "true if this story was already marked read earlier" }),
+});
+
+// App asks batch, item A8: shared by POST and DELETE .../bookmark - idempotent
+// either way (bookmarking an already-bookmarked story, or unbookmarking one
+// that isn't, both simply reflect the resulting state rather than erroring).
+export const NewsBookmarkResponseSchema = z.object({
+  bookmarked: z.boolean(),
 });
 
 export const NewsDeskPickSchema = z.object({

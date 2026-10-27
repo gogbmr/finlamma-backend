@@ -12,16 +12,20 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  deleteBookmark,
+  getExistingBookmark,
   getExistingRead,
   getPublishedStoryById,
   getRawIngestedCount,
   getStoryStatusCounts,
   getUndraftedRawCount,
+  insertBookmarkIfNew,
   insertDraftStoryWithQuestion,
   insertRawItemsIfNew,
   insertReadIfNew,
   listActiveDeskPicks,
   listAllStories,
+  listBookmarkedStoryIdsForUser,
   listPublishedStories,
   listPublishedStoriesPendingNotification,
   listReadStoryIdsForUser,
@@ -352,6 +356,79 @@ describe("news_reads", () => {
   it("listReadStoryIdsForUser returns an empty set for an empty input, without a query", async () => {
     const user = await seedUser();
     expect((await listReadStoryIdsForUser(user.id, [])).size).toBe(0);
+  });
+});
+
+// App asks batch, item A8 - same pattern as news_reads above, except a
+// bookmark is a real, reversible toggle (deleteBookmark actually removes
+// the row).
+describe("news_bookmarks", () => {
+  async function seedUser() {
+    const [user] = await db
+      .insert(users)
+      .values({ clerkUserId: uniqueClerkUserId("news-bookmarks-repo-test"), clerkUpdatedAt: new Date() })
+      .returning();
+    return user;
+  }
+
+  it("insertBookmarkIfNew inserts, and is idempotent on (userId, storyId)", async () => {
+    const user = await seedUser();
+    const story = await publishStory(`bookmark-${user.id}`);
+
+    const first = await insertBookmarkIfNew(user.id, story!.id);
+    expect(first).not.toBeNull();
+
+    const second = await insertBookmarkIfNew(user.id, story!.id);
+    expect(second).toBeNull();
+  });
+
+  it("getExistingBookmark / listBookmarkedStoryIdsForUser reflect what's been bookmarked", async () => {
+    const user = await seedUser();
+    const bookmarkedStory = await publishStory(`bm-${user.id}-a`);
+    const otherStory = await publishStory(`bm-${user.id}-b`);
+    await insertBookmarkIfNew(user.id, bookmarkedStory!.id);
+
+    expect(await getExistingBookmark(user.id, bookmarkedStory!.id)).not.toBeNull();
+    expect(await getExistingBookmark(user.id, otherStory!.id)).toBeNull();
+
+    const ids = await listBookmarkedStoryIdsForUser(user.id, [bookmarkedStory!.id, otherStory!.id]);
+    expect(ids.has(bookmarkedStory!.id)).toBe(true);
+    expect(ids.has(otherStory!.id)).toBe(false);
+  });
+
+  it("listBookmarkedStoryIdsForUser returns an empty set for an empty input, without a query", async () => {
+    const user = await seedUser();
+    expect((await listBookmarkedStoryIdsForUser(user.id, [])).size).toBe(0);
+  });
+
+  it("deleteBookmark actually removes the row - a real, reversible toggle", async () => {
+    const user = await seedUser();
+    const story = await publishStory(`unbookmark-${user.id}`);
+    await insertBookmarkIfNew(user.id, story!.id);
+    expect(await getExistingBookmark(user.id, story!.id)).not.toBeNull();
+
+    await deleteBookmark(user.id, story!.id);
+
+    expect(await getExistingBookmark(user.id, story!.id)).toBeNull();
+  });
+
+  it("deleteBookmark on a bookmark that doesn't exist is a harmless no-op", async () => {
+    const user = await seedUser();
+    const story = await publishStory(`never-bookmarked-${user.id}`);
+
+    await expect(deleteBookmark(user.id, story!.id)).resolves.toBeUndefined();
+  });
+
+  it("the same key for two DIFFERENT users never collides - unique per user, not global", async () => {
+    const userA = await seedUser();
+    const userB = await seedUser();
+    const story = await publishStory(`shared-${userA.id}`);
+
+    await insertBookmarkIfNew(userA.id, story!.id);
+    const forB = await insertBookmarkIfNew(userB.id, story!.id);
+
+    expect(forB).not.toBeNull();
+    expect(await getExistingBookmark(userB.id, story!.id)).not.toBeNull();
   });
 });
 

@@ -11,17 +11,21 @@ import { computeQualityGrade } from "./grading";
 import { getNewsProvider } from "./providers";
 import { computeMinReadSeconds } from "./reading-time";
 import {
+  deleteBookmark,
+  getExistingBookmark,
   getExistingRead,
   getPublishedStoryById,
   getRawIngestedCount,
   getStoryById,
   getStoryStatusCounts,
   getUndraftedRawCount,
+  insertBookmarkIfNew,
   insertDraftStoryWithQuestion,
   insertRawItemsIfNew,
   insertReadIfNew,
   listActiveDeskPicks,
   listAllStories,
+  listBookmarkedStoryIdsForUser,
   listPublishedStories,
   listPublishedStoriesPendingNotification,
   listReadStoryIdsForUser,
@@ -171,6 +175,13 @@ export async function getNewsFeed(
     userId,
     data.map((s) => s.id),
   );
+  // App asks batch, item A8 - sequential, not concurrent with the read-ids
+  // lookup above (CLAUDE.md rule 15 applies to concurrent calls, not two
+  // plain sequential awaits).
+  const bookmarkedIds = await listBookmarkedStoryIdsForUser(
+    userId,
+    data.map((s) => s.id),
+  );
   return {
     data: data.map((s) => ({
       id: s.id,
@@ -182,6 +193,7 @@ export async function getNewsFeed(
       featured: s.featured,
       publishedAt: (s.publishedAt ?? s.createdAt).toISOString(),
       read: readIds.has(s.id),
+      bookmarked: bookmarkedIds.has(s.id),
     })),
     nextCursor: nextCursor ? encodeCursor(nextCursor) : null,
   };
@@ -191,7 +203,9 @@ export async function getNewsStoryDetail(userId: string, id: string) {
   const story = await getPublishedStoryById(id);
   if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
 
-  const [existingRead] = await Promise.all([getExistingRead(userId, id)]);
+  const existingRead = await getExistingRead(userId, id);
+  // App asks batch, item A8.
+  const existingBookmark = await getExistingBookmark(userId, id);
   return {
     id: story.id,
     headline: story.content.headline,
@@ -204,8 +218,25 @@ export async function getNewsStoryDetail(userId: string, id: string) {
     sourceUrl: story.sourceUrl,
     publishedAt: (story.publishedAt ?? story.createdAt).toISOString(),
     read: existingRead !== null,
+    bookmarked: existingBookmark !== null,
     minReadSeconds: computeMinReadSeconds(story.content.body.map((p) => p.en)),
   };
+}
+
+// App asks batch, item A8: idempotent either direction - bookmarking an
+// already-bookmarked story, or unbookmarking one that isn't, both simply
+// reflect the resulting state, never an error.
+export async function bookmarkNewsStory(user: { id: string }, storyId: string) {
+  const story = await getPublishedStoryById(storyId);
+  if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
+
+  await insertBookmarkIfNew(user.id, storyId);
+  return { bookmarked: true };
+}
+
+export async function unbookmarkNewsStory(user: { id: string }, storyId: string) {
+  await deleteBookmark(user.id, storyId);
+  return { bookmarked: false };
 }
 
 // NW-09: server-validated, not client-trusted - the client's own

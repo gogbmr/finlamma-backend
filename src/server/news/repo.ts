@@ -1,6 +1,6 @@
 import { and, count, desc, eq, gte, inArray, isNull, like, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { activityLogs, newsDeskPicks, newsRaw, newsReads, newsStories, questions } from "@/db/schema";
+import { activityLogs, newsBookmarks, newsDeskPicks, newsRaw, newsReads, newsStories, questions } from "@/db/schema";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import type { NewsCategory } from "./schemas";
 import type { RawNewsItem } from "./providers/mock";
@@ -248,6 +248,44 @@ export async function insertReadIfNew(userId: string, storyId: string, dwellSeco
     .onConflictDoNothing({ target: [newsReads.userId, newsReads.storyId] })
     .returning();
   return row ?? null;
+}
+
+// App asks batch, item A8 - same shape as listReadStoryIdsForUser above.
+export async function listBookmarkedStoryIdsForUser(userId: string, storyIds: string[]) {
+  if (storyIds.length === 0) return new Set<string>();
+  const rows = await db
+    .select({ storyId: newsBookmarks.storyId })
+    .from(newsBookmarks)
+    .where(and(eq(newsBookmarks.userId, userId), inArray(newsBookmarks.storyId, storyIds)));
+  return new Set(rows.map((r) => r.storyId));
+}
+
+export async function getExistingBookmark(userId: string, storyId: string) {
+  const [row] = await db
+    .select()
+    .from(newsBookmarks)
+    .where(and(eq(newsBookmarks.userId, userId), eq(newsBookmarks.storyId, storyId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// Idempotent on (userId, storyId) - a re-POST for an already-bookmarked
+// story is a no-op (returns null from the conflict), same shape as
+// insertReadIfNew.
+export async function insertBookmarkIfNew(userId: string, storyId: string) {
+  const [row] = await db
+    .insert(newsBookmarks)
+    .values({ userId, storyId })
+    .onConflictDoNothing({ target: [newsBookmarks.userId, newsBookmarks.storyId] })
+    .returning();
+  return row ?? null;
+}
+
+// Unlike news_reads, a bookmark is a real, reversible toggle - this
+// actually deletes the row. Idempotent: removing a bookmark that doesn't
+// exist is simply a 0-row delete, never an error.
+export async function deleteBookmark(userId: string, storyId: string): Promise<void> {
+  await db.delete(newsBookmarks).where(and(eq(newsBookmarks.userId, userId), eq(newsBookmarks.storyId, storyId)));
 }
 
 export async function listActiveDeskPicks() {

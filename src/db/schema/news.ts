@@ -141,6 +141,27 @@ export const newsReads = pgTable(
   (t) => [uniqueIndex("news_reads_user_story_idx").on(t.userId, t.storyId)],
 ).enableRLS();
 
+// App asks batch, item A8: a learner's saved stories. Unlike news_reads
+// (a permanent read marker), a bookmark is a toggle the learner can undo -
+// DELETE /api/v1/news/{id}/bookmark removes the row outright, never an
+// append-only/soft-delete record.
+export const newsBookmarks = pgTable(
+  "news_bookmarks",
+  {
+    ...idAndTimestamps(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    storyId: uuid("story_id")
+      .notNull()
+      .references(() => newsStories.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    uniqueIndex("news_bookmarks_user_story_idx").on(t.userId, t.storyId),
+    index("news_bookmarks_user_id_idx").on(t.userId),
+  ],
+).enableRLS();
+
 // Staff-authored highlights (Desk Pick / Exam Alert / Scam Watch) - entirely
 // separate from the AI/ingestion pipeline above (NW-05/NW-46). Either points
 // at an existing published story or carries its own standalone content, not
