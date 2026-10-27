@@ -4,6 +4,7 @@ import type { requestMeta } from "@/lib/http";
 import { decodeCursor, encodeCursor, logInternalError } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import { notifyUser } from "@/server/notifications/service";
+import { isFormatAppRenderable } from "@/server/questions/schemas";
 import { findAdviceLikePhrases } from "@/server/trading/advice-language";
 import { draftNewsStoryFromRaw } from "./ai";
 import { computeQualityGrade } from "./grading";
@@ -363,11 +364,27 @@ export async function getNewsQuizGeneratorSettings(): Promise<NewsQuizGeneratorS
 // other "changes what every learner's session looks like/earns" constant
 // (lesson_flow_scoring, vm_issuance_multiplier) - not news.manage/publish,
 // since this isn't about a specific story, it's a global Pulse Check knob.
+// App asks batch, section B: refuse to enable a format in Pulse Check's
+// daily pool that the app can't render interactively yet - the News
+// Desk's own "generator/toggle" flow, same shared allowlist
+// questions/service.ts's publishQuestion gate uses. Named per-format so
+// the admin UI can point at exactly which one(s) to remove.
+function assertEnabledFormatsAppRenderable(enabledFormats: string[]): void {
+  const unsupported = enabledFormats.filter((f) => !isFormatAppRenderable(f));
+  if (unsupported.length === 0) return;
+  throw new AppError(
+    "VALIDATION_FAILED",
+    `Cannot enable format${unsupported.length > 1 ? "s" : ""} the app doesn't support yet: ${unsupported.join(", ")}`,
+    { unsupportedFormats: unsupported },
+  );
+}
+
 export async function updateNewsQuizGeneratorSettings(
   actor: { id: string },
   input: NewsQuizGeneratorSettings,
   meta: RequestMeta,
 ): Promise<NewsQuizGeneratorSettings> {
+  assertEnabledFormatsAppRenderable(input.enabledFormats);
   const previous = await getNewsQuizGeneratorSettings();
   await setSettingJson(
     NEWS_QUIZ_GENERATOR_SETTINGS_KEY,

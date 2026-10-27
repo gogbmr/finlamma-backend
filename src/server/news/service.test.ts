@@ -99,7 +99,7 @@ import {
   updateNewsQuizGeneratorSettings,
   updateNewsStoryStatusForAdmin,
 } from "./service";
-import { DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS } from "./schemas";
+import { DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, type NewsQuizGeneratorSettings } from "./schemas";
 
 const ACTOR = { id: "staff_1" };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -268,6 +268,34 @@ describe("news quiz generator settings", () => {
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "news.quiz_generator_settings_updated" }),
     );
+  });
+
+  // App asks batch, section B: the News Desk's own "toggle" gate.
+  it("refuses to enable a format the app doesn't support yet, naming it", async () => {
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["single_select", "ordering"] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+    await expect(updateNewsQuizGeneratorSettings(ACTOR, next, META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { unsupportedFormats: ["ordering"] },
+    });
+    expect(mockSetSettingJson).not.toHaveBeenCalled();
+  });
+
+  it("names every unsupported format, not just the first", async () => {
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["ordering", "sort_buckets"] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+    await expect(updateNewsQuizGeneratorSettings(ACTOR, next, META)).rejects.toMatchObject({
+      details: { unsupportedFormats: ["ordering", "sort_buckets"] },
+    });
+  });
+
+  it("still allows saving enabledFormats: ['single_select']", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(null);
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["single_select"] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+    const result = await updateNewsQuizGeneratorSettings(ACTOR, next, META);
+
+    expect(result).toEqual(next);
   });
 });
 

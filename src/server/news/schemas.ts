@@ -169,18 +169,17 @@ export const NewsQuizGeneratorSettingsSchema = z.object({
 });
 export type NewsQuizGeneratorSettings = z.infer<typeof NewsQuizGeneratorSettingsSchema>;
 
+// App asks batch, section B: defaults to only the format the app can
+// actually render interactively today (APP_RENDERABLE_QUESTION_FORMATS,
+// src/server/questions/schemas.ts) - the other 6 formats are real,
+// gradeable backend formats (and staff-authorable for lesson content),
+// just not yet eligible for Pulse Check's own daily pool. Widen this
+// default (and re-save the setting) once the app ships a UI component for
+// another format.
 export const DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS: NewsQuizGeneratorSettings = {
   questionCount: 8,
   perQuestionTimerSeconds: 20,
   baseVmPerQuestion: 30,
-  enabledFormats: [
-    "single_select",
-    "ordering",
-    "sort_buckets",
-    "fill_blank",
-    "match_pairs",
-    "spot_mistake",
-    "number_guess",
-  ],
+  enabledFormats: ["single_select"],
 };
 export const NEWS_QUIZ_GENERATOR_SETTINGS_KEY = "news_quiz_generator";

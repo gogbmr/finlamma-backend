@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getWorldById, listPublishedWorlds } from "@/server/worlds/repo";
 import { getQuestionsByIds } from "@/server/questions/repo";
+import { isFormatAppRenderable } from "@/server/questions/schemas";
 import {
   countInProgressLearnersByLessonIds,
   getLessonProgressStatusesForUser,
@@ -287,6 +288,14 @@ async function assertQuestionReferencesValid(kind: string, content: unknown): Pr
     const q = foundById.get(qid);
     if (!q) questionProblems.push(`question ${qid} does not exist`);
     else if (q.status !== "published") questionProblems.push(`question ${qid} is not published`);
+    // App asks batch, section B (defense in depth - questions/service.ts's
+    // publishQuestion is the root gate that should already prevent this for
+    // any question published after this fix shipped): refuse to publish a
+    // lesson that would put an app-unrenderable question in front of a
+    // learner, naming the exact format.
+    else if (!isFormatAppRenderable(q.format)) {
+      questionProblems.push(`question ${qid} uses the "${q.format}" format, which the app doesn't support yet`);
+    }
   }
   if (questionProblems.length > 0) {
     throw new AppError("VALIDATION_FAILED", `Cannot publish: ${questionProblems.join("; ")}`, {
