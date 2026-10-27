@@ -18,6 +18,19 @@ registry.registerComponent("securitySchemes", "bearerAuth", {
   description: "Consumer Clerk session token, sent as `Authorization: Bearer <token>`.",
 });
 
+// The STAFF Clerk app's own session cookie (clerkMiddleware()/auth(), see
+// docs/ARCHITECTURE.md D2a) - every admin-facing /api/v1 route gated by
+// getStaffMember()/requireStaff() uses this, never bearerAuth. Most admin
+// mutations are Server Actions (D16) rather than REST, so this is
+// documented here for the handful of /api/v1 routes that are staff-gated
+// REST endpoints (e.g. GET /api/v1/health/details).
+registry.registerComponent("securitySchemes", "clerkSession", {
+  type: "apiKey",
+  in: "cookie",
+  name: "__session",
+  description: "The signed-in staff member's Clerk session cookie - never a bearer token.",
+});
+
 // Shared error envelope every route can reference in its responses.
 export const ErrorResponseSchema = registry.register(
   "ErrorResponse",
