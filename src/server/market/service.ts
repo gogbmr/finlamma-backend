@@ -127,6 +127,46 @@ export async function getMarketStatus(userId: string) {
   };
 }
 
+// App asks batch, item A1 (TR-04): the fixed NIFTY 50 / BANK NIFTY / SENSEX
+// index strip. No DB row per docs/DATA_MODEL.md - these reuse the exact same
+// cached-quote path as every tradeable instrument, just with a code-defined
+// symbol/exchange/name list instead of the `instruments` table. A symbol the
+// vendor has no data for right now is simply omitted (never a synthetic
+// value, same "no volatility control" rule as everywhere else in this
+// domain) rather than returned with null fields.
+const INDEX_DEFINITIONS: { symbol: string; exchange: string; name: string }[] = [
+  { symbol: "NIFTY50", exchange: "NSE", name: "NIFTY 50" },
+  { symbol: "NIFTYBANK", exchange: "NSE", name: "BANK NIFTY" },
+  { symbol: "SENSEX", exchange: "BSE", name: "SENSEX" },
+];
+
+export async function getIndexQuotes() {
+  // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
+  const results = await Promise.allSettled(
+    INDEX_DEFINITIONS.map((def) => getCachedQuote(def.symbol, def.exchange)),
+  );
+
+  const indices = INDEX_DEFINITIONS.map((def, i) => {
+    const result = results[i];
+    const quote = result?.status === "fulfilled" ? result.value : null;
+    if (!quote) return null;
+    return {
+      symbol: def.symbol,
+      name: def.name,
+      valuePaise: quote.pricePaise,
+      changePaise: quote.changePaise,
+      changePercent: quote.changePercent,
+      asOf: quote.asOf.toISOString(),
+    };
+  }).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return {
+    data: { indices },
+    disclaimer: TRADING_DISCLAIMER,
+    disclaimerLocalized: TRADING_DISCLAIMER_LOCALIZED,
+  };
+}
+
 // TR-05/16 - candlestick chart data for a timeframe.
 export async function getInstrumentCandles(symbol: string, timeframe: MarketTimeframe) {
   const instrument = await getInstrumentBySymbol(symbol);

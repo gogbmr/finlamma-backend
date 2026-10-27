@@ -31,6 +31,12 @@ const BASE_PRICES_RUPEES: Record<string, number> = {
   ASIANPAINT: 2914.3,
   LT: 3624.85,
   TCS: 3859.55,
+  // App asks batch item A1 - fixed index strip (service.ts's
+  // INDEX_DEFINITIONS). Realistic magnitudes only; these are not tradeable
+  // instruments so there's no "real NSE snapshot" requirement to match.
+  NIFTY50: 24500.35,
+  NIFTYBANK: 51200.8,
+  SENSEX: 80540.6,
 };
 
 // A simple, stable hash for symbols not in the table above (any future

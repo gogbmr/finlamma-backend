@@ -31,6 +31,7 @@ vi.mock("./hours", () => ({
 
 const {
   computeRecommendedPollIntervalMs,
+  getIndexQuotes,
   getInstrumentCandles,
   getMarketStatus,
   getPublicInstrumentBySymbol,
@@ -228,5 +229,40 @@ describe("computeRecommendedPollIntervalMs", () => {
 
   it("polls slowly when the market is closed, regardless of feed mode", () => {
     expect(computeRecommendedPollIntervalMs(false, "live")).toBe(60_000);
+  });
+});
+
+describe("getIndexQuotes", () => {
+  it("returns the fixed NIFTY 50 / BANK NIFTY / SENSEX strip with quotes merged in", async () => {
+    mockGetCachedQuote.mockImplementation((symbol: string) =>
+      Promise.resolve(quote({ symbol, pricePaise: 2450035, changePaise: 12500, changePercent: 0.51 })),
+    );
+
+    const result = await getIndexQuotes();
+
+    expect(result.data.indices).toEqual([
+      { symbol: "NIFTY50", name: "NIFTY 50", valuePaise: 2450035, changePaise: 12500, changePercent: 0.51, asOf: "2026-09-25T10:00:00.000Z" },
+      { symbol: "NIFTYBANK", name: "BANK NIFTY", valuePaise: 2450035, changePaise: 12500, changePercent: 0.51, asOf: "2026-09-25T10:00:00.000Z" },
+      { symbol: "SENSEX", name: "SENSEX", valuePaise: 2450035, changePaise: 12500, changePercent: 0.51, asOf: "2026-09-25T10:00:00.000Z" },
+    ]);
+    expect(result.disclaimer).toBeTruthy();
+  });
+
+  it("omits an index the vendor has no data for right now, rather than returning a synthetic value", async () => {
+    mockGetCachedQuote.mockImplementation((symbol: string) =>
+      Promise.resolve(symbol === "SENSEX" ? null : quote({ symbol })),
+    );
+
+    const result = await getIndexQuotes();
+
+    expect(result.data.indices.map((i) => i.symbol)).toEqual(["NIFTY50", "NIFTYBANK"]);
+  });
+
+  it("returns an empty list, never throwing, when every index quote is unavailable", async () => {
+    mockGetCachedQuote.mockResolvedValue(null);
+
+    const result = await getIndexQuotes();
+
+    expect(result.data.indices).toEqual([]);
   });
 });

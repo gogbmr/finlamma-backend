@@ -132,3 +132,25 @@ const MarketStatusSchema = z.object({
 });
 
 export const MarketStatusResponseSchema = z.object({ data: MarketStatusSchema });
+
+// App asks batch (2026-10-27), item A1: NIFTY 50 / BANK NIFTY / SENSEX index
+// strip (TR-04, docs/FEATURE_MAP.md) - no `indices` DB table (docs/DATA_MODEL.md's
+// Trading section: "indices reuse the same Twelve Data source and caching, no
+// separate table"), so this is a fixed, code-defined list of index quotes,
+// same provider/cache path as every other quote in this domain.
+const IndexQuoteSchema = z.object({
+  symbol: z.string().openapi({ description: "Our own index code, not a vendor-specific symbol.", example: "NIFTY50" }),
+  name: z.string().openapi({ example: "NIFTY 50" }),
+  valuePaise: z.number().int().openapi({
+    description: "Index level, in paise (CLAUDE.md rule 2's integer-money convention applied to index points for consistency with every other price field in this API - an index level is not actually currency).",
+    example: 2450035,
+  }),
+  changePaise: z.number().int().openapi({ example: 12500 }),
+  changePercent: z.number().openapi({ example: 0.51 }),
+  asOf: z.string().datetime().openapi({ description: "When this value was captured by the market-data vendor." }),
+});
+
+export const IndexQuotesResponseSchema = z.object({
+  data: z.object({ indices: z.array(IndexQuoteSchema) }),
+  ...DISCLAIMER_LOCALIZED_SHAPE,
+});
