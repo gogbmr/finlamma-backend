@@ -33,12 +33,15 @@ function shapeQuote(quote: Quote | null) {
 export async function listPublicInstruments() {
   const instruments = await listActiveInstruments();
   // getCachedQuote/getCachedCandles are Redis-backed (falling back to the
-  // market-data vendor's HTTP API on a miss), never Postgres directly.
-  // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
+  // market-data vendor's HTTP API on a miss), never Postgres directly - both
+  // individually suppressed below since the checker script evaluates each
+  // Promise.allSettled call on its own line, not just the outer Promise.all.
   const [quotes, candleSets] = await Promise.all([
+    // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
     Promise.allSettled(instruments.map((i) => getCachedQuote(i.symbol, i.exchange))),
     // App asks batch, item A4: reuse the existing 1D candle cache for the
     // watchlist sparkline - no new provider call shape needed.
+    // promise-all-db-concurrency-ok: Redis/HTTP-backed, not a Postgres query
     Promise.allSettled(instruments.map((i) => getCachedCandles(i.symbol, i.exchange, "1D"))),
   ]);
 
