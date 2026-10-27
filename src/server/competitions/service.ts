@@ -2,7 +2,7 @@ import { db } from "@/db/client";
 import type { LocalizedText } from "@/db/schema/_helpers";
 import { AppError } from "@/lib/errors";
 import { logActivity } from "@/lib/activity-log";
-import type { requestMeta } from "@/lib/http";
+import { decodeCursor, type requestMeta } from "@/lib/http";
 import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { checkRateLimit, TRADE_ORDER_RATE_LIMIT } from "@/lib/redis";
 import { getSettingNumber, setSettingJson } from "@/lib/settings";
@@ -26,6 +26,7 @@ import {
   insertDraftCompetition,
   insertEntryIfNew,
   listCompetitionsForAdmin,
+  listCompetitionTradesForEntryPage,
   listEntriesForCompetition,
   listPublishedCompetitionsPastWindowEnd,
   placeCompetitionTradeTx,
@@ -34,6 +35,7 @@ import {
   type CompetitionDraftInput,
   type CompetitionEntryRow,
   type CompetitionRow,
+  type CompetitionTradeListCursor,
 } from "./repo";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
@@ -309,6 +311,41 @@ export async function placeCompetitionTrade(
       });
       return { ...result.trade, replayed: false };
   }
+}
+
+// App asks batch, item A11 - same semantics as GET /trade/orders
+// (listMyOrders): self-only by construction (the entry is resolved from
+// the caller's own userId, never accepted as a param), cursor-paginated,
+// idempotencyKey lets the app resolve an "outcome unknown" trade attempt.
+export async function listMyCompetitionTrades(
+  user: { id: string },
+  opts: { idempotencyKey?: string; limit: number; cursor: string | null },
+  now: Date = new Date(),
+) {
+  const competition = await getCurrentCompetition(now);
+  if (!competition) throw new AppError("NOT_FOUND", "No active competition right now");
+
+  const entry = await getEntry(competition.id, user.id);
+  if (!entry) throw new AppError("FORBIDDEN", "Enter the competition before trading in it");
+
+  const decodedCursor = decodeCursor<CompetitionTradeListCursor>(opts.cursor);
+  const { data, nextCursor } = await listCompetitionTradesForEntryPage(entry.id, {
+    limit: opts.limit,
+    cursor: decodedCursor,
+    idempotencyKey: opts.idempotencyKey,
+  });
+
+  return {
+    data: data.map((trade) => ({
+      id: trade.id,
+      side: trade.side,
+      qty: trade.qty,
+      fillPricePaise: trade.fillPricePaise,
+      realizedPnlPaise: trade.realizedPnlPaise,
+      filledAt: trade.filledAt.toISOString(),
+    })),
+    nextCursor,
+  };
 }
 
 export type MyCompetitionStatus =

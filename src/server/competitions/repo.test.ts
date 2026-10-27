@@ -25,6 +25,7 @@ const {
   insertCompetitionPrizeIfNew,
   insertDraftCompetition,
   insertEntryIfNew,
+  listCompetitionTradesForEntryPage,
   listPublishedCompetitionsPastWindowEnd,
   placeCompetitionTradeTx,
   publishCompetitionRow,
@@ -459,6 +460,50 @@ describe("getCompetitionTradeByIdempotencyKeyTx", () => {
     const found = await getCompetitionTradeByIdempotencyKeyTx(db as never, entry!.id, freshIdempotencyKey());
 
     expect(found).toBeNull();
+  });
+});
+
+// App asks batch, item A11 - same semantics as src/server/orders/
+// repo.test.ts's listOrdersForUserPage tests.
+describe("listCompetitionTradesForEntryPage", () => {
+  it("looks up a single trade by idempotencyKey, scoped to this entry", async () => {
+    const instrument = await makeInstrument();
+    const competition = await makeDraftCompetition(instrument.id);
+    const userA = await makeUser();
+    const userB = await makeUser();
+    const entryA = (await insertEntryIfNew(competition.id, userA.id, competition.virtualCapitalPaise))!;
+    const entryB = (await insertEntryIfNew(competition.id, userB.id, competition.virtualCapitalPaise))!;
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    const key = freshIdempotencyKey();
+    await placeCompetitionTradeTx(entryA.id, instrument, { side: "buy", qty: 5 }, key, 10, MARKET_OPEN_NOW);
+    // Another entry guessing the same key never matches - idempotencyKey is
+    // unique per-entry, not global.
+    await placeCompetitionTradeTx(entryB.id, instrument, { side: "buy", qty: 7 }, key, 10, MARKET_OPEN_NOW);
+
+    const { data } = await listCompetitionTradesForEntryPage(entryA.id, { limit: 20, cursor: null, idempotencyKey: key });
+
+    expect(data).toHaveLength(1);
+    expect(data[0]!.qty).toBe(5);
+  });
+
+  it("paginates newest-first with a stable cursor", async () => {
+    const instrument = await makeInstrument();
+    const competition = await makeDraftCompetition(instrument.id);
+    const user = await makeUser();
+    const entry = (await insertEntryIfNew(competition.id, user.id, competition.virtualCapitalPaise))!;
+    mockGetRelayPrice.mockResolvedValue({ pricePaise: 10000, ts: MARKET_OPEN_NOW.getTime() });
+    for (let i = 0; i < 3; i++) {
+      await placeCompetitionTradeTx(entry.id, instrument, { side: "buy", qty: 1 }, freshIdempotencyKey(), 10, MARKET_OPEN_NOW);
+    }
+
+    const page1 = await listCompetitionTradesForEntryPage(entry.id, { limit: 2, cursor: null });
+    expect(page1.data).toHaveLength(2);
+    expect(page1.nextCursor).not.toBeNull();
+
+    const { decodeCursor } = await import("@/lib/http");
+    const page2 = await listCompetitionTradesForEntryPage(entry.id, { limit: 2, cursor: decodeCursor(page1.nextCursor) });
+    expect(page2.data).toHaveLength(1);
+    expect(page2.nextCursor).toBeNull();
   });
 });
 

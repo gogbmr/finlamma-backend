@@ -1,5 +1,6 @@
-import { and, count, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { encodeCursor } from "@/lib/http";
 import { competitionEntries, competitionPrizes, competitions, competitionTrades } from "@/db/schema";
 import type { DbOrTx } from "@/server/economy/repo";
 import { isMarketOpen } from "@/server/market/hours";
@@ -97,6 +98,47 @@ export async function getCompetitionTradeByIdempotencyKeyTx(
     .where(and(eq(competitionTrades.entryId, entryId), eq(competitionTrades.idempotencyKey, idempotencyKey)))
     .limit(1);
   return row ?? null;
+}
+
+export type CompetitionTradeListCursor = { filledAt: string; id: string };
+
+// App asks batch, item A11 - same semantics as src/server/orders/repo.ts's
+// listOrdersForUserPage: scoped to one entry (the caller's own, resolved by
+// the service before this is ever called - never another learner's),
+// cursor-paginated newest-first on (filledAt, id), with an optional
+// idempotencyKey filter for resolving an "outcome unknown" trade attempt.
+export async function listCompetitionTradesForEntryPage(
+  entryId: string,
+  opts: { limit: number; cursor: CompetitionTradeListCursor | null; idempotencyKey?: string },
+): Promise<{ data: CompetitionTradeRow[]; nextCursor: string | null }> {
+  const conditions = [eq(competitionTrades.entryId, entryId)];
+  if (opts.idempotencyKey) conditions.push(eq(competitionTrades.idempotencyKey, opts.idempotencyKey));
+  if (opts.cursor) {
+    const cursorFilledAt = new Date(opts.cursor.filledAt);
+    conditions.push(
+      or(
+        lt(competitionTrades.filledAt, cursorFilledAt),
+        and(eq(competitionTrades.filledAt, cursorFilledAt), lt(competitionTrades.id, opts.cursor.id)),
+      )!,
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(competitionTrades)
+    .where(and(...conditions))
+    .orderBy(desc(competitionTrades.filledAt), desc(competitionTrades.id))
+    .limit(opts.limit + 1);
+
+  const hasMore = rows.length > opts.limit;
+  const page = hasMore ? rows.slice(0, opts.limit) : rows;
+  const last = page[page.length - 1];
+  const nextCursor =
+    hasMore && last
+      ? encodeCursor({ filledAt: last.filledAt.toISOString(), id: last.id } satisfies CompetitionTradeListCursor)
+      : null;
+
+  return { data: page, nextCursor };
 }
 
 export type CompetitionTradeInput = { side: "buy" | "sell"; qty: number };

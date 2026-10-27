@@ -8,6 +8,7 @@ const mockInsertEntryIfNew = vi.fn();
 const mockCountTradesForEntry = vi.fn();
 const mockCountTradesForEntries = vi.fn();
 const mockPlaceCompetitionTradeTx = vi.fn();
+const mockListCompetitionTradesForEntryPage = vi.fn();
 const mockListPublishedCompetitionsPastWindowEnd = vi.fn();
 const mockClaimCompetitionForSettlement = vi.fn();
 const mockInsertCompetitionPrizeIfNew = vi.fn();
@@ -25,6 +26,8 @@ vi.mock("./repo", () => ({
     mockInsertEntryIfNew(competitionId, userId, cashPaise),
   countTradesForEntry: (entryId: unknown) => mockCountTradesForEntry(entryId),
   countTradesForEntries: (entryIds: unknown) => mockCountTradesForEntries(entryIds),
+  listCompetitionTradesForEntryPage: (entryId: unknown, opts: unknown) =>
+    mockListCompetitionTradesForEntryPage(entryId, opts),
   placeCompetitionTradeTx: (
     entryId: unknown,
     instrument: unknown,
@@ -109,6 +112,7 @@ const {
   enterCurrentCompetition,
   getCurrentCompetitionView,
   getMyCompetitionStatus,
+  listMyCompetitionTrades,
   placeCompetitionTrade,
   rankEntriesByRoi,
   settleDueCompetitions,
@@ -503,5 +507,54 @@ describe("settleDueCompetitions", () => {
 
     expect(mockInsertVmoneyLedgerEntryIfNew).not.toHaveBeenCalled();
     expect(mockInsertUserBadgeIfAbsent).not.toHaveBeenCalled();
+  });
+});
+
+// App asks batch, item A11 - same shape as src/server/orders/
+// service.test.ts's listMyOrders tests.
+describe("listMyCompetitionTrades", () => {
+  it("returns 404 when no competition is currently active", async () => {
+    mockGetCurrentCompetition.mockResolvedValueOnce(null);
+
+    await expect(listMyCompetitionTrades(USER, { limit: 20, cursor: null }, NOW)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+  });
+
+  it("returns 403 when the caller hasn't entered the competition", async () => {
+    mockGetCurrentCompetition.mockResolvedValueOnce(competitionRow());
+    mockGetEntry.mockResolvedValueOnce(null);
+
+    await expect(listMyCompetitionTrades(USER, { limit: 20, cursor: null }, NOW)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+  });
+
+  it("resolves the caller's own entry and forwards idempotencyKey/limit to the repo", async () => {
+    mockGetCurrentCompetition.mockResolvedValueOnce(competitionRow());
+    mockGetEntry.mockResolvedValueOnce(entryRow());
+    mockListCompetitionTradesForEntryPage.mockResolvedValueOnce({
+      data: [
+        {
+          id: "trade_1",
+          side: "buy",
+          qty: 5,
+          fillPricePaise: 10000,
+          realizedPnlPaise: null,
+          filledAt: NOW,
+        },
+      ],
+      nextCursor: null,
+    });
+
+    const result = await listMyCompetitionTrades(USER, { idempotencyKey: "key1", limit: 20, cursor: null }, NOW);
+
+    expect(mockListCompetitionTradesForEntryPage).toHaveBeenCalledWith("entry_1", {
+      limit: 20,
+      cursor: null,
+      idempotencyKey: "key1",
+    });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: "trade_1", side: "buy" });
   });
 });
