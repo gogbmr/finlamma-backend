@@ -34,6 +34,18 @@ export const PortfolioSummaryResponseSchema = z.object({
       description: "allTimePnlPaise as a percentage of total paise ever spent on BUY fills. 0 if nothing has ever been bought.",
       example: 8.4,
     }),
+    // App asks batch, item A3 - same pattern as allTimePnlPaise/Pct, but
+    // today's price move only (live price vs. the market-data vendor's own
+    // previous-close), never since the position was opened. 0 when no
+    // position has a quote available right now.
+    dayPnlPaise: z.number().int().openapi({
+      description: "Today's unrealized change only - sum of qty * (livePrice - previousClosePaise) across open positions.",
+      example: 1250,
+    }),
+    dayPnlPercent: z.number().openapi({
+      description: "dayPnlPaise as a percentage of yesterday's closing market value of current holdings. 0 if that value is 0.",
+      example: 1.1,
+    }),
     equityBarsPaise: z.array(z.number().int()).max(12).openapi({
       description:
         "Up to 12 points sampled from a chronological replay of every fill (a trading equity curve, not a literal " +

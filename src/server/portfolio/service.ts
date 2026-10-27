@@ -108,22 +108,33 @@ export async function getPortfolioSummary(userId: string) {
   const livePricesBySymbol = new Map<string, number>();
   let unrealizedPnlPaise = 0;
   let holdingsMarketValuePaise = 0;
+  // App asks batch, item A3: day P&L - today's price move only (live price
+  // vs. the vendor's own previousClosePaise on the SAME quote object
+  // already fetched above, so this needs no extra query). A position whose
+  // quote fetch failed contributes to neither this nor the all-time P&L
+  // above - same "can't honestly price it" convention, never a guess.
+  let dayPnlPaise = 0;
+  let previousCloseMarketValuePaise = 0;
   openPositions.forEach((p, i) => {
     const result = quotes[i];
-    const price =
-      result?.status === "fulfilled"
-        ? (result.value?.pricePaise ?? null)
-        : null;
+    const quote = result?.status === "fulfilled" ? result.value : null;
+    const price = quote?.pricePaise ?? null;
     if (price !== null) {
       livePricesBySymbol.set(p.symbol, price);
       holdingsMarketValuePaise += p.qty * price;
       unrealizedPnlPaise += p.qty * (price - p.avgPricePaise);
+      dayPnlPaise += p.qty * (price - quote!.previousClosePaise);
+      previousCloseMarketValuePaise += p.qty * quote!.previousClosePaise;
     }
   });
 
   const allTimePnlPaise = realizedPnlPaise + unrealizedPnlPaise;
   const allTimePnlPct =
     costBasisPaise > 0 ? roundPct((allTimePnlPaise / costBasisPaise) * 100) : 0;
+  const dayPnlPercent =
+    previousCloseMarketValuePaise > 0
+      ? roundPct((dayPnlPaise / previousCloseMarketValuePaise) * 100)
+      : 0;
   const equityBarsPaise = buildEquityCurve(filledOrders, livePricesBySymbol);
 
   return {
@@ -132,6 +143,8 @@ export async function getPortfolioSummary(userId: string) {
     totalValuePaise: cashBalancePaise + holdingsMarketValuePaise,
     allTimePnlPaise,
     allTimePnlPct,
+    dayPnlPaise,
+    dayPnlPercent,
     equityBarsPaise,
   };
 }
