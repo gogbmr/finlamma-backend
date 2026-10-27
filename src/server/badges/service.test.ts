@@ -10,6 +10,7 @@ const mockListPublishedBadges = vi.fn();
 const mockListUnlockedBadgeIdsForUser = vi.fn();
 const mockListUserBadgesForUser = vi.fn();
 const mockAwardBadgeAndCreditVmoney = vi.fn();
+const mockSetBadgeIconImageKey = vi.fn();
 vi.mock("./repo", () => ({
   getBadgeById: (id: unknown) => mockGetBadgeById(id),
   insertDraftBadge: (input: unknown) => mockInsertDraftBadge(input),
@@ -22,6 +23,15 @@ vi.mock("./repo", () => ({
   listUserBadgesForUser: (userId: unknown) => mockListUserBadgesForUser(userId),
   awardBadgeAndCreditVmoney: (userId: unknown, badgeId: unknown, vmoney: unknown) =>
     mockAwardBadgeAndCreditVmoney(userId, badgeId, vmoney),
+  setBadgeIconImageKey: (id: unknown, key: unknown) => mockSetBadgeIconImageKey(id, key),
+}));
+
+const mockGetSignedDownloadUrl = vi.fn();
+const mockUploadObject = vi.fn();
+vi.mock("@/lib/s3", () => ({
+  getSignedDownloadUrl: (key: unknown) => mockGetSignedDownloadUrl(key),
+  uploadObject: (key: unknown, body: unknown, contentType: unknown) =>
+    mockUploadObject(key, body, contentType),
 }));
 
 const mockLessonsCompleted = vi.fn();
@@ -53,10 +63,12 @@ vi.mock("@/lib/http", () => ({
 import {
   createBadgeDraft,
   evaluateBadgesForUser,
+  getBadgeEditorData,
   getMyBadges,
   publishBadge,
   unpublishBadge,
   updateBadgeDraft,
+  uploadBadgeIcon,
 } from "./service";
 
 const ACTOR = { id: "staff_1" };
@@ -286,5 +298,107 @@ describe("getMyBadges", () => {
       expect.objectContaining({ progress: 5, unlocked: true, unlockedAt }),
     ]);
     expect(mockLessonsCompleted).not.toHaveBeenCalled();
+  });
+
+  // App asks batch, item A10.
+  it("reports iconUrl: null when no icon has been uploaded, never calling getSignedDownloadUrl", async () => {
+    mockListPublishedBadges.mockResolvedValueOnce([badgeRow()]);
+    mockListUserBadgesForUser.mockResolvedValueOnce([]);
+    mockLessonsCompleted.mockResolvedValueOnce(0);
+
+    const result = await getMyBadges(USER.id);
+
+    expect(result[0]!.iconUrl).toBeNull();
+    expect(mockGetSignedDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("resolves iconUrl via a signed URL once an icon has been uploaded", async () => {
+    mockListPublishedBadges.mockResolvedValueOnce([badgeRow({ iconImageKey: "badges/badge_1/x.png" })]);
+    mockListUserBadgesForUser.mockResolvedValueOnce([]);
+    mockLessonsCompleted.mockResolvedValueOnce(0);
+    mockGetSignedDownloadUrl.mockResolvedValueOnce("https://signed.example/icon.png");
+
+    const result = await getMyBadges(USER.id);
+
+    expect(result[0]!.iconUrl).toBe("https://signed.example/icon.png");
+    expect(mockGetSignedDownloadUrl).toHaveBeenCalledWith("badges/badge_1/x.png");
+  });
+});
+
+describe("getBadgeEditorData", () => {
+  it("merges iconUrl into every badge for the admin preview", async () => {
+    mockListAllBadges.mockResolvedValueOnce([
+      badgeRow({ id: "badge_1", iconImageKey: null }),
+      badgeRow({ id: "badge_2", iconImageKey: "badges/badge_2/x.png" }),
+    ]);
+    mockGetSignedDownloadUrl.mockResolvedValueOnce("https://signed.example/icon2.png");
+
+    const result = await getBadgeEditorData();
+
+    expect(result[0]).toMatchObject({ id: "badge_1", iconUrl: null });
+    expect(result[1]).toMatchObject({ id: "badge_2", iconUrl: "https://signed.example/icon2.png" });
+  });
+});
+
+// App asks batch, item A10 - mirrors mentors/service.test.ts's
+// uploadMentorArt tests.
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+describe("uploadBadgeIcon", () => {
+  it("uploads to storage under a server-generated, unique key, records old+new keys, and logs it", async () => {
+    mockGetBadgeById.mockResolvedValueOnce(badgeRow({ iconImageKey: "badges/badge_1/old-key.png" }));
+    mockSetBadgeIconImageKey.mockResolvedValueOnce(badgeRow({ iconImageKey: "badges/badge_1/new-key.png" }));
+    mockGetSignedDownloadUrl.mockResolvedValueOnce("https://signed.example/new-key.png");
+
+    const result = await uploadBadgeIcon(ACTOR, "badge_1", { body: PNG_BYTES }, META);
+
+    expect(mockUploadObject).toHaveBeenCalledWith(
+      expect.stringMatching(/^badges\/badge_1\/[0-9a-f-]+\.png$/),
+      PNG_BYTES,
+      "image/png",
+    );
+    expect(result.iconUrl).toBe("https://signed.example/new-key.png");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "badge.icon_uploaded",
+        metadata: expect.objectContaining({
+          previousIconImageKey: "badges/badge_1/old-key.png",
+          newIconImageKey: expect.stringMatching(/^badges\/badge_1\/[0-9a-f-]+\.png$/),
+        }),
+      }),
+    );
+  });
+
+  it("rejects a file whose bytes aren't a real PNG/JPEG/WebP", async () => {
+    mockGetBadgeById.mockResolvedValueOnce(badgeRow());
+    const svgDisguisedAsImage = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+      "utf8",
+    );
+
+    await expect(
+      uploadBadgeIcon(ACTOR, "badge_1", { body: svgDisguisedAsImage }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+    expect(mockSetBadgeIconImageKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file over the 2MB cap even if the bytes are a real PNG", async () => {
+    mockGetBadgeById.mockResolvedValueOnce(badgeRow());
+    const oversized = Buffer.concat([PNG_BYTES, Buffer.alloc(2 * 1024 * 1024)]);
+
+    await expect(
+      uploadBadgeIcon(ACTOR, "badge_1", { body: oversized }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  it("throws NOT_FOUND for an unknown badge", async () => {
+    mockGetBadgeById.mockResolvedValueOnce(null);
+
+    await expect(
+      uploadBadgeIcon(ACTOR, "nope", { body: PNG_BYTES }, META),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
   });
 });

@@ -182,6 +182,8 @@ const PublicBadgeSchema = z.object({
   name: LocalizedTextSchema,
   description: LocalizedTextSchema,
   iconKey: z.string().nullable(),
+  // App asks batch, item A10.
+  iconUrl: z.url().nullable(),
 });
 
 const PublicWorldProgressSchema = z

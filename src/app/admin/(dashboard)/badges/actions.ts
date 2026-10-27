@@ -7,7 +7,13 @@ import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import { BadgeIdSchema, CreateBadgeDraftSchema, UpdateBadgeDraftSchema } from "@/server/badges/schemas";
-import { createBadgeDraft, publishBadge, unpublishBadge, updateBadgeDraft } from "@/server/badges/service";
+import {
+  createBadgeDraft,
+  publishBadge,
+  unpublishBadge,
+  updateBadgeDraft,
+  uploadBadgeIcon,
+} from "@/server/badges/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -60,6 +66,24 @@ export async function unpublishBadgeAction(input: unknown): Promise<ActionResult
     const actor = await requireStaff("economy.manage");
     const { id } = BadgeIdSchema.parse(input);
     await unpublishBadge(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/badges");
+  });
+}
+
+// App asks batch, item A10. No Content-Type/extension/size check here on
+// purpose - uploadBadgeIcon's own byte-level format sniff and size cap
+// (src/lib/image.ts) is the only real check, same reasoning as
+// uploadMentorArtAction.
+export async function uploadBadgeIconAction(formData: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("economy.manage");
+    const id = BadgeIdSchema.parse({ id: formData.get("id") }).id;
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      throw new AppError("VALIDATION_FAILED", "No file provided");
+    }
+    const body = Buffer.from(await file.arrayBuffer());
+    await uploadBadgeIcon(actor, id, { body }, requestMeta(await headers()));
     revalidatePath("/admin/badges");
   });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Award } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -16,6 +16,7 @@ import {
   publishBadgeAction,
   unpublishBadgeAction,
   updateBadgeDraftAction,
+  uploadBadgeIconAction,
 } from "./actions";
 
 type BadgeRow = {
@@ -26,6 +27,7 @@ type BadgeRow = {
   criteria: { type: string; threshold: number };
   vmReward: number;
   iconKey: string | null;
+  iconUrl: string | null;
   status: "draft" | "published";
 };
 
@@ -96,6 +98,7 @@ export function BadgeEditor({ badges, canManage }: { badges: BadgeRow[]; canMana
 
 function BadgeForm({ badge, canManage }: { badge?: BadgeRow; canManage: boolean }) {
   const [isPending, startTransition] = useTransition();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState<LocalizedText>(badge?.name ?? EMPTY_LOCALIZED);
   const [description, setDescription] = useState<LocalizedText>(badge?.description ?? EMPTY_LOCALIZED);
   const [category, setCategory] = useState<string>(badge?.category ?? "learning");
@@ -155,6 +158,21 @@ function BadgeForm({ badge, canManage }: { badge?: BadgeRow; canManage: boolean 
     });
   }
 
+  function uploadIcon(file: File) {
+    if (!badge) return;
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.append("id", badge.id);
+      formData.append("file", file);
+      const result = await uploadBadgeIconAction(formData);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Icon uploaded");
+    });
+  }
+
   return (
     <div className="space-y-4 rounded-lg border border-border bg-card p-4">
       {badge && (
@@ -183,6 +201,27 @@ function BadgeForm({ badge, canManage }: { badge?: BadgeRow; canManage: boolean 
           <Label>Icon key (optional)</Label>
           <Input value={iconKey} disabled={!editable} onChange={(e) => setIconKey(e.target.value)} placeholder="pehla-kadam" />
         </div>
+        {badge && (
+          <div className="col-span-2 space-y-1">
+            <Label>Icon image (optional, app ask A10)</Label>
+            {badge.iconUrl && (
+              // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
+              <img src={badge.iconUrl} alt="" className="h-16 w-16 rounded-full object-cover" />
+            )}
+            {canManage && (
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={isPending}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) uploadIcon(file);
+                }}
+              />
+            )}
+          </div>
+        )}
         <div className="space-y-1">
           <Label>Criteria type</Label>
           <Select value={criteriaType} onValueChange={setCriteriaType} disabled={!editable}>

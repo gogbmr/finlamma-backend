@@ -29,6 +29,12 @@ export const badges = pgTable(
     criteria: jsonb("criteria").$type<{ type: string; threshold: number }>().notNull(),
     vmReward: integer("vm_reward").notNull(),
     iconKey: text("icon_key"),
+    // App asks batch, item A10, additive: a real staff-uploaded icon image
+    // (S3 object key), same pattern as mentors.artKey - null until
+    // uploaded. `iconKey` above is unchanged and stays what it always was
+    // (a bundled-icon-set identifier); this is a second, independent field
+    // for actual custom art, exposed as `iconUrl` (a signed download URL).
+    iconImageKey: text("icon_image_key"),
     status: badgeStatusEnum("status").default("draft").notNull(),
     publishedAt: timestamp("published_at", { withTimezone: true }),
     publishedBy: uuid("published_by").references(() => staffMembers.id, {

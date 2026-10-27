@@ -11,8 +11,13 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { awardBadgeAndCreditVmoney, insertUserBadgeIfAbsent, listUnlockedBadgeIdsForUser, listUserBadgesForUser } =
-  await import("./repo");
+const {
+  awardBadgeAndCreditVmoney,
+  insertUserBadgeIfAbsent,
+  listUnlockedBadgeIdsForUser,
+  listUserBadgesForUser,
+  setBadgeIconImageKey,
+} = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 afterAll(async () => {
@@ -173,5 +178,21 @@ describe("awardBadgeAndCreditVmoney", () => {
       .from(vmoneyLedger)
       .where(and(eq(vmoneyLedger.userId, user.id), eq(vmoneyLedger.sourceId, badge.id)));
     expect(ledgerRows).toHaveLength(0);
+  });
+});
+
+// App asks batch, item A10.
+describe("setBadgeIconImageKey", () => {
+  it("updates the icon image key and leaves iconKey (the separate bundled-icon field) untouched", async () => {
+    const badge = await makeBadge();
+
+    const updated = await setBadgeIconImageKey(badge!.id, "badges/x/y.png");
+
+    expect(updated!.iconImageKey).toBe("badges/x/y.png");
+    expect(updated!.iconKey).toBeNull();
+  });
+
+  it("returns null for an unknown badge id", async () => {
+    expect(await setBadgeIconImageKey("00000000-0000-0000-0000-000000000000", "badges/x/y.png")).toBeNull();
   });
 });

@@ -844,6 +844,7 @@ export async function getPublicProfile(
         name: b.name,
         description: b.description,
         iconKey: b.iconKey,
+        iconUrl: b.iconUrl, // app ask A10
       })),
     chips: chips.map((c) => ({ id: c.id, name: c.name, iconKey: c.iconKey })),
     weekXp,

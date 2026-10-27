@@ -1,0 +1,1 @@
+ALTER TABLE "badges" ADD COLUMN "icon_image_key" text;

@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
 import { AppError } from "@/lib/errors";
 import { logInternalError } from "@/lib/http";
 import type { requestMeta } from "@/lib/http";
+import { imageContentType, imageExtension, MAX_IMAGE_BYTES, sniffImageType } from "@/lib/image";
+import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { VM_TO_LEDGER_PAISE } from "@/server/economy/schemas";
 import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import type { LocalizedText } from "@/server/shared/schemas";
@@ -15,6 +18,7 @@ import {
   listUnlockedBadgeIdsForUser,
   listUserBadgesForUser,
   publishBadgeRow,
+  setBadgeIconImageKey,
   unpublishBadgeRow,
   updateDraftBadge,
 } from "./repo";
@@ -42,8 +46,18 @@ function validateBadgeForPublish(badge: BadgeRow): void {
   }
 }
 
+// App asks batch, item A10: iconUrl merged in for the admin preview too -
+// toPublicMentor's "only calls getSignedDownloadUrl (S3), never Postgres"
+// reasoning applies here the same way.
 export async function getBadgeEditorData() {
-  return listAllBadges();
+  const rows = await listAllBadges();
+  // promise-all-db-concurrency-ok: S3-backed, not a Postgres query
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      iconUrl: row.iconImageKey ? await getSignedDownloadUrl(row.iconImageKey) : null,
+    })),
+  );
 }
 
 export async function createBadgeDraft(actor: { id: string }, input: CreateBadgeDraftInput, meta: RequestMeta) {
@@ -115,6 +129,47 @@ export async function unpublishBadge(actor: { id: string }, id: string, meta: Re
     userAgent: meta.userAgent,
   });
   return unpublished;
+}
+
+// App asks batch, item A10 - mirrors mentors/service.ts's uploadMentorArt
+// exactly (size cap, byte-sniffed format, unique key per upload so a bad
+// upload to live content can be reverted). Unlike mentor art, badges have
+// only one permission tier (economy.manage) regardless of draft/published
+// status, so there's no manage-vs-publish split to re-check here.
+export async function uploadBadgeIcon(
+  actor: { id: string },
+  id: string,
+  file: { body: Buffer },
+  meta: RequestMeta,
+) {
+  const badge = await getBadgeById(id);
+  if (!badge) throw new AppError("NOT_FOUND", "Badge not found");
+
+  if (file.body.byteLength > MAX_IMAGE_BYTES) {
+    throw new AppError("VALIDATION_FAILED", "Icon must be 2MB or smaller");
+  }
+
+  const detectedType = sniffImageType(file.body);
+  if (!detectedType) {
+    throw new AppError("VALIDATION_FAILED", "Icon must be a valid PNG, JPEG or WebP image");
+  }
+
+  const iconImageKey = `badges/${id}/${randomUUID()}.${imageExtension(detectedType)}`;
+  await uploadObject(iconImageKey, file.body, imageContentType(detectedType));
+  const updated = await setBadgeIconImageKey(id, iconImageKey);
+  if (!updated) throw new AppError("NOT_FOUND", "Badge not found");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "badge.icon_uploaded",
+    targetType: "badge",
+    targetId: id,
+    metadata: { previousIconImageKey: badge.iconImageKey, newIconImageKey: iconImageKey },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return { ...updated, iconUrl: await getSignedDownloadUrl(iconImageKey) };
 }
 
 // The one entry point that decides "does this user now qualify for any
@@ -199,6 +254,9 @@ export async function getMyBadges(userId: string) {
         category: badge.category,
         vmReward: badge.vmReward,
         iconKey: badge.iconKey,
+        // App asks batch, item A10 - toPublicMentor's own "S3, never
+        // Postgres" reasoning applies here too.
+        iconUrl: badge.iconImageKey ? await getSignedDownloadUrl(badge.iconImageKey) : null,
         target: badge.criteria.threshold,
         progress: Math.min(progress, badge.criteria.threshold),
         unlocked: unlockedAt !== null,
