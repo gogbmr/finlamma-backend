@@ -2,6 +2,105 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-10-28 — v2.4.0
+
+Minor bump: 7 new operations, new fields on fourteen existing response schemas, and one new error
+response since v2.3.0 - plus one **compatibility-relevant trim** on an existing public endpoint
+(below). Clears the mobile app team's consolidated "next backend trip" ask list in one batch.
+Branch `app-asks-batch`.
+
+**Compatibility note: `GET /api/v1/health` now returns `status` only**
+- Previously returned the full diagnostic payload (migration drift, Clerk key config, content
+  warnings, mock/vendor status, commit SHA) publicly, with no auth. That full payload moved to the
+  new staff-only `GET /api/v1/health/details` below; the public endpoint now returns `{ "data": {
+  "status": "ok" } }` on 200 and the same `503 SERVICE_UNAVAILABLE` on a real outage - nothing else.
+  This is a field removal on a **public, unauthenticated, already-shipped** endpoint (app ask C1),
+  so anything that was reading those extra fields off the public endpoint breaks. The only known
+  consumers are uptime monitors, which only ever checked the HTTP status code / `status` field -
+  no code in this repo or the mobile app reads the removed fields. Shipping as a minor bump on that
+  basis, not a major one; flag if any external monitor config parses the old payload.
+
+**New: `GET /api/v1/health/details` (app ask C1)**
+- Everything the public endpoint used to return, now behind an active staff session (any staff
+  member, not a specific permission - this is operational visibility, not a money/PII-sensitive
+  view). Reports `migrations`/`clerkKeys` as plain data here, never a 503 - a staff member
+  diagnosing an issue wants the full picture, not to be blocked by it.
+
+**Market data**
+- **New endpoint**: `GET /api/v1/trade/indices` (app ask A1) - the NIFTY 50 / BANK NIFTY / SENSEX
+  index strip. No DB row per index; an index the vendor has no data for right now is simply
+  omitted, never returned with a synthetic value.
+- `GET /api/v1/trade/instruments` - each row gained `sparkline` (a short array of recent prices,
+  app ask A4) for the watchlist's mini-chart.
+
+**Portfolio & funds**
+- `GET /api/v1/me/portfolio/summary` - gained `dayPnlPaise`/`dayPnlPercent` (app ask A3).
+- **New endpoint**: `GET /api/v1/trade/funds/summary` (app ask A2) - aggregated cost basis,
+  current value and overall returns across every fund the caller holds. A held fund with no NAV
+  ingested yet contributes its cost basis at zero gain/loss, rather than being dropped or guessed.
+- **New endpoint**: `GET /api/v1/trade/funds/orders` (app ask A16) - the caller's own fund-order
+  history, same `idempotencyKey` lookup semantics as `GET /trade/orders`, so an "outcome unknown"
+  fund-order attempt can be resolved by looking up the exact key sent.
+- `GET /api/v1/trade/funds/sip` - gained an `idempotencyKey` query param (app ask A16), narrowing
+  the list to the single plan created with that key; a guessed key just returns an empty list.
+
+**Lessons & quizzes**
+- `GET /api/v1/lessons/{id}`, `GET /api/v1/me/current-lesson` - lesson `content` gained a `video`
+  field (`{ url: { en, hi, hx } }`, app ask A12) for video lessons.
+- `POST /api/v1/lessons/{id}/steps/{n}/serve` (Story/Doubt Zone completion) and
+  `POST /api/v1/lessons/{id}/steps/{n}/answer` - both gained `vmAwardedPaise` (app ask A5), the
+  integer-paise form of the VM just credited, alongside the existing display value.
+
+**Mentors**
+- `GET /api/v1/mentors`, `GET /api/v1/mentors/{key}` - each mentor gained `id` (app ask A13,
+  previously **blocking** - the app had no stable identifier to key off of other than `key`).
+
+**Badges**
+- `GET /api/v1/me/badges`, and the badge list nested in `GET /api/v1/arena/profile/{userId}` -
+  each badge gained `iconUrl` (app ask A10, null until staff upload one) alongside the existing
+  `iconKey`.
+
+**Arena**
+- `GET /api/v1/arena/leaderboard`, `GET /api/v1/arena/worlds/{worldId}/leaderboard` - both gained
+  `promoteCount`/`demoteCount` (app asks A6) and `seasonRewards` (app ask A7, the VM/badge payout
+  per promote/safe/demote band), read from the same `settings_kv` values the server already
+  enforces at season-close, not a second hardcoded copy.
+- **New endpoint**: `GET /api/v1/arena/competitions/current/trades` (app ask A11) - the caller's
+  own trades in the currently active Monthly Competition, same `idempotencyKey` lookup semantics
+  as `GET /trade/orders`.
+
+**News**
+- `GET /api/v1/news`, `GET /api/v1/news/{id}` - gained `bookmarked` (app ask A8).
+- **New endpoints**: `POST /api/v1/news/{id}/bookmark` / `DELETE /api/v1/news/{id}/bookmark`
+  (app ask A8) - removing a bookmark that doesn't exist is a no-op, never an error.
+
+**Pulse Check**
+- `GET /api/v1/pulse-check/current` - gained `baseVmPerQuestionPaise`/`maxVmPayoutPaise` (app ask
+  A14, paise-suffixed alongside the existing display values) and `resumeStepIndex` (app ask A15).
+- `POST /api/v1/pulse-check/start` - gained `resumeStepIndex` (app ask A15).
+- `POST /api/v1/pulse-check/{attemptId}/steps/{n}/answer`, and the per-step results nested in the
+  edition-completion response - both gained `vmAwardedPaise` (app ask A14).
+
+**Notifications**
+- `GET /api/v1/me/notifications` - `data` is now documented as a discriminated union keyed on
+  `kind` (app ask A9), confirmed against every real `notifyUser()` call site rather than guessed:
+  `boss_battle` carries `{ worldId }`, `market_news` carries `{ newsStoryId }` (not `storyId`),
+  and `streak_risk`/`session_goal`/`cheer_received`/`league_rank_change` all carry `data: null`.
+
+**Account & minors (app asks C2/C4)**
+- `PATCH /api/v1/me/date-of-birth` - gained the `403 AGE_BELOW_MINIMUM` response: rejects a
+  submitted date that puts the learner under 13 (judged by the calendar date in India, not UTC).
+  The date is never persisted on rejection, and the account is immediately queued for deletion via
+  the same pipeline `DELETE /me` uses - a retry with a different date is blocked for free by
+  `requireUser`'s existing `ACCOUNT_DELETION_PENDING` gate.
+- `GET /api/v1/me/entitlements` - gained `doubtZoneEnabled` (app ask C4), a server-side kill switch
+  for the Doubt Zone AI mentor feature.
+
+**Not in this contract**: the staff DOB-correction tool (app ask C3, `consent.correct_dob`,
+super_admin only) is an admin Server Action, not a REST endpoint, per `docs/ARCHITECTURE.md` D16 -
+no schema change. Section B (rejecting question formats the app can't render yet) is an internal
+publish-time validation rule with no app-visible shape change either.
+
 ## 2026-10-26 — v2.3.0
 
 Minor bump: purely additive, new fields on one existing response schema - nothing removed and
