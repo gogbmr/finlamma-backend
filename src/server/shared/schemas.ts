@@ -1,4 +1,16 @@
 import { z } from "zod";
+// Side-effect import: registers Zod's .openapi() extension method. Must be
+// imported here, in the SAME module that constructs LocalizedTextSchema -
+// question-shapes branch bug fix: under Vitest's SSR module runner, a
+// consumer module calling LocalizedTextSchema.openapi(...) after its OWN
+// "@/lib/openapi" import was NOT enough when some other module had already
+// imported this file first (reproduced with src/server/questions/schemas.ts
+// + src/server/questions/service.test.ts: `LocalizedTextSchema.openapi is
+// not a function`, only when this file's exports were loaded before the
+// consumer's own extension import). Importing it here guarantees the
+// extension is applied as part of evaluating THIS module, regardless of who
+// else has already touched it or in what order - see src/lib/openapi.ts.
+import "@/lib/openapi";
 
 // India's 28 states + 8 union territories - a fixed, closed list (not free
 // text) since this value is used as an Arena leaderboard scope-bucketing key
