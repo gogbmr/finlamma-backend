@@ -2,6 +2,35 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-11-02 — v2.5.0
+
+Minor bump: no new or removed operations, no fields removed. Precise per-format schemas for the
+7 question formats a graded lesson step can be (mobile needs these to build the other 6 formats -
+today only `single_select` is live; `APP_RENDERABLE_QUESTION_FORMATS` is unchanged). Branch
+`question-shapes`.
+
+**`POST /api/v1/lessons/{id}/steps/{n}/serve`**
+- `data.payload`'s type narrowed from an untyped object to a real discriminated union keyed by
+  `data.format` (`single_select` / `ordering` / `sort_buckets` / `fill_blank` / `match_pairs` /
+  `spot_mistake` / `number_guess`), each with its exact field shape. Every real response today is
+  still exactly the `single_select` shape already being sent - this only makes the existing shape
+  precise, it sends nothing different on the wire.
+
+**`POST /api/v1/lessons/{id}/steps/{n}/answer`**
+- Response gained two fields: `format` (new - lets `correctAnswer` below be typed precisely) and
+  `totalVmAwardedPreviewPaise` (a display-only cumulative V Money total for the attempt, always
+  exactly equal to `vmAwardedPaise` - there is only one VM source per attempt, so this can never
+  drift from what was actually credited).
+- `data.correctAnswer`'s type narrowed the same way as `serve`'s `payload` above, keyed by the new
+  `data.format` field.
+- Request body `answer`'s documented shape (new `SubmitAnswerRequest` schema) is now one of the 7
+  precise per-format shapes instead of an untyped object - **documentation only**: the server still
+  never trusts a client-supplied `format` (it's always looked up from the step actually served), so
+  nothing about what the server accepts changed; don't send a `format` field alongside `answer`.
+
+All 7 formats documented with one example each (served payload / answer body / `correctAnswer`) in
+`docs/MOBILE_INTEGRATION.md` §10. Full reasoning: `docs/ARCHITECTURE.md` decision D79.
+
 ## 2026-10-28 — v2.4.0
 
 Minor bump: 7 new operations, new fields on fourteen existing response schemas, and one new error
