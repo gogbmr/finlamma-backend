@@ -35,7 +35,22 @@ export type QuestionFormat = z.infer<typeof QuestionFormatSchema>;
 // toggle). Every format above still exists as a real, gradeable backend
 // format (scoring, validation, DB schema) - this constant is purely about
 // the APP's current rendering capability, not what the backend supports.
-export const APP_RENDERABLE_QUESTION_FORMATS: readonly QuestionFormat[] = ["single_select"];
+//
+// Widened to all 7 (enable-all-formats branch): the mobile app now ships a
+// renderer for every format above, not just single_select. The gates
+// themselves (assertFormatAppRenderable/assertEnabledFormatsAppRenderable/
+// lessons/service.ts's reverse-reference check) stay in place as defense
+// in depth for whenever an 8th format is added here before the app can
+// render it - they're just permissive for all current formats now.
+export const APP_RENDERABLE_QUESTION_FORMATS: readonly QuestionFormat[] = [
+  "single_select",
+  "ordering",
+  "sort_buckets",
+  "fill_blank",
+  "match_pairs",
+  "spot_mistake",
+  "number_guess",
+];
 
 export function isFormatAppRenderable(format: string): boolean {
   return (APP_RENDERABLE_QUESTION_FORMATS as readonly string[]).includes(format);
@@ -181,6 +196,26 @@ export const SpotMistakePayloadSchema = z.object({
       { en: "Spend more than you earn to grow faster.", hi: "तेज़ी से बढ़ने के लिए कमाई से ज़्यादा खर्च करें।", hx: "Jaldi grow karne ke liye kamai se zyada kharch karo." },
       { en: "Save at least 20% of your income.", hi: "अपनी आय का कम से कम 20% बचाएं।", hx: "Apni income ka kam se kam 20% save karo." },
       { en: "Review your budget every quarter.", hi: "हर तीन महीने में अपना बजट जांचें।", hx: "Har teen mahine mein apna budget check karo." },
+    ],
+  }),
+  // Additive, optional (enable-all-formats branch): a per-line source/
+  // citation tag, for prototype parity with the UI design. Null entries
+  // mean "no source tag for this line" - content can fill these in later;
+  // omitting the whole field entirely keeps older drafts valid. A sibling
+  // array parallel to `lines` (same index, same length when present),
+  // rather than restructuring each line into an object, so existing
+  // authored content (a plain array of LocalizedText) never needs
+  // migrating. Served payload only, like every other field here - it's
+  // independent citation metadata, not derived from answer.wrongLineIndex,
+  // so including it reveals nothing about which line is wrong.
+  lineSources: z.array(LocalizedTextSchema.nullable()).optional().openapi({
+    description: "One entry per payload.lines entry (same order), each a source/citation tag or null. " +
+      "Optional - omit entirely for content that hasn't been tagged yet.",
+    example: [
+      null,
+      { en: "RBI financial literacy guide", hi: "आरबीआई वित्तीय साक्षरता गाइड", hx: "RBI financial literacy guide" },
+      null,
+      null,
     ],
   }),
 });
@@ -333,10 +368,13 @@ export function validateAnswerBounds(
       break;
     }
     case "spot_mistake": {
-      const { lines } = p.data as SpotMistakePayload;
+      const { lines, lineSources } = p.data as SpotMistakePayload;
       const { wrongLineIndex } = a.data as SpotMistakeAnswer;
       if (wrongLineIndex >= lines.length) {
         errors.push(`answer.wrongLineIndex (${wrongLineIndex}) is out of range for ${lines.length} lines`);
+      }
+      if (lineSources !== undefined && lineSources.length !== lines.length) {
+        errors.push(`payload.lineSources has ${lineSources.length} entries but there are ${lines.length} lines`);
       }
       break;
     }
