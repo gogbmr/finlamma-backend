@@ -285,21 +285,29 @@ describe("news quiz generator settings", () => {
   });
 
   // App asks batch, section B: the News Desk's own "toggle" gate.
+  // enable-all-formats branch: all 7 real formats are app-renderable now
+  // (see the it.each below), so this gate is exercised with values outside
+  // the real enum - standing in for whatever gets added next before the
+  // app ships a renderer for it - rather than real formats that would now
+  // legitimately succeed. The `as` cast bypasses the enum's TS type
+  // deliberately, same as the real gate accepting a plain `string[]` at
+  // runtime - a defense-in-depth check doesn't get to assume its input was
+  // already validated.
   it("refuses to enable a format the app doesn't support yet, naming it", async () => {
-    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["single_select", "ordering"] as NewsQuizGeneratorSettings["enabledFormats"] };
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["single_select", "not_a_real_format"] as NewsQuizGeneratorSettings["enabledFormats"] };
 
     await expect(updateNewsQuizGeneratorSettings(ACTOR, next, META)).rejects.toMatchObject({
       code: "VALIDATION_FAILED",
-      details: { unsupportedFormats: ["ordering"] },
+      details: { unsupportedFormats: ["not_a_real_format"] },
     });
     expect(mockSetSettingJson).not.toHaveBeenCalled();
   });
 
   it("names every unsupported format, not just the first", async () => {
-    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["ordering", "sort_buckets"] as NewsQuizGeneratorSettings["enabledFormats"] };
+    const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: ["not_a_real_format", "also_not_real"] as unknown as NewsQuizGeneratorSettings["enabledFormats"] };
 
     await expect(updateNewsQuizGeneratorSettings(ACTOR, next, META)).rejects.toMatchObject({
-      details: { unsupportedFormats: ["ordering", "sort_buckets"] },
+      details: { unsupportedFormats: ["not_a_real_format", "also_not_real"] },
     });
   });
 
@@ -311,6 +319,20 @@ describe("news quiz generator settings", () => {
 
     expect(result).toEqual(next);
   });
+
+  // enable-all-formats branch: widened from just single_select - every
+  // real format can now be enabled in Pulse Check's daily pool.
+  it.each(["ordering", "sort_buckets", "fill_blank", "match_pairs", "spot_mistake", "number_guess"])(
+    "still allows enabling %s",
+    async (format) => {
+      mockGetSettingJson.mockResolvedValueOnce(null);
+      const next = { ...DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS, enabledFormats: [format] as NewsQuizGeneratorSettings["enabledFormats"] };
+
+      const result = await updateNewsQuizGeneratorSettings(ACTOR, next, META);
+
+      expect(result).toEqual(next);
+    },
+  );
 });
 
 const PUBLISHED_STORY = {

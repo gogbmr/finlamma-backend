@@ -621,6 +621,34 @@ describe("serveStep", () => {
         expect(result.payload).not.toHaveProperty(answerKey);
       }
     });
+
+    // enable-all-formats branch: spot_mistake's new optional, additive
+    // lineSources field (a per-line source/citation tag) is served payload
+    // only, same as every other payload field - exercised here with a
+    // populated (non-null) entry, since the generic loop above uses
+    // QUESTION_PAYLOAD_TEMPLATES's skeleton, which leaves it omitted.
+    it("serves spot_mistake's lineSources as-is, without leaking answer.wrongLineIndex", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(null);
+      mockCountAttemptsForUserLesson.mockResolvedValueOnce(0);
+      mockInsertAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(null);
+      const payload = {
+        lines: [
+          { en: "Track your expenses every month.", hi: "x", hx: "x" },
+          { en: "Spend more than you earn to grow faster.", hi: "x", hx: "x" },
+        ],
+        lineSources: [null, { en: "RBI financial literacy guide", hi: "x", hx: "x" }],
+      };
+      const answer = { wrongLineIndex: 1 };
+      mockGetQuestionById.mockResolvedValue(questionRow({ format: "spot_mistake", payload, answer }));
+      mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+
+      const result = await serveStep(USER, LESSON_ID, 1, META);
+
+      expect(result.payload).toEqual(payload);
+      expect(result.payload).not.toHaveProperty("wrongLineIndex");
+    });
   });
 });
 

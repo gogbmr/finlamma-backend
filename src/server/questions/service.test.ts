@@ -215,25 +215,35 @@ describe("publishQuestion - translation-completeness gate", () => {
   });
 
   // App asks batch, section B (root gate): the app can't render this
-  // format interactively yet.
+  // format interactively yet. enable-all-formats branch: all 7 real
+  // QuestionFormat values are app-renderable now (see the
+  // "still allows publishing" test below for each of them), so this gate
+  // is exercised with a format outside the real enum - standing in for
+  // whatever gets added next before the app ships a renderer for it -
+  // rather than a real format that would now legitimately succeed.
   it("refuses to publish a question in a format the app doesn't support yet, naming the format", async () => {
-    mockGetQuestionById.mockResolvedValueOnce(questionRow({ format: "ordering" }));
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ format: "not_a_real_format" }));
 
     await expect(publishQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({
       code: "VALIDATION_FAILED",
-      details: { format: "ordering" },
+      details: { format: "not_a_real_format" },
     });
     expect(mockPublishQuestionRow).not.toHaveBeenCalled();
   });
 
-  it("still allows publishing a single_select question", async () => {
-    mockGetQuestionById.mockResolvedValueOnce(questionRow({ format: "single_select" }));
-    mockPublishQuestionRow.mockResolvedValueOnce(questionRow({ status: "published" }));
+  // enable-all-formats branch: widened from just single_select to every
+  // real format, now that the app can render all 7.
+  it.each(["single_select", "ordering", "sort_buckets", "fill_blank", "match_pairs", "spot_mistake", "number_guess"])(
+    "still allows publishing a %s question",
+    async (format) => {
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ format }));
+      mockPublishQuestionRow.mockResolvedValueOnce(questionRow({ format, status: "published" }));
 
-    const result = await publishQuestion(ACTOR, "question_1", META);
+      const result = await publishQuestion(ACTOR, "question_1", META);
 
-    expect(result.status).toBe("published");
-  });
+      expect(result.status).toBe("published");
+    },
+  );
 });
 
 // D20 (docs/ARCHITECTURE.md): direct edit of a PUBLISHED question's

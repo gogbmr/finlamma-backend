@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { validateAnswerBounds } from "./schemas";
+import {
+  APP_RENDERABLE_QUESTION_FORMATS,
+  isFormatAppRenderable,
+  QuestionFormatSchema,
+  validateAnswerBounds,
+} from "./schemas";
 
 const T = { en: "en", hi: "hi", hx: "hx" };
 
@@ -138,5 +143,54 @@ describe("validateAnswerBounds", () => {
       const errors = validateAnswerBounds("spot_mistake", { lines: [T, T] }, { wrongLineIndex: 2 });
       expect(errors).toEqual([expect.stringMatching(/wrongLineIndex.*out of range for 2 lines/)]);
     });
+
+    // enable-all-formats branch: lineSources is additive and optional -
+    // omitting it entirely must stay valid (existing drafts never have it).
+    it("accepts a payload with no lineSources field at all", () => {
+      expect(validateAnswerBounds("spot_mistake", { lines: [T, T] }, { wrongLineIndex: 0 })).toEqual([]);
+    });
+
+    it("accepts lineSources with a mix of null and filled entries, matching lines length", () => {
+      expect(
+        validateAnswerBounds(
+          "spot_mistake",
+          { lines: [T, T, T], lineSources: [null, T, null] },
+          { wrongLineIndex: 1 },
+        ),
+      ).toEqual([]);
+    });
+
+    it("rejects lineSources whose length doesn't match lines", () => {
+      const errors = validateAnswerBounds(
+        "spot_mistake",
+        { lines: [T, T, T], lineSources: [null, T] },
+        { wrongLineIndex: 0 },
+      );
+      expect(errors).toEqual([expect.stringMatching(/lineSources has 2 entries but there are 3 lines/)]);
+    });
+  });
+});
+
+// App asks batch, section B (enable-all-formats branch): the app now ships
+// a renderer for every format, so the shared allowlist both publish gates
+// (questions/service.ts's publishQuestion, news/service.ts's
+// updateNewsQuizGeneratorSettings, lessons/service.ts's reverse-reference
+// check) read from must list all 7, not just single_select.
+describe("APP_RENDERABLE_QUESTION_FORMATS / isFormatAppRenderable", () => {
+  const allFormats = QuestionFormatSchema.options;
+
+  it("lists every real question format as app-renderable", () => {
+    expect(new Set(APP_RENDERABLE_QUESTION_FORMATS)).toEqual(new Set(allFormats));
+  });
+
+  it.each(allFormats)("isFormatAppRenderable(%s) is true", (format) => {
+    expect(isFormatAppRenderable(format)).toBe(true);
+  });
+
+  // Not a real format in the enum - proves the gate still correctly
+  // rejects an unknown value rather than this constant having silently
+  // become "anything goes" (e.g. via a typo'd includes check).
+  it("isFormatAppRenderable returns false for a format outside the known enum", () => {
+    expect(isFormatAppRenderable("not_a_real_format")).toBe(false);
   });
 });

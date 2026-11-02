@@ -913,20 +913,44 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
       expect(result.status).toBe("published");
     });
 
-    // App asks batch, section B.
+    // enable-all-formats branch: widened from just single_select - every
+    // real format is app-renderable now, so a quiz-like lesson referencing
+    // any one of them must publish cleanly.
+    it.each(["ordering", "sort_buckets", "fill_blank", "match_pairs", "spot_mistake", "number_guess"])(
+      "publishes when a quiz-like lesson references a %s question",
+      async (format) => {
+        mockGetLessonById.mockResolvedValueOnce(
+          lessonRow({ kind: "quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
+        );
+        mockGetQuestionsByIds.mockResolvedValueOnce([
+          { id: "11111111-1111-4111-8111-111111111111", status: "published", format },
+        ]);
+        mockGetWorldById.mockResolvedValueOnce(worldRow());
+        mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "published" }));
+
+        const result = await publishLesson(ACTOR, "lesson_1", META);
+
+        expect(result.status).toBe("published");
+      },
+    );
+
+    // App asks batch, section B. enable-all-formats branch: all 7 real
+    // formats are app-renderable now (see the it.each above), so this gate
+    // is exercised with a format outside the real enum - standing in for
+    // whatever gets added next before the app ships a renderer for it.
     it("blocks publish when a quiz-like lesson references a question in an app-unrenderable format", async () => {
       mockGetLessonById.mockResolvedValueOnce(
         lessonRow({ kind: "quiz", content: { questionIds: ["11111111-1111-4111-8111-111111111111"] } }),
       );
       mockGetQuestionsByIds.mockResolvedValueOnce([
-        { id: "11111111-1111-4111-8111-111111111111", status: "published", format: "ordering" },
+        { id: "11111111-1111-4111-8111-111111111111", status: "published", format: "not_a_real_format" },
       ]);
 
       await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
         code: "VALIDATION_FAILED",
         details: {
           questionProblems: [
-            'question 11111111-1111-4111-8111-111111111111 uses the "ordering" format, which the app doesn\'t support yet',
+            'question 11111111-1111-4111-8111-111111111111 uses the "not_a_real_format" format, which the app doesn\'t support yet',
           ],
         },
       });

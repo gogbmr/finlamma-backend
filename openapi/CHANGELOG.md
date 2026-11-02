@@ -2,6 +2,19 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-11-02 — v2.6.0
+
+Minor bump: no operations added or removed, no fields removed or renamed - additive only.
+`APP_RENDERABLE_QUESTION_FORMATS` widened from `single_select` alone to all 7 question formats
+(the mobile app now ships a renderer for every one), which changes server *behavior* (which
+formats a publish/enable gate accepts) but not the contract shape itself - no schema change from
+that part. Branch `enable-all-formats`.
+
+**`POST /api/v1/lessons/{id}/steps/{n}/serve`**
+- `spot_mistake`'s payload gained a new optional field, `lineSources`: one entry per `lines` entry
+  (same order), each a source/citation tag (`LocalizedText`) or `null`. Omit the field entirely for
+  content that hasn't been tagged yet - existing `spot_mistake` responses are unaffected.
+
 ## 2026-11-02 — v2.5.0
 
 Minor bump: no new or removed operations, no fields removed. Precise per-format schemas for the

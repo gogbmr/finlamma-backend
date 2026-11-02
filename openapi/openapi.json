@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "2.5.0",
+    "version": "2.6.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -3123,6 +3123,42 @@
                             "hi": "हर तीन महीने में अपना बजट जांचें।",
                             "hx": "Har teen mahine mein apna budget check karo."
                           }
+                        ]
+                      },
+                      "lineSources": {
+                        "type": "array",
+                        "items": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "description": "One entry per payload.lines entry (same order), each a source/citation tag or null. Optional - omit entirely for content that hasn't been tagged yet.",
+                        "example": [
+                          null,
+                          {
+                            "en": "RBI financial literacy guide",
+                            "hi": "आरबीआई वित्तीय साक्षरता गाइड",
+                            "hx": "RBI financial literacy guide"
+                          },
+                          null,
+                          null
                         ]
                       }
                     },
