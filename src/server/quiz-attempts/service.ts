@@ -169,6 +169,7 @@ function buildAnswerResponse(
   revision: { answer: unknown; explanation: unknown },
   totalSteps: number,
   attempt: { status: string; totalXpPreview: number | null },
+  format: QuestionFormat,
   vmAwardedPaise: number | null = null,
 ) {
   return {
@@ -177,6 +178,7 @@ function buildAnswerResponse(
     totalSteps,
     isCorrect: row.isCorrect!,
     timedOut: row.timedOut!,
+    format,
     correctAnswer: revision.answer,
     explanation: revision.explanation,
     xpAwardedPreview: row.xpAwardedPreview!,
@@ -189,6 +191,12 @@ function buildAnswerResponse(
     // actually completed the attempt this call (never a per-step preview -
     // see the `vmAwardedPaise` local in submitAnswer for why).
     vmAwardedPaise,
+    // Question-shapes branch, item 4: always exactly vmAwardedPaise - there
+    // is only one VM source per attempt (the flat lesson-completion reward
+    // below), never a per-question amount summed across steps like XP, so
+    // this can never drift from what was actually credited. See
+    // src/server/quiz-attempts/schemas.ts's SHARED_SUBMIT_ANSWER_FIELDS.
+    totalVmAwardedPreviewPaise: vmAwardedPaise,
   };
 }
 
@@ -230,14 +238,14 @@ export async function submitAnswer(
     throw new AppError("NOT_FOUND", "This question's served revision is no longer recoverable");
   }
 
-  if (row.answeredAt) {
-    return buildAnswerResponse(row, servedRevision, questionIds.length, attempt);
-  }
-
   const question = await getQuestionById(row.questionId);
   if (!question) throw new AppError("NOT_FOUND", "This step's question no longer exists");
-
   const format = question.format as QuestionFormat;
+
+  if (row.answeredAt) {
+    return buildAnswerResponse(row, servedRevision, questionIds.length, attempt, format);
+  }
+
   const answerResult = answerSchemaForFormat(format).safeParse(rawAnswer);
   if (!answerResult.success) {
     throw new AppError(
@@ -429,5 +437,5 @@ export async function submitAnswer(
     });
   }
 
-  return buildAnswerResponse(graded, servedRevision, questionIds.length, attemptAfter, vmAwardedPaise);
+  return buildAnswerResponse(graded, servedRevision, questionIds.length, attemptAfter, format, vmAwardedPaise);
 }

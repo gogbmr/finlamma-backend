@@ -125,6 +125,21 @@ vi.mock("@/server/notifications/service", () => ({
 }));
 
 import { serveStep, submitAnswer } from "./service";
+import {
+  QUESTION_ANSWER_TEMPLATES,
+  QUESTION_PAYLOAD_TEMPLATES,
+  type QuestionFormat,
+} from "@/server/questions/schemas";
+
+const ALL_QUESTION_FORMATS: QuestionFormat[] = [
+  "single_select",
+  "ordering",
+  "sort_buckets",
+  "fill_blank",
+  "match_pairs",
+  "spot_mistake",
+  "number_guess",
+];
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
 const USER = { id: "user_1" };
@@ -572,6 +587,41 @@ describe("serveStep", () => {
       await expect(serveStep(USER, LESSON_ID, 1, META)).resolves.toMatchObject({ stepIndex: 1 });
     });
   });
+
+  // Question-shapes branch, item 2 (SECURITY): the served step must never
+  // include an answer-bearing field, for ANY of the 7 formats - not just
+  // single_select. This holds by construction (src/db/schema/questions.ts:
+  // `payload` and `answer` are separate DB columns, and serveStep's
+  // response only ever spreads `question.payload`), but it's proven here
+  // per format rather than assumed, so a future change that accidentally
+  // merges answer data into payload fails loudly. Fixtures come from the
+  // real QUESTION_PAYLOAD_TEMPLATES/QUESTION_ANSWER_TEMPLATES (src/server/
+  // questions/schemas.ts) - the same skeletons the admin editor opens a new
+  // draft with - so this exercises the real per-format shapes, not
+  // hand-rolled stand-ins that could drift from them.
+  describe("never leaks an answer-bearing field into the served payload (SECURITY)", () => {
+    it.each(ALL_QUESTION_FORMATS)("format=%s", async (format) => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(null);
+      mockCountAttemptsForUserLesson.mockResolvedValueOnce(0);
+      mockInsertAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(null);
+      const payload = QUESTION_PAYLOAD_TEMPLATES[format];
+      const answer = QUESTION_ANSWER_TEMPLATES[format];
+      mockGetQuestionById.mockResolvedValue(questionRow({ format, payload, answer }));
+      mockInsertServedQuestionAnswer.mockResolvedValueOnce(servedAnswerRow());
+
+      const result = await serveStep(USER, LESSON_ID, 1, META);
+
+      expect(result.format).toBe(format);
+      // The served payload is exactly payload - never payload merged with
+      // (or alongside) any part of answer.
+      expect(result.payload).toEqual(payload);
+      for (const answerKey of Object.keys(answer as Record<string, unknown>)) {
+        expect(result.payload).not.toHaveProperty(answerKey);
+      }
+    });
+  });
 });
 
 describe("submitAnswer", () => {
@@ -649,6 +699,7 @@ describe("submitAnswer", () => {
 
     expect(result.isCorrect).toBe(true);
     expect(result.timedOut).toBe(false);
+    expect(result.format).toBe("single_select");
     expect(result.correctAnswer).toEqual({ correctIndex: 0 });
     expect(result.explanation).toEqual(questionRow().explanation);
     expect(mockGradeQuestionAnswer).toHaveBeenCalledWith(
@@ -769,6 +820,7 @@ describe("submitAnswer", () => {
     // App asks batch, item A5: nothing credited here (50% accuracy fails
     // the default pass mark), so vmAwardedPaise is null, not a guess.
     expect(result.vmAwardedPaise).toBeNull();
+    expect(result.totalVmAwardedPreviewPaise).toBeNull();
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.objectContaining({ action: "quiz_attempt.completed" }),
     );
@@ -816,6 +868,17 @@ describe("submitAnswer", () => {
     const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
 
     expect(result.vmAwardedPaise).toBe(5000);
+    // Question-shapes branch, item 4: totalVmAwardedPreviewPaise is a
+    // display-only cumulative total, guaranteed to equal what was actually
+    // credited - here, exactly the 5000 paise creditLessonCompletion (the
+    // real credit, mocked above) just returned. There's only one VM source
+    // per attempt, so "cumulative" and "this call's credit" are the same
+    // number by construction (src/server/quiz-attempts/service.ts's
+    // buildAnswerResponse assigns both from the same `vmAwardedPaise`
+    // value - see also economy/service.test.ts for the proof that THAT
+    // value itself equals the real vmoney_ledger write).
+    expect(result.totalVmAwardedPreviewPaise).toBe(5000);
+    expect(result.totalVmAwardedPreviewPaise).toBe(result.vmAwardedPaise);
   });
 
   it("never previews vmAwardedPaise on a non-completing step - null, not a guess", async () => {
@@ -830,6 +893,7 @@ describe("submitAnswer", () => {
 
     expect(result.isAttemptComplete).toBe(false);
     expect(result.vmAwardedPaise).toBeNull();
+    expect(result.totalVmAwardedPreviewPaise).toBeNull();
     expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
   });
 
@@ -1383,12 +1447,19 @@ describe("submitAnswer", () => {
       mockGetQuestionRevision.mockResolvedValueOnce(
         questionRevisionRow({ revision: 1, answer: { correctIndex: 0 }, explanation: { en: "Original explanation", hi: "x", hx: "x" } }),
       );
+      // question-shapes branch: `format` is immutable (never changes via
+      // hotfix), so the response's new `format` field is read from the
+      // live `questions` row even on a replay - this is the one live read
+      // a replay now makes (previously none), and it's safe precisely
+      // because format can't drift the way payload/answer/explanation can.
+      mockGetQuestionById.mockResolvedValueOnce(questionRow());
 
       const result = await submitAnswer(USER, LESSON_ID, 1, { correctIndex: 0 }, META);
 
       expect(result.correctAnswer).toEqual({ correctIndex: 0 });
       expect(result.explanation).toEqual({ en: "Original explanation", hi: "x", hx: "x" });
-      expect(mockGetQuestionById).not.toHaveBeenCalled(); // never needed for a replay
+      expect(result.format).toBe("single_select");
+      expect(mockGetQuestionById).toHaveBeenCalledTimes(1);
     });
 
     // Item 1 (recoverability): this should never happen once every publish/

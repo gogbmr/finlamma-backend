@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.4.0) on 2026-10-28.
+> Generated from `openapi/openapi.json` (version 2.4.0) on 2026-11-02.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -1486,15 +1486,38 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
     "stepIndex": 1,
     "totalSteps": 5,
     "questionId": "00000000-0000-0000-0000-000000000000",
-    "format": "single_select",
     "prompt": {
       "en": "string",
       "hi": "string",
       "hx": "string"
     },
-    "payload": {},
     "timerSeconds": 12,
-    "servedAt": "2026-01-01T00:00:00.000Z"
+    "servedAt": "2026-01-01T00:00:00.000Z",
+    "format": "single_select",
+    "payload": {
+      "options": [
+        {
+          "en": "Spend everything as soon as it arrives",
+          "hi": "जैसे ही पैसा आए, पूरा खर्च कर दें",
+          "hx": "Jaise hi paisa aaye, pura kharch kar do"
+        },
+        {
+          "en": "Set aside a fixed % of income every month",
+          "hi": "हर महीने आय का एक तय % अलग रखें",
+          "hx": "Har mahine income ka ek fix % alag rakho"
+        },
+        {
+          "en": "Borrow money to buy stocks",
+          "hi": "स्टॉक खरीदने के लिए पैसे उधार लें",
+          "hx": "Stock kharidne ke liye paise udhaar lo"
+        },
+        {
+          "en": "Never check your bank balance",
+          "hi": "कभी भी बैंक बैलेंस न देखें",
+          "hx": "Kabhi bhi bank balance na dekho"
+        }
+      ]
+    }
   }
 }
 ```
@@ -1576,11 +1599,13 @@ Server-graded and server-timed - the submitted answer is checked against the que
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `answer` | object | no | Shape depends on the question's format - see the matching *AnswerSchema in src/server/questions/schemas.ts (e.g. { correctIndex } for single_select). |
+| `answer` | one of several | yes | One of the 7 shapes below, matching the format of the step being answered (returned by the matching serve call's `format` field). Never send a `format` field alongside `answer` - the server already knows it and would ignore one anyway. |
 
 ```json
 {
-  "answer": null
+  "answer": {
+    "correctIndex": 1
+  }
 }
 ```
 
@@ -1596,7 +1621,6 @@ Server-graded and server-timed - the submitted answer is checked against the que
     "totalSteps": 0,
     "isCorrect": true,
     "timedOut": true,
-    "correctAnswer": null,
     "explanation": {
       "en": "string",
       "hi": "string",
@@ -1608,7 +1632,12 @@ Server-graded and server-timed - the submitted answer is checked against the que
     "comboAfter": 0,
     "isAttemptComplete": true,
     "totalXpPreview": 0,
-    "vmAwardedPaise": 5000
+    "vmAwardedPaise": 5000,
+    "totalVmAwardedPreviewPaise": 5000,
+    "format": "single_select",
+    "correctAnswer": {
+      "correctIndex": 1
+    }
   }
 }
 ```
