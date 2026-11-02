@@ -6,6 +6,7 @@ import { checkRateLimit, LESSON_STEP_RATE_LIMIT } from "@/lib/redis";
 import { requireFullAccess } from "@/server/onboarding/service";
 import {
   LessonStepParamsSchema,
+  SubmitAnswerRequestDocSchema,
   SubmitAnswerRequestSchema,
   SubmitAnswerResponseSchema,
 } from "@/server/quiz-attempts/schemas";
@@ -29,7 +30,10 @@ registry.registerPath({
   security: [{ bearerAuth: [] }],
   request: {
     params: LessonStepParamsSchema,
-    body: { content: { "application/json": { schema: SubmitAnswerRequestSchema } } },
+    // Documentation-only: the real req.json() parse below still uses the
+    // permissive SubmitAnswerRequestSchema - see its sibling
+    // SubmitAnswerRequestDocSchema comment in quiz-attempts/schemas.ts.
+    body: { content: { "application/json": { schema: SubmitAnswerRequestDocSchema } } },
   },
   responses: {
     200: {

@@ -6,7 +6,7 @@ the backend, not the per-endpoint request/response shape of each call.
 
 **For per-endpoint detail** (every route, method, auth requirement, parameters, request body,
 every response code with a JSON example): `docs/API_ENDPOINTS.md`, generated from
-`/api/openapi.json` (currently `v2.1.0`). Download the contract over HTTP and generate a typed
+`/api/openapi.json` (currently `v2.5.0`). Download the contract over HTTP and generate a typed
 client from it rather than hand-copying examples from that file — see `docs/ARCHITECTURE.md`'s
 "Three separate projects" section for the `pnpm api:sync`-style workflow. This document never
 repeats a request/response shape that file already has; it links to the relevant endpoint by
@@ -445,3 +445,148 @@ that the app never knows or needs to know which one is behind the response.
   surface, the Clerk/RevenueCat webhook endpoints, and `/api/v1/relay/config`. If an endpoint's
   OpenAPI tag is `Relay` or its description says "admin only" / "staff only," it's not part of
   this integration.
+
+---
+
+## 10. Question format shapes (lesson quizzes)
+
+A graded lesson step (`POST /lessons/{id}/steps/{n}/serve` then `POST .../answer`) can be any of
+**7 formats**. Today the app only renders `single_select` - `isFormatAppRenderable`
+(`src/server/questions/schemas.ts`) still gates publishing every other format, so you won't see
+one from a real lesson yet. This section exists so the app team can build against the other 6
+ahead of that gate opening, without waiting on a second round-trip. The generated
+`docs/API_ENDPOINTS.md` shows one example per endpoint (today, always the `single_select` branch,
+since that's the one real example a generated doc can pick from a `oneOf`) - the full, precise
+shape of all 7 is in the OpenAPI contract itself as a `oneOf` keyed by `format` (browse it in
+Scalar at `/api/docs`, or `components.schemas.ServeStepResponse`/`SubmitAnswerResponse` in
+`openapi/openapi.json`); the examples below are the same 7 shapes, just inlined here for quick
+reference.
+
+**Shared shape**, regardless of format:
+- `POST .../serve` returns `data.format` + `data.payload` - never an answer-bearing field, for any
+  format (verified by a dedicated test on the backend; see D79, `docs/ARCHITECTURE.md`).
+- `POST .../answer`'s request body is always `{ "answer": <shape below> }` - **never send a
+  `format` field alongside it**; the server already knows this step's real format (from the
+  `serve` call it already made) and would ignore one anyway.
+- `POST .../answer`'s response (after grading) includes `data.format` and `data.correctAnswer` in
+  the matching shape, plus the fields `docs/API_ENDPOINTS.md` already documents
+  (`isCorrect`/`xpAwardedPreview`/`totalVmAwardedPreviewPaise`/...).
+
+### `single_select`
+
+Served `payload`:
+```json
+{ "options": [
+  { "en": "Spend everything as soon as it arrives", "hi": "जैसे ही पैसा आए, पूरा खर्च कर दें", "hx": "Jaise hi paisa aaye, pura kharch kar do" },
+  { "en": "Set aside a fixed % of income every month", "hi": "हर महीने आय का एक तय % अलग रखें", "hx": "Har mahine income ka ek fix % alag rakho" },
+  { "en": "Borrow money to buy stocks", "hi": "स्टॉक खरीदने के लिए पैसे उधार लें", "hx": "Stock kharidne ke liye paise udhaar lo" },
+  { "en": "Never check your bank balance", "hi": "कभी भी बैंक बैलेंस न देखें", "hx": "Kabhi bhi bank balance na dekho" }
+] }
+```
+Answer body / `correctAnswer`: `{ "answer": { "correctIndex": 1 } }` - `correctIndex` is a 0-based
+index into `payload.options`.
+
+### `ordering`
+
+Served `payload` (`pool`, shown scrambled):
+```json
+{ "pool": [
+  { "en": "Save or invest what's left over", "hi": "जो बचे उसे बचाएं या निवेश करें", "hx": "Jo bache use save ya invest karo" },
+  { "en": "List your monthly income", "hi": "अपनी मासिक आय सूचीबद्ध करें", "hx": "Apni monthly income list karo" },
+  { "en": "Subtract expenses from income", "hi": "आय से खर्च घटाएं", "hx": "Income se expenses minus karo" },
+  { "en": "List your monthly expenses", "hi": "अपने मासिक खर्च सूचीबद्ध करें", "hx": "Apne monthly expenses list karo" }
+] }
+```
+Answer body / `correctAnswer`: `{ "answer": { "correctOrder": [1, 3, 2, 0] } }` - `pool` indices
+(a permutation) in the correct order. Here that's "List income" (idx 1), "List expenses" (idx 3),
+"Subtract expenses from income" (idx 2), "Save or invest what's left over" (idx 0).
+
+### `sort_buckets`
+
+Served `payload` (exactly 2 buckets):
+```json
+{
+  "items": [
+    { "en": "Rent", "hi": "किराया", "hx": "Kiraya" },
+    { "en": "Stock dividends", "hi": "स्टॉक डिविडेंड", "hx": "Stock dividend" },
+    { "en": "Electricity bill", "hi": "बिजली का बिल", "hx": "Bijli ka bill" },
+    { "en": "Freelance income", "hi": "फ्रीलांस आय", "hx": "Freelance income" }
+  ],
+  "buckets": [
+    { "en": "Expense", "hi": "खर्च", "hx": "Kharch" },
+    { "en": "Income", "hi": "आय", "hx": "Income" }
+  ]
+}
+```
+Answer body / `correctAnswer`: `{ "answer": { "bucketByItemIndex": [0, 1, 0, 1] } }` - one entry
+per `items` entry (same order), 0 or 1, naming which `buckets` slot it belongs in.
+
+### `fill_blank`
+
+Served `payload` (N sentence parts frame N-1 blanks):
+```json
+{
+  "sentenceParts": [
+    { "en": "A ", "hi": "एक ", "hx": "Ek " },
+    { "en": " is money set aside for emergencies.", "hi": " आपातकाल के लिए अलग रखा गया पैसा है।", "hx": " emergency ke liye alag rakha paisa hai." }
+  ],
+  "pool": [
+    { "en": "budget", "hi": "बजट", "hx": "budget" },
+    { "en": "emergency fund", "hi": "इमरजेंसी फंड", "hx": "emergency fund" },
+    { "en": "loan", "hi": "कर्ज़", "hx": "loan" }
+  ]
+}
+```
+Answer body / `correctAnswer`: `{ "answer": { "correctFillIndices": [1] } }` - one `pool` index per
+blank (length = `sentenceParts.length - 1`); here the single blank is filled by `pool[1]`
+("emergency fund").
+
+### `match_pairs`
+
+Served `payload` (two equal-length columns, `right` shown shuffled):
+```json
+{
+  "left": [
+    { "en": "SIP", "hi": "एसआईपी", "hx": "SIP" },
+    { "en": "NAV", "hi": "एनएवी", "hx": "NAV" },
+    { "en": "Diversification", "hi": "विविधीकरण", "hx": "Diversification" }
+  ],
+  "right": [
+    { "en": "A fixed monthly investment plan", "hi": "एक तय मासिक निवेश योजना", "hx": "Ek fix monthly investment plan" },
+    { "en": "The per-unit value of a mutual fund", "hi": "म्यूचुअल फंड की प्रति-यूनिट कीमत", "hx": "Mutual fund ki per-unit value" },
+    { "en": "Spreading investments across asset types", "hi": "निवेश को विभिन्न एसेट में फैलाना", "hx": "Investment ko alag-alag asset types mein spread karna" }
+  ]
+}
+```
+Answer body / `correctAnswer`: `{ "answer": { "rightIndexByLeftIndex": [2, 1, 0] } }` - one
+`right` index per `left` entry (same order): SIP → idx 2, NAV → idx 1, Diversification → idx 0.
+
+### `spot_mistake`
+
+Served `payload`:
+```json
+{ "lines": [
+  { "en": "Track your expenses every month.", "hi": "हर महीने अपने खर्च पर नज़र रखें।", "hx": "Har mahine apne expenses track karo." },
+  { "en": "Spend more than you earn to grow faster.", "hi": "तेज़ी से बढ़ने के लिए कमाई से ज़्यादा खर्च करें।", "hx": "Jaldi grow karne ke liye kamai se zyada kharch karo." },
+  { "en": "Save at least 20% of your income.", "hi": "अपनी आय का कम से कम 20% बचाएं।", "hx": "Apni income ka kam se kam 20% save karo." },
+  { "en": "Review your budget every quarter.", "hi": "हर तीन महीने में अपना बजट जांचें।", "hx": "Har teen mahine mein apna budget check karo." }
+] }
+```
+Answer body / `correctAnswer`: `{ "answer": { "wrongLineIndex": 1 } }` - a 0-based index into
+`lines` of the one factually wrong line.
+
+### `number_guess` (Pulse Check's "Number Pakdo")
+
+Served `payload`:
+```json
+{
+  "unit": { "en": "Repo rate (%)", "hi": "रेपो रेट (%)", "hx": "Repo rate (%)" },
+  "min": 0,
+  "max": 15,
+  "step": 0.25
+}
+```
+Answer body: `{ "answer": { "correctValue": <your guess>, "tolerance": 0 } }` - only `correctValue`
+is read on submit (your own `tolerance` is ignored; the stored answer's `tolerance` defines the
+correct band). `correctAnswer` (after grading): `{ "correctValue": 6.5, "tolerance": 0.5 }` - a
+guess within `[correctValue - tolerance, correctValue + tolerance]` counts as correct.

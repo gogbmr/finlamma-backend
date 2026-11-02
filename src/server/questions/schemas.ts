@@ -1,4 +1,11 @@
 import { z } from "zod";
+// Side-effect import: registers Zod's .openapi() extension method, used
+// below (question-shapes branch: these per-format schemas are now composed
+// into app-facing OpenAPI-registered responses in
+// src/server/quiz-attempts/schemas.ts, so they need real examples). Must be
+// imported before any .openapi() call in this file runs - see
+// src/lib/openapi.ts.
+import "@/lib/openapi";
 import { LocalizedTextSchema } from "@/server/shared/schemas";
 
 // Text-only, per the Phase 2b Checkpoint 5a kickoff decision - no images/
@@ -38,10 +45,21 @@ export function isFormatAppRenderable(format: string): boolean {
 // tile-grid-style pick-the-odd-one-out, per FEATURE_MAP LF-08/09/16 - all
 // three are structurally "a set of choices + one correct index"). ---
 export const SingleSelectPayloadSchema = z.object({
-  options: z.array(LocalizedTextSchema).min(2),
+  options: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "The choices to render, in order. The correct one (never sent here - see POST .../answer) is an index into this array.",
+    example: [
+      { en: "Spend everything as soon as it arrives", hi: "जैसे ही पैसा आए, पूरा खर्च कर दें", hx: "Jaise hi paisa aaye, pura kharch kar do" },
+      { en: "Set aside a fixed % of income every month", hi: "हर महीने आय का एक तय % अलग रखें", hx: "Har mahine income ka ek fix % alag rakho" },
+      { en: "Borrow money to buy stocks", hi: "स्टॉक खरीदने के लिए पैसे उधार लें", hx: "Stock kharidne ke liye paise udhaar lo" },
+      { en: "Never check your bank balance", hi: "कभी भी बैंक बैलेंस न देखें", hx: "Kabhi bhi bank balance na dekho" },
+    ],
+  }),
 });
 export const SingleSelectAnswerSchema = z.object({
-  correctIndex: z.number().int().nonnegative(),
+  correctIndex: z.number().int().nonnegative().openapi({
+    description: "0-based index into payload.options.",
+    example: 1,
+  }),
 });
 export type SingleSelectPayload = z.infer<typeof SingleSelectPayloadSchema>;
 export type SingleSelectAnswer = z.infer<typeof SingleSelectAnswerSchema>;
@@ -49,10 +67,21 @@ export type SingleSelectAnswer = z.infer<typeof SingleSelectAnswerSchema>;
 // --- ordering: arrange a word/item pool into the correct sequence
 // (FEATURE_MAP LF-10/LF-18). ---
 export const OrderingPayloadSchema = z.object({
-  pool: z.array(LocalizedTextSchema).min(2),
+  pool: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "The items to arrange, shown in this (scrambled) order - the correct sequence is a permutation of these indices (see answer.correctOrder).",
+    example: [
+      { en: "Save or invest what's left over", hi: "जो बचे उसे बचाएं या निवेश करें", hx: "Jo bache use save ya invest karo" },
+      { en: "List your monthly income", hi: "अपनी मासिक आय सूचीबद्ध करें", hx: "Apni monthly income list karo" },
+      { en: "Subtract expenses from income", hi: "आय से खर्च घटाएं", hx: "Income se expenses minus karo" },
+      { en: "List your monthly expenses", hi: "अपने मासिक खर्च सूचीबद्ध करें", hx: "Apne monthly expenses list karo" },
+    ],
+  }),
 });
 export const OrderingAnswerSchema = z.object({
-  correctOrder: z.array(z.number().int().nonnegative()).min(2),
+  correctOrder: z.array(z.number().int().nonnegative()).min(2).openapi({
+    description: "payload.pool indices in the correct order - a permutation using every index exactly once.",
+    example: [1, 3, 2, 0],
+  }),
 });
 export type OrderingPayload = z.infer<typeof OrderingPayloadSchema>;
 export type OrderingAnswer = z.infer<typeof OrderingAnswerSchema>;
@@ -60,11 +89,28 @@ export type OrderingAnswer = z.infer<typeof OrderingAnswerSchema>;
 // --- sort_buckets: tap items into one of exactly 2 labeled buckets
 // (FEATURE_MAP LF-17, "2 labeled buckets"). ---
 export const SortBucketsPayloadSchema = z.object({
-  items: z.array(LocalizedTextSchema).min(2),
-  buckets: z.tuple([LocalizedTextSchema, LocalizedTextSchema]),
+  items: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "The items to sort - each one belongs in exactly one of payload.buckets (see answer.bucketByItemIndex).",
+    example: [
+      { en: "Rent", hi: "किराया", hx: "Kiraya" },
+      { en: "Stock dividends", hi: "स्टॉक डिविडेंड", hx: "Stock dividend" },
+      { en: "Electricity bill", hi: "बिजली का बिल", hx: "Bijli ka bill" },
+      { en: "Freelance income", hi: "फ्रीलांस आय", hx: "Freelance income" },
+    ],
+  }),
+  buckets: z.tuple([LocalizedTextSchema, LocalizedTextSchema]).openapi({
+    description: "Exactly 2 bucket labels - bucket 0 and bucket 1, in this order.",
+    example: [
+      { en: "Expense", hi: "खर्च", hx: "Kharch" },
+      { en: "Income", hi: "आय", hx: "Income" },
+    ],
+  }),
 });
 export const SortBucketsAnswerSchema = z.object({
-  bucketByItemIndex: z.array(z.union([z.literal(0), z.literal(1)])).min(2),
+  bucketByItemIndex: z.array(z.union([z.literal(0), z.literal(1)])).min(2).openapi({
+    description: "One entry per payload.items entry (same order), each 0 or 1 - which payload.buckets slot that item belongs in.",
+    example: [0, 1, 0, 1],
+  }),
 });
 export type SortBucketsPayload = z.infer<typeof SortBucketsPayloadSchema>;
 export type SortBucketsAnswer = z.infer<typeof SortBucketsAnswerSchema>;
@@ -72,11 +118,27 @@ export type SortBucketsAnswer = z.infer<typeof SortBucketsAnswerSchema>;
 // --- fill_blank: sentence parts around blanks + a word pool
 // (FEATURE_MAP LF-19). N sentence parts frame N-1 blanks, one fill each. ---
 export const FillBlankPayloadSchema = z.object({
-  sentenceParts: z.array(LocalizedTextSchema).min(2),
-  pool: z.array(LocalizedTextSchema).min(1),
+  sentenceParts: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "N parts of the sentence; a blank sits between every consecutive pair (N-1 blanks total). Render part[0], blank, part[1], blank, ... part[N-1].",
+    example: [
+      { en: "A ", hi: "एक ", hx: "Ek " },
+      { en: " is money set aside for emergencies.", hi: " आपातकाल के लिए अलग रखा गया पैसा है।", hx: " emergency ke liye alag rakha paisa hai." },
+    ],
+  }),
+  pool: z.array(LocalizedTextSchema).min(1).openapi({
+    description: "Word/phrase pool the learner picks from to fill each blank - each entry can be reused, picked once, or left unused depending on the question.",
+    example: [
+      { en: "budget", hi: "बजट", hx: "budget" },
+      { en: "emergency fund", hi: "इमरजेंसी फंड", hx: "emergency fund" },
+      { en: "loan", hi: "कर्ज़", hx: "loan" },
+    ],
+  }),
 });
 export const FillBlankAnswerSchema = z.object({
-  correctFillIndices: z.array(z.number().int().nonnegative()).min(1),
+  correctFillIndices: z.array(z.number().int().nonnegative()).min(1).openapi({
+    description: "One payload.pool index per blank, in blank order (length = sentenceParts.length - 1).",
+    example: [1],
+  }),
 });
 export type FillBlankPayload = z.infer<typeof FillBlankPayloadSchema>;
 export type FillBlankAnswer = z.infer<typeof FillBlankAnswerSchema>;
@@ -84,21 +146,49 @@ export type FillBlankAnswer = z.infer<typeof FillBlankAnswerSchema>;
 // --- match_pairs: tap-tap pairing between two equal-length columns
 // (FEATURE_MAP LF-20). ---
 export const MatchPairsPayloadSchema = z.object({
-  left: z.array(LocalizedTextSchema).min(2),
-  right: z.array(LocalizedTextSchema).min(2),
+  left: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "The left column - each entry pairs with exactly one payload.right entry (see answer.rightIndexByLeftIndex).",
+    example: [
+      { en: "SIP", hi: "एसआईपी", hx: "SIP" },
+      { en: "NAV", hi: "एनएवी", hx: "NAV" },
+      { en: "Diversification", hi: "विविधीकरण", hx: "Diversification" },
+    ],
+  }),
+  right: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "The right column, same length as payload.left, shown in a shuffled order.",
+    example: [
+      { en: "A fixed monthly investment plan", hi: "एक तय मासिक निवेश योजना", hx: "Ek fix monthly investment plan" },
+      { en: "The per-unit value of a mutual fund", hi: "म्यूचुअल फंड की प्रति-यूनिट कीमत", hx: "Mutual fund ki per-unit value" },
+      { en: "Spreading investments across asset types", hi: "निवेश को विभिन्न एसेट में फैलाना", hx: "Investment ko alag-alag asset types mein spread karna" },
+    ],
+  }),
 });
 export const MatchPairsAnswerSchema = z.object({
-  rightIndexByLeftIndex: z.array(z.number().int().nonnegative()).min(2),
+  rightIndexByLeftIndex: z.array(z.number().int().nonnegative()).min(2).openapi({
+    description: "One payload.right index per payload.left entry (same order) - which right-column entry that left entry pairs with.",
+    example: [2, 1, 0],
+  }),
 });
 export type MatchPairsPayload = z.infer<typeof MatchPairsPayloadSchema>;
 export type MatchPairsAnswer = z.infer<typeof MatchPairsAnswerSchema>;
 
 // --- spot_mistake: tap the one wrong line among several (FEATURE_MAP LF-21). ---
 export const SpotMistakePayloadSchema = z.object({
-  lines: z.array(LocalizedTextSchema).min(2),
+  lines: z.array(LocalizedTextSchema).min(2).openapi({
+    description: "The lines to inspect - exactly one is factually wrong (see answer.wrongLineIndex).",
+    example: [
+      { en: "Track your expenses every month.", hi: "हर महीने अपने खर्च पर नज़र रखें।", hx: "Har mahine apne expenses track karo." },
+      { en: "Spend more than you earn to grow faster.", hi: "तेज़ी से बढ़ने के लिए कमाई से ज़्यादा खर्च करें।", hx: "Jaldi grow karne ke liye kamai se zyada kharch karo." },
+      { en: "Save at least 20% of your income.", hi: "अपनी आय का कम से कम 20% बचाएं।", hx: "Apni income ka kam se kam 20% save karo." },
+      { en: "Review your budget every quarter.", hi: "हर तीन महीने में अपना बजट जांचें।", hx: "Har teen mahine mein apna budget check karo." },
+    ],
+  }),
 });
 export const SpotMistakeAnswerSchema = z.object({
-  wrongLineIndex: z.number().int().nonnegative(),
+  wrongLineIndex: z.number().int().nonnegative().openapi({
+    description: "0-based index into payload.lines of the one wrong line.",
+    example: 1,
+  }),
 });
 export type SpotMistakePayload = z.infer<typeof SpotMistakePayloadSchema>;
 export type SpotMistakeAnswer = z.infer<typeof SpotMistakeAnswerSchema>;
@@ -108,14 +198,20 @@ export type SpotMistakeAnswer = z.infer<typeof SpotMistakeAnswerSchema>;
 // format with no existing equivalent; every other prototype format reuses
 // single_select/ordering/sort_buckets/fill_blank/match_pairs/spot_mistake. ---
 export const NumberGuessPayloadSchema = z.object({
-  unit: LocalizedTextSchema, // e.g. "PERCENT · CPI" - shown next to the slider
-  min: z.number(),
-  max: z.number(),
-  step: z.number().positive(),
+  unit: LocalizedTextSchema.openapi({
+    description: "Shown next to the slider, e.g. a metric name/unit.",
+    example: { en: "Repo rate (%)", hi: "रेपो रेट (%)", hx: "Repo rate (%)" },
+  }), // e.g. "PERCENT · CPI" - shown next to the slider
+  min: z.number().openapi({ description: "Slider's minimum selectable value.", example: 0 }),
+  max: z.number().openapi({ description: "Slider's maximum selectable value.", example: 15 }),
+  step: z.number().positive().openapi({ description: "Slider's increment.", example: 0.25 }),
 });
 export const NumberGuessAnswerSchema = z.object({
-  correctValue: z.number(),
-  tolerance: z.number().nonnegative(), // an answer within [correctValue - tolerance, correctValue + tolerance] counts as correct
+  correctValue: z.number().openapi({ description: "The correct value on the [payload.min, payload.max] scale.", example: 6.5 }),
+  tolerance: z.number().nonnegative().openapi({
+    description: "An answer within [correctValue - tolerance, correctValue + tolerance] counts as correct.",
+    example: 0.5,
+  }),
 });
 export type NumberGuessPayload = z.infer<typeof NumberGuessPayloadSchema>;
 export type NumberGuessAnswer = z.infer<typeof NumberGuessAnswerSchema>;

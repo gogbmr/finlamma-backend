@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -2272,83 +2272,999 @@
         "type": "object",
         "properties": {
           "data": {
-            "type": "object",
-            "properties": {
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "stepIndex": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "example": 1
-              },
-              "totalSteps": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "example": 5
-              },
-              "questionId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "format": {
-                "type": "string",
-                "enum": [
-                  "single_select",
-                  "ordering",
-                  "sort_buckets",
-                  "fill_blank",
-                  "match_pairs",
-                  "spot_mistake",
-                  "number_guess"
-                ]
-              },
-              "prompt": {
+            "oneOf": [
+              {
                 "type": "object",
                 "properties": {
-                  "en": {
-                    "type": "string"
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
-                  "hi": {
-                    "type": "string"
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
                   },
-                  "hx": {
-                    "type": "string"
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "single_select"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "options": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "The choices to render, in order. The correct one (never sent here - see POST .../answer) is an index into this array.",
+                        "example": [
+                          {
+                            "en": "Spend everything as soon as it arrives",
+                            "hi": "जैसे ही पैसा आए, पूरा खर्च कर दें",
+                            "hx": "Jaise hi paisa aaye, pura kharch kar do"
+                          },
+                          {
+                            "en": "Set aside a fixed % of income every month",
+                            "hi": "हर महीने आय का एक तय % अलग रखें",
+                            "hx": "Har mahine income ka ek fix % alag rakho"
+                          },
+                          {
+                            "en": "Borrow money to buy stocks",
+                            "hi": "स्टॉक खरीदने के लिए पैसे उधार लें",
+                            "hx": "Stock kharidne ke liye paise udhaar lo"
+                          },
+                          {
+                            "en": "Never check your bank balance",
+                            "hi": "कभी भी बैंक बैलेंस न देखें",
+                            "hx": "Kabhi bhi bank balance na dekho"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "options"
+                    ]
                   }
                 },
                 "required": [
-                  "en",
-                  "hi",
-                  "hx"
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
                 ]
               },
-              "payload": {
+              {
                 "type": "object",
-                "additionalProperties": {}
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "ordering"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "pool": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "The items to arrange, shown in this (scrambled) order - the correct sequence is a permutation of these indices (see answer.correctOrder).",
+                        "example": [
+                          {
+                            "en": "Save or invest what's left over",
+                            "hi": "जो बचे उसे बचाएं या निवेश करें",
+                            "hx": "Jo bache use save ya invest karo"
+                          },
+                          {
+                            "en": "List your monthly income",
+                            "hi": "अपनी मासिक आय सूचीबद्ध करें",
+                            "hx": "Apni monthly income list karo"
+                          },
+                          {
+                            "en": "Subtract expenses from income",
+                            "hi": "आय से खर्च घटाएं",
+                            "hx": "Income se expenses minus karo"
+                          },
+                          {
+                            "en": "List your monthly expenses",
+                            "hi": "अपने मासिक खर्च सूचीबद्ध करें",
+                            "hx": "Apne monthly expenses list karo"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "pool"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
+                ]
               },
-              "timerSeconds": {
-                "type": "integer",
-                "exclusiveMinimum": 0,
-                "example": 12,
-                "description": "Allotted seconds to answer, captured at serve time."
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "sort_buckets"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "The items to sort - each one belongs in exactly one of payload.buckets (see answer.bucketByItemIndex).",
+                        "example": [
+                          {
+                            "en": "Rent",
+                            "hi": "किराया",
+                            "hx": "Kiraya"
+                          },
+                          {
+                            "en": "Stock dividends",
+                            "hi": "स्टॉक डिविडेंड",
+                            "hx": "Stock dividend"
+                          },
+                          {
+                            "en": "Electricity bill",
+                            "hi": "बिजली का बिल",
+                            "hx": "Bijli ka bill"
+                          },
+                          {
+                            "en": "Freelance income",
+                            "hi": "फ्रीलांस आय",
+                            "hx": "Freelance income"
+                          }
+                        ]
+                      },
+                      "buckets": {
+                        "type": "array",
+                        "prefixItems": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "en": {
+                                "type": "string"
+                              },
+                              "hi": {
+                                "type": "string"
+                              },
+                              "hx": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "en",
+                              "hi",
+                              "hx"
+                            ]
+                          }
+                        ],
+                        "description": "Exactly 2 bucket labels - bucket 0 and bucket 1, in this order.",
+                        "example": [
+                          {
+                            "en": "Expense",
+                            "hi": "खर्च",
+                            "hx": "Kharch"
+                          },
+                          {
+                            "en": "Income",
+                            "hi": "आय",
+                            "hx": "Income"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "items",
+                      "buckets"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
+                ]
               },
-              "servedAt": {
-                "type": "string",
-                "format": "date-time",
-                "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "fill_blank"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "sentenceParts": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "N parts of the sentence; a blank sits between every consecutive pair (N-1 blanks total). Render part[0], blank, part[1], blank, ... part[N-1].",
+                        "example": [
+                          {
+                            "en": "A ",
+                            "hi": "एक ",
+                            "hx": "Ek "
+                          },
+                          {
+                            "en": " is money set aside for emergencies.",
+                            "hi": " आपातकाल के लिए अलग रखा गया पैसा है।",
+                            "hx": " emergency ke liye alag rakha paisa hai."
+                          }
+                        ]
+                      },
+                      "pool": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 1,
+                        "description": "Word/phrase pool the learner picks from to fill each blank - each entry can be reused, picked once, or left unused depending on the question.",
+                        "example": [
+                          {
+                            "en": "budget",
+                            "hi": "बजट",
+                            "hx": "budget"
+                          },
+                          {
+                            "en": "emergency fund",
+                            "hi": "इमरजेंसी फंड",
+                            "hx": "emergency fund"
+                          },
+                          {
+                            "en": "loan",
+                            "hi": "कर्ज़",
+                            "hx": "loan"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "sentenceParts",
+                      "pool"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "match_pairs"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "left": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "The left column - each entry pairs with exactly one payload.right entry (see answer.rightIndexByLeftIndex).",
+                        "example": [
+                          {
+                            "en": "SIP",
+                            "hi": "एसआईपी",
+                            "hx": "SIP"
+                          },
+                          {
+                            "en": "NAV",
+                            "hi": "एनएवी",
+                            "hx": "NAV"
+                          },
+                          {
+                            "en": "Diversification",
+                            "hi": "विविधीकरण",
+                            "hx": "Diversification"
+                          }
+                        ]
+                      },
+                      "right": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "The right column, same length as payload.left, shown in a shuffled order.",
+                        "example": [
+                          {
+                            "en": "A fixed monthly investment plan",
+                            "hi": "एक तय मासिक निवेश योजना",
+                            "hx": "Ek fix monthly investment plan"
+                          },
+                          {
+                            "en": "The per-unit value of a mutual fund",
+                            "hi": "म्यूचुअल फंड की प्रति-यूनिट कीमत",
+                            "hx": "Mutual fund ki per-unit value"
+                          },
+                          {
+                            "en": "Spreading investments across asset types",
+                            "hi": "निवेश को विभिन्न एसेट में फैलाना",
+                            "hx": "Investment ko alag-alag asset types mein spread karna"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "left",
+                      "right"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "spot_mistake"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "lines": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "en": {
+                              "type": "string"
+                            },
+                            "hi": {
+                              "type": "string"
+                            },
+                            "hx": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "en",
+                            "hi",
+                            "hx"
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "The lines to inspect - exactly one is factually wrong (see answer.wrongLineIndex).",
+                        "example": [
+                          {
+                            "en": "Track your expenses every month.",
+                            "hi": "हर महीने अपने खर्च पर नज़र रखें।",
+                            "hx": "Har mahine apne expenses track karo."
+                          },
+                          {
+                            "en": "Spend more than you earn to grow faster.",
+                            "hi": "तेज़ी से बढ़ने के लिए कमाई से ज़्यादा खर्च करें।",
+                            "hx": "Jaldi grow karne ke liye kamai se zyada kharch karo."
+                          },
+                          {
+                            "en": "Save at least 20% of your income.",
+                            "hi": "अपनी आय का कम से कम 20% बचाएं।",
+                            "hx": "Apni income ka kam se kam 20% save karo."
+                          },
+                          {
+                            "en": "Review your budget every quarter.",
+                            "hi": "हर तीन महीने में अपना बजट जांचें।",
+                            "hx": "Har teen mahine mein apna budget check karo."
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "lines"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 1
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 5
+                  },
+                  "questionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "prompt": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "timerSeconds": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "example": 12,
+                    "description": "Allotted seconds to answer, captured at serve time."
+                  },
+                  "servedAt": {
+                    "type": "string",
+                    "format": "date-time",
+                    "description": "Server-stamped serve time (ISO 8601 UTC) - the clock this step's timer runs from."
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "number_guess"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "unit": {
+                        "type": "object",
+                        "properties": {
+                          "en": {
+                            "type": "string"
+                          },
+                          "hi": {
+                            "type": "string"
+                          },
+                          "hx": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "en",
+                          "hi",
+                          "hx"
+                        ],
+                        "description": "Shown next to the slider, e.g. a metric name/unit.",
+                        "example": {
+                          "en": "Repo rate (%)",
+                          "hi": "रेपो रेट (%)",
+                          "hx": "Repo rate (%)"
+                        }
+                      },
+                      "min": {
+                        "type": "number",
+                        "description": "Slider's minimum selectable value.",
+                        "example": 0
+                      },
+                      "max": {
+                        "type": "number",
+                        "description": "Slider's maximum selectable value.",
+                        "example": 15
+                      },
+                      "step": {
+                        "type": "number",
+                        "exclusiveMinimum": 0,
+                        "description": "Slider's increment.",
+                        "example": 0.25
+                      }
+                    },
+                    "required": [
+                      "unit",
+                      "min",
+                      "max",
+                      "step"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "questionId",
+                  "prompt",
+                  "timerSeconds",
+                  "servedAt",
+                  "format",
+                  "payload"
+                ]
               }
-            },
-            "required": [
-              "attemptId",
-              "stepIndex",
-              "totalSteps",
-              "questionId",
-              "format",
-              "prompt",
-              "payload",
-              "timerSeconds",
-              "servedAt"
             ]
           }
         },
@@ -2356,100 +3272,1076 @@
           "data"
         ]
       },
+      "SubmitAnswerRequest": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "correctIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "0-based index into payload.options.",
+                    "example": 1
+                  }
+                },
+                "required": [
+                  "correctIndex"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "correctOrder": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 2,
+                    "description": "payload.pool indices in the correct order - a permutation using every index exactly once.",
+                    "example": [
+                      1,
+                      3,
+                      2,
+                      0
+                    ]
+                  }
+                },
+                "required": [
+                  "correctOrder"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "bucketByItemIndex": {
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "enum": [
+                            0
+                          ]
+                        },
+                        {
+                          "type": "number",
+                          "enum": [
+                            1
+                          ]
+                        }
+                      ]
+                    },
+                    "minItems": 2,
+                    "description": "One entry per payload.items entry (same order), each 0 or 1 - which payload.buckets slot that item belongs in.",
+                    "example": [
+                      0,
+                      1,
+                      0,
+                      1
+                    ]
+                  }
+                },
+                "required": [
+                  "bucketByItemIndex"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "correctFillIndices": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1,
+                    "description": "One payload.pool index per blank, in blank order (length = sentenceParts.length - 1).",
+                    "example": [
+                      1
+                    ]
+                  }
+                },
+                "required": [
+                  "correctFillIndices"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "rightIndexByLeftIndex": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 2,
+                    "description": "One payload.right index per payload.left entry (same order) - which right-column entry that left entry pairs with.",
+                    "example": [
+                      2,
+                      1,
+                      0
+                    ]
+                  }
+                },
+                "required": [
+                  "rightIndexByLeftIndex"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "wrongLineIndex": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "0-based index into payload.lines of the one wrong line.",
+                    "example": 1
+                  }
+                },
+                "required": [
+                  "wrongLineIndex"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "correctValue": {
+                    "type": "number",
+                    "description": "The correct value on the [payload.min, payload.max] scale.",
+                    "example": 6.5
+                  },
+                  "tolerance": {
+                    "type": "number",
+                    "minimum": 0,
+                    "description": "An answer within [correctValue - tolerance, correctValue + tolerance] counts as correct.",
+                    "example": 0.5
+                  }
+                },
+                "required": [
+                  "correctValue",
+                  "tolerance"
+                ]
+              }
+            ],
+            "description": "One of the 7 shapes below, matching the format of the step being answered (returned by the matching serve call's `format` field). Never send a `format` field alongside `answer` - the server already knows it and would ignore one anyway."
+          }
+        },
+        "required": [
+          "answer"
+        ]
+      },
       "SubmitAnswerResponse": {
         "type": "object",
         "properties": {
           "data": {
-            "type": "object",
-            "properties": {
-              "attemptId": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "stepIndex": {
-                "type": "integer",
-                "exclusiveMinimum": 0
-              },
-              "totalSteps": {
-                "type": "integer",
-                "exclusiveMinimum": 0
-              },
-              "isCorrect": {
-                "type": "boolean"
-              },
-              "timedOut": {
-                "type": "boolean",
-                "description": "True if the server-measured elapsed time exceeded the allotted timer."
-              },
-              "correctAnswer": {
-                "description": "This question's correct answer - only ever included here, after grading."
-              },
-              "explanation": {
+            "oneOf": [
+              {
                 "type": "object",
                 "properties": {
-                  "en": {
-                    "type": "string"
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
                   },
-                  "hi": {
-                    "type": "string"
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
                   },
-                  "hx": {
-                    "type": "string"
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "single_select"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "correctIndex": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "0-based index into payload.options.",
+                        "example": 1
+                      }
+                    },
+                    "required": [
+                      "correctIndex"
+                    ]
                   }
                 },
                 "required": [
-                  "en",
-                  "hi",
-                  "hx"
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
                 ]
               },
-              "xpAwardedPreview": {
-                "type": "integer",
-                "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "ordering"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "correctOrder": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "minItems": 2,
+                        "description": "payload.pool indices in the correct order - a permutation using every index exactly once.",
+                        "example": [
+                          1,
+                          3,
+                          2,
+                          0
+                        ]
+                      }
+                    },
+                    "required": [
+                      "correctOrder"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
+                ]
               },
-              "speedBonusAwarded": {
-                "type": "boolean"
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "sort_buckets"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "bucketByItemIndex": {
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "enum": [
+                                0
+                              ]
+                            },
+                            {
+                              "type": "number",
+                              "enum": [
+                                1
+                              ]
+                            }
+                          ]
+                        },
+                        "minItems": 2,
+                        "description": "One entry per payload.items entry (same order), each 0 or 1 - which payload.buckets slot that item belongs in.",
+                        "example": [
+                          0,
+                          1,
+                          0,
+                          1
+                        ]
+                      }
+                    },
+                    "required": [
+                      "bucketByItemIndex"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
+                ]
               },
-              "feverActive": {
-                "type": "boolean"
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "fill_blank"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "correctFillIndices": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "minItems": 1,
+                        "description": "One payload.pool index per blank, in blank order (length = sentenceParts.length - 1).",
+                        "example": [
+                          1
+                        ]
+                      }
+                    },
+                    "required": [
+                      "correctFillIndices"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
+                ]
               },
-              "comboAfter": {
-                "type": "integer",
-                "minimum": 0
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "match_pairs"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "rightIndexByLeftIndex": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "minItems": 2,
+                        "description": "One payload.right index per payload.left entry (same order) - which right-column entry that left entry pairs with.",
+                        "example": [
+                          2,
+                          1,
+                          0
+                        ]
+                      }
+                    },
+                    "required": [
+                      "rightIndexByLeftIndex"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
+                ]
               },
-              "isAttemptComplete": {
-                "type": "boolean"
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "spot_mistake"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "wrongLineIndex": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "description": "0-based index into payload.lines of the one wrong line.",
+                        "example": 1
+                      }
+                    },
+                    "required": [
+                      "wrongLineIndex"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
+                ]
               },
-              "totalXpPreview": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
-              },
-              "vmAwardedPaise": {
-                "type": [
-                  "integer",
-                  "null"
-                ],
-                "minimum": 0,
-                "example": 5000
+              {
+                "type": "object",
+                "properties": {
+                  "attemptId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "stepIndex": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "totalSteps": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0
+                  },
+                  "isCorrect": {
+                    "type": "boolean"
+                  },
+                  "timedOut": {
+                    "type": "boolean",
+                    "description": "True if the server-measured elapsed time exceeded the allotted timer."
+                  },
+                  "explanation": {
+                    "type": "object",
+                    "properties": {
+                      "en": {
+                        "type": "string"
+                      },
+                      "hi": {
+                        "type": "string"
+                      },
+                      "hx": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "en",
+                      "hi",
+                      "hx"
+                    ]
+                  },
+                  "xpAwardedPreview": {
+                    "type": "integer",
+                    "description": "Preview only (docs/ARCHITECTURE.md D17) - not yet credited to any ledger, Phase 3 owns that."
+                  },
+                  "speedBonusAwarded": {
+                    "type": "boolean"
+                  },
+                  "feverActive": {
+                    "type": "boolean"
+                  },
+                  "comboAfter": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "isAttemptComplete": {
+                    "type": "boolean"
+                  },
+                  "totalXpPreview": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Sum of every step's xpAwardedPreview for this attempt - filled only once complete."
+                  },
+                  "vmAwardedPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "example": 5000
+                  },
+                  "totalVmAwardedPreviewPaise": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
+                    "example": 5000
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "number_guess"
+                    ]
+                  },
+                  "correctAnswer": {
+                    "type": "object",
+                    "properties": {
+                      "correctValue": {
+                        "type": "number",
+                        "description": "The correct value on the [payload.min, payload.max] scale.",
+                        "example": 6.5
+                      },
+                      "tolerance": {
+                        "type": "number",
+                        "minimum": 0,
+                        "description": "An answer within [correctValue - tolerance, correctValue + tolerance] counts as correct.",
+                        "example": 0.5
+                      }
+                    },
+                    "required": [
+                      "correctValue",
+                      "tolerance"
+                    ]
+                  }
+                },
+                "required": [
+                  "attemptId",
+                  "stepIndex",
+                  "totalSteps",
+                  "isCorrect",
+                  "timedOut",
+                  "explanation",
+                  "xpAwardedPreview",
+                  "speedBonusAwarded",
+                  "feverActive",
+                  "comboAfter",
+                  "isAttemptComplete",
+                  "totalXpPreview",
+                  "vmAwardedPaise",
+                  "totalVmAwardedPreviewPaise",
+                  "format",
+                  "correctAnswer"
+                ]
               }
-            },
-            "required": [
-              "attemptId",
-              "stepIndex",
-              "totalSteps",
-              "isCorrect",
-              "timedOut",
-              "explanation",
-              "xpAwardedPreview",
-              "speedBonusAwarded",
-              "feverActive",
-              "comboAfter",
-              "isAttemptComplete",
-              "totalXpPreview",
-              "vmAwardedPaise"
             ]
           }
         },
@@ -6391,12 +8283,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "answer": {
-                    "description": "Shape depends on the question's format - see the matching *AnswerSchema in src/server/questions/schemas.ts (e.g. { correctIndex } for single_select)."
-                  }
-                }
+                "$ref": "#/components/schemas/SubmitAnswerRequest"
               }
             }
           }
