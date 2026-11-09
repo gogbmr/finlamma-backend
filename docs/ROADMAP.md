@@ -530,6 +530,25 @@ yet - recorded here so the mobile app's Trade tab work doesn't quietly discover 
       ever) permanently accumulates in what will become the production database. Check
       `docs/STATUS.md`'s "Test learners recorded so far" list before recreating, to confirm
       nothing real got mixed in with test data in the meantime.
+- [ ] **BLOCKING: remove dev/seed data before go-live, and decide how.** Two different cleanup
+      mechanisms exist now and nobody has picked one: (a) the item directly above - recreate the
+      database from migrations + seeds, which naturally never runs `seed:dev-content`/
+      `seed:dev-users` in the first place; (b) `scripts/teardown-dev-users.ts` (added 2026-11-09),
+      which hard-deletes exactly the 50 `seed_clerk_%` synthetic users and every row they own via
+      cascade (dry-run by default, `--apply` to execute, prints row counts per table). **No
+      equivalent teardown exists for `seed:dev-content`'s ~50 `[PLACEHOLDER]`-prefixed lessons/
+      questions/badges/rewards/about-me chips/news items/competitions** - those are shared catalog
+      rows, not owned by one user, so a user-cascade delete can't remove them. Removing them means
+      either the full recreate in (a), or staff manually unpublishing/deleting each one from the
+      admin UI as real content replaces it. Also unresolved, and worth deciding before picking (a)
+      or (b): whether to keep one shared dev/preview/production database going forward (D27's
+      2026-09-23 call, made when there were no real users yet) or split preview and production
+      apart now that real users are approaching. **Found while investigating this item**: 8
+      non-`seed_clerk_` user rows already exist in the database (real Clerk-format ids, created
+      2026-09-18 through 2026-11-03) that are NOT on this file's "Test learners recorded so far"
+      list above - reconcile who they are (founder's own test sign-ups vs. something else) and
+      record them there before choosing (a) or (b), since a straight DB recreate would silently
+      erase them too.
 - [ ] **Real-Postgres concurrency test for world reorder**, once a separate dev database exists.
       `src/server/worlds/repo.test.ts`'s concurrent-move tests run against PGlite
       (`src/test/db.ts`), which is a single connection - two "concurrent" `db.transaction()` calls
