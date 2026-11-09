@@ -1,5 +1,42 @@
 # Status
 
+## 2026-11-09 — Decided: this database stays test-only forever; go-live gets a separate, fresh production database
+
+Recorded in full as `docs/ARCHITECTURE.md` decision D80 - summary here for the dated record, same
+convention as the 2026-09-23 D27 entry below, which this supersedes.
+
+**What changed**: D27 (2026-09-23) deferred splitting dev/preview from production "for now," on the
+reasoning that there were no real users yet - but its explicit consequence was that the *current*
+shared database would have to be recreated from migrations + seeds before real users sign up, to
+wipe out accumulated test/seed noise in the append-only `xp_events`/`vmoney_ledger` tables (D26).
+The founder has now decided that consequence is replaced, not just postponed again: **go-live
+provisions a brand-new, separate production Supabase project**, migrated and seeded fresh. This
+database remains dev/preview/test-only indefinitely and is never promoted to production.
+
+**Consequences:**
+- Seed users (`seed_clerk_%`, `scripts/seed-dev-users.ts`) and dev content (`[PLACEHOLDER]`-prefixed
+  rows, `scripts/seed-dev-content.ts`) are never cleaned out of this database - there's no need to,
+  since it will never serve real traffic.
+- `scripts/teardown-dev-users.ts` (added 2026-11-09, same session as this decision) remains
+  available but is no longer a go-live requirement - harmless to run, or not run, here.
+- **Production's seed sequence is exactly the catalog/reference scripts, never the dev ones**:
+  `pnpm db:migrate`, then `db:seed`, `seed:legal`, `seed:mentors`, `seed:worlds`, `seed:settings`,
+  `seed:reward-rules`, `seed:instruments`, `seed:market-holidays`, `seed:funds`, `seed:topics`,
+  `seed:peer-handles` - plus the one-time, argument-driven `pnpm seed:super-admin <clerkUserId>`
+  (the founder's own staff Clerk user id, from the STAFF Clerk application) to bootstrap the first
+  admin account. `seed:dev-content`/`seed:dev-users` must never run against it.
+- An `ALLOW_DEV_SEED` env-var guard (added 2026-11-09) makes that a hard refusal in `seed:dev-users`,
+  `seed:dev-content`, and `teardown-dev-users.ts`, rather than just a documented convention someone
+  could forget - see `docs/ROADMAP.md`'s go-live checklist item for the full list and each script's
+  own comment for the exact check.
+- The 8 non-`seed_clerk_` user rows found in this database (real Clerk-format ids, created
+  2026-09-18 through 2026-11-03, not on this file's "Test learners recorded so far" list below)
+  are worth reconciling eventually, but are no longer launch-blocking now that this database will
+  never become production.
+- CLAUDE.md rule 8 (destructive-migration ordering) still applies in full to whichever database a
+  migration is about to run against - this decision changes which database production *is*, not
+  how migrations are ordered.
+
 ## 2026-10-11 — Full pre-launch `/phase-audit` (all phases, 0-9), read-only
 
 First full-codebase audit covering every phase at once rather than one phase at a time - run
