@@ -106,7 +106,11 @@ vi.mock("@/server/rank-titles/service", () => ({
 }));
 
 const mockGetStreakStats = vi.fn();
-vi.mock("@/server/streaks/service", () => ({ getStreakStats: (id: unknown) => mockGetStreakStats(id) }));
+const mockGetCurrentStreaksForUserIds = vi.fn();
+vi.mock("@/server/streaks/service", () => ({
+  getStreakStats: (id: unknown) => mockGetStreakStats(id),
+  getCurrentStreaksForUserIds: (ids: unknown) => mockGetCurrentStreaksForUserIds(ids),
+}));
 
 const mockGetMyBadges = vi.fn();
 vi.mock("@/server/badges/service", () => ({ getMyBadges: (id: unknown) => mockGetMyBadges(id) }));
@@ -172,6 +176,7 @@ beforeEach(() => {
   mockGetHandlesForUserIds.mockImplementation((ids: string[]) => Promise.resolve(handlesFor(ids)));
   mockGetLeagueZonesForScope.mockResolvedValue(new Map());
   mockGetLastWeekRanksForScope.mockResolvedValue(new Map());
+  mockGetCurrentStreaksForUserIds.mockResolvedValue(new Map());
 });
 
 describe("getLeaderboard", () => {
@@ -344,6 +349,66 @@ describe("getLeaderboard", () => {
 
     expect(result.rows[0].zone).toBeNull();
   });
+
+  it("world is null for a non-world scope", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([{ userId: "u1", xp: 10 }]);
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    expect(result.world).toBeNull();
+    expect(mockGetWorldTitleById).not.toHaveBeenCalled();
+  });
+
+  it("world is set to the resolved world's id/name for scope=world", async () => {
+    mockGetCurrentWorldIdForUser.mockResolvedValueOnce("world-1");
+    mockWeeklyXpByScope.mockResolvedValueOnce(
+      Array.from({ length: 21 }, (_, i) => ({ userId: `u${i}`, xp: i })),
+    );
+    mockGetWorldTitleById.mockResolvedValueOnce({ en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" });
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "world");
+
+    expect(result.world).toEqual({ id: "world-1", name: { en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" } });
+  });
+
+  // Each row's streak comes from the SAME public-profile value
+  // (getCurrentStreaksForUserIds), batched for the whole page in one call -
+  // never one lookup per row (CLAUDE.md rule 15's "no N+1" spirit).
+  it("attaches each row's current learning streak, batched in one call for every visible row", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([
+      { userId: "u1", xp: 10 },
+      { userId: "u2", xp: 5 },
+    ]);
+    mockGetCurrentStreaksForUserIds.mockResolvedValueOnce(new Map([["u1", 4], ["u2", 0]]));
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    expect(mockGetCurrentStreaksForUserIds).toHaveBeenCalledTimes(1);
+    expect(mockGetCurrentStreaksForUserIds).toHaveBeenCalledWith(expect.arrayContaining(["u1", "u2"]));
+    expect(result.rows.find((r) => r.userId === "u1")).toMatchObject({ streak: 4 });
+    expect(result.rows.find((r) => r.userId === "u2")).toMatchObject({ streak: 0 });
+  });
+
+  it("reports streak: null for a row the batch streak lookup has no entry for", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([{ userId: "u1", xp: 10 }]);
+    // mockGetCurrentStreaksForUserIds's beforeEach default (empty Map) applies.
+
+    const result = await getLeaderboard({ id: "u1", state: null }, "global");
+
+    expect(result.rows[0].streak).toBeNull();
+  });
+
+  it("includes an out-of-window self row in the same single streak batch call, not a second lookup", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce(
+      Array.from({ length: 60 }, (_, i) => ({ userId: `u${i}`, xp: 60 - i })),
+    );
+    mockGetCurrentStreaksForUserIds.mockResolvedValueOnce(new Map([["u59", 7]]));
+
+    const result = await getLeaderboard({ id: "u59", state: null }, "global");
+
+    expect(mockGetCurrentStreaksForUserIds).toHaveBeenCalledTimes(1);
+    expect(result.rows.at(-1)).toMatchObject({ userId: "u59", streak: 7 });
+  });
 });
 
 describe("getWorldLeaderboard", () => {
@@ -367,6 +432,21 @@ describe("getWorldLeaderboard", () => {
 
     expect(result.notEnoughPlayers).toBe(true);
     expect(result.fallbackApplied).toBe(false);
+  });
+
+  it("sets world to the drilled-into world's id/name, and attaches each row's streak", async () => {
+    mockWeeklyXpByScope.mockResolvedValueOnce([
+      { userId: "u1", xp: 50 },
+      { userId: "u2", xp: 10 },
+    ]);
+    mockGetWorldTitleById.mockResolvedValueOnce({ en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" });
+    mockGetCurrentStreaksForUserIds.mockResolvedValueOnce(new Map([["u1", 3], ["u2", 1]]));
+
+    const result = await getWorldLeaderboard({ id: "u2", state: null }, "world-9");
+
+    expect(result.world).toEqual({ id: "world-9", name: { en: "Money World", hi: "मनी वर्ल्ड", hx: "Money World" } });
+    expect(result.rows.find((r) => r.userId === "u1")).toMatchObject({ streak: 3 });
+    expect(result.rows.find((r) => r.userId === "u2")).toMatchObject({ streak: 1 });
   });
 });
 

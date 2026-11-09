@@ -29,7 +29,7 @@ import { getVmIssuanceMultiplier } from "@/server/economy/service";
 import { getLevelInfo } from "@/server/leveling/service";
 import { getQuizAccuracyTotalsForUser } from "@/server/quiz-attempts/repo";
 import { getRankTitleForLevel } from "@/server/rank-titles/service";
-import { getStreakStats } from "@/server/streaks/service";
+import { getCurrentStreaksForUserIds, getStreakStats } from "@/server/streaks/service";
 import { getMyBadges } from "@/server/badges/service";
 import { insertUserBadgeIfAbsent } from "@/server/badges/repo";
 import { isUniqueViolation } from "@/lib/db-errors";
@@ -124,6 +124,10 @@ export type LeaderboardRowView = {
   // leaderboard_snapshots row getMyArenaRankSummary's rankDelta cells already
   // read, just against THIS scope's live rows instead of a single user.
   rankDelta: number | null;
+  // This learner's current learning streak - the same value the public
+  // profile endpoint already exposes (getCurrentStreaksForUserIds, batched
+  // for every row on the page in one query, never one-per-row).
+  streak: number | null;
 };
 
 // docs/ARCHITECTURE.md D54: promotion (and the neutral "safe" band) are
@@ -148,6 +152,12 @@ export type LeaderboardView = {
   fallbackApplied: boolean;
   notEnoughPlayers: boolean;
   weekStartDate: string;
+  // The world this leaderboard resolved to for this learner - set whenever
+  // the RESOLVED scope (not necessarily what was requested) is a world
+  // scope, null for state/india/global. GET /arena/worlds/{worldId}/
+  // leaderboard's resolved scope is always a world scope (no broader
+  // fallback exists for it), so this is always set there.
+  world: { id: string; name: LocalizedText } | null;
   poolSize: number;
   // App asks batch, item A7: the exact boundary ranks the prototype's own
   // `Math.max(1, Math.round(n/4))` formula (computeZonesForRankedList)
@@ -245,6 +255,12 @@ async function buildLeaderboardView(
   const topRows = ranked.slice(0, LEADERBOARD_ROW_LIMIT);
   const selfInTop = topRows.some((r) => r.userId === user.id);
 
+  // One batched query for every row's streak (never one-per-row) - the
+  // union of the visible rows plus a self row that may fall outside them.
+  const streakUserIds = new Set(topRows.map((r) => r.userId));
+  if (selfRanked) streakUserIds.add(selfRanked.userId);
+  const streaksByUser = await getCurrentStreaksForUserIds([...streakUserIds]);
+
   const viewRows: LeaderboardRowView[] = topRows.map((r) => {
     const isSelf = r.userId === user.id;
     return {
@@ -255,6 +271,7 @@ async function buildLeaderboardView(
       isSelf,
       zone: visibleZone(zones.get(r.userId), isSelf),
       rankDelta: rankDeltaFor(r.userId, r.rank),
+      streak: streaksByUser.get(r.userId) ?? null,
     };
   });
 
@@ -267,7 +284,17 @@ async function buildLeaderboardView(
       isSelf: true,
       zone: visibleZone(zones.get(selfRanked.userId), true),
       rankDelta: rankDeltaFor(selfRanked.userId, selfRanked.rank),
+      streak: streaksByUser.get(selfRanked.userId) ?? null,
     });
+  }
+
+  // The world this leaderboard resolved to (null for state/india/global) -
+  // GET /arena/worlds/{worldId}/leaderboard's resolved scope is always
+  // "world" (no broader fallback exists for it), so it's always set there.
+  let world: LeaderboardView["world"] = null;
+  if (resolution.resolved.kind === "world") {
+    const name = await getWorldTitleById(resolution.resolved.worldId);
+    if (name) world = { id: resolution.resolved.worldId, name };
   }
 
   // App asks batch, items A6/A7 - same settings/formula settlement itself
@@ -285,6 +312,7 @@ async function buildLeaderboardView(
     fallbackApplied: resolution.fallbackFrom !== null,
     notEnoughPlayers: resolution.notEnoughPlayers,
     weekStartDate,
+    world,
     poolSize: rows.length,
     promoteCount: zoneN,
     demoteCount: zoneN,

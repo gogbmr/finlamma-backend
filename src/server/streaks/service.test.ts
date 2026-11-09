@@ -19,10 +19,12 @@ vi.mock("@/lib/activity-log", () => ({
 }));
 
 const mockGetStreak = vi.fn();
+const mockGetStreaksForUserIds = vi.fn();
 const mockRecordStreakActivity = vi.fn();
 const mockListAtRiskLearningStreaks = vi.fn();
 vi.mock("./repo", () => ({
   getStreak: (userId: unknown, scope: unknown) => mockGetStreak(userId, scope),
+  getStreaksForUserIds: (userIds: unknown, scope: unknown) => mockGetStreaksForUserIds(userIds, scope),
   recordStreakActivity: (userId: unknown, scope: unknown, todayIst: unknown, freezes: unknown) =>
     mockRecordStreakActivity(userId, scope, todayIst, freezes),
   listAtRiskLearningStreaks: (yesterdayIst: unknown) => mockListAtRiskLearningStreaks(yesterdayIst),
@@ -34,6 +36,7 @@ vi.mock("@/server/notifications/service", () => ({
 }));
 
 import {
+  getCurrentStreaksForUserIds,
   getStreaksSettings,
   getStreakStats,
   notifyLearnersWithStreakAtRisk,
@@ -221,6 +224,54 @@ describe("getStreakStats", () => {
     // The allowance is treated as freshly reset for January, so the one
     // missed day is still coverable and the streak still reads as current.
     expect(result.learning).toEqual({ current: 5, longest: 12, freezesLeft: 2 });
+  });
+});
+
+describe("getCurrentStreaksForUserIds", () => {
+  const TODAY = new Date("2026-01-10T04:00:00.000Z"); // 2026-01-10 09:30 IST
+
+  it("returns an empty map without querying anything for an empty input", async () => {
+    const result = await getCurrentStreaksForUserIds([]);
+
+    expect(result).toEqual(new Map());
+    expect(mockGetStreaksForUserIds).not.toHaveBeenCalled();
+  });
+
+  it("batches every userId into a single repo call against the learning scope", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreaksForUserIds.mockResolvedValueOnce(new Map());
+
+    await getCurrentStreaksForUserIds(["u1", "u2", "u3"], TODAY);
+
+    expect(mockGetStreaksForUserIds).toHaveBeenCalledTimes(1);
+    expect(mockGetStreaksForUserIds).toHaveBeenCalledWith(["u1", "u2", "u3"], "learning");
+  });
+
+  it("shapes each row the same way getStreakStats does - 0 for no row, the real current value otherwise", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreaksForUserIds.mockResolvedValueOnce(
+      new Map([
+        ["u1", { current: 5, longest: 12, freezesLeft: 2, lastActiveDateIst: "2026-01-10", freezesResetMonth: "2026-01" }],
+      ]),
+    );
+
+    const result = await getCurrentStreaksForUserIds(["u1", "u2"], TODAY);
+
+    expect(result.get("u1")).toBe(5);
+    expect(result.get("u2")).toBe(0); // no row at all
+  });
+
+  it("reports a stale streak as 0, same as a live read would (shapeStreak's reset-if-stale rule)", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ streakFreezesPerMonth: 2 });
+    mockGetStreaksForUserIds.mockResolvedValueOnce(
+      new Map([
+        ["u1", { current: 5, longest: 12, freezesLeft: 2, lastActiveDateIst: "2025-12-31", freezesResetMonth: "2025-12" }],
+      ]),
+    );
+
+    const result = await getCurrentStreaksForUserIds(["u1"], TODAY);
+
+    expect(result.get("u1")).toBe(0);
   });
 });
 

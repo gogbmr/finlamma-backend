@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "2.6.0",
+    "version": "2.7.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -15200,6 +15200,43 @@
                           "example": "2026-09-28",
                           "description": "Monday IST, this week."
                         },
+                        "world": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "example": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                            },
+                            "name": {
+                              "type": "object",
+                              "properties": {
+                                "en": {
+                                  "type": "string"
+                                },
+                                "hi": {
+                                  "type": "string"
+                                },
+                                "hx": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "en",
+                                "hi",
+                                "hx"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "description": "The world this leaderboard resolved to for this learner - set whenever `scope` (the RESOLVED scope, not necessarily what was requested) is a world scope, null otherwise (e.g. scope=state/india/global, or a thin world fell back before reaching here - in practice GET /arena/worlds/{worldId}/leaderboard always has one, since a world scope never falls back to a broader one)."
+                        },
                         "poolSize": {
                           "type": "integer",
                           "minimum": 0,
@@ -15291,6 +15328,15 @@
                                 ],
                                 "example": 3,
                                 "description": "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, negative = moved down, null = nothing to compare (a new entrant this week, or this scope didn't settle last week - e.g. below the privacy floor)."
+                              },
+                              "streak": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "example": 4,
+                                "description": "This learner's current learning streak - the same value GET /users/{userId}/public-profile already exposes. Nothing beyond that public value is added here."
                               }
                             },
                             "required": [
@@ -15300,7 +15346,8 @@
                               "xp",
                               "isSelf",
                               "zone",
-                              "rankDelta"
+                              "rankDelta",
+                              "streak"
                             ]
                           }
                         },
@@ -15416,6 +15463,7 @@
                         "fallbackApplied",
                         "notEnoughPlayers",
                         "weekStartDate",
+                        "world",
                         "poolSize",
                         "promoteCount",
                         "demoteCount",
@@ -15710,6 +15758,43 @@
                           "example": "2026-09-28",
                           "description": "Monday IST, this week."
                         },
+                        "world": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "example": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b"
+                            },
+                            "name": {
+                              "type": "object",
+                              "properties": {
+                                "en": {
+                                  "type": "string"
+                                },
+                                "hi": {
+                                  "type": "string"
+                                },
+                                "hx": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "en",
+                                "hi",
+                                "hx"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name"
+                          ],
+                          "description": "The world this leaderboard resolved to for this learner - set whenever `scope` (the RESOLVED scope, not necessarily what was requested) is a world scope, null otherwise (e.g. scope=state/india/global, or a thin world fell back before reaching here - in practice GET /arena/worlds/{worldId}/leaderboard always has one, since a world scope never falls back to a broader one)."
+                        },
                         "poolSize": {
                           "type": "integer",
                           "minimum": 0,
@@ -15801,6 +15886,15 @@
                                 ],
                                 "example": 3,
                                 "description": "AR-09's weekly move indicator: positive = moved up N ranks since last week's settlement, negative = moved down, null = nothing to compare (a new entrant this week, or this scope didn't settle last week - e.g. below the privacy floor)."
+                              },
+                              "streak": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "minimum": 0,
+                                "example": 4,
+                                "description": "This learner's current learning streak - the same value GET /users/{userId}/public-profile already exposes. Nothing beyond that public value is added here."
                               }
                             },
                             "required": [
@@ -15810,7 +15904,8 @@
                               "xp",
                               "isSelf",
                               "zone",
-                              "rankDelta"
+                              "rankDelta",
+                              "streak"
                             ]
                           }
                         },
@@ -15926,6 +16021,7 @@
                         "fallbackApplied",
                         "notEnoughPlayers",
                         "weekStartDate",
+                        "world",
                         "poolSize",
                         "promoteCount",
                         "demoteCount",

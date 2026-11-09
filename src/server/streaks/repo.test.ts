@@ -14,7 +14,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
-const { getStreak, listAtRiskLearningStreaks, recordStreakActivity } = await import("./repo");
+const { getStreak, getStreaksForUserIds, listAtRiskLearningStreaks, recordStreakActivity } = await import("./repo");
 const { db } = (await import("@/db/client")) as unknown as { db: TestDb };
 
 afterAll(async () => {
@@ -206,6 +206,38 @@ describe("recordStreakActivity", () => {
     const resultB = await recordStreakActivity(userB.id, "learning", "2026-01-05", FREEZES);
 
     expect(resultB.current).toBe(1); // A's activity never touched B's streak
+  });
+});
+
+describe("getStreaksForUserIds", () => {
+  it("returns an empty map for an empty input, without querying", async () => {
+    const result = await getStreaksForUserIds([], "learning");
+
+    expect(result).toEqual(new Map());
+  });
+
+  it("batches multiple users' rows for the requested scope in one call", async () => {
+    const userA = await makeUser();
+    const userB = await makeUser();
+    const userC = await makeUser(); // never touched - absent from the result
+    await recordStreakActivity(userA.id, "learning", "2026-01-05", FREEZES);
+    await recordStreakActivity(userB.id, "learning", "2026-01-05", FREEZES);
+    await recordStreakActivity(userB.id, "learning", "2026-01-06", FREEZES);
+
+    const result = await getStreaksForUserIds([userA.id, userB.id, userC.id], "learning");
+
+    expect(result.get(userA.id)).toMatchObject({ current: 1 });
+    expect(result.get(userB.id)).toMatchObject({ current: 2 });
+    expect(result.has(userC.id)).toBe(false);
+  });
+
+  it("only returns rows for the requested scope, not a learner's other-scope streak", async () => {
+    const user = await makeUser();
+    await recordStreakActivity(user.id, "pulse_check", "2026-01-05", FREEZES);
+
+    const result = await getStreaksForUserIds([user.id], "learning");
+
+    expect(result.has(user.id)).toBe(false);
   });
 });
 

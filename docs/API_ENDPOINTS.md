@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.6.0) on 2026-11-02.
+> Generated from `openapi/openapi.json` (version 2.7.0) on 2026-11-09.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -5674,6 +5674,14 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
     "fallbackApplied": true,
     "notEnoughPlayers": false,
     "weekStartDate": "2026-09-28",
+    "world": {
+      "id": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      }
+    },
     "poolSize": 214,
     "promoteCount": 54,
     "demoteCount": 54,
@@ -5689,7 +5697,8 @@ Ranks every learner by XP earned since Monday IST, for the requested scope. 'sta
         "xp": 2710,
         "isSelf": false,
         "zone": "promote",
-        "rankDelta": 3
+        "rankDelta": 3,
+        "streak": 4
       }
     ],
     "self": {
@@ -5842,6 +5851,14 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
     "fallbackApplied": true,
     "notEnoughPlayers": false,
     "weekStartDate": "2026-09-28",
+    "world": {
+      "id": "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b",
+      "name": {
+        "en": "string",
+        "hi": "string",
+        "hx": "string"
+      }
+    },
     "poolSize": 214,
     "promoteCount": 54,
     "demoteCount": 54,
@@ -5857,7 +5874,8 @@ Drilling into a specific world tapped from GET /arena/worlds - not necessarily t
         "xp": 2710,
         "isSelf": false,
         "zone": "promote",
-        "rankDelta": 3
+        "rankDelta": 3,
+        "streak": 4
       }
     ],
     "self": {

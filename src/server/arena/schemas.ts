@@ -34,6 +34,12 @@ const LeaderboardRowSchema = z.object({
       "negative = moved down, null = nothing to compare (a new entrant this week, or this scope " +
       "didn't settle last week - e.g. below the privacy floor).",
   }),
+  streak: z.number().int().nonnegative().nullable().openapi({
+    example: 4,
+    description:
+      "This learner's current learning streak - the same value GET /users/{userId}/public-profile " +
+      "already exposes. Nothing beyond that public value is added here.",
+  }),
 });
 
 const SeasonRewardSchema = z.object({
@@ -64,6 +70,20 @@ export const ArenaLeaderboardResponseSchema = z.object({
         "should render 'not enough players yet' rather than this (possibly empty) list.",
     }),
     weekStartDate: z.string().openapi({ example: "2026-09-28", description: "Monday IST, this week." }),
+    world: z
+      .object({
+        id: z.uuid().openapi({ example: "c1c6c6f0-8f2a-4b8b-9f0a-2b8b8b8b8b8b" }),
+        name: LocalizedTextSchema,
+      })
+      .nullable()
+      .openapi({
+        description:
+          "The world this leaderboard resolved to for this learner - set whenever `scope` " +
+          "(the RESOLVED scope, not necessarily what was requested) is a world scope, null " +
+          "otherwise (e.g. scope=state/india/global, or a thin world fell back before reaching " +
+          "here - in practice GET /arena/worlds/{worldId}/leaderboard always has one, since a " +
+          "world scope never falls back to a broader one).",
+      }),
     poolSize: z.number().int().nonnegative().openapi({ example: 214 }),
     // App asks batch, item A7: the exact zone boundary this scope's rows[]
     // were assigned from (Math.max(1, Math.round(poolSize/4)) - the
