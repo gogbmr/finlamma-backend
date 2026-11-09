@@ -1,4 +1,4 @@
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/db/client";
 import { streaks } from "@/db/schema";
 import { daysBetweenIstDates } from "@/lib/ist-date";
@@ -13,6 +13,24 @@ export async function getStreak(userId: string, scope: StreakScope) {
     .where(and(eq(streaks.userId, userId), eq(streaks.scope, scope)))
     .limit(1);
   return row ?? null;
+}
+
+// Batched form of getStreak for a whole leaderboard page at once (Arena's
+// leaderboard rows each need their own streak - one query here instead of
+// one per row, same "bulk read, never N+1" rule every other Arena lookup
+// follows, e.g. getHandlesForUserIds). A userId absent from the returned map
+// simply has no row for this scope yet - callers treat that the same way
+// getStreak's null does.
+export async function getStreaksForUserIds(
+  userIds: string[],
+  scope: StreakScope,
+): Promise<Map<string, NonNullable<Awaited<ReturnType<typeof getStreak>>>>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await db
+    .select()
+    .from(streaks)
+    .where(and(inArray(streaks.userId, userIds), eq(streaks.scope, scope)));
+  return new Map(rows.map((row) => [row.userId, row]));
 }
 
 // Phase 7's streak_risk push notification: an active learning streak

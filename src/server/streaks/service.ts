@@ -5,7 +5,13 @@ import { daysBetweenIstDates, istDateString } from "@/lib/ist-date";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import { NOTIFICATION_COPY } from "@/server/notifications/copy";
 import { notifyUser } from "@/server/notifications/service";
-import { getStreak, listAtRiskLearningStreaks, recordStreakActivity, type StreakScope } from "./repo";
+import {
+  getStreak,
+  getStreaksForUserIds,
+  listAtRiskLearningStreaks,
+  recordStreakActivity,
+  type StreakScope,
+} from "./repo";
 import {
   DEFAULT_STREAKS_SETTINGS,
   STREAKS_SETTINGS_KEY,
@@ -107,7 +113,13 @@ export async function recordPulseCheckActivity(userId: string, at: Date = new Da
 // a real write either - "extend" (including the freeze-covered case) just
 // means the existing streak is still intact, so `current` is shown as-is.
 function shapeStreak(
-  row: Awaited<ReturnType<typeof getStreak>>,
+  // getStreak's own `row ?? null` collapses to a non-nullable inferred
+  // return type (its [row] destructure is a fixed-arity tuple from
+  // `.limit(1)`, never possibly undefined per TS, so the `?? null` branch
+  // is unreachable from the type checker's view) - but getStreaksForUserIds'
+  // batched Map genuinely can miss an entry (Map.get is `V | undefined`),
+  // so this parameter is explicitly nullable to accept both call shapes.
+  row: Awaited<ReturnType<typeof getStreak>> | null,
   todayIst: string,
   defaultFreezes: number,
 ): { current: number; longest: number; freezesLeft: number } {
@@ -137,6 +149,30 @@ export async function getStreakStats(userId: string, at: Date = new Date()) {
     learning: shapeStreak(learning, todayIst, settings.streakFreezesPerMonth),
     pulseCheck: shapeStreak(pulseCheck, todayIst, settings.streakFreezesPerMonth),
   };
+}
+
+// Arena leaderboard rows (GET /arena/leaderboard, GET /arena/worlds/{id}/
+// leaderboard) each show a learner's current LEARNING streak - the same
+// number getStreakStats().learning.current / the public profile endpoint
+// already exposes, just batched: one query for every row on the page
+// instead of one per row (see getStreaksForUserIds). A userId with no
+// streak row yet (or whose stored streak has gone stale as of today, see
+// shapeStreak above) reads as 0, never null - there's always a real current
+// value to report for an existing learner.
+export async function getCurrentStreaksForUserIds(
+  userIds: string[],
+  at: Date = new Date(),
+): Promise<Map<string, number>> {
+  if (userIds.length === 0) return new Map();
+  const settings = await getStreaksSettings();
+  const todayIst = istDateString(at);
+  const rows = await getStreaksForUserIds(userIds, "learning" satisfies StreakScope);
+  return new Map(
+    userIds.map((userId) => [
+      userId,
+      shapeStreak(rows.get(userId) ?? null, todayIst, settings.streakFreezesPerMonth).current,
+    ]),
+  );
 }
 
 // Phase 7's streak_risk push notification (src/inngest/functions/

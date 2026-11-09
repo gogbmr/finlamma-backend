@@ -2,6 +2,19 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-11-09 — v2.7.0
+
+Minor bump: no operations added or removed, no fields removed or renamed - additive only. New
+Arena tab fields (world context + learning streak on leaderboard rows). Branch
+`feat-arena-world-and-streak`.
+
+**`GET /api/v1/arena/leaderboard`** and **`GET /api/v1/arena/worlds/{worldId}/leaderboard`**
+- Response gained `world: { id, name } | null` - the world this leaderboard resolved to for this
+  learner (null for state/india/global scopes; always set for the world-drilldown endpoint).
+- Each leaderboard row gained `streak: number | null` - the learner's current learning streak,
+  the same value `GET /users/{userId}/public-profile` already exposes. Nothing new is surfaced -
+  this is an existing public value, now also shown alongside XP/rank.
+
 ## 2026-11-02 — v2.6.0
 
 Minor bump: no operations added or removed, no fields removed or renamed - additive only.
