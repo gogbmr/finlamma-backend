@@ -396,7 +396,24 @@ async function seedCompetitions() {
   return count;
 }
 
+// Refuses to run at all unless ALLOW_DEV_SEED=true is set in the
+// environment - a hard stop, not just a documented convention, so this can
+// never run against a real production database by accident
+// (docs/ARCHITECTURE.md D80, docs/STATUS.md 2026-11-09 entry). Must be set
+// locally (.env.local) for dev work and must stay unset in production.
+function assertDevSeedAllowed(): void {
+  if (process.env.ALLOW_DEV_SEED !== "true") {
+    console.error(
+      'Refusing to run: ALLOW_DEV_SEED is not "true". This script creates synthetic placeholder ' +
+        "content and must never run against a real production database. Set ALLOW_DEV_SEED=true " +
+        "in .env.local (never in a production environment) to run it anyway.",
+    );
+    process.exit(1);
+  }
+}
+
 async function seed() {
+  assertDevSeedAllowed();
   const [alreadySeeded] = await db
     .select({ id: lessons.id })
     .from(lessons)

@@ -520,16 +520,26 @@ yet - recorded here so the mobile app's Trade tab work doesn't quietly discover 
         retrievable past 90 days for escalation purposes, which would mean the scrub job has to
         skip (not just delay) any message still attached to an open flag. Not decided; needs that
         reviewer's input before this is built.
-- [ ] **BLOCKING: recreate the production database from migrations + seeds before real users sign
-      up** (`docs/ARCHITECTURE.md` D27, decided 2026-09-23) - a fresh Supabase project, or a full
-      reset of this one, then `pnpm db:migrate` + the full seed sequence
-      (`db:seed`/`seed:super-admin`/`seed:legal`/`seed:mentors`/`seed:worlds`/`seed:settings`/
-      `seed:reward-rules`). Necessary because the deliberate decision to keep one shared database
-      pre-launch (no separate dev project - see the next item) means every local/preview test
-      credit written to the append-only `xp_events`/`vmoney_ledger` tables (D26 - no delete path,
-      ever) permanently accumulates in what will become the production database. Check
-      `docs/STATUS.md`'s "Test learners recorded so far" list before recreating, to confirm
-      nothing real got mixed in with test data in the meantime.
+- [ ] **Go-live: provision a fresh, separate production database - this one is never recreated
+      or promoted.** Supersedes the old plan recorded here (D27; see `docs/ARCHITECTURE.md` D80
+      and `docs/STATUS.md`'s 2026-11-09 entry for the full founder decision): the current shared
+      database is permanent dev/preview/test-only, so there is no cleanup step on it at go-live -
+      a brand-new Supabase project gets migrated and seeded fresh instead. **Production seed
+      sequence (catalog/reference data only)**: `pnpm db:migrate`, then `db:seed`, `seed:legal`,
+      `seed:mentors`, `seed:worlds`, `seed:settings`, `seed:reward-rules`, `seed:instruments`,
+      `seed:market-holidays`, `seed:funds`, `seed:topics`, `seed:peer-handles` - plus the one-time,
+      argument-driven `pnpm seed:super-admin <clerkUserId>` (the founder's own staff Clerk user id,
+      from the STAFF Clerk application, not the consumer one) to bootstrap the first admin account.
+      **Never run `seed:dev-content` or `seed:dev-users` against the production database** - both,
+      plus `scripts/teardown-dev-users.ts`, refuse to run unless an `ALLOW_DEV_SEED` env var marks
+      the database as non-production (added 2026-11-09 - see each script's own comment for the
+      exact check). That var must stay unset/false in the production environment and only ever be
+      set in local/preview dev envs. `scripts/teardown-dev-users.ts` remains available but is no
+      longer a go-live requirement - it's harmless to run, or not run, against this now-permanent
+      test database. **Still open, no longer launch-blocking**: 8 non-`seed_clerk_` user rows exist
+      in this database (real Clerk-format ids, created 2026-09-18 through 2026-11-03) that are not
+      on this file's "Test learners recorded so far" list above - worth reconciling who they are,
+      though it no longer matters for go-live now that this database will never become production.
 - [ ] **Real-Postgres concurrency test for world reorder**, once a separate dev database exists.
       `src/server/worlds/repo.test.ts`'s concurrent-move tests run against PGlite
       (`src/test/db.ts`), which is a single connection - two "concurrent" `db.transaction()` calls
