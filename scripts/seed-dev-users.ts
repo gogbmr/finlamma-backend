@@ -1031,43 +1031,52 @@ function dedupeById<T extends { id?: string | null }>(rows: T[]): T[] {
   return out;
 }
 
+// biome-ignore lint: table arg is a Drizzle PgTable, typed loosely here since
+// this helper is called with many different table/row-array pairs below.
+async function insertIfAny(table: any, rows: unknown[]): Promise<void> {
+  if (rows.length === 0) return;
+  await db.insert(table).values(rows).onConflictDoNothing();
+}
+
 async function writePlan(plan: Plan): Promise<void> {
   // Dependency order: users first, then everything else (all FK to users or
   // to rows this same plan just inserted, like orders before holdings).
-  await db.insert(users).values(plan.users).onConflictDoNothing();
-  await db.insert(parentContacts).values(plan.parentContacts).onConflictDoNothing();
-  await db.insert(consentRecords).values(plan.consentRecords).onConflictDoNothing();
-  await db.insert(legalAcceptances).values(plan.legalAcceptances).onConflictDoNothing();
-  await db.insert(streaks).values(plan.streaks).onConflictDoNothing();
-  await db.insert(lessonProgress).values(plan.lessonProgress).onConflictDoNothing();
-  await db.insert(quizAttempts).values(plan.quizAttempts).onConflictDoNothing();
-  await db.insert(questionAnswers).values(plan.questionAnswers).onConflictDoNothing();
-  await db.insert(xpEvents).values(plan.xpEvents).onConflictDoNothing();
-  await db.insert(vmoneyLedger).values(plan.vmoneyLedger).onConflictDoNothing();
-  await db.insert(userBadges).values(plan.userBadges).onConflictDoNothing();
-  await db.insert(rewardClaims).values(plan.rewardClaims).onConflictDoNothing();
-  await db.insert(certificates).values(plan.certificates).onConflictDoNothing();
-  await db.insert(orders).values(plan.orders).onConflictDoNothing();
-  await db.insert(holdings).values(plan.holdings).onConflictDoNothing();
-  await db.insert(sipPlans).values(plan.sipPlans).onConflictDoNothing();
-  await db.insert(fundOrders).values(plan.fundOrders).onConflictDoNothing();
-  await db.insert(fundHoldings).values(plan.fundHoldings).onConflictDoNothing();
-  await db.insert(leagues).values(plan.leagues).onConflictDoNothing();
-  await db.insert(leagueMembers).values(plan.leagueMembers).onConflictDoNothing();
-  await db.insert(userAboutMeChips).values(plan.userAboutMeChips).onConflictDoNothing();
-  await db.insert(cheers).values(plan.cheers).onConflictDoNothing();
-  await db.insert(notifications).values(plan.notifications).onConflictDoNothing();
-  await db.insert(doubtThreads).values(plan.doubtThreads).onConflictDoNothing();
-  await db.insert(doubtMessages).values(plan.doubtMessages).onConflictDoNothing();
-  await db.insert(sessionTimeDaily).values(plan.sessionTimeDaily).onConflictDoNothing();
-  await db.insert(coachNoteTemplates).values(plan.coachNoteTemplates).onConflictDoNothing();
-  await db.insert(reportSnapshots).values(plan.reportSnapshots).onConflictDoNothing();
-  await db.insert(entitlements).values(plan.entitlements).onConflictDoNothing();
-  await db.insert(newsReads).values(plan.newsReads).onConflictDoNothing();
-  await db.insert(pulseCheckAttempts).values(plan.pulseCheckAttempts).onConflictDoNothing();
-  await db.insert(pulseCheckAnswers).values(plan.pulseCheckAnswers).onConflictDoNothing();
-  await db.insert(competitionEntries).values(plan.competitionEntries).onConflictDoNothing();
-  await db.insert(competitionTrades).values(plan.competitionTrades).onConflictDoNothing();
+  // insertIfAny skips the call entirely for an empty array - Drizzle's
+  // .values() throws on an empty array rather than treating it as a no-op.
+  await insertIfAny(users, plan.users);
+  await insertIfAny(parentContacts, plan.parentContacts);
+  await insertIfAny(consentRecords, plan.consentRecords);
+  await insertIfAny(legalAcceptances, plan.legalAcceptances);
+  await insertIfAny(streaks, plan.streaks);
+  await insertIfAny(lessonProgress, plan.lessonProgress);
+  await insertIfAny(quizAttempts, plan.quizAttempts);
+  await insertIfAny(questionAnswers, plan.questionAnswers);
+  await insertIfAny(xpEvents, plan.xpEvents);
+  await insertIfAny(vmoneyLedger, plan.vmoneyLedger);
+  await insertIfAny(userBadges, plan.userBadges);
+  await insertIfAny(rewardClaims, plan.rewardClaims);
+  await insertIfAny(certificates, plan.certificates);
+  await insertIfAny(orders, plan.orders);
+  await insertIfAny(holdings, plan.holdings);
+  await insertIfAny(sipPlans, plan.sipPlans);
+  await insertIfAny(fundOrders, plan.fundOrders);
+  await insertIfAny(fundHoldings, plan.fundHoldings);
+  await insertIfAny(leagues, plan.leagues);
+  await insertIfAny(leagueMembers, plan.leagueMembers);
+  await insertIfAny(userAboutMeChips, plan.userAboutMeChips);
+  await insertIfAny(cheers, plan.cheers);
+  await insertIfAny(notifications, plan.notifications);
+  await insertIfAny(doubtThreads, plan.doubtThreads);
+  await insertIfAny(doubtMessages, plan.doubtMessages);
+  await insertIfAny(sessionTimeDaily, plan.sessionTimeDaily);
+  await insertIfAny(coachNoteTemplates, plan.coachNoteTemplates);
+  await insertIfAny(reportSnapshots, plan.reportSnapshots);
+  await insertIfAny(entitlements, plan.entitlements);
+  await insertIfAny(newsReads, plan.newsReads);
+  await insertIfAny(pulseCheckAttempts, plan.pulseCheckAttempts);
+  await insertIfAny(pulseCheckAnswers, plan.pulseCheckAnswers);
+  await insertIfAny(competitionEntries, plan.competitionEntries);
+  await insertIfAny(competitionTrades, plan.competitionTrades);
 }
 
 // Cheers needs the full cross-user pool (sender/receiver, never the same
