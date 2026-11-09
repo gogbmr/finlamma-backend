@@ -1162,7 +1162,24 @@ function printSummary(profiles: UserProfile[], plan: Plan): void {
   );
 }
 
+// Refuses to run at all (dry run included) unless ALLOW_DEV_SEED=true is set
+// in the environment - a hard stop, not just a documented convention, so
+// this can never run against a real production database by accident
+// (docs/ARCHITECTURE.md D80, docs/STATUS.md 2026-11-09 entry). Must be set
+// locally (.env.local) for dev work and must stay unset in production.
+function assertDevSeedAllowed(): void {
+  if (process.env.ALLOW_DEV_SEED !== "true") {
+    console.error(
+      'Refusing to run: ALLOW_DEV_SEED is not "true". This script creates synthetic seed data ' +
+        "and must never run against a real production database. Set ALLOW_DEV_SEED=true in " +
+        ".env.local (never in a production environment) to run it anyway.",
+    );
+    process.exit(1);
+  }
+}
+
 async function main() {
+  assertDevSeedAllowed();
   const ref = await loadReferenceData();
   if (ref.worldRows.length === 0) {
     console.error("No worlds found - run pnpm seed:worlds and pnpm seed:dev-content first.");
