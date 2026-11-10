@@ -2,6 +2,35 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-11-10 — v2.8.0
+
+Minor bump: no operations added or removed. News data-quality fix, triggered by the app seeing a
+feed story with `headline: undefined` and another with a missing category, even though the
+database behind it was clean. Branch `fix/news-contract-validation`.
+
+**`GET /api/v1/news/feed`** - bug fix, not a documented-shape change: the response was being
+double-wrapped (`{ data: { data: [...], nextCursor } }` instead of the already-documented
+`{ data: [...], nextCursor }`), because the route handler wrapped the service's own
+`{data, nextCursor}` result in another `ok()` envelope instead of using `okList()` like every
+other cursor-paginated endpoint. This is the actual root cause of the "headline undefined"
+report - an app reading `response.data` as the story array got `{data, nextCursor}` instead.
+Also: any story whose `content` doesn't match the contract (malformed by a future write path, a
+direct DB edit, etc.) is now skipped and logged rather than shipped - the feed degrades
+gracefully instead of leaking a broken row.
+
+**`GET /api/v1/news/{id}`**
+- `jargon` is now `nullable` - it was already `null` in the database for every story that has no
+  drafted jargon term (true of all 3 current dev-seed stories), but the schema previously
+  declared it required. No backfill; this just makes the documented contract match reality.
+- Same malformed-content guard as the feed: an invalid story now 404s (treated as not found)
+  instead of crashing on `story.content.body`.
+
+Write-time tightening (not a response-shape change, but closes where a blank field could come
+from): `news_stories.content`/`jargon` and the AI-drafted Quick Check question now require each
+`{en, hi, hx}` field to be a non-empty string, not just a string - the one real write path
+(`draftNewsStoryFromRaw`) rejects a blank headline/summary/jargon the same way it already
+rejected a missing one.
+
 ## 2026-11-09 — v2.7.0
 
 Minor bump: no operations added or removed, no fields removed or renamed - additive only. New

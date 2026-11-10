@@ -1,0 +1,31 @@
+{
+  "data": {
+    "id": "fcd174d2-e101-4ca0-8fe7-17eae8d28f37",
+    "headline": {
+      "en": "[PLACEHOLDER] RBI holds rates steady",
+      "hi": "[PLACEHOLDER] RBI holds rates steady",
+      "hx": "[PLACEHOLDER] RBI holds rates steady"
+    },
+    "summary": {
+      "en": "[PLACEHOLDER] Dev-seed summary for: RBI holds rates steady",
+      "hi": "[PLACEHOLDER] Dev-seed summary for: RBI holds rates steady",
+      "hx": "[PLACEHOLDER] Dev-seed summary for: RBI holds rates steady"
+    },
+    "body": [
+      {
+        "en": "[PLACEHOLDER] Dev-seed body paragraph for: RBI holds rates steady",
+        "hi": "[PLACEHOLDER] Dev-seed body paragraph for: RBI holds rates steady",
+        "hx": "[PLACEHOLDER] Dev-seed body paragraph for: RBI holds rates steady"
+      }
+    ],
+    "jargon": null,
+    "category": "rbi_rates",
+    "impact": "neutral",
+    "outlet": "[PLACEHOLDER] Dev Seed Wire",
+    "sourceUrl": "https://example.invalid/dev-seed",
+    "publishedAt": "2026-10-07T08:14:52.705Z",
+    "read": false,
+    "bookmarked": false,
+    "minReadSeconds": 15
+  }
+}

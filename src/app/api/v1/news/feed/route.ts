@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, parseLimit, withErrors } from "@/lib/http";
+import { okList, parseLimit, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
 import { NewsCategorySchema, NewsFeedResponseSchema } from "@/server/news/schemas";
@@ -79,5 +79,5 @@ export const GET = withErrors(async (req: Request) => {
   }
 
   const result = await getNewsFeed(user.id, { limit, cursor: searchParams.get("cursor"), category });
-  return ok(result);
+  return okList(result.data, result.nextCursor);
 });

@@ -16,9 +16,9 @@ import { NewsDraftAiOutputSchema, type NewsDraftAiOutput } from "./schemas";
 const LOCALIZED_TEXT_SCHEMA = {
   type: "object" as const,
   properties: {
-    en: { type: "string" as const },
-    hi: { type: "string" as const },
-    hx: { type: "string" as const },
+    en: { type: "string" as const, minLength: 1 },
+    hi: { type: "string" as const, minLength: 1 },
+    hx: { type: "string" as const, minLength: 1 },
   },
   required: ["en", "hi", "hx"],
   additionalProperties: false,

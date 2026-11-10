@@ -1,0 +1,67 @@
+{
+  "data": {
+    "data": [
+      {
+        "id": "96600dd2-12da-4804-a044-0c702afc33fe",
+        "headline": {
+          "en": "[PLACEHOLDER] What a stock split actually does",
+          "hi": "[PLACEHOLDER] What a stock split actually does",
+          "hx": "[PLACEHOLDER] What a stock split actually does"
+        },
+        "summary": {
+          "en": "[PLACEHOLDER] Dev-seed summary for: What a stock split actually does",
+          "hi": "[PLACEHOLDER] Dev-seed summary for: What a stock split actually does",
+          "hx": "[PLACEHOLDER] Dev-seed summary for: What a stock split actually does"
+        },
+        "category": "stock_market_basics",
+        "impact": "good",
+        "outlet": "[PLACEHOLDER] Dev Seed Wire",
+        "featured": false,
+        "publishedAt": "2026-10-07T08:14:52.885Z",
+        "read": false,
+        "bookmarked": false
+      },
+      {
+        "id": "3d8f8cf0-aa70-4fc7-8919-93c30dc281a4",
+        "headline": {
+          "en": "[PLACEHOLDER] Inflation ticks up this quarter",
+          "hi": "[PLACEHOLDER] Inflation ticks up this quarter",
+          "hx": "[PLACEHOLDER] Inflation ticks up this quarter"
+        },
+        "summary": {
+          "en": "[PLACEHOLDER] Dev-seed summary for: Inflation ticks up this quarter",
+          "hi": "[PLACEHOLDER] Dev-seed summary for: Inflation ticks up this quarter",
+          "hx": "[PLACEHOLDER] Dev-seed summary for: Inflation ticks up this quarter"
+        },
+        "category": "inflation",
+        "impact": "bad",
+        "outlet": "[PLACEHOLDER] Dev Seed Wire",
+        "featured": false,
+        "publishedAt": "2026-10-07T08:14:52.798Z",
+        "read": false,
+        "bookmarked": false
+      },
+      {
+        "id": "fcd174d2-e101-4ca0-8fe7-17eae8d28f37",
+        "headline": {
+          "en": "[PLACEHOLDER] RBI holds rates steady",
+          "hi": "[PLACEHOLDER] RBI holds rates steady",
+          "hx": "[PLACEHOLDER] RBI holds rates steady"
+        },
+        "summary": {
+          "en": "[PLACEHOLDER] Dev-seed summary for: RBI holds rates steady",
+          "hi": "[PLACEHOLDER] Dev-seed summary for: RBI holds rates steady",
+          "hx": "[PLACEHOLDER] Dev-seed summary for: RBI holds rates steady"
+        },
+        "category": "rbi_rates",
+        "impact": "neutral",
+        "outlet": "[PLACEHOLDER] Dev Seed Wire",
+        "featured": false,
+        "publishedAt": "2026-10-07T08:14:52.705Z",
+        "read": false,
+        "bookmarked": false
+      }
+    ],
+    "nextCursor": null
+  }
+}
