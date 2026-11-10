@@ -99,4 +99,19 @@ describe("draftNewsStoryFromRaw", () => {
 
     await expect(draftNewsStoryFromRaw(RAW)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
   });
+
+  // Data-quality fix: a headline/summary/jargon/question field that's
+  // present but blank is a different failure mode from a missing key -
+  // LocalizedTextSchema alone ("is this a string?") lets "" through, so
+  // this path needs its own non-empty check to reject it.
+  it("throws SERVICE_UNAVAILABLE when a localized field is an empty string", async () => {
+    mockCreate.mockResolvedValueOnce(
+      toolUseResponse({
+        ...VALID_DRAFT_INPUT,
+        content: { ...VALID_DRAFT_INPUT.content, headline: { en: "", hi: "H", hx: "H" } },
+      }),
+    );
+
+    await expect(draftNewsStoryFromRaw(RAW)).rejects.toMatchObject({ code: "SERVICE_UNAVAILABLE" });
+  });
 });

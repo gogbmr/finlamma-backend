@@ -107,7 +107,7 @@ const document = generator.generateDocument({
   openapi: "3.1.0",
   info: {
     title: "Finlamma API",
-    version: "2.7.0",
+    version: "2.8.0",
     description:
       "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.",
   },

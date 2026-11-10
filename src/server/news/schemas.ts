@@ -29,7 +29,10 @@ export const NewsStoryDetailResponseSchema = z.object({
   headline: LocalizedTextSchema,
   summary: LocalizedTextSchema,
   body: z.array(LocalizedTextSchema),
-  jargon: z.object({ term: LocalizedTextSchema, explanation: LocalizedTextSchema }),
+  jargon: z
+    .object({ term: LocalizedTextSchema, explanation: LocalizedTextSchema })
+    .nullable()
+    .openapi({ description: "Null for a story with no jargon term drafted (e.g. every dev-seed story today)" }),
   category: z.string().openapi({ example: "rbi_rates" }),
   impact: z.enum(["good", "bad", "neutral"]),
   outlet: z.string().openapi({ example: "mock" }),
@@ -96,16 +99,28 @@ export const NewsImpactSchema = z.enum(["good", "bad", "neutral"]);
 export const NewsQualityGradeSchema = z.enum(["A", "B", "C"]);
 export const NewsStoryStatusSchema = z.enum(["draft", "published", "hidden"]);
 
+// Stricter than LocalizedTextSchema (which only checks "is a string", so ""
+// passes) - used for every news field that's actually WRITTEN by the
+// drafting pipeline, never for response schemas. A blank headline/summary/
+// jargon term is exactly the kind of "technically valid shape, practically
+// useless" row this is meant to reject at insert time, not learn about
+// later from a confused learner-facing render.
+const NonEmptyLocalizedTextSchema = z.object({
+  en: z.string().min(1, "en text is required"),
+  hi: z.string().min(1, "hi text is required"),
+  hx: z.string().min(1, "hx text is required"),
+});
+
 export const NewsStoryContentSchema = z.object({
-  headline: LocalizedTextSchema,
-  summary: LocalizedTextSchema,
-  body: z.array(LocalizedTextSchema).min(1),
+  headline: NonEmptyLocalizedTextSchema,
+  summary: NonEmptyLocalizedTextSchema,
+  body: z.array(NonEmptyLocalizedTextSchema).min(1),
 });
 export type NewsStoryContent = z.infer<typeof NewsStoryContentSchema>;
 
 export const NewsJargonSchema = z.object({
-  term: LocalizedTextSchema,
-  explanation: LocalizedTextSchema,
+  term: NonEmptyLocalizedTextSchema,
+  explanation: NonEmptyLocalizedTextSchema,
 });
 export type NewsJargon = z.infer<typeof NewsJargonSchema>;
 
@@ -122,10 +137,10 @@ export type NewsJargon = z.infer<typeof NewsJargonSchema>;
 // Richer formats (slider, match pairs, ...) stay staff-authored via the
 // existing Question editor, not AI-drafted in v1.
 const NewsDraftQuestionSchema = z.object({
-  prompt: LocalizedTextSchema,
-  options: z.array(LocalizedTextSchema).length(3),
+  prompt: NonEmptyLocalizedTextSchema,
+  options: z.array(NonEmptyLocalizedTextSchema).length(3),
   correctIndex: z.number().int().min(0).max(2),
-  explanation: LocalizedTextSchema,
+  explanation: NonEmptyLocalizedTextSchema,
 });
 
 export const NewsDraftAiOutputSchema = z.object({

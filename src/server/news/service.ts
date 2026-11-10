@@ -43,8 +43,30 @@ import {
   DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS,
   NEWS_QUIZ_GENERATOR_SETTINGS_KEY,
   NewsQuizGeneratorSettingsSchema,
+  NewsStoryContentSchema,
   type NewsQuizGeneratorSettings,
 } from "./schemas";
+
+// Read-time guard (CLAUDE.md data-quality fix, 2026-11): `news_stories.content`
+// is just jsonb - nothing stops a row whose shape doesn't satisfy the
+// contract from existing (a direct SQL edit, a future write path that
+// forgets to validate, ...). The one write path there is today
+// (draftNewsStoryFromRaw, see ai.ts) is Zod-gated, so this should never
+// actually fire - but "never crash the feed over a bad row" is cheap
+// insurance against every write path that might exist tomorrow. A story
+// that fails this check is skipped (feed) or treated as not found
+// (detail), and logged so it surfaces instead of silently shipping
+// `headline: undefined` to the app.
+function hasValidStoryContent(story: { id: string; content: unknown }): boolean {
+  const parsed = NewsStoryContentSchema.safeParse(story.content);
+  if (!parsed.success) {
+    logInternalError(
+      "news.invalid_story_content_skipped",
+      new Error(`news_stories ${story.id} failed contract validation: ${JSON.stringify(parsed.error.issues)}`),
+    );
+  }
+  return parsed.success;
+}
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 
@@ -166,11 +188,12 @@ export async function getNewsFeed(
   opts: { limit: number; cursor: string | null; category: NewsCategory | null },
 ) {
   const cursor = decodeCursor<NewsFeedCursor>(opts.cursor);
-  const { data, nextCursor } = await listPublishedStories({
+  const { data: rawData, nextCursor } = await listPublishedStories({
     limit: opts.limit,
     cursor,
     category: opts.category,
   });
+  const data = rawData.filter(hasValidStoryContent);
   const readIds = await listReadStoryIdsForUser(
     userId,
     data.map((s) => s.id),
@@ -201,7 +224,7 @@ export async function getNewsFeed(
 
 export async function getNewsStoryDetail(userId: string, id: string) {
   const story = await getPublishedStoryById(id);
-  if (!story) throw new AppError("NOT_FOUND", "No published news story with this id");
+  if (!story || !hasValidStoryContent(story)) throw new AppError("NOT_FOUND", "No published news story with this id");
 
   const existingRead = await getExistingRead(userId, id);
   // App asks batch, item A8.

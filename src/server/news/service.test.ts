@@ -392,6 +392,43 @@ describe("getNewsFeed", () => {
 
     expect(result.data[0].bookmarked).toBe(false);
   });
+
+  // Data-quality fix: a row whose `content` doesn't satisfy the contract
+  // (however it got that way - direct SQL, a future write path that
+  // forgets to validate, ...) must never ship `headline: undefined` to the
+  // app. It's skipped and logged instead, and the rest of the page still
+  // renders.
+  it("skips a story with a malformed content shape and logs it, instead of shipping it broken", async () => {
+    const malformedStory = { ...PUBLISHED_STORY, id: "story_bad", content: { headline: { en: "H" } } };
+    mockListPublishedStories.mockResolvedValueOnce({
+      data: [malformedStory, PUBLISHED_STORY],
+      nextCursor: null,
+    });
+    mockListReadStoryIdsForUser.mockResolvedValueOnce(new Set());
+
+    const result = await getNewsFeed("user_1", { limit: 20, cursor: null, category: null });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].id).toBe("story_1");
+    expect(mockLogInternalError).toHaveBeenCalledWith(
+      "news.invalid_story_content_skipped",
+      expect.objectContaining({ message: expect.stringContaining("story_bad") }),
+    );
+  });
+
+  it("a headline that's merely blank (not missing) is also skipped", async () => {
+    const blankHeadlineStory = {
+      ...PUBLISHED_STORY,
+      id: "story_blank",
+      content: { ...PUBLISHED_STORY.content, headline: { en: "", hi: "H", hx: "H" } },
+    };
+    mockListPublishedStories.mockResolvedValueOnce({ data: [blankHeadlineStory], nextCursor: null });
+    mockListReadStoryIdsForUser.mockResolvedValueOnce(new Set());
+
+    const result = await getNewsFeed("user_1", { limit: 20, cursor: null, category: null });
+
+    expect(result.data).toHaveLength(0);
+  });
 });
 
 describe("getNewsStoryDetail", () => {
@@ -420,6 +457,19 @@ describe("getNewsStoryDetail", () => {
     mockGetPublishedStoryById.mockResolvedValueOnce(null);
 
     await expect(getNewsStoryDetail("user_1", "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // Data-quality fix: same guard as the feed, applied to a single story -
+  // treated as not found (never a raw crash reading story.content.body
+  // below) and logged so the bad row surfaces.
+  it("throws NOT_FOUND (not a crash) for a story with a malformed content shape, and logs it", async () => {
+    mockGetPublishedStoryById.mockResolvedValueOnce({ ...PUBLISHED_STORY, content: { headline: { en: "H" } } });
+
+    await expect(getNewsStoryDetail("user_1", "story_1")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockLogInternalError).toHaveBeenCalledWith(
+      "news.invalid_story_content_skipped",
+      expect.any(Error),
+    );
   });
 });
 
