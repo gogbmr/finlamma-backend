@@ -1,7 +1,8 @@
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
 import { MarkNewsReadRequestSchema, MarkNewsReadResponseSchema } from "@/server/news/schemas";
@@ -78,5 +79,6 @@ export const POST = withErrors(async (req: Request, { params }: { params: Promis
   if (!parsedParams.success) throw new AppError("VALIDATION_FAILED", "Invalid news story id");
 
   const { dwellSeconds } = MarkNewsReadRequestSchema.parse(await req.json());
-  return ok(await markNewsStoryRead(user, parsedParams.data.id, dwellSeconds, requestMeta(req.headers)));
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json(await markNewsStoryRead(user, parsedParams.data.id, dwellSeconds, requestMeta(req.headers)));
 });

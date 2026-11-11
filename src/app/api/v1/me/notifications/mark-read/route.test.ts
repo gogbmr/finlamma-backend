@@ -37,10 +37,12 @@ describe("POST /api/v1/me/notifications/mark-read", () => {
     expect(res.status).toBe(401);
   });
 
-  it("marks all when ids omitted", async () => {
+  it("marks all when ids omitted, flat - no { data } envelope", async () => {
     const res = await POST(makeRequest({}));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ marked: true });
     expect(mockMarkMyNotificationsRead).toHaveBeenCalledWith(
       { id: "u1" },
       undefined,

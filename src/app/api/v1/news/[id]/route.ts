@@ -1,7 +1,8 @@
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, withErrors } from "@/lib/http";
+import { withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
 import { NewsStoryDetailResponseSchema } from "@/server/news/schemas";
@@ -64,5 +65,7 @@ export const GET = withErrors(async (req: Request, { params }: { params: Promise
   const parsed = NewsStoryParamsSchema.safeParse(await params);
   if (!parsed.success) throw new AppError("VALIDATION_FAILED", "Invalid news story id");
 
-  return ok(await getNewsStoryDetail(user.id, parsed.data.id));
+  // Flat response (no { data } envelope) - matches the documented contract/
+  // app, not ok()'s default. See src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json(await getNewsStoryDetail(user.id, parsed.data.id));
 });

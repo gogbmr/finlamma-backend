@@ -1,6 +1,7 @@
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { MarkNotificationsReadInputSchema } from "@/server/notifications/schemas";
 import { markMyNotificationsRead } from "@/server/notifications/service";
@@ -41,5 +42,6 @@ export const POST = withErrors(async (req: Request) => {
   await requireFullAccess(user);
   const body = MarkNotificationsReadInputSchema.parse(await req.json());
   await markMyNotificationsRead({ id: user.id }, body.ids, requestMeta(req.headers));
-  return ok({ marked: true as const });
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json({ marked: true as const });
 });

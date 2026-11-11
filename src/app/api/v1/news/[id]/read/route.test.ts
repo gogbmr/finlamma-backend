@@ -66,14 +66,16 @@ describe("POST /api/v1/news/{id}/read", () => {
     expect(res.status).toBe(429);
   });
 
-  it("records the read on success", async () => {
+  it("records the read on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockMarkNewsStoryRead.mockResolvedValueOnce({ read: true, alreadyRead: false });
 
     const res = await POST(makeRequest({ dwellSeconds: 30 }), { params: Promise.resolve({ id: STORY_ID }) });
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ read: true, alreadyRead: false });
     expect(mockMarkNewsStoryRead).toHaveBeenCalledWith(USER, STORY_ID, 30, expect.any(Object));
   });
 });

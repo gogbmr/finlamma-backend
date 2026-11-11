@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import {
   RegisterPushTokenInputSchema,
@@ -49,7 +50,8 @@ export const POST = withErrors(async (req: Request) => {
   await requireFullAccess(user);
   const body = RegisterPushTokenInputSchema.parse(await req.json());
   await registerPushToken({ id: user.id }, body, requestMeta(req.headers));
-  return ok({ registered: true as const });
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json({ registered: true as const });
 });
 
 registry.registerPath({
@@ -97,5 +99,5 @@ export const DELETE = withErrors(async (req: Request) => {
   await requireFullAccess(user);
   const body = UnregisterPushTokenInputSchema.parse(await req.json());
   await unregisterPushToken({ id: user.id }, body.expoPushToken, requestMeta(req.headers));
-  return ok({ unregistered: true as const });
+  return NextResponse.json({ unregistered: true as const });
 });
