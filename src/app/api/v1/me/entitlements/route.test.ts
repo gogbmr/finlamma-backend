@@ -44,7 +44,7 @@ describe("GET /api/v1/me/entitlements", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.data).toEqual({
+    expect(body).toEqual({
       entitlements: [],
       showAds: true,
       nonPersonalizedAdsRequired: true,

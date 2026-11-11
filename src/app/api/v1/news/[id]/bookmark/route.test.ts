@@ -61,7 +61,7 @@ describe("POST /api/v1/news/{id}/bookmark", () => {
     expect(res.status).toBe(200);
     expect(mockBookmarkNewsStory).toHaveBeenCalledWith(USER, STORY_ID);
     const body = await res.json();
-    expect(body.data.bookmarked).toBe(true);
+    expect(body.bookmarked).toBe(true);
   });
 });
 
@@ -85,6 +85,6 @@ describe("DELETE /api/v1/news/{id}/bookmark", () => {
     expect(res.status).toBe(200);
     expect(mockUnbookmarkNewsStory).toHaveBeenCalledWith(USER, STORY_ID);
     const body = await res.json();
-    expect(body.data.bookmarked).toBe(false);
+    expect(body.bookmarked).toBe(false);
   });
 });

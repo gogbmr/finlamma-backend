@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { ok, withErrors } from "@/lib/http";
+import { withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
 import { PulseCheckCurrentResponseSchema } from "@/server/pulse-check/schemas";
@@ -47,5 +48,6 @@ registry.registerPath({
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  return ok(await getCurrentPulseCheck(user.id));
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json(await getCurrentPulseCheck(user.id));
 });

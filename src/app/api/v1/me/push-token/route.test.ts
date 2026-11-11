@@ -49,10 +49,12 @@ describe("POST /api/v1/me/push-token", () => {
     expect(res.status).toBe(400);
   });
 
-  it("registers and returns 200", async () => {
+  it("registers and returns 200, flat - no { data } envelope", async () => {
     const res = await POST(postRequest({ expoPushToken: "ExponentPushToken[x]", platform: "android" }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ registered: true });
     expect(mockRegisterPushToken).toHaveBeenCalledWith(
       { id: "u1" },
       { expoPushToken: "ExponentPushToken[x]", platform: "android" },
@@ -79,10 +81,12 @@ describe("DELETE /api/v1/me/push-token", () => {
     expect(mockUnregisterPushToken).not.toHaveBeenCalled();
   });
 
-  it("unregisters and returns 200", async () => {
+  it("unregisters and returns 200, flat - no { data } envelope", async () => {
     const res = await DELETE(deleteRequest({ expoPushToken: "ExponentPushToken[x]" }));
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ unregistered: true });
     expect(mockUnregisterPushToken).toHaveBeenCalledWith({ id: "u1" }, "ExponentPushToken[x]", expect.anything());
   });
 });

@@ -1,6 +1,7 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { checkRateLimit, PULSE_CHECK_STEP_RATE_LIMIT } from "@/lib/redis";
 import { requireFullAccess } from "@/server/onboarding/service";
@@ -93,5 +94,6 @@ export const POST = withErrors(async (req: Request, { params }: { params: Promis
   }
   const parsed = PulseCheckAttemptParamsSchema.safeParse(await params);
   if (!parsed.success) throw new AppError("VALIDATION_FAILED", "Invalid attempt id");
-  return ok(await finishAttempt(user, parsed.data.attemptId, requestMeta(req.headers)));
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json(await finishAttempt(user, parsed.data.attemptId, requestMeta(req.headers)));
 });

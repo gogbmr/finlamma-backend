@@ -59,14 +59,16 @@ describe("GET /api/v1/news/{id}", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns the story detail on success", async () => {
+  it("returns the story detail on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockGetNewsStoryDetail.mockResolvedValueOnce({ id: STORY_ID, minReadSeconds: 20 });
 
     const res = await GET(makeRequest(), { params: Promise.resolve({ id: STORY_ID }) });
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ id: STORY_ID, minReadSeconds: 20 });
     expect(mockGetNewsStoryDetail).toHaveBeenCalledWith(USER.id, STORY_ID);
   });
 });

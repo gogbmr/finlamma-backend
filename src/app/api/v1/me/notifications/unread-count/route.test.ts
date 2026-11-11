@@ -40,7 +40,7 @@ describe("GET /api/v1/me/notifications/unread-count", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.data).toEqual({ count: 3 });
+    expect(body).toEqual({ count: 3 });
     expect(mockGetMyUnreadNotificationCount).toHaveBeenCalledWith({ id: "u1" });
   });
 });

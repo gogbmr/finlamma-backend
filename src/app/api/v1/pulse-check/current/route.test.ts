@@ -35,14 +35,16 @@ describe("GET /api/v1/pulse-check/current", () => {
     expect(mockGetCurrentPulseCheck).not.toHaveBeenCalled();
   });
 
-  it("returns today's meta on success", async () => {
+  it("returns today's meta on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockGetCurrentPulseCheck.mockResolvedValueOnce({ editionId: null, alreadyCompletedToday: false });
 
     const res = await GET(makeRequest());
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ editionId: null, alreadyCompletedToday: false });
     expect(mockGetCurrentPulseCheck).toHaveBeenCalledWith(USER.id);
   });
 });

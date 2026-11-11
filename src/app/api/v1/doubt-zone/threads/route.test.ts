@@ -72,6 +72,7 @@ describe("POST /api/v1/doubt-zone/threads", () => {
   });
 
   it("returns 201 with the thread on success, passing the caller's own language", async () => {
+  it("returns 201 with the thread on success, flat - no { data } envelope, passing the caller's own language", async () => {
     mockCreateOrGetThread.mockResolvedValueOnce({
       id: "thread_1",
       mentorId: MENTOR_ID,
@@ -83,7 +84,12 @@ describe("POST /api/v1/doubt-zone/threads", () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.data.id).toBe("thread_1");
+    expect(body).toEqual({
+      id: "thread_1",
+      mentorId: MENTOR_ID,
+      lessonId: null,
+      disclosureMessage: "Hi! I'm Lamma AI...",
+    });
     expect(mockCreateOrGetThread).toHaveBeenCalledWith(
       { id: "u1", language: "en" },
       { mentorId: MENTOR_ID },

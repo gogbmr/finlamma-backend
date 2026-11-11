@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { ok, withErrors } from "@/lib/http";
+import { withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { UnreadNotificationCountResponseSchema } from "@/server/notifications/schemas";
 import { getMyUnreadNotificationCount } from "@/server/notifications/service";
@@ -33,5 +34,6 @@ export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
   const count = await getMyUnreadNotificationCount({ id: user.id });
-  return ok({ count });
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json({ count });
 });

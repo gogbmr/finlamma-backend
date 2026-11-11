@@ -76,14 +76,16 @@ describe("POST /api/v1/pulse-check/{attemptId}/steps/{n}/serve", () => {
     expect(res.status).toBe(409);
   });
 
-  it("serves the question on success", async () => {
+  it("serves the question on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockServeStep.mockResolvedValueOnce({ stepIndex: 1, totalSteps: 8, question: { questionId: "q1" } });
 
     const res = await POST(makeRequest(), { params: Promise.resolve({ attemptId: ATTEMPT_ID, n: "1" }) });
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ stepIndex: 1, totalSteps: 8, question: { questionId: "q1" } });
     expect(mockServeStep).toHaveBeenCalledWith(USER, ATTEMPT_ID, 1, { ip: null, userAgent: null });
   });
 });

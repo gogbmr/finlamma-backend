@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { created, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { createOrGetThread } from "@/server/doubt-zone/service";
 import { CreateThreadInputSchema, ThreadResponseSchema } from "@/server/doubt-zone/schemas";
@@ -82,5 +83,6 @@ export const POST = withErrors(async (req: Request) => {
     body,
     requestMeta(req.headers),
   );
-  return created(thread);
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json(thread, { status: 201 });
 });
