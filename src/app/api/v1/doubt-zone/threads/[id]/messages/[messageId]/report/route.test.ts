@@ -63,7 +63,7 @@ describe("POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report", () 
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.data).toEqual({ reported: true });
+    expect(body).toEqual({ reported: true });
     expect(mockReportMessage).toHaveBeenCalledWith({ id: "u1" }, THREAD_ID, MESSAGE_ID, expect.anything());
   });
 });

@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { ReportMessageParamsSchema, ReportMessageResponseSchema } from "@/server/doubt-zone/schemas";
 import { reportMessage } from "@/server/doubt-zone/service";
@@ -70,6 +71,7 @@ export const POST = withErrors(
     await requireFullAccess(user);
     const { id, messageId } = ReportMessageParamsSchema.parse(await params);
     await reportMessage({ id: user.id }, id, messageId, requestMeta(req.headers));
-    return ok({ reported: true as const });
+    // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+    return NextResponse.json({ reported: true as const });
   },
 );

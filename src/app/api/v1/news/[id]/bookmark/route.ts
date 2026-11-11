@@ -1,7 +1,8 @@
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
-import { ok, withErrors } from "@/lib/http";
+import { withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { requireFullAccess } from "@/server/onboarding/service";
 import { NewsBookmarkResponseSchema } from "@/server/news/schemas";
@@ -97,7 +98,8 @@ export const POST = withErrors(async (req: Request, { params }: { params: Promis
   const parsedParams = NewsStoryParamsSchema.safeParse(await params);
   if (!parsedParams.success) throw new AppError("VALIDATION_FAILED", "Invalid news story id");
 
-  return ok(await bookmarkNewsStory(user, parsedParams.data.id));
+  // Flat response - see src/app/api/v1/me/notification-prefs/route.ts.
+  return NextResponse.json(await bookmarkNewsStory(user, parsedParams.data.id));
 });
 
 export const DELETE = withErrors(async (req: Request, { params }: { params: Promise<{ id: string }> }) => {
@@ -107,5 +109,5 @@ export const DELETE = withErrors(async (req: Request, { params }: { params: Prom
   const parsedParams = NewsStoryParamsSchema.safeParse(await params);
   if (!parsedParams.success) throw new AppError("VALIDATION_FAILED", "Invalid news story id");
 
-  return ok(await unbookmarkNewsStory(user, parsedParams.data.id));
+  return NextResponse.json(await unbookmarkNewsStory(user, parsedParams.data.id));
 });

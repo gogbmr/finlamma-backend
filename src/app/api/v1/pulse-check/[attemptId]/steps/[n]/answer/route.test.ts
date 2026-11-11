@@ -63,7 +63,7 @@ describe("POST /api/v1/pulse-check/{attemptId}/steps/{n}/answer", () => {
     expect(res.status).toBe(400);
   });
 
-  it("grades and returns the result on success", async () => {
+  it("grades and returns the result on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockSubmitAnswer.mockResolvedValueOnce({ isCorrect: true, vmAwarded: 50 });
@@ -71,8 +71,10 @@ describe("POST /api/v1/pulse-check/{attemptId}/steps/{n}/answer", () => {
     const res = await POST(makeRequest({ answer: { correctIndex: 0 } }), {
       params: Promise.resolve({ attemptId: ATTEMPT_ID, n: "1" }),
     });
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ isCorrect: true, vmAwarded: 50 });
     expect(mockSubmitAnswer).toHaveBeenCalledWith(USER, ATTEMPT_ID, 1, { correctIndex: 0 }, expect.any(Object));
   });
 });

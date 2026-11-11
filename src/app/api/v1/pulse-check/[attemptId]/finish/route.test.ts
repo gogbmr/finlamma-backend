@@ -54,7 +54,7 @@ describe("POST /api/v1/pulse-check/{attemptId}/finish", () => {
     expect(res.status).toBe(409);
   });
 
-  it("returns the payout summary on success, surfacing dailyCapReached", async () => {
+  it("returns the payout summary on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockFinishAttempt.mockResolvedValueOnce({
@@ -68,7 +68,12 @@ describe("POST /api/v1/pulse-check/{attemptId}/finish", () => {
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.data.dailyCapReached).toBe(true);
+    expect(body).toEqual({
+      accuracyPct: 100,
+      totalVmAwardedPaise: 6000,
+      rawVmEarnedPaise: 10_000,
+      dailyCapReached: true,
+    });
     expect(mockFinishAttempt).toHaveBeenCalledWith(USER, ATTEMPT_ID, expect.any(Object));
   });
 });

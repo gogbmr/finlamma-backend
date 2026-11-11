@@ -47,14 +47,16 @@ describe("GET /api/v1/pulse-check/{attemptId}/result", () => {
     expect(res.status).toBe(409);
   });
 
-  it("returns the result on success", async () => {
+  it("returns the result on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockGetResult.mockResolvedValueOnce({ attemptId: ATTEMPT_ID, accuracyPct: 100, answers: [] });
 
     const res = await GET(makeRequest(), { params: Promise.resolve({ attemptId: ATTEMPT_ID }) });
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ attemptId: ATTEMPT_ID, accuracyPct: 100, answers: [] });
     expect(mockGetResult).toHaveBeenCalledWith(USER, ATTEMPT_ID);
   });
 });

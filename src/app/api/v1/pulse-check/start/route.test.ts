@@ -45,14 +45,16 @@ describe("POST /api/v1/pulse-check/start", () => {
     expect(res.status).toBe(404);
   });
 
-  it("starts (or resumes) an attempt on success", async () => {
+  it("starts (or resumes) an attempt on success, flat - no { data } envelope", async () => {
     mockRequireUser.mockResolvedValueOnce(USER);
     mockRequireFullAccess.mockResolvedValueOnce(undefined);
     mockStartAttempt.mockResolvedValueOnce({ attemptId: "a1", editionId: "e1", totalSteps: 8, resumed: false });
 
     const res = await POST(makeRequest());
+    const body = await res.json();
 
     expect(res.status).toBe(200);
+    expect(body).toEqual({ attemptId: "a1", editionId: "e1", totalSteps: 8, resumed: false });
     expect(mockStartAttempt).toHaveBeenCalledWith(USER, expect.any(Object));
   });
 });
