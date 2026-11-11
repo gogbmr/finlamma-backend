@@ -45,12 +45,12 @@ describe("GET /api/v1/me/notification-prefs", () => {
     expect(res.status).toBe(401);
   });
 
-  it("returns the resolved prefs", async () => {
+  it("returns the resolved prefs, flat - no { data } envelope (the app is coded to this exact shape)", async () => {
     const res = await GET(getRequest());
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.data).toEqual(PREFS);
+    expect(body).toEqual(PREFS);
   });
 });
 
