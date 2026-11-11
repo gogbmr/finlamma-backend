@@ -71,7 +71,6 @@ describe("POST /api/v1/doubt-zone/threads", () => {
     expect(body.error.code).toBe("DOUBT_ZONE_DISABLED");
   });
 
-  it("returns 201 with the thread on success, passing the caller's own language", async () => {
   it("returns 201 with the thread on success, flat - no { data } envelope, passing the caller's own language", async () => {
     mockCreateOrGetThread.mockResolvedValueOnce({
       id: "thread_1",
