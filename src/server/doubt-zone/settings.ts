@@ -1,4 +1,5 @@
 import { logActivity } from "@/lib/activity-log";
+import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import {
@@ -64,4 +65,21 @@ export async function updateDoubtZoneSafetySettings(
 export async function getDoubtZoneEnabled(): Promise<boolean> {
   const raw = await getSettingJson(DOUBT_ZONE_ENABLED_KEY);
   return typeof raw === "boolean" ? raw : DEFAULT_DOUBT_ZONE_ENABLED;
+}
+
+// The actual server-side enforcement of the kill switch above - unlike
+// getDoubtZoneEnabled (a plain read, used by GET /me/entitlements to tell
+// the app whether to show the feature at all), this throws. Called first
+// thing, before any other work, in every learner-facing Doubt Zone service
+// function (src/server/doubt-zone/service.ts: createOrGetThread,
+// listThreadMessages, prepareMessage, reportMessage) so a flagged-off
+// feature can't be reached by calling the API directly even though the app
+// hides the UI for it - no AI call, no DB read/write, nothing. Both this
+// and getDoubtZoneEnabled read the exact same settings_kv key, so the
+// server's actual behavior and what GET /me/entitlements told the app can
+// never disagree.
+export async function requireDoubtZoneEnabled(): Promise<void> {
+  if (!(await getDoubtZoneEnabled())) {
+    throw new AppError("DOUBT_ZONE_DISABLED", "Doubt Zone is not available right now");
+  }
 }

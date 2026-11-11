@@ -61,6 +61,17 @@ describe("POST /api/v1/doubt-zone/threads", () => {
     expect(mockCreateOrGetThread).toHaveBeenCalledWith({ id: "u1", language: "en" }, {}, expect.anything());
   });
 
+  it("returns 403 DOUBT_ZONE_DISABLED when the server-side kill switch is off", async () => {
+    mockCreateOrGetThread.mockRejectedValueOnce(new AppError("DOUBT_ZONE_DISABLED", "Doubt Zone is not available right now"));
+
+    const res = await POST(makeRequest({ mentorId: MENTOR_ID }));
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("DOUBT_ZONE_DISABLED");
+  });
+
+  it("returns 201 with the thread on success, passing the caller's own language", async () => {
   it("returns 201 with the thread on success, flat - no { data } envelope, passing the caller's own language", async () => {
     mockCreateOrGetThread.mockResolvedValueOnce({
       id: "thread_1",

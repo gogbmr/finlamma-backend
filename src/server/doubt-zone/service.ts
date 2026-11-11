@@ -24,7 +24,7 @@ import {
 import { streamDoubtZoneReply, type DoubtZoneChatMessage } from "./reply";
 import { classifyMessageSafety, isFlaggableSafetyCategory } from "./safety";
 import type { CreateThreadInput } from "./schemas";
-import { getDoubtZoneSafetySettings } from "./settings";
+import { getDoubtZoneSafetySettings, requireDoubtZoneEnabled } from "./settings";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type DoubtZoneUser = { id: string; language: DoubtZoneLanguage };
@@ -62,6 +62,7 @@ async function resolveMentorAndLessonContext(input: CreateThreadInput, language:
 }
 
 export async function createOrGetThread(user: DoubtZoneUser, input: CreateThreadInput, meta: RequestMeta) {
+  await requireDoubtZoneEnabled();
   const { mentorId, lessonId } = await resolveMentorAndLessonContext(input, user.language);
 
   const existing = lessonId
@@ -96,6 +97,7 @@ export async function listThreadMessages(
   threadId: string,
   opts: { limit: number; cursor: string | null },
 ) {
+  await requireDoubtZoneEnabled();
   const thread = await getThreadById(threadId);
   if (!thread || thread.userId !== user.id) {
     throw new AppError("NOT_FOUND", "No Doubt Zone thread with this id");
@@ -136,6 +138,7 @@ export async function prepareMessage(
   content: string,
   meta: RequestMeta,
 ): Promise<PreparedMessage> {
+  await requireDoubtZoneEnabled();
   const thread = await getThreadById(threadId);
   if (!thread || thread.userId !== user.id) {
     throw new AppError("NOT_FOUND", "No Doubt Zone thread with this id");
@@ -348,6 +351,7 @@ export async function reportMessage(
   messageId: string,
   meta: RequestMeta,
 ): Promise<void> {
+  await requireDoubtZoneEnabled();
   const thread = await getThreadById(threadId);
   if (!thread || thread.userId !== user.id) {
     throw new AppError("NOT_FOUND", "No Doubt Zone thread with this id");

@@ -58,6 +58,16 @@ describe("POST /api/v1/doubt-zone/threads/{id}/messages/{messageId}/report", () 
     expect(res.status).toBe(400);
   });
 
+  it("returns 403 DOUBT_ZONE_DISABLED when the server-side kill switch is off", async () => {
+    mockReportMessage.mockRejectedValueOnce(new AppError("DOUBT_ZONE_DISABLED", "Doubt Zone is not available right now"));
+
+    const res = await POST(makeRequest(), { params: Promise.resolve({ id: THREAD_ID, messageId: MESSAGE_ID }) });
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("DOUBT_ZONE_DISABLED");
+  });
+
   it("reports the message and returns 200", async () => {
     const res = await POST(makeRequest(), { params: Promise.resolve({ id: THREAD_ID, messageId: MESSAGE_ID }) });
 

@@ -38,12 +38,15 @@ registry.registerPath({
       },
     },
     403: {
-      description: "Onboarding, parental consent or legal acceptance is incomplete",
+      description:
+        "Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or the " +
+        "Doubt Zone feature is currently disabled server-side (DOUBT_ZONE_DISABLED - see " +
+        "doubtZoneEnabled on GET /me/entitlements)",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
           example: {
-            error: { code: "FORBIDDEN", message: "Complete onboarding before using this feature" },
+            error: { code: "DOUBT_ZONE_DISABLED", message: "Doubt Zone is not available right now" },
           },
         },
       },

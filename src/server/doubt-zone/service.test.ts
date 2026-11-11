@@ -51,7 +51,11 @@ vi.mock("./safety", () => ({
 }));
 
 const mockGetDoubtZoneSafetySettings = vi.fn();
-vi.mock("./settings", () => ({ getDoubtZoneSafetySettings: () => mockGetDoubtZoneSafetySettings() }));
+const mockRequireDoubtZoneEnabled = vi.fn();
+vi.mock("./settings", () => ({
+  getDoubtZoneSafetySettings: () => mockGetDoubtZoneSafetySettings(),
+  requireDoubtZoneEnabled: () => mockRequireDoubtZoneEnabled(),
+}));
 
 const {
   createOrGetThread,
@@ -75,10 +79,61 @@ const THREAD = {
   lastMessageAt: new Date(),
 };
 
+const DOUBT_ZONE_DISABLED_ERROR = Object.assign(new Error("Doubt Zone is not available right now"), {
+  code: "DOUBT_ZONE_DISABLED",
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetDoubtZoneSafetySettings.mockResolvedValue(DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS);
   mockCheckRateLimit.mockResolvedValue({ allowed: true, configured: true });
+  // Every test in this file runs as if the feature is on, unless a specific
+  // "disabled" test below overrides this with a rejection - see the
+  // "server-side Doubt Zone kill switch" describe block.
+  mockRequireDoubtZoneEnabled.mockResolvedValue(undefined);
+});
+
+describe("server-side Doubt Zone kill switch (requireDoubtZoneEnabled)", () => {
+  beforeEach(() => {
+    mockRequireDoubtZoneEnabled.mockRejectedValue(DOUBT_ZONE_DISABLED_ERROR);
+  });
+
+  it("createOrGetThread refuses before touching any thread/mentor/lesson lookup", async () => {
+    await expect(createOrGetThread(USER, { mentorId: "mentor_1" }, META)).rejects.toMatchObject({
+      code: "DOUBT_ZONE_DISABLED",
+    });
+    expect(mockGetMentorById).not.toHaveBeenCalled();
+    expect(mockRepo.findStandaloneThread).not.toHaveBeenCalled();
+    expect(mockRepo.insertThread).not.toHaveBeenCalled();
+  });
+
+  it("listThreadMessages refuses before reading the thread or any messages", async () => {
+    await expect(listThreadMessages(USER, THREAD.id, { limit: 20, cursor: null })).rejects.toMatchObject({
+      code: "DOUBT_ZONE_DISABLED",
+    });
+    expect(mockRepo.getThreadById).not.toHaveBeenCalled();
+    expect(mockRepo.listMessagesPage).not.toHaveBeenCalled();
+  });
+
+  it("prepareMessage refuses before any rate-limit check, DB write or AI/classifier call", async () => {
+    await expect(prepareMessage(USER, THREAD.id, "hi", META)).rejects.toMatchObject({
+      code: "DOUBT_ZONE_DISABLED",
+    });
+    expect(mockCheckRateLimit).not.toHaveBeenCalled();
+    expect(mockRepo.getThreadById).not.toHaveBeenCalled();
+    expect(mockRepo.insertMessage).not.toHaveBeenCalled();
+    expect(mockClassifyMessageSafety).not.toHaveBeenCalled();
+    expect(mockStreamDoubtZoneReply).not.toHaveBeenCalled();
+  });
+
+  it("reportMessage refuses before reading the thread or the message", async () => {
+    await expect(reportMessage(USER, THREAD.id, "msg_1", META)).rejects.toMatchObject({
+      code: "DOUBT_ZONE_DISABLED",
+    });
+    expect(mockRepo.getThreadById).not.toHaveBeenCalled();
+    expect(mockRepo.getMessageById).not.toHaveBeenCalled();
+    expect(mockRepo.markMessageFlagged).not.toHaveBeenCalled();
+  });
 });
 
 describe("createOrGetThread", () => {
