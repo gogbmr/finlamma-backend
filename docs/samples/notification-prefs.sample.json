@@ -1,0 +1,13 @@
+{
+  "_note": "Captured by calling the route handler directly against a real PGlite test DB (src/app/api/v1/me/notification-prefs/route.contract.test.ts), for a learner with no notification_prefs row and no 'notifications' settings_kv row. Confirms GET /api/v1/me/notification-prefs and PATCH /api/v1/me/notification-prefs return the payload FLAT - no { data } envelope - unlike almost every other endpoint in this API. The route previously used ok(), which added the envelope at runtime even though docs/API_ENDPOINTS.md (and the mobile app) were built against this flat shape; the route was fixed to match the documented contract instead of changing the contract.",
+  "GET /api/v1/me/notification-prefs": {
+    "enabled": true,
+    "quietHours": { "startHourIst": 21, "endHourIst": 7 },
+    "disabledCategories": []
+  },
+  "PATCH /api/v1/me/notification-prefs (body: { \"enabled\": false })": {
+    "enabled": false,
+    "quietHours": { "startHourIst": 21, "endHourIst": 7 },
+    "disabledCategories": []
+  }
+}

@@ -1,5 +1,6 @@
+import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { ok, requestMeta, withErrors } from "@/lib/http";
+import { requestMeta, withErrors } from "@/lib/http";
 import { ErrorResponseSchema, registry } from "@/lib/openapi";
 import { NotificationPrefsResponseSchema, UpdateNotificationPrefsInputSchema } from "@/server/notifications/schemas";
 import { getMyNotificationPrefs, updateMyNotificationPrefs } from "@/server/notifications/service";
@@ -35,7 +36,15 @@ registry.registerPath({
 export const GET = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
-  return ok(await getMyNotificationPrefs({ id: user.id }));
+  // Deliberately flat - no { data } envelope, unlike every other endpoint
+  // in this codebase. docs/API_ENDPOINTS.md has always documented this
+  // response flat (a schema-registration bug: NotificationPrefsResponseSchema
+  // was never wrapped in a `data` property the way e.g. XpStatsResponseSchema
+  // is), and the app was built against that documented shape before the
+  // mismatch was caught - see docs/STATUS.md. Fixing the route to match the
+  // existing contract/app, not the other way around. Do not change this to
+  // ok(...) without also coordinating an app release.
+  return NextResponse.json(await getMyNotificationPrefs({ id: user.id }));
 });
 
 registry.registerPath({
@@ -58,5 +67,6 @@ export const PATCH = withErrors(async (req: Request) => {
   const user = await requireUser(req);
   await requireFullAccess(user);
   const body = UpdateNotificationPrefsInputSchema.parse(await req.json());
-  return ok(await updateMyNotificationPrefs({ id: user.id }, body, requestMeta(req.headers)));
+  // Flat response - see the matching comment on GET above.
+  return NextResponse.json(await updateMyNotificationPrefs({ id: user.id }, body, requestMeta(req.headers)));
 });
