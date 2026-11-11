@@ -65,6 +65,16 @@ describe("GET /api/v1/doubt-zone/threads/{id}/messages", () => {
     expect(res.status).toBe(404);
   });
 
+  it("returns 403 DOUBT_ZONE_DISABLED when the server-side kill switch is off", async () => {
+    mockListThreadMessages.mockRejectedValueOnce(new AppError("DOUBT_ZONE_DISABLED", "Doubt Zone is not available right now"));
+
+    const res = await GET(makeGetRequest(), { params: Promise.resolve({ id: THREAD_ID }) });
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("DOUBT_ZONE_DISABLED");
+  });
+
   it("returns a page of messages", async () => {
     mockListThreadMessages.mockResolvedValueOnce({
       data: [{ id: "m1", role: "learner", content: "hi", createdAt: "2026-09-30T00:00:00.000Z" }],
@@ -121,6 +131,16 @@ describe("POST /api/v1/doubt-zone/threads/{id}/messages", () => {
     const res = await POST(makePostRequest({ content: "hi" }), { params: Promise.resolve({ id: THREAD_ID }) });
 
     expect(res.status).toBe(404);
+  });
+
+  it("returns a clean 403 JSON response when the server-side Doubt Zone kill switch is off, never calling the AI provider", async () => {
+    mockPrepareMessage.mockRejectedValueOnce(new AppError("DOUBT_ZONE_DISABLED", "Doubt Zone is not available right now"));
+
+    const res = await POST(makePostRequest({ content: "hi" }), { params: Promise.resolve({ id: THREAD_ID }) });
+
+    expect(res.status).toBe(403);
+    expect(res.headers.get("Content-Type")).not.toContain("ndjson");
+    expect(mockStreamReplyAndPersist).not.toHaveBeenCalled();
   });
 
   it("streams an instant done line (no delta lines, no call to streamReplyAndPersist) when the message was flagged", async () => {

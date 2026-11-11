@@ -117,6 +117,14 @@ export const ErrorCode = {
   // never retryable with a different date, since the very next request on
   // this account hits ACCOUNT_DELETION_PENDING instead.
   AGE_BELOW_MINIMUM: "AGE_BELOW_MINIMUM",
+
+  // Doubt Zone (src/server/doubt-zone) - the settings_kv "doubt_zone_enabled"
+  // server-side kill switch (app ask C4) is off. Thrown by
+  // requireDoubtZoneEnabled, called first thing in every learner-facing
+  // Doubt Zone service function (open/list/send/report) - BEFORE any DB
+  // read/write or AI call, so a flagged-off feature truly does nothing, not
+  // just hides its UI. Same "fails closed" shape as LESSON_LOCKED.
+  DOUBT_ZONE_DISABLED: "DOUBT_ZONE_DISABLED",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -166,6 +174,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   ACCOUNT_DELETION_PENDING: 403,
 
   AGE_BELOW_MINIMUM: 403,
+
+  DOUBT_ZONE_DISABLED: 403,
 };
 
 export class AppError extends Error {

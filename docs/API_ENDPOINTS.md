@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.8.0) on 2026-11-10.
+> Generated from `openapi/openapi.json` (version 2.8.0) on 2026-11-11.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -6924,13 +6924,13 @@ Idempotent by (learner, context): passing the same lessonId (or, for the standal
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or the Doubt Zone feature is currently disabled server-side (DOUBT_ZONE_DISABLED - see doubtZoneEnabled on GET /me/entitlements)
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "DOUBT_ZONE_DISABLED",
+    "message": "Doubt Zone is not available right now"
   }
 }
 ```
@@ -6994,13 +6994,13 @@ The caller's own thread only, newest first, cursor-paginated.
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or the Doubt Zone feature is currently disabled server-side (DOUBT_ZONE_DISABLED - see doubtZoneEnabled on GET /me/entitlements)
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "DOUBT_ZONE_DISABLED",
+    "message": "Doubt Zone is not available right now"
   }
 }
 ```
@@ -7078,13 +7078,13 @@ The response body is always newline-delimited JSON (`application/x-ndjson`, one 
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or the Doubt Zone feature is currently disabled server-side (DOUBT_ZONE_DISABLED - see doubtZoneEnabled on GET /me/entitlements)
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "DOUBT_ZONE_DISABLED",
+    "message": "Doubt Zone is not available right now"
   }
 }
 ```
@@ -7172,13 +7172,13 @@ Flags an assistant message for staff review (doubt_zone.moderate) - same flagged
 }
 ```
 
-- **403** — Onboarding, parental consent or legal acceptance is incomplete
+- **403** — Either onboarding/parental consent/legal acceptance is incomplete (FORBIDDEN), or the Doubt Zone feature is currently disabled server-side (DOUBT_ZONE_DISABLED - see doubtZoneEnabled on GET /me/entitlements)
 
 ```json
 {
   "error": {
-    "code": "FORBIDDEN",
-    "message": "Complete onboarding before using this feature"
+    "code": "DOUBT_ZONE_DISABLED",
+    "message": "Doubt Zone is not available right now"
   }
 }
 ```

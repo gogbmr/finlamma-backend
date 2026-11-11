@@ -13,7 +13,12 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
-import { getDoubtZoneEnabled, getDoubtZoneSafetySettings, updateDoubtZoneSafetySettings } from "./settings";
+import {
+  getDoubtZoneEnabled,
+  getDoubtZoneSafetySettings,
+  requireDoubtZoneEnabled,
+  updateDoubtZoneSafetySettings,
+} from "./settings";
 import { DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS, DOUBT_ZONE_SAFETY_SETTINGS_KEY } from "./schemas";
 
 const ACTOR = { id: "staff_1" };
@@ -92,5 +97,25 @@ describe("getDoubtZoneEnabled", () => {
     mockGetSettingJson.mockResolvedValueOnce(true);
 
     expect(await getDoubtZoneEnabled()).toBe(true);
+  });
+});
+
+describe("requireDoubtZoneEnabled", () => {
+  it("throws DOUBT_ZONE_DISABLED when the flag is off (unseeded default)", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(null);
+
+    await expect(requireDoubtZoneEnabled()).rejects.toMatchObject({ code: "DOUBT_ZONE_DISABLED", status: 403 });
+  });
+
+  it("throws DOUBT_ZONE_DISABLED when the flag is explicitly false", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(false);
+
+    await expect(requireDoubtZoneEnabled()).rejects.toMatchObject({ code: "DOUBT_ZONE_DISABLED" });
+  });
+
+  it("resolves without throwing when the flag is true", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(true);
+
+    await expect(requireDoubtZoneEnabled()).resolves.toBeUndefined();
   });
 });
