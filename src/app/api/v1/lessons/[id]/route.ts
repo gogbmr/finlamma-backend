@@ -59,6 +59,6 @@ export const GET = withErrors(
     const user = await requireUser(req);
     await requireFullAccess(user);
     const { id } = await params;
-    return ok(await getPublicLesson(id));
+    return ok(await getPublicLesson(id, user.id));
   },
 );

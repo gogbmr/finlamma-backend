@@ -53,9 +53,33 @@ vi.mock("@/server/quiz-attempts/repo", () => ({
     mockGetWorldIdsWithPassedBossQuiz(userId, passMark),
 }));
 
+const mockListRewardRules = vi.fn();
+const mockGetCreditedLessonIdsForUser = vi.fn();
+vi.mock("@/server/economy/repo", () => ({
+  listRewardRules: () => mockListRewardRules(),
+  getCreditedLessonIdsForUser: (userId: unknown, lessonIds: unknown) =>
+    mockGetCreditedLessonIdsForUser(userId, lessonIds),
+}));
+
+// previewLessonReward's own math (per-kind defaults, overrides, the
+// multiplier) is already pinned independently in economy/service.test.ts -
+// this file only needs to prove lessons/service.ts WIRES it correctly
+// (calls it, places the result in the right field, skips it once
+// rewardEarned), so it's mocked as a plain black box like everything else
+// here, not run for real.
+const mockGetVmIssuanceMultiplier = vi.fn();
+const mockPreviewLessonReward = vi.fn();
+vi.mock("@/server/economy/service", () => ({
+  getVmIssuanceMultiplier: () => mockGetVmIssuanceMultiplier(),
+  previewLessonReward: (lesson: unknown, ruleByActivityKind: unknown, multiplier: unknown) =>
+    mockPreviewLessonReward(lesson, ruleByActivityKind, multiplier),
+}));
+
 const mockGetLessonFlowScoringSettings = vi.fn();
+const mockGetLessonDefaultDurationSettings = vi.fn();
 vi.mock("@/server/settings/service", () => ({
   getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
+  getLessonDefaultDurationSettings: () => mockGetLessonDefaultDurationSettings(),
 }));
 
 const mockLogActivity = vi.fn();
@@ -122,6 +146,26 @@ beforeEach(() => {
   mockListPublishedWorlds.mockResolvedValue([worldRow()]);
   mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
   mockGetLessonProgressStatusesForUser.mockResolvedValue(new Map());
+  // Lesson-meta defaults (feat/lesson-meta-and-pass-flag): docs/ECONOMY.md's
+  // seeded 3x reward_rules values, a 1.0 VM multiplier, nothing credited yet,
+  // and the seeded lesson_default_duration_seconds - same numbers every
+  // per-node-state test above already runs against without asserting on
+  // them, so only the tests that actually check the full summary/detail
+  // shape below need to spell these out.
+  mockListRewardRules.mockResolvedValue([]);
+  mockGetVmIssuanceMultiplier.mockResolvedValue(1);
+  mockGetCreditedLessonIdsForUser.mockResolvedValue(new Set());
+  // Matches the "quiz" kind docs/ECONOMY.md default (defaultXp 50, defaultVm
+  // 90 * 100 paise) - the kind every lessonRow() fixture defaults to, so the
+  // tests that assert the full summary/detail shape don't need their own
+  // per-test override.
+  mockPreviewLessonReward.mockReturnValue({ xpReward: 50, vmRewardPaise: 9000 });
+  mockGetLessonDefaultDurationSettings.mockResolvedValue({
+    quiz: 180,
+    boss_quiz: 600,
+    role_play: 420,
+    doubt_zone: 300,
+  });
 });
 
 describe("getPublicLessonsForWorld / getPublicLesson", () => {
@@ -139,6 +183,11 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
         title: lessonRow().title,
         blurb: lessonRow().blurb,
         state: "current",
+        chapterNumber: 1,
+        durationSeconds: 180, // settings_kv default for "quiz"
+        xpReward: 50, // reward_rules "quiz" defaultXp
+        vmRewardPaise: 9000, // defaultVm 90 * 100 paise * multiplier 1.0
+        rewardEarned: false,
       },
     ]);
     expect(result[0]).not.toHaveProperty("content");
@@ -254,7 +303,7 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
   it("maps a single published lesson to the full detail shape", async () => {
     mockGetPublishedLesson.mockResolvedValueOnce(lessonRow());
 
-    const result = await getPublicLesson("lesson_1");
+    const result = await getPublicLesson("lesson_1", LEARNER_ID);
 
     expect(result).toEqual({
       id: "lesson_1",
@@ -265,7 +314,26 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
       title: lessonRow().title,
       blurb: lessonRow().blurb,
       content: lessonRow().content,
+      chapterNumber: 1,
+      durationSeconds: 180,
+      xpReward: 50,
+      vmRewardPaise: 9000,
+      rewardEarned: false,
     });
+  });
+
+  it("returns null xpReward/vmRewardPaise and rewardEarned: true once this learner is already credited", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(lessonRow());
+    mockGetCreditedLessonIdsForUser.mockResolvedValueOnce(new Set(["lesson_1"]));
+
+    const result = await getPublicLesson("lesson_1", LEARNER_ID);
+
+    expect(result.xpReward).toBeNull();
+    expect(result.vmRewardPaise).toBeNull();
+    expect(result.rewardEarned).toBe(true);
+    // Already credited - never even asks previewLessonReward what a retry
+    // would pay, since the answer is "nothing, it already paid once".
+    expect(mockPreviewLessonReward).not.toHaveBeenCalled();
   });
 
   // App asks batch, item A12.
@@ -274,7 +342,7 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
       lessonRow({ kind: "video", content: { lengthSeconds: 48, scenes: [], cues: [] } }),
     );
 
-    const result = await getPublicLesson("lesson_1");
+    const result = await getPublicLesson("lesson_1", LEARNER_ID);
 
     expect(result.content).toEqual({
       lengthSeconds: 48,
@@ -282,13 +350,17 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
       cues: [],
       video: { url: { en: null, hi: null, hx: null } },
     });
+    // durationSeconds comes from the video's own content.lengthSeconds, not
+    // the settings_kv per-kind default (that's only for quiz/boss_quiz/
+    // role_play/doubt_zone).
+    expect(result.durationSeconds).toBe(48);
   });
 
   it("never overwrites an already-set content.video.url", async () => {
     const withUrl = { lengthSeconds: 48, scenes: [], cues: [], video: { url: { en: "https://x/a.mp4", hi: null, hx: null } } };
     mockGetPublishedLesson.mockResolvedValueOnce(lessonRow({ kind: "video", content: withUrl }));
 
-    const result = await getPublicLesson("lesson_1");
+    const result = await getPublicLesson("lesson_1", LEARNER_ID);
 
     expect(result.content).toEqual(withUrl);
   });
@@ -296,7 +368,7 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
   it("never adds content.video.url for a non-video kind", async () => {
     mockGetPublishedLesson.mockResolvedValueOnce(lessonRow()); // kind: "quiz"
 
-    const result = await getPublicLesson("lesson_1");
+    const result = await getPublicLesson("lesson_1", LEARNER_ID);
 
     expect(result.content).toEqual(lessonRow().content);
   });
@@ -304,7 +376,7 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
   it("throws NOT_FOUND for an unknown/unpublished lesson id", async () => {
     mockGetPublishedLesson.mockResolvedValueOnce(null);
 
-    await expect(getPublicLesson("nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(getPublicLesson("nope", LEARNER_ID)).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   // The single concrete guarantee this checkpoint's kickoff asked to prove:
@@ -321,7 +393,7 @@ describe("getPublicLessonsForWorld / getPublicLesson", () => {
       mockGetPublishedLesson.mockResolvedValueOnce(row);
 
       const summaryList = await getPublicLessonsForWorld(WORLD_ID, LEARNER_ID);
-      const detail = await getPublicLesson(row.id);
+      const detail = await getPublicLesson(row.id, LEARNER_ID);
 
       expect(JSON.stringify(summaryList)).not.toMatch(/"answer"/i);
       expect(JSON.stringify(detail)).not.toMatch(/"answer"/i);
@@ -439,6 +511,28 @@ describe("getCurrentLesson", () => {
     mockListPublishedLessonsForWorld.mockResolvedValueOnce([]);
 
     await expect(getCurrentLesson(USER_ID)).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  // This route's own OpenAPI description promises an identical response
+  // shape to GET /api/v1/lessons/{id} - so it must carry the same
+  // lesson-meta fields, for the same signed-in caller.
+  it("includes the same lesson-meta fields as GET /api/v1/lessons/{id}", async () => {
+    const l1 = lessonRow({ id: "l1", chapter: 1, step: 1 });
+    mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
+    mockGetWorldIdsWithPassedBossQuiz.mockResolvedValueOnce(new Set());
+    mockListPublishedLessonsForWorld.mockResolvedValueOnce([l1]);
+    mockGetLessonProgressStatusesForUser.mockResolvedValueOnce(new Map());
+
+    const result = await getCurrentLesson(USER_ID);
+
+    expect(result).toMatchObject({
+      chapterNumber: 1,
+      durationSeconds: 180,
+      xpReward: 50,
+      vmRewardPaise: 9000,
+      rewardEarned: false,
+    });
+    expect(mockGetCreditedLessonIdsForUser).toHaveBeenCalledWith(USER_ID, ["l1"]);
   });
 });
 
@@ -1216,7 +1310,7 @@ describe("getLessonPreview", () => {
     mockGetPublishedLesson.mockResolvedValueOnce(null); // the public repo call finds nothing - it's a draft
 
     const preview = await getLessonPreview("lesson_1");
-    await expect(getPublicLesson("lesson_1")).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(getPublicLesson("lesson_1", LEARNER_ID)).rejects.toMatchObject({ code: "NOT_FOUND" });
 
     expect(preview).toEqual({
       id: "lesson_1",

@@ -13,7 +13,7 @@ vi.mock("@/server/onboarding/service", () => ({
 
 const mockGetPublicLesson = vi.fn();
 vi.mock("@/server/lessons/service", () => ({
-  getPublicLesson: (id: unknown) => mockGetPublicLesson(id),
+  getPublicLesson: (id: unknown, userId: unknown) => mockGetPublicLesson(id, userId),
 }));
 
 import { GET } from "./route";
@@ -66,7 +66,7 @@ describe("GET /api/v1/lessons/{id}", () => {
     const res = await GET(makeRequest(), { params: Promise.resolve({ id: "lesson_1" }) });
 
     expect(res.status).toBe(200);
-    expect(mockGetPublicLesson).toHaveBeenCalledWith("lesson_1");
+    expect(mockGetPublicLesson).toHaveBeenCalledWith("lesson_1", "u1");
     const body = await res.json();
     expect(body.data.id).toBe("lesson_1");
   });

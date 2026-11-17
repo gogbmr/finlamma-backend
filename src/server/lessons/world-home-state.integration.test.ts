@@ -18,10 +18,17 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 vi.mock("@/lib/analytics", () => ({ captureEvent: vi.fn() }));
+// Only creditLessonCompletion is stubbed out (serveStep never reaches it in
+// these tests). getVmIssuanceMultiplier/previewLessonReward - needed by
+// getPublicLessonsForWorld's lesson-meta fields (feat/lesson-meta-and-pass-
+// flag) - are left as the REAL implementations, which is fine here (unlike a
+// plain unit test) since @/db/client is already mocked to the same PGlite
+// test db above, so the real settings_kv/reward_rules reads just work.
 const mockCreditLessonCompletion = vi.fn();
-vi.mock("@/server/economy/service", () => ({
-  creditLessonCompletion: (...args: unknown[]) => mockCreditLessonCompletion(...args),
-}));
+vi.mock(import("@/server/economy/service"), async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, creditLessonCompletion: (...args: unknown[]) => mockCreditLessonCompletion(...args) };
+});
 vi.mock("@/server/certificates/service", () => ({ issueCertificateIfEligible: vi.fn() }));
 vi.mock("@/server/badges/service", () => ({ evaluateBadgesForUser: vi.fn() }));
 vi.mock("@/server/notifications/service", () => ({ notifyUser: vi.fn() }));

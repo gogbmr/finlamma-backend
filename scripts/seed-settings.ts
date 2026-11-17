@@ -58,7 +58,11 @@ import {
   DEFAULT_PULSE_CHECK_SCORING,
   PULSE_CHECK_SCORING_SETTINGS_KEY,
 } from "../src/server/pulse-check/schemas";
-import { DEFAULT_LESSON_FLOW_SCORING } from "../src/server/settings/schemas";
+import {
+  DEFAULT_LESSON_DEFAULT_DURATION_SECONDS,
+  DEFAULT_LESSON_FLOW_SCORING,
+  LESSON_DEFAULT_DURATION_SECONDS_KEY,
+} from "../src/server/settings/schemas";
 import { DEFAULT_STREAKS_SETTINGS, STREAKS_SETTINGS_KEY } from "../src/server/streaks/schemas";
 
 const SETTINGS = [
@@ -82,6 +86,15 @@ const SETTINGS = [
     description:
       "Lesson Flow scoring constants (speed bonus, combo, fever mode, base XP per quiz kind) - " +
       "see docs/PRODUCT_SPEC.md §1. Editable only by super_admin (settings.manage), logged.",
+  },
+  {
+    key: LESSON_DEFAULT_DURATION_SECONDS_KEY,
+    value: DEFAULT_LESSON_DEFAULT_DURATION_SECONDS,
+    description:
+      "Lesson-meta durationSeconds fallback for quiz/boss_quiz/role_play/doubt_zone lessons " +
+      "(video/story always use their own content.lengthSeconds instead) - one fixed estimate " +
+      "per kind, from docs/ECONOMY.md's LSTEP table. Editable only by super_admin " +
+      "(settings.manage), logged.",
   },
   {
     key: VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY,

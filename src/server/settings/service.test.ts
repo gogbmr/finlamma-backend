@@ -13,8 +13,16 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
-import { getLessonFlowScoringSettings, updateLessonFlowScoringSettings } from "./service";
-import { DEFAULT_LESSON_FLOW_SCORING, LESSON_FLOW_SCORING_SETTINGS_KEY } from "./schemas";
+import {
+  getLessonDefaultDurationSettings,
+  getLessonFlowScoringSettings,
+  updateLessonFlowScoringSettings,
+} from "./service";
+import {
+  DEFAULT_LESSON_DEFAULT_DURATION_SECONDS,
+  DEFAULT_LESSON_FLOW_SCORING,
+  LESSON_FLOW_SCORING_SETTINGS_KEY,
+} from "./schemas";
 
 const ACTOR = { id: "staff_1" };
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -47,6 +55,33 @@ describe("getLessonFlowScoringSettings", () => {
     const result = await getLessonFlowScoringSettings();
 
     expect(result).toEqual(DEFAULT_LESSON_FLOW_SCORING);
+  });
+});
+
+describe("getLessonDefaultDurationSettings", () => {
+  it("returns the stored value when it matches the current shape", async () => {
+    const custom = { ...DEFAULT_LESSON_DEFAULT_DURATION_SECONDS, quiz: 999 };
+    mockGetSettingJson.mockResolvedValueOnce(custom);
+
+    const result = await getLessonDefaultDurationSettings();
+
+    expect(result).toEqual(custom);
+  });
+
+  it("falls back to the ECONOMY.md-derived defaults when nothing is seeded yet", async () => {
+    mockGetSettingJson.mockResolvedValueOnce(null);
+
+    const result = await getLessonDefaultDurationSettings();
+
+    expect(result).toEqual({ quiz: 180, boss_quiz: 600, role_play: 420, doubt_zone: 300 });
+  });
+
+  it("falls back to defaults when the stored value no longer matches the shape", async () => {
+    mockGetSettingJson.mockResolvedValueOnce({ garbage: true });
+
+    const result = await getLessonDefaultDurationSettings();
+
+    expect(result).toEqual(DEFAULT_LESSON_DEFAULT_DURATION_SECONDS);
   });
 });
 
