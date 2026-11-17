@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   rewardActivityKindEnum,
@@ -22,6 +22,32 @@ export async function getRewardRule(activityKind: RewardActivityKind) {
 
 export async function listRewardRules() {
   return db.select().from(rewardRules).orderBy(rewardRules.activityKind);
+}
+
+// Lesson-meta fields (GET /worlds/{id}/lessons, GET /lessons/{id}): which of
+// these lessonIds this user has ALREADY been credited for, so the reward
+// preview can show null instead of re-advertising a reward that replaying
+// the lesson won't actually pay again. Deliberately queries `xp_events`, the
+// exact table D26's (userId, sourceType, sourceId) unique index lives on -
+// the same idempotency key creditLessonCompletionRow's insert conflicts
+// against - never a second, possibly-out-of-sync source of "is this
+// credited". One batched query for the whole list (never N+1 per lesson).
+export async function getCreditedLessonIdsForUser(
+  userId: string,
+  lessonIds: string[],
+): Promise<Set<string>> {
+  if (lessonIds.length === 0) return new Set();
+  const rows = await db
+    .select({ sourceId: xpEvents.sourceId })
+    .from(xpEvents)
+    .where(
+      and(
+        eq(xpEvents.userId, userId),
+        eq(xpEvents.sourceType, "lesson_completion"),
+        inArray(xpEvents.sourceId, lessonIds),
+      ),
+    );
+  return new Set(rows.map((r) => r.sourceId));
 }
 
 export async function updateRewardRule(

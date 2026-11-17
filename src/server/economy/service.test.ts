@@ -48,6 +48,7 @@ import {
   getMyWalletHistory,
   getVmIssuanceMultiplier,
   getVmoneyStats,
+  previewLessonReward,
   updateRewardRuleForAdmin,
   updateVmIssuanceMultiplier,
 } from "./service";
@@ -293,6 +294,197 @@ describe("creditLessonCompletion", () => {
     );
 
     expect(mockGetRewardRule).toHaveBeenCalledWith("ai_chat");
+  });
+});
+
+// Pinning suite (feat/lesson-meta-and-pass-flag): locks down exactly what
+// creditLessonCompletion credits today, per lesson kind, BEFORE
+// computeLessonReward/previewLessonReward are extracted out of it. This must
+// pass unchanged both before and after that refactor - if it doesn't, the
+// refactor silently changed real XP/VM math, which must never happen by even
+// a single paisa (CLAUDE.md rule 2).
+describe("creditLessonCompletion — reward pinning (must not change under refactor)", () => {
+  const RULE_BY_KIND = {
+    video: { id: "rule_video", activityKind: "video", defaultXp: 20, defaultVm: 30 },
+    story: { id: "rule_story", activityKind: "story", defaultXp: 30, defaultVm: 45 },
+    quiz: { id: "rule_quiz", activityKind: "quiz", defaultXp: 50, defaultVm: 90 },
+    boss_quiz: { id: "rule_boss_quiz", activityKind: "boss_quiz", defaultXp: 120, defaultVm: 300 },
+    role_play: { id: "rule_role_play", activityKind: "role_play", defaultXp: 40, defaultVm: 75 },
+    doubt_zone: { id: "rule_ai_chat", activityKind: "ai_chat", defaultXp: 25, defaultVm: 60 },
+  } as const;
+
+  it.each(Object.keys(RULE_BY_KIND) as (keyof typeof RULE_BY_KIND)[])(
+    "credits exactly the rule's defaultXp and defaultVm*100*multiplier paise for a passing %s lesson",
+    async (kind) => {
+      const rule = { ...RULE_BY_KIND[kind], active: true };
+      mockGetRewardRule.mockResolvedValueOnce(rule);
+      mockGetSettingNumber.mockResolvedValueOnce(1); // multiplier 1.0
+      const expectedVmPaise = rule.defaultVm * 100;
+      mockCreditLessonCompletionRow.mockResolvedValueOnce({
+        xpRow: { id: "xp_1", amount: rule.defaultXp },
+        vmRow: { id: "vm_1", amountPaise: expectedVmPaise },
+      });
+
+      const result = await creditLessonCompletion(
+        USER,
+        { id: "lesson_1", kind, xpOverride: null, vmOverride: null },
+        true,
+        META,
+      );
+
+      expect(result).toEqual({ credited: true, vmAwardedPaise: expectedVmPaise });
+      expect(mockGetRewardRule).toHaveBeenCalledWith(rule.activityKind);
+      expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: rule.defaultXp }),
+        expect.objectContaining({ amountPaise: expectedVmPaise, multiplierApplied: 1 }),
+      );
+    },
+  );
+
+  it("boss_quiz: a failed attempt (successful=false) credits nothing, regardless of the rule", async () => {
+    const result = await creditLessonCompletion(
+      USER,
+      { id: "lesson_1", kind: "boss_quiz", xpOverride: null, vmOverride: null },
+      false,
+      META,
+    );
+
+    expect(result).toEqual({ credited: false, vmAwardedPaise: null });
+    expect(mockGetRewardRule).not.toHaveBeenCalled();
+    expect(mockCreditLessonCompletionRow).not.toHaveBeenCalled();
+  });
+
+  it("boss_quiz: a passing attempt credits the boss_quiz rule's exact defaults", async () => {
+    const rule = { ...RULE_BY_KIND.boss_quiz, active: true };
+    mockGetRewardRule.mockResolvedValueOnce(rule);
+    mockGetSettingNumber.mockResolvedValueOnce(1);
+    mockCreditLessonCompletionRow.mockResolvedValueOnce({
+      xpRow: { id: "xp_1", amount: 120 },
+      vmRow: { id: "vm_1", amountPaise: 30000 },
+    });
+
+    const result = await creditLessonCompletion(
+      USER,
+      { id: "lesson_1", kind: "boss_quiz", xpOverride: null, vmOverride: null },
+      true,
+      META,
+    );
+
+    expect(result).toEqual({ credited: true, vmAwardedPaise: 30000 });
+    expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 120 }),
+      expect.objectContaining({ amountPaise: 30000, multiplierApplied: 1 }),
+    );
+  });
+
+  it("a lesson's xpOverride/vmOverride wins over the rule's defaults, exactly", async () => {
+    const rule = { ...RULE_BY_KIND.video, active: true };
+    mockGetRewardRule.mockResolvedValueOnce(rule);
+    mockGetSettingNumber.mockResolvedValueOnce(1);
+    mockCreditLessonCompletionRow.mockResolvedValueOnce({
+      xpRow: { id: "xp_1", amount: 999 },
+      vmRow: { id: "vm_1", amountPaise: 50000 },
+    });
+
+    await creditLessonCompletion(
+      USER,
+      { id: "lesson_1", kind: "video", xpOverride: 999, vmOverride: 500 },
+      true,
+      META,
+    );
+
+    expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 999 }),
+      expect.objectContaining({ amountPaise: 50000, multiplierApplied: 1 }),
+    );
+  });
+
+  it("scales VM (not XP) by a non-1.0 multiplier, exactly", async () => {
+    const rule = { ...RULE_BY_KIND.video, active: true };
+    mockGetRewardRule.mockResolvedValueOnce(rule);
+    mockGetSettingNumber.mockResolvedValueOnce(1.5);
+    mockCreditLessonCompletionRow.mockResolvedValueOnce({
+      xpRow: { id: "xp_1", amount: 20 },
+      vmRow: { id: "vm_1", amountPaise: 4500 },
+    });
+
+    await creditLessonCompletion(
+      USER,
+      { id: "lesson_1", kind: "video", xpOverride: null, vmOverride: null },
+      true,
+      META,
+    );
+
+    expect(mockCreditLessonCompletionRow).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 20 }),
+      expect.objectContaining({ amountPaise: 4500, multiplierApplied: 1.5 }),
+    );
+  });
+});
+
+// Lesson-meta fields (GET /worlds/{id}/lessons, GET /lessons/{id}): proves
+// previewLessonReward's numbers can never drift from what
+// creditLessonCompletion would actually credit, since both go through the
+// same computeLessonReward (not asserted directly - it's a private helper -
+// but by construction the two functions share it, and this pins
+// previewLessonReward's own output shape/math independently).
+describe("previewLessonReward", () => {
+  const videoRule = { id: "rule_video", activityKind: "video" as const, defaultXp: 20, defaultVm: 30, active: true };
+
+  it("returns the rule's default XP/VM (scaled by the multiplier) for a lesson with no override", () => {
+    const ruleByActivityKind = new Map([["video", videoRule]]);
+
+    const result = previewLessonReward(
+      { kind: "video", xpOverride: null, vmOverride: null },
+      ruleByActivityKind,
+      1.5,
+    );
+
+    expect(result).toEqual({ xpReward: 20, vmRewardPaise: 4500 });
+  });
+
+  it("uses the lesson's xpOverride/vmOverride instead of the rule's defaults", () => {
+    const ruleByActivityKind = new Map([["video", videoRule]]);
+
+    const result = previewLessonReward(
+      { kind: "video", xpOverride: 999, vmOverride: 500 },
+      ruleByActivityKind,
+      1,
+    );
+
+    expect(result).toEqual({ xpReward: 999, vmRewardPaise: 50000 });
+  });
+
+  it("returns null when no reward rule exists for the kind", () => {
+    const result = previewLessonReward({ kind: "video", xpOverride: null, vmOverride: null }, new Map(), 1);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the reward rule is inactive", () => {
+    const ruleByActivityKind = new Map([["video", { ...videoRule, active: false }]]);
+
+    const result = previewLessonReward(
+      { kind: "video", xpOverride: null, vmOverride: null },
+      ruleByActivityKind,
+      1,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("maps doubt_zone lessons to the ai_chat rule, same as creditLessonCompletion", () => {
+    const ruleByActivityKind = new Map([
+      ["ai_chat", { id: "rule_ai_chat", activityKind: "ai_chat" as const, defaultXp: 25, defaultVm: 60, active: true }],
+    ]);
+
+    const result = previewLessonReward(
+      { kind: "doubt_zone", xpOverride: null, vmOverride: null },
+      ruleByActivityKind,
+      1,
+    );
+
+    expect(result).toEqual({ xpReward: 25, vmRewardPaise: 6000 });
   });
 });
 

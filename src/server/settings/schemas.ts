@@ -89,3 +89,35 @@ export const DEFAULT_LESSON_FLOW_SCORING: LessonFlowScoring = {
 };
 
 export const LESSON_FLOW_SCORING_SETTINGS_KEY = "lesson_flow_scoring";
+
+// Lesson-meta `durationSeconds` (GET /worlds/{id}/lessons, GET
+// /lessons/{id}): video/story lessons always read their OWN
+// content.lengthSeconds (real, authored per lesson - see
+// src/server/lessons/schemas.ts), so they're deliberately not in this key.
+// quiz/boss_quiz/role_play/doubt_zone have no per-lesson length field at all
+// (a practice quiz's "length" is really question-count * the shared
+// practiceQuizTimerSeconds, and doubt_zone is a chat with no step count) -
+// this is one fixed estimate per kind instead, admin-editable like every
+// other settings_kv value, not a second per-lesson authoring surface.
+export const LessonDefaultDurationSchema = z.object({
+  quiz: z.number().int().positive(),
+  boss_quiz: z.number().int().positive(),
+  role_play: z.number().int().positive(),
+  doubt_zone: z.number().int().positive(),
+});
+export type LessonDefaultDuration = z.infer<typeof LessonDefaultDurationSchema>;
+
+// docs/ECONOMY.md's LSTEP table (lines 30-37), converted minutes -> seconds:
+// Quiz 3min, Role Play 7min, Boss Quiz 10min, AI Chat (= doubt_zone lesson
+// kind) 5min. Used both by scripts/seed-settings.ts and as the in-code
+// fallback (getLessonDefaultDurationSettings) if the settings_kv row is
+// ever missing - identical values either way, so an unseeded environment
+// behaves exactly like a seeded one.
+export const DEFAULT_LESSON_DEFAULT_DURATION_SECONDS: LessonDefaultDuration = {
+  quiz: 180,
+  boss_quiz: 600,
+  role_play: 420,
+  doubt_zone: 300,
+};
+
+export const LESSON_DEFAULT_DURATION_SECONDS_KEY = "lesson_default_duration_seconds";

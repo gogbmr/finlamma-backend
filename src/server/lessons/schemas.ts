@@ -203,6 +203,47 @@ const LessonContentSchema = z.union([
 export const LessonNodeStateSchema = z.enum(["done", "current", "available", "locked"]);
 export type LessonNodeState = z.infer<typeof LessonNodeStateSchema>;
 
+// Lesson-meta fields (feat/lesson-meta-and-pass-flag), shared by
+// LessonSummarySchema and LessonDetailSchema below - additive on both, no
+// field removed/renamed, so an old app build keeps parsing either response
+// unchanged. See src/server/lessons/service.ts's lessonMetaFields, the one
+// place these are actually computed.
+const LESSON_META_FIELDS = {
+  // Same value as `chapter` above, under the name the app asks batch used -
+  // both are kept (never a rename) so neither field's meaning ever shifts.
+  chapterNumber: z.number().int().openapi({ example: 1 }),
+  durationSeconds: z.number().int().positive().openapi({
+    example: 48,
+    description:
+      "Estimated time to complete this lesson. Video/Story: this lesson's own authored " +
+      "content.lengthSeconds. Quiz/Boss Quiz/Role Play/Doubt Zone: a fixed per-kind estimate " +
+      "(settings_kv \"lesson_default_duration_seconds\", admin-editable) - not per-lesson.",
+  }),
+  xpReward: z.number().int().nonnegative().nullable().openapi({
+    example: 20,
+    description:
+      "XP this signed-in learner would earn on this lesson's first successful completion - " +
+      "computed by the exact same function creditLessonCompletion itself uses " +
+      "(src/server/economy/service.ts), never a second copy of the numbers. null when there's " +
+      "no active reward for this lesson's kind, OR when rewardEarned is true (already credited - " +
+      "replaying this lesson won't pay again).",
+  }),
+  vmRewardPaise: z.number().int().nonnegative().nullable().openapi({
+    example: 3000,
+    description:
+      "Same as xpReward, but V Money in paise (100 = 1 V Money, D37) - null under the exact " +
+      "same conditions as xpReward.",
+  }),
+  rewardEarned: z.boolean().openapi({
+    example: false,
+    description:
+      "True once this signed-in learner has already been credited for this lesson - checked " +
+      "against xp_events, the same table D26's (userId, sourceType, sourceId) unique index " +
+      "lives on (the real idempotency key crediting itself uses), never a separate check that " +
+      "could drift from it. xpReward/vmRewardPaise are both null whenever this is true.",
+  }),
+};
+
 export const LessonSummarySchema = registry.register(
   "LessonSummary",
   z.object({
@@ -218,6 +259,7 @@ export const LessonSummarySchema = registry.register(
         "This signed-in user's own progress on this node - done/current/available/locked " +
         "(docs/ARCHITECTURE.md D76).",
     }),
+    ...LESSON_META_FIELDS,
   }),
 );
 
@@ -232,6 +274,7 @@ export const LessonDetailSchema = registry.register(
     title: LocalizedTextSchema,
     blurb: LocalizedTextSchema,
     content: LessonContentSchema,
+    ...LESSON_META_FIELDS,
   }),
 );
 

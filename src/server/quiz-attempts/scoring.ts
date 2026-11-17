@@ -128,3 +128,17 @@ export function computeScore(input: ScoreInput): ScoreResult {
 
   return { isCorrect: true, timedOut: false, speedBonusAwarded, feverActive, comboAfter, xpAwardedPreview };
 }
+
+// docs/ECONOMY.md decision 4 / docs/ARCHITECTURE.md D24/D28: which pass mark
+// an attempt's accuracyPct is judged against, by lesson kind - Boss Quiz
+// uses its own higher bar (it also gates world progression, not just this
+// lesson's own reward), every other graded kind (video/quiz/role_play)
+// shares the lower lessonPassMarkPct. The ONE place this rule is written -
+// src/server/quiz-attempts/service.ts's submitAnswer calls this for both the
+// normal completing-step path AND the concurrent-duplicate-submit race
+// path, and src/server/economy/service.ts's creditLessonCompletion is fed
+// the exact `passed` boolean this produces - so the credited reward and the
+// `passed`/`passMarkPct` response fields can never disagree.
+export function passMarkPctForLessonKind(kind: string, settings: LessonFlowScoring): number {
+  return kind === "boss_quiz" ? settings.bossQuizPassMarkPct : settings.lessonPassMarkPct;
+}

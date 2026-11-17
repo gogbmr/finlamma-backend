@@ -2,9 +2,13 @@ import { logActivity } from "@/lib/activity-log";
 import type { requestMeta } from "@/lib/http";
 import { getSettingJson, setSettingJson } from "@/lib/settings";
 import {
+  DEFAULT_LESSON_DEFAULT_DURATION_SECONDS,
   DEFAULT_LESSON_FLOW_SCORING,
+  LESSON_DEFAULT_DURATION_SECONDS_KEY,
   LESSON_FLOW_SCORING_SETTINGS_KEY,
+  LessonDefaultDurationSchema,
   LessonFlowScoringSchema,
+  type LessonDefaultDuration,
   type LessonFlowScoring,
 } from "./schemas";
 
@@ -19,6 +23,17 @@ export async function getLessonFlowScoringSettings(): Promise<LessonFlowScoring>
   if (raw === null) return DEFAULT_LESSON_FLOW_SCORING;
   const parsed = LessonFlowScoringSchema.safeParse(raw);
   return parsed.success ? parsed.data : DEFAULT_LESSON_FLOW_SCORING;
+}
+
+// Lesson-meta `durationSeconds` fallback for quiz/boss_quiz/role_play/
+// doubt_zone lessons (video/story always use their own content.lengthSeconds
+// instead - see src/server/lessons/schemas.ts). Same "never hard-fail on a
+// settings_kv shape drift" fallback as getLessonFlowScoringSettings above.
+export async function getLessonDefaultDurationSettings(): Promise<LessonDefaultDuration> {
+  const raw = await getSettingJson(LESSON_DEFAULT_DURATION_SECONDS_KEY);
+  if (raw === null) return DEFAULT_LESSON_DEFAULT_DURATION_SECONDS;
+  const parsed = LessonDefaultDurationSchema.safeParse(raw);
+  return parsed.success ? parsed.data : DEFAULT_LESSON_DEFAULT_DURATION_SECONDS;
 }
 
 // Gated on settings.manage, seeded (scripts/seed-roles.ts) ONLY to

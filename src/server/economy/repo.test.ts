@@ -17,6 +17,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 const {
   creditLessonCompletionRow,
   creditVmoneyRow,
+  getCreditedLessonIdsForUser,
   getRewardRule,
   listRewardRules,
   listVmoneyLedgerForUser,
@@ -388,6 +389,59 @@ describe("sumVmoneyEarnedSinceBySource", () => {
       { sourceType: "badge_unlock", amountPaise: 5000 },
       { sourceType: "lesson_completion", amountPaise: 10000 },
     ]);
+  });
+});
+
+describe("getCreditedLessonIdsForUser", () => {
+  it("returns an empty set for an empty lessonIds list, with no query", async () => {
+    const user = await makeUser();
+    expect(await getCreditedLessonIdsForUser(user.id, [])).toEqual(new Set());
+  });
+
+  it("returns only the lessons this user has a lesson_completion xp_events row for", async () => {
+    const user = await makeUser();
+    const creditedLessonId = randomUUID();
+    const uncreditedLessonId = randomUUID();
+    await db.insert(xpEvents).values({
+      userId: user.id,
+      amount: 20,
+      sourceType: "lesson_completion",
+      sourceId: creditedLessonId,
+      reason: "x",
+    });
+
+    const result = await getCreditedLessonIdsForUser(user.id, [creditedLessonId, uncreditedLessonId]);
+
+    expect(result).toEqual(new Set([creditedLessonId]));
+  });
+
+  it("never includes another user's credit for the same lesson id", async () => {
+    const user = await makeUser();
+    const other = await makeUser();
+    const lessonId = randomUUID();
+    await db.insert(xpEvents).values({
+      userId: other.id,
+      amount: 20,
+      sourceType: "lesson_completion",
+      sourceId: lessonId,
+      reason: "x",
+    });
+
+    expect(await getCreditedLessonIdsForUser(user.id, [lessonId])).toEqual(new Set());
+  });
+
+  it("ignores a non-lesson_completion source for the same sourceId", async () => {
+    const user = await makeUser();
+    const id = randomUUID();
+    await db.insert(xpEvents).values({
+      userId: user.id,
+      amount: 20,
+      sourceType: "reversal",
+      sourceId: id,
+      reason: "x",
+    });
+
+    expect(await getCreditedLessonIdsForUser(user.id, [id])).toEqual(new Set());
   });
 });
 

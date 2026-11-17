@@ -14,6 +14,19 @@ vi.mock("@/server/lessons/repo", () => ({
 const mockGetLessonFlowScoringSettings = vi.fn();
 vi.mock("@/server/settings/service", () => ({
   getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
+  // Never actually exercised here - only present so the real, unmocked
+  // @/server/lessons/service (pulled in for assertLessonUnlocked, same
+  // reasoning as the comment below) can load without a real settings_kv
+  // read. Same fix as quiz-attempts/service.test.ts.
+  getLessonDefaultDurationSettings: () => Promise.resolve({}),
+}));
+
+// Same reasoning as getLessonDefaultDurationSettings above - these two are
+// only imported (not called) via the real @/server/lessons/service, which
+// otherwise can't load without @/db/client's real env validation.
+vi.mock("@/server/economy/repo", () => ({
+  listRewardRules: () => Promise.resolve([]),
+  getCreditedLessonIdsForUser: () => Promise.resolve(new Set()),
 }));
 
 // D76 (docs/ARCHITECTURE.md): assertLessonUnlocked's dependencies - the

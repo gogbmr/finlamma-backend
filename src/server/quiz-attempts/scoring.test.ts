@@ -6,7 +6,7 @@
 // what was submitted."
 import { describe, expect, it } from "vitest";
 import type { LessonFlowScoring } from "@/server/settings/schemas";
-import { answerMatches, computeScore, LATENCY_ALLOWANCE_MS } from "./scoring";
+import { answerMatches, computeScore, LATENCY_ALLOWANCE_MS, passMarkPctForLessonKind } from "./scoring";
 
 const SETTINGS: LessonFlowScoring = {
   popQuiz: { correctXp: 20, wrongXp: 4 },
@@ -24,6 +24,19 @@ const SETTINGS: LessonFlowScoring = {
   doubtZoneMinCompletionSeconds: 150,
   tradingUnlockAfterWorldPosition: 3,
 };
+
+describe("passMarkPctForLessonKind", () => {
+  it("boss_quiz uses the higher bossQuizPassMarkPct", () => {
+    expect(passMarkPctForLessonKind("boss_quiz", SETTINGS)).toBe(60);
+  });
+
+  it.each(["video", "quiz", "role_play"])(
+    "%s uses the lower lessonPassMarkPct",
+    (kind) => {
+      expect(passMarkPctForLessonKind(kind, SETTINGS)).toBe(50);
+    },
+  );
+});
 
 describe("computeScore", () => {
   it("a wrong answer awards wrongXp, no speed/combo/fever, and resets combo to 0", () => {

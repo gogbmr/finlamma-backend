@@ -125,6 +125,50 @@ export async function updateRewardRuleForAdmin(
   return updated;
 }
 
+type LessonRewardInput = { kind: string; xpOverride: number | null; vmOverride: number | null };
+type RewardRule = { id: string; defaultXp: number; defaultVm: number; active: boolean };
+
+// The ONE place that turns a lesson + its reward_rules row + the current VM
+// multiplier into the actual XP/VM amounts - creditLessonCompletion (the
+// real credit) and previewLessonReward (the app asks batch item A5 "what
+// WOULD this lesson pay" field) both call exactly this, so a preview can
+// never drift from what a real completion would actually credit. Pure/sync
+// on purpose: every DB/settings read already happened by the time this runs.
+function computeLessonReward(
+  lesson: Pick<LessonRewardInput, "xpOverride" | "vmOverride">,
+  rule: Pick<RewardRule, "defaultXp" | "defaultVm">,
+  multiplier: number,
+): { xpAmount: number; vmAmountPaise: number } {
+  const xpAmount = lesson.xpOverride ?? rule.defaultXp;
+  const vmBaseAmount = lesson.vmOverride ?? rule.defaultVm;
+  // Rounds at paise scale (D37), not whole-VM scale - a 100x finer grid
+  // means a fractional multiplier (e.g. 1.5) essentially never needs to
+  // round at all in practice, unlike rounding a whole-VM amount first.
+  const vmAmountPaise = Math.round(vmBaseAmount * VM_TO_LEDGER_PAISE * multiplier);
+  return { xpAmount, vmAmountPaise };
+}
+
+// Lesson-meta fields (GET /worlds/{id}/lessons, GET /lessons/{id}): the
+// reward a learner WOULD get on first successful completion of this lesson,
+// or null if there's no active reward rule for its kind - same "no rule, no
+// reward" fallthrough creditLessonCompletion itself uses, never a thrown
+// error. Deliberately takes the caller's own already-fetched rule/multiplier
+// instead of re-querying them per lesson - a world's lesson list calls this
+// once per lesson with values fetched ONCE for the whole list (listRewardRules
+// + getVmIssuanceMultiplier), not N+1 queries.
+export function previewLessonReward(
+  lesson: LessonRewardInput,
+  ruleByActivityKind: Map<string, RewardRule>,
+  multiplier: number,
+): { xpReward: number; vmRewardPaise: number } | null {
+  const activityKind = activityKindForLessonKind(lesson.kind);
+  const rule = ruleByActivityKind.get(activityKind);
+  if (!rule || !rule.active) return null;
+
+  const { xpAmount, vmAmountPaise } = computeLessonReward(lesson, rule, multiplier);
+  return { xpReward: xpAmount, vmRewardPaise: vmAmountPaise };
+}
+
 // The one entry point every "did a learner just finish something rewardable"
 // call site uses (today: quiz-attempts service's attempt-completion path;
 // Checkpoint 3 adds the story/doubt_zone completion endpoint). Credits
@@ -148,13 +192,8 @@ export async function creditLessonCompletion(
   const rule = await getRewardRule(activityKind);
   if (!rule || !rule.active) return { credited: false, vmAwardedPaise: null };
 
-  const xpAmount = lesson.xpOverride ?? rule.defaultXp;
-  const vmBaseAmount = lesson.vmOverride ?? rule.defaultVm;
   const multiplier = await getVmIssuanceMultiplier();
-  // Rounds at paise scale (D37), not whole-VM scale - a 100x finer grid
-  // means a fractional multiplier (e.g. 1.5) essentially never needs to
-  // round at all in practice, unlike rounding a whole-VM amount first.
-  const vmAmountPaise = Math.round(vmBaseAmount * VM_TO_LEDGER_PAISE * multiplier);
+  const { xpAmount, vmAmountPaise } = computeLessonReward(lesson, rule, multiplier);
 
   const shared = {
     userId: user.id,

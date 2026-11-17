@@ -9,8 +9,11 @@ import {
   countInProgressLearnersByLessonIds,
   getLessonProgressStatusesForUser,
 } from "@/server/lesson-progress/repo";
+import { getCreditedLessonIdsForUser, listRewardRules } from "@/server/economy/repo";
+import { getVmIssuanceMultiplier, previewLessonReward } from "@/server/economy/service";
 import { getWorldIdsWithPassedBossQuiz } from "@/server/quiz-attempts/repo";
-import { getLessonFlowScoringSettings } from "@/server/settings/service";
+import { getLessonDefaultDurationSettings, getLessonFlowScoringSettings } from "@/server/settings/service";
+import type { LessonDefaultDuration } from "@/server/settings/schemas";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
   getLessonById,
@@ -24,7 +27,12 @@ import {
   unpublishLessonRow,
   updateDraftLesson,
 } from "./repo";
-import { contentSchemaForKind, QuizLikeContentSchema, VideoContentSchema } from "./schemas";
+import {
+  contentSchemaForKind,
+  QuizLikeContentSchema,
+  StoryContentSchema,
+  VideoContentSchema,
+} from "./schemas";
 import type {
   CreateLessonDraftInput,
   HotfixLessonInput,
@@ -69,6 +77,76 @@ function toDetail(row: LessonRow) {
     title: row.title,
     blurb: row.blurb,
     content: withVideoUrlDefault(row.kind, row.content),
+  };
+}
+
+// Lesson-meta `durationSeconds`: video/story always read their OWN authored
+// content.lengthSeconds (required by VideoContentSchema/StoryContentSchema,
+// so safeParse failing here is structurally unreachable in practice - a
+// lesson's content is already validated against its kind's schema at
+// create/update time, see contentSchemaForKind) - the `0` fallback is
+// defensive only, never a hard failure of a lesson-meta field. Every other
+// kind has no per-lesson length field at all (a practice quiz's real
+// "length" is question-count * the shared practiceQuizTimerSeconds, and
+// doubt_zone is a chat with no step count), so those get one fixed estimate
+// per kind instead (settings_kv, see src/server/settings/schemas.ts).
+function durationSecondsForLesson(row: LessonRow, durationDefaults: LessonDefaultDuration): number {
+  if (row.kind === "video") {
+    const parsed = VideoContentSchema.safeParse(row.content);
+    return parsed.success ? parsed.data.lengthSeconds : 0;
+  }
+  if (row.kind === "story") {
+    const parsed = StoryContentSchema.safeParse(row.content);
+    return parsed.success ? parsed.data.lengthSeconds : 0;
+  }
+  if (row.kind === "quiz" || row.kind === "boss_quiz" || row.kind === "role_play" || row.kind === "doubt_zone") {
+    return durationDefaults[row.kind];
+  }
+  return 0; // defensive only - every real lessonKindEnum value is handled above
+}
+
+type LessonRewardContext = {
+  ruleByActivityKind: Map<string, { id: string; defaultXp: number; defaultVm: number; active: boolean }>;
+  vmMultiplier: number;
+  creditedLessonIds: Set<string>;
+  durationDefaults: LessonDefaultDuration;
+};
+
+// One batch of lookups for however many lessons the caller is about to
+// render (a whole world's list, or a single lesson detail) - never a
+// per-lesson round trip. 4 sequential awaits (not a bare Promise.all - rule
+// 15, CLAUDE.md), which is fine either way since none of these depend on
+// each other.
+async function buildLessonRewardContext(userId: string, lessonIds: string[]): Promise<LessonRewardContext> {
+  const rules = await listRewardRules();
+  const vmMultiplier = await getVmIssuanceMultiplier();
+  const creditedLessonIds = await getCreditedLessonIdsForUser(userId, lessonIds);
+  const durationDefaults = await getLessonDefaultDurationSettings();
+  return {
+    ruleByActivityKind: new Map(rules.map((r) => [r.activityKind, r])),
+    vmMultiplier,
+    creditedLessonIds,
+    durationDefaults,
+  };
+}
+
+// The lesson-meta fields added to the app-facing summary/detail projections
+// only (toSummary/toDetail above stay exactly as they were, for every
+// staff-facing caller - getLessonEditorData, getLessonPreview, ... - which
+// have no signed-in learner to compute a reward/credited state for).
+// rewardEarned true -> both reward fields null, never a stale/misleading
+// number for a lesson that won't pay out again on replay.
+function lessonMetaFields(row: LessonRow, ctx: LessonRewardContext) {
+  const rewardEarned = ctx.creditedLessonIds.has(row.id);
+  const preview = rewardEarned
+    ? null
+    : previewLessonReward(row, ctx.ruleByActivityKind, ctx.vmMultiplier);
+  return {
+    chapterNumber: row.chapter,
+    durationSeconds: durationSecondsForLesson(row, ctx.durationDefaults),
+    xpReward: preview?.xpReward ?? null,
+    vmRewardPaise: preview?.vmRewardPaise ?? null,
+    rewardEarned,
   };
 }
 
@@ -127,7 +205,14 @@ async function computeLessonStatesForWorld(
 
 export async function getPublicLessonsForWorld(worldId: string, userId: string) {
   const { rows, states } = await computeLessonStatesForWorld(worldId, userId);
-  return rows.map((row) => ({ ...toSummary(row), state: states.get(row.id)! }));
+  if (rows.length === 0) return [];
+
+  const ctx = await buildLessonRewardContext(userId, rows.map((r) => r.id));
+  return rows.map((row) => ({
+    ...toSummary(row),
+    state: states.get(row.id)!,
+    ...lessonMetaFields(row, ctx),
+  }));
 }
 
 // D76 (docs/ARCHITECTURE.md): enforcement gate called by every lesson
@@ -154,10 +239,11 @@ export async function assertLessonUnlocked(
   }
 }
 
-export async function getPublicLesson(id: string) {
+export async function getPublicLesson(id: string, userId: string) {
   const row = await getPublishedLesson(id);
   if (!row) throw new AppError("NOT_FOUND", "No published lesson with this id");
-  return toDetail(row);
+  const ctx = await buildLessonRewardContext(userId, [row.id]);
+  return { ...toDetail(row), ...lessonMetaFields(row, ctx) };
 }
 
 // WH-06 "Resume" banner - progress-aware (phase-audit 2026-10-11 fix; this
@@ -197,11 +283,18 @@ export async function getCurrentLesson(userId: string) {
       lessonsInWorld.map((l) => l.id),
     );
     const next = lessonsInWorld.find((l) => progressByLessonId.get(l.id) !== "completed");
-    if (next) return toDetail(next);
+    // Same response shape as GET /api/v1/lessons/{id} (this route's own
+    // OpenAPI description says so) - lesson-meta fields included here too,
+    // for the same signed-in caller, so the two never structurally diverge.
+    if (next) {
+      const ctx = await buildLessonRewardContext(userId, [next.id]);
+      return { ...toDetail(next), ...lessonMetaFields(next, ctx) };
+    }
   }
 
   if (!lastSeenLesson) throw new AppError("NOT_FOUND", "No published lessons yet");
-  return toDetail(lastSeenLesson);
+  const ctx = await buildLessonRewardContext(userId, [lastSeenLesson.id]);
+  return { ...toDetail(lastSeenLesson), ...lessonMetaFields(lastSeenLesson, ctx) };
 }
 
 // --- Staff (admin) ---

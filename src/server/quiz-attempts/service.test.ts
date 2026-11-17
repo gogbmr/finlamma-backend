@@ -39,6 +39,20 @@ vi.mock("@/server/worlds/repo", () => ({
 const mockGetLessonFlowScoringSettings = vi.fn();
 vi.mock("@/server/settings/service", () => ({
   getLessonFlowScoringSettings: () => mockGetLessonFlowScoringSettings(),
+  // Never actually exercised here (getPublicLesson/getPublicLessonsForWorld
+  // aren't called by anything submitAnswer/serveStep touch) - only present
+  // so the real, unmocked @/server/lessons/service (imported for
+  // assertLessonUnlocked/extractQuestionIds) can load without needing a
+  // real settings_kv read.
+  getLessonDefaultDurationSettings: () => Promise.resolve({}),
+}));
+
+// Same reasoning as getLessonDefaultDurationSettings above - these two are
+// only imported (not called) via the real @/server/lessons/service, which
+// otherwise can't load without @/db/client's real env validation.
+vi.mock("@/server/economy/repo", () => ({
+  listRewardRules: () => Promise.resolve([]),
+  getCreditedLessonIdsForUser: () => Promise.resolve(new Set()),
 }));
 
 const mockStartLessonProgress = vi.fn();
@@ -54,6 +68,7 @@ vi.mock("@/server/lesson-progress/repo", () => ({
 }));
 
 const mockCompleteAttempt = vi.fn();
+const mockCountAnsweredStepsForAttempt = vi.fn();
 const mockCountAttemptsForUserLesson = vi.fn();
 const mockGetAttemptById = vi.fn();
 const mockGetLatestInProgressAttempt = vi.fn();
@@ -67,6 +82,7 @@ const mockGetWorldIdsWithPassedBossQuiz = vi.fn();
 vi.mock("./repo", () => ({
   completeAttempt: (id: unknown, xp: unknown, accuracyPct: unknown) =>
     mockCompleteAttempt(id, xp, accuracyPct),
+  countAnsweredStepsForAttempt: (attemptId: unknown) => mockCountAnsweredStepsForAttempt(attemptId),
   getWorldIdsWithPassedBossQuiz: (userId: unknown, passMarkPct: unknown) =>
     mockGetWorldIdsWithPassedBossQuiz(userId, passMarkPct),
   countAttemptsForUserLesson: (userId: unknown, lessonId: unknown) =>
@@ -280,6 +296,7 @@ beforeEach(() => {
   mockGetWorldIdsWithPassedBossQuiz.mockResolvedValue(new Set());
   mockListPublishedLessonsForWorld.mockResolvedValue([{ id: LESSON_ID }]);
   mockGetLessonProgressStatusesForUser.mockResolvedValue(new Map());
+  mockCountAnsweredStepsForAttempt.mockResolvedValue(0);
   // Matches servedAnswerRow()'s default servedAt, so any test that doesn't
   // care about elapsed time gets elapsed=0 by default - tests that DO care
   // move the clock forward explicitly with vi.setSystemTime().
@@ -398,14 +415,47 @@ describe("serveStep", () => {
     );
   });
 
-  it("no-skip-ahead: rejects serving a step whose predecessor isn't answered yet", async () => {
-    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+  it("no-skip-ahead: rejects serving a step whose predecessor isn't answered yet, with currentStepIndex/attemptId in details", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson()); // 2 total steps
     mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
     mockGetQuestionAnswer.mockResolvedValueOnce(null); // step 2 not yet served
     mockGetPreviousQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ answeredAt: null })); // step 1 unanswered
+    mockCountAnsweredStepsForAttempt.mockResolvedValueOnce(0); // nothing answered yet
 
-    await expect(serveStep(USER, LESSON_ID, 2, META)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(serveStep(USER, LESSON_ID, 2, META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      details: { lessonId: LESSON_ID, attemptId: ATTEMPT_ID, currentStepIndex: 1 },
+    });
     expect(mockInsertServedQuestionAnswer).not.toHaveBeenCalled();
+    expect(mockCountAnsweredStepsForAttempt).toHaveBeenCalledWith(ATTEMPT_ID);
+  });
+
+  it("currentStepIndex reflects however many steps are actually answered, not always 1", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson()); // 2 total steps
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(null); // trying to re-request step 2 out of order (e.g. stepIndex 2 served twice in a race)
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null); // step 1's row missing/unanswered
+    mockCountAnsweredStepsForAttempt.mockResolvedValueOnce(1); // step 1 is actually answered
+
+    await expect(serveStep(USER, LESSON_ID, 2, META)).rejects.toMatchObject({
+      details: { currentStepIndex: 2 },
+    });
+  });
+
+  it("caps currentStepIndex at the lesson's total step count, never reporting a step past the end", async () => {
+    mockGetPublishedLesson.mockResolvedValueOnce(quizLesson()); // 2 total steps
+    mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+    mockGetQuestionAnswer.mockResolvedValueOnce(null);
+    mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+    // Defensive scenario only (can't really happen - assertStepInRange
+    // already rejects any stepIndex beyond totalSteps) - proves the Math.min
+    // cap holds even if the answered count ever reported higher than
+    // totalSteps.
+    mockCountAnsweredStepsForAttempt.mockResolvedValueOnce(5);
+
+    await expect(serveStep(USER, LESSON_ID, 2, META)).rejects.toMatchObject({
+      details: { currentStepIndex: 2 }, // capped at totalSteps (2), not 6
+    });
   });
 
   it("serves step 2 once step 1 is answered", async () => {
@@ -923,6 +973,132 @@ describe("submitAnswer", () => {
     expect(result.vmAwardedPaise).toBeNull();
     expect(result.totalVmAwardedPreviewPaise).toBeNull();
     expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
+    // feat/lesson-meta-and-pass-flag: same "null until complete" convention.
+    expect(result.passed).toBeNull();
+    expect(result.passMarkPct).toBeNull();
+  });
+
+  // feat/lesson-meta-and-pass-flag: passed/passMarkPct must come from the
+  // exact same values fed into creditLessonCompletion's `successful` input,
+  // never a second computation that could disagree with it.
+  describe("passed/passMarkPct on the completing step", () => {
+    it("quiz: passed=true and passMarkPct=lessonPassMarkPct (50) when accuracy clears the lower bar", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 100 }));
+      mockCreditLessonCompletion.mockResolvedValueOnce({ credited: true, vmAwardedPaise: 9000 });
+
+      const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(result.passed).toBe(true);
+      expect(result.passMarkPct).toBe(50);
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID }),
+        true, // the exact same `successful`/`passed` value
+        META,
+      );
+    });
+
+    it("quiz: passed=false when accuracy (50%) doesn't clear the lower bar, and nothing is credited", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, xpAwardedPreview: 20, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, xpAwardedPreview: 5, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(
+        attemptRow({ status: "completed", totalXpPreview: 25, accuracyPct: 50 }),
+      );
+
+      const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      // lessonPassMarkPct is 50 (SCORING_SETTINGS) and accuracyPct is also
+      // 50 - the pass mark is inclusive (>=), same rule as
+      // creditLessonCompletion's `successful` input and docs/ECONOMY.md
+      // decision 4, so this is actually a PASS at the exact boundary.
+      expect(result.passed).toBe(true);
+      expect(result.passMarkPct).toBe(50);
+    });
+
+    it("boss_quiz: uses the higher bossQuizPassMarkPct (60), not lessonPassMarkPct", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson({ kind: "boss_quiz" }));
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      // 1 of 2 correct = 50% - passes lessonPassMarkPct (50) but NOT
+      // bossQuizPassMarkPct (60).
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: false }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(attemptRow({ status: "completed", accuracyPct: 50 }));
+
+      const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(result.passMarkPct).toBe(60);
+      expect(result.passed).toBe(false);
+      expect(mockCreditLessonCompletion).toHaveBeenCalledWith(
+        USER,
+        expect.objectContaining({ id: LESSON_ID }),
+        false,
+        META,
+      );
+    });
+
+    // The concurrent-duplicate-submit race (completeAttempt returns null
+    // because another request already completed this attempt first) - this
+    // call credits nothing of its own, but must still report the SAME
+    // passed/passMarkPct the winning call already produced, recomputed from
+    // the now-stored accuracyPct via the exact same passMarkPctForLessonKind
+    // rule, never a second disagreeing computation.
+    it("recomputes passed/passMarkPct from the stored accuracyPct when a concurrent submit already completed the attempt", async () => {
+      mockGetPublishedLesson.mockResolvedValueOnce(quizLesson());
+      mockGetLatestInProgressAttempt.mockResolvedValueOnce(attemptRow());
+      mockGetQuestionAnswer.mockResolvedValueOnce(servedAnswerRow({ stepIndex: 2, timerSeconds: 10 }));
+      mockGetQuestionById.mockResolvedValueOnce(questionRow({ id: Q2_ID }));
+      mockGetPreviousQuestionAnswer.mockResolvedValueOnce(null);
+      mockGradeQuestionAnswer.mockImplementationOnce((input) =>
+        Promise.resolve(servedAnswerRow({ ...input, stepIndex: 2 })),
+      );
+      mockListQuestionAnswersForAttempt.mockResolvedValueOnce([
+        servedAnswerRow({ stepIndex: 1, isCorrect: true }),
+        servedAnswerRow({ stepIndex: 2, isCorrect: true }),
+      ]);
+      mockCompleteAttempt.mockResolvedValueOnce(null); // lost the race - already completed
+      mockGetAttemptById.mockResolvedValueOnce(
+        attemptRow({ status: "completed", totalXpPreview: 40, accuracyPct: 100 }),
+      );
+
+      const result = await submitAnswer(USER, LESSON_ID, 2, { correctIndex: 0 }, META);
+
+      expect(result.isAttemptComplete).toBe(true);
+      expect(result.passed).toBe(true);
+      expect(result.passMarkPct).toBe(50);
+      // This call never credited anything - the winning call already did.
+      expect(mockCreditLessonCompletion).not.toHaveBeenCalled();
+      expect(result.vmAwardedPaise).toBeNull();
+    });
   });
 
   it("computes 0% accuracy when every step was wrong", async () => {
