@@ -75,6 +75,21 @@ export async function getPreviousQuestionAnswer(attemptId: string, stepIndex: nu
   return getQuestionAnswer(attemptId, stepIndex - 1);
 }
 
+// feat/lesson-meta-and-pass-flag: serveStep's "not the current step" 409
+// uses this to report currentStepIndex (the step the learner should
+// actually be served next) - steps are only ever created in order, each one
+// requiring the immediately preceding step to already be answered (see
+// serveStep's own comment on that invariant), so "how many steps have been
+// answered so far" is exactly "the next step index, 0-based" for this
+// attempt.
+export async function countAnsweredStepsForAttempt(attemptId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: count() })
+    .from(questionAnswers)
+    .where(and(eq(questionAnswers.attemptId, attemptId), isNotNull(questionAnswers.answeredAt)));
+  return row?.n ?? 0;
+}
+
 export async function insertServedQuestionAnswer(input: {
   attemptId: string;
   questionId: string;

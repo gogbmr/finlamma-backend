@@ -14,6 +14,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   completeAttempt,
+  countAnsweredStepsForAttempt,
   countAttemptsForUserLesson,
   getAttemptById,
   getLatestInProgressAttempt,
@@ -360,6 +361,113 @@ describe("gradeQuestionAnswer", () => {
     expect(second).toBeNull();
     const row = await getQuestionAnswer(attempt.id, 1);
     expect(row?.xpAwardedPreview).toBe(30); // untouched - the first grade wins, no double scoring
+  });
+});
+
+describe("countAnsweredStepsForAttempt", () => {
+  it("counts 0 for an attempt with a served-but-unanswered step", async () => {
+    const user = await makeUser();
+    const lesson = await makeLesson();
+    const question = await makeQuestion();
+    const attempt = await insertAttempt({
+      userId: user.id,
+      lessonId: lesson.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await insertServedQuestionAnswer({
+      attemptId: attempt.id,
+      questionId: question.id,
+      stepIndex: 1,
+      servedAt: new Date(),
+      timerSeconds: 10,
+      servedRevision: 1,
+    });
+
+    expect(await countAnsweredStepsForAttempt(attempt.id)).toBe(0);
+  });
+
+  it("counts only the steps with answeredAt set, never the currently-served-but-unanswered one", async () => {
+    const user = await makeUser();
+    const lesson = await makeLesson();
+    const q1 = await makeQuestion();
+    const q2 = await makeQuestion();
+    const attempt = await insertAttempt({
+      userId: user.id,
+      lessonId: lesson.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await insertServedQuestionAnswer({
+      attemptId: attempt.id,
+      questionId: q1.id,
+      stepIndex: 1,
+      servedAt: new Date(),
+      timerSeconds: 10,
+      servedRevision: 1,
+    });
+    await gradeQuestionAnswer({
+      attemptId: attempt.id,
+      stepIndex: 1,
+      submittedAnswer: { correctIndex: 0 },
+      isCorrect: true,
+      timedOut: false,
+      speedBonusAwarded: false,
+      feverActive: false,
+      xpAwardedPreview: 20,
+      comboAfter: 1,
+      answeredAt: new Date(),
+    });
+    await insertServedQuestionAnswer({
+      attemptId: attempt.id,
+      questionId: q2.id,
+      stepIndex: 2,
+      servedAt: new Date(),
+      timerSeconds: 10,
+      servedRevision: 1,
+    });
+
+    expect(await countAnsweredStepsForAttempt(attempt.id)).toBe(1);
+  });
+
+  it("never counts another attempt's answered steps", async () => {
+    const user = await makeUser();
+    const lesson = await makeLesson();
+    const q1 = await makeQuestion();
+    const otherAttempt = await insertAttempt({
+      userId: user.id,
+      lessonId: lesson.id,
+      attemptNumber: 1,
+      isFirstPass: true,
+    });
+    await insertServedQuestionAnswer({
+      attemptId: otherAttempt.id,
+      questionId: q1.id,
+      stepIndex: 1,
+      servedAt: new Date(),
+      timerSeconds: 10,
+      servedRevision: 1,
+    });
+    await gradeQuestionAnswer({
+      attemptId: otherAttempt.id,
+      stepIndex: 1,
+      submittedAnswer: { correctIndex: 0 },
+      isCorrect: true,
+      timedOut: false,
+      speedBonusAwarded: false,
+      feverActive: false,
+      xpAwardedPreview: 20,
+      comboAfter: 1,
+      answeredAt: new Date(),
+    });
+    const attempt = await insertAttempt({
+      userId: user.id,
+      lessonId: lesson.id,
+      attemptNumber: 2,
+      isFirstPass: false,
+    });
+
+    expect(await countAnsweredStepsForAttempt(attempt.id)).toBe(0);
   });
 });
 

@@ -160,6 +160,28 @@ const SHARED_SUBMIT_ANSWER_FIELDS = {
       "today (there is only one VM source per attempt). null until the attempt completes.",
     example: 5000,
   }),
+  // feat/lesson-meta-and-pass-flag: filled only on the step that completes
+  // the attempt (isAttemptComplete: true), same "null until complete"
+  // convention as totalXpPreview/vmAwardedPaise - null on every earlier
+  // step. Computed by the exact same rule (src/server/quiz-attempts/
+  // scoring.ts's passMarkPctForLessonKind) that decides whether this
+  // attempt's XP/VM actually got credited, so this can never disagree with
+  // vmAwardedPaise being null vs. non-null.
+  passed: z.boolean().nullable().openapi({
+    example: true,
+    description:
+      "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against " +
+      "lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md " +
+      "decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit " +
+      "anything - the learner can simply retry with a fresh attempt.",
+  }),
+  passMarkPct: z.number().nullable().openapi({
+    example: 50,
+    description:
+      "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for " +
+      "video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv " +
+      "\"lesson_flow_scoring\"). null until isAttemptComplete is true.",
+  }),
 };
 
 // The ONLY response that ever includes a question's answer/explanation -

@@ -18,6 +18,7 @@ import { getLessonFlowScoringSettings } from "@/server/settings/service";
 import { getNextPublishedWorldByOrder, getWorldById } from "@/server/worlds/repo";
 import {
   completeAttempt,
+  countAnsweredStepsForAttempt,
   countAttemptsForUserLesson,
   getAttemptById,
   getLatestInProgressAttempt,
@@ -28,7 +29,7 @@ import {
   insertServedQuestionAnswer,
   listQuestionAnswersForAttempt,
 } from "./repo";
-import { answerMatches, computeScore, type QuizKind } from "./scoring";
+import { answerMatches, computeScore, passMarkPctForLessonKind, type QuizKind } from "./scoring";
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 type QuestionAnswerRow = NonNullable<Awaited<ReturnType<typeof getQuestionAnswer>>>;
@@ -125,7 +126,23 @@ export async function serveStep(
     if (stepIndex > 1) {
       const previous = await getPreviousQuestionAnswer(attempt.id, stepIndex);
       if (!previous || !previous.answeredAt) {
-        throw new AppError("CONFLICT", "Not the current step - answer earlier steps first");
+        // feat/lesson-meta-and-pass-flag: currentStepIndex is the step this
+        // learner should actually be served next - capped at totalSteps as
+        // a defensive bound (it's derived from answered-step count, which
+        // can never exceed totalSteps in practice, since assertStepInRange
+        // above already rejects any stepIndex beyond it). attempt.id is
+        // this SAME attempt - already scoped to this caller's own (userId,
+        // lessonId) via getLatestInProgressAttempt above, never another
+        // learner's.
+        const currentStepIndex = Math.min(
+          (await countAnsweredStepsForAttempt(attempt.id)) + 1,
+          questionIds.length,
+        );
+        throw new AppError("CONFLICT", "Not the current step - answer earlier steps first", {
+          lessonId,
+          attemptId: attempt.id,
+          currentStepIndex,
+        });
       }
     }
     const settings = await getLessonFlowScoringSettings();
@@ -171,6 +188,8 @@ function buildAnswerResponse(
   attempt: { status: string; totalXpPreview: number | null },
   format: QuestionFormat,
   vmAwardedPaise: number | null = null,
+  passed: boolean | null = null,
+  passMarkPct: number | null = null,
 ) {
   return {
     attemptId: row.attemptId,
@@ -197,6 +216,10 @@ function buildAnswerResponse(
     // this can never drift from what was actually credited. See
     // src/server/quiz-attempts/schemas.ts's SHARED_SUBMIT_ANSWER_FIELDS.
     totalVmAwardedPreviewPaise: vmAwardedPaise,
+    // feat/lesson-meta-and-pass-flag: null on every step except the one
+    // that completes the attempt, same convention as totalXpPreview above.
+    passed,
+    passMarkPct,
   };
 }
 
@@ -300,6 +323,10 @@ export async function submitAnswer(
   // totalXpPreview - never a per-step preview, since VM here is a flat
   // per-lesson reward (reward_rules.defaultVm), not computed per question.
   let vmAwardedPaise: number | null = null;
+  // feat/lesson-meta-and-pass-flag: same "null until the attempt actually
+  // completes" convention as totalXpPreview/vmAwardedPaise above.
+  let passed: boolean | null = null;
+  let passMarkPct: number | null = null;
   if (stepIndex === questionIds.length) {
     const allAnswers = await listQuestionAnswersForAttempt(attempt.id);
     const sum = allAnswers.reduce((s, a) => s + (a.xpAwardedPreview ?? 0), 0);
@@ -331,9 +358,9 @@ export async function submitAnswer(
       // unlock); Video/Quiz/Role Play share the lower lessonPassMarkPct.
       // Story/Doubt Zone never reach this code path at all (no graded
       // questions - Checkpoint 3's own completion endpoint handles them).
-      const passMark =
-        lesson.kind === "boss_quiz" ? settings.bossQuizPassMarkPct : settings.lessonPassMarkPct;
-      const successful = accuracyPct >= passMark;
+      passMarkPct = passMarkPctForLessonKind(lesson.kind, settings);
+      const successful = accuracyPct >= passMarkPct;
+      passed = successful;
       const creditResult = await creditLessonCompletion(
         user,
         { id: lessonId, kind: lesson.kind, xpOverride: lesson.xpOverride, vmOverride: lesson.vmOverride },
@@ -395,11 +422,21 @@ export async function submitAnswer(
     } else {
       // Already completed by a concurrent duplicate last-step submit -
       // reflect the real, already-completed state rather than claiming
-      // "not complete".
+      // "not complete". passed/passMarkPct are recomputed from the
+      // already-stored accuracyPct, via the exact same
+      // passMarkPctForLessonKind this branch's sibling above used - the
+      // winner of that race already ran creditLessonCompletion, this call
+      // just reports the same outcome, never a second credit attempt
+      // (vmAwardedPaise correctly stays null here - this call credited
+      // nothing).
       const refreshed = await getAttemptById(attempt.id);
       if (refreshed) attemptAfter = refreshed;
       isAttemptComplete = attemptAfter.status === "completed";
       totalXpPreview = attemptAfter.totalXpPreview;
+      if (isAttemptComplete && attemptAfter.accuracyPct !== null) {
+        passMarkPct = passMarkPctForLessonKind(lesson.kind, settings);
+        passed = attemptAfter.accuracyPct >= passMarkPct;
+      }
     }
   }
 
@@ -437,5 +474,14 @@ export async function submitAnswer(
     });
   }
 
-  return buildAnswerResponse(graded, servedRevision, questionIds.length, attemptAfter, format, vmAwardedPaise);
+  return buildAnswerResponse(
+    graded,
+    servedRevision,
+    questionIds.length,
+    attemptAfter,
+    format,
+    vmAwardedPaise,
+    passed,
+    passMarkPct,
+  );
 }

@@ -58,12 +58,22 @@ registry.registerPath({
       },
     },
     409: {
-      description: "Not the current step (no skip-ahead), or the step is already answered",
+      description:
+        "Not the current step (no skip-ahead - includes currentStepIndex/attemptId in `details` " +
+        "so the app can resume at the right step), or the step is already answered",
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
           example: {
-            error: { code: "CONFLICT", message: "Not the current step - answer earlier steps first" },
+            error: {
+              code: "CONFLICT",
+              message: "Not the current step - answer earlier steps first",
+              details: {
+                lessonId: "00000000-0000-0000-0000-000000000000",
+                attemptId: "00000000-0000-0000-0000-000000000000",
+                currentStepIndex: 2,
+              },
+            },
           },
         },
       },
