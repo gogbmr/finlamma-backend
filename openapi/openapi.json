@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "2.8.0",
+    "version": "2.9.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -1817,6 +1817,39 @@
             ],
             "example": "current",
             "description": "This signed-in user's own progress on this node - done/current/available/locked (docs/ARCHITECTURE.md D76)."
+          },
+          "chapterNumber": {
+            "type": "integer",
+            "example": 1
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 48,
+            "description": "Estimated time to complete this lesson. Video/Story: this lesson's own authored content.lengthSeconds. Quiz/Boss Quiz/Role Play/Doubt Zone: a fixed per-kind estimate (settings_kv \"lesson_default_duration_seconds\", admin-editable) - not per-lesson."
+          },
+          "xpReward": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "example": 20,
+            "description": "XP this signed-in learner would earn on this lesson's first successful completion - computed by the exact same function creditLessonCompletion itself uses (src/server/economy/service.ts), never a second copy of the numbers. null when there's no active reward for this lesson's kind, OR when rewardEarned is true (already credited - replaying this lesson won't pay again)."
+          },
+          "vmRewardPaise": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "example": 3000,
+            "description": "Same as xpReward, but V Money in paise (100 = 1 V Money, D37) - null under the exact same conditions as xpReward."
+          },
+          "rewardEarned": {
+            "type": "boolean",
+            "example": false,
+            "description": "True once this signed-in learner has already been credited for this lesson - checked against xp_events, the same table D26's (userId, sourceType, sourceId) unique index lives on (the real idempotency key crediting itself uses), never a separate check that could drift from it. xpReward/vmRewardPaise are both null whenever this is true."
           }
         },
         "required": [
@@ -1826,7 +1859,12 @@
           "kind",
           "title",
           "blurb",
-          "state"
+          "state",
+          "chapterNumber",
+          "durationSeconds",
+          "xpReward",
+          "vmRewardPaise",
+          "rewardEarned"
         ]
       },
       "LessonDetail": {
@@ -2230,6 +2268,39 @@
                 ]
               }
             ]
+          },
+          "chapterNumber": {
+            "type": "integer",
+            "example": 1
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "example": 48,
+            "description": "Estimated time to complete this lesson. Video/Story: this lesson's own authored content.lengthSeconds. Quiz/Boss Quiz/Role Play/Doubt Zone: a fixed per-kind estimate (settings_kv \"lesson_default_duration_seconds\", admin-editable) - not per-lesson."
+          },
+          "xpReward": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "example": 20,
+            "description": "XP this signed-in learner would earn on this lesson's first successful completion - computed by the exact same function creditLessonCompletion itself uses (src/server/economy/service.ts), never a second copy of the numbers. null when there's no active reward for this lesson's kind, OR when rewardEarned is true (already credited - replaying this lesson won't pay again)."
+          },
+          "vmRewardPaise": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "example": 3000,
+            "description": "Same as xpReward, but V Money in paise (100 = 1 V Money, D37) - null under the exact same conditions as xpReward."
+          },
+          "rewardEarned": {
+            "type": "boolean",
+            "example": false,
+            "description": "True once this signed-in learner has already been credited for this lesson - checked against xp_events, the same table D26's (userId, sourceType, sourceId) unique index lives on (the real idempotency key crediting itself uses), never a separate check that could drift from it. xpReward/vmRewardPaise are both null whenever this is true."
           }
         },
         "required": [
@@ -2240,7 +2311,12 @@
           "kind",
           "title",
           "blurb",
-          "content"
+          "content",
+          "chapterNumber",
+          "durationSeconds",
+          "xpReward",
+          "vmRewardPaise",
+          "rewardEarned"
         ]
       },
       "LessonDetailResponse": {
@@ -3556,6 +3632,22 @@
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
                   },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
@@ -3592,6 +3684,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -3677,6 +3771,22 @@
                     "minimum": 0,
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
+                  },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
                   },
                   "format": {
                     "type": "string",
@@ -3723,6 +3833,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -3808,6 +3920,22 @@
                     "minimum": 0,
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
+                  },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
                   },
                   "format": {
                     "type": "string",
@@ -3866,6 +3994,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -3951,6 +4081,22 @@
                     "minimum": 0,
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
+                  },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
                   },
                   "format": {
                     "type": "string",
@@ -3994,6 +4140,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -4079,6 +4227,22 @@
                     "minimum": 0,
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
+                  },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
                   },
                   "format": {
                     "type": "string",
@@ -4124,6 +4288,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -4209,6 +4375,22 @@
                     "minimum": 0,
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
+                  },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
                   },
                   "format": {
                     "type": "string",
@@ -4246,6 +4428,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -4331,6 +4515,22 @@
                     "minimum": 0,
                     "description": "Cumulative V Money this attempt will credit, in paise - guaranteed equal to vmAwardedPaise today (there is only one VM source per attempt). null until the attempt completes.",
                     "example": 5000
+                  },
+                  "passed": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "example": true,
+                    "description": "Whether this attempt's accuracyPct cleared passMarkPct - video/quiz/role_play against lessonPassMarkPct, boss_quiz against the higher bossQuizPassMarkPct (docs/ECONOMY.md decision 4). null until isAttemptComplete is true. A failed attempt doesn't forfeit anything - the learner can simply retry with a fresh attempt."
+                  },
+                  "passMarkPct": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "example": 50,
+                    "description": "The accuracy % passed was judged against for this lesson's kind - lessonPassMarkPct for video/quiz/role_play, bossQuizPassMarkPct for boss_quiz (settings_kv \"lesson_flow_scoring\"). null until isAttemptComplete is true."
                   },
                   "format": {
                     "type": "string",
@@ -4374,6 +4574,8 @@
                   "totalXpPreview",
                   "vmAwardedPaise",
                   "totalVmAwardedPreviewPaise",
+                  "passed",
+                  "passMarkPct",
                   "format",
                   "correctAnswer"
                 ]
@@ -8253,13 +8455,18 @@
             }
           },
           "409": {
-            "description": "Not the current step (no skip-ahead), or the step is already answered",
+            "description": "Not the current step (no skip-ahead - includes currentStepIndex/attemptId in `details` so the app can resume at the right step), or the step is already answered",
             "content": {
               "application/json": {
                 "example": {
                   "error": {
                     "code": "CONFLICT",
-                    "message": "Not the current step - answer earlier steps first"
+                    "message": "Not the current step - answer earlier steps first",
+                    "details": {
+                      "lessonId": "00000000-0000-0000-0000-000000000000",
+                      "attemptId": "00000000-0000-0000-0000-000000000000",
+                      "currentStepIndex": 2
+                    }
                   }
                 },
                 "schema": {

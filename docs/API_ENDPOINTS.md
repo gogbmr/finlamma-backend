@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.8.0) on 2026-11-11.
+> Generated from `openapi/openapi.json` (version 2.9.0) on 2026-11-17.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -1163,7 +1163,12 @@ The journey-map node list for one world (WH-12): id, chapter, step, kind, title,
         "hi": "string",
         "hx": "string"
       },
-      "state": "current"
+      "state": "current",
+      "chapterNumber": 1,
+      "durationSeconds": 48,
+      "xpReward": 20,
+      "vmRewardPaise": 3000,
+      "rewardEarned": false
     }
   ]
 }
@@ -1241,7 +1246,12 @@ Full content for a single published lesson - what the Lesson Flow engine renders
           "hx": null
         }
       }
-    }
+    },
+    "chapterNumber": 1,
+    "durationSeconds": 48,
+    "xpReward": 20,
+    "vmRewardPaise": 3000,
+    "rewardEarned": false
   }
 }
 ```
@@ -1555,13 +1565,18 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
 }
 ```
 
-- **409** — Not the current step (no skip-ahead), or the step is already answered
+- **409** — Not the current step (no skip-ahead - includes currentStepIndex/attemptId in `details` so the app can resume at the right step), or the step is already answered
 
 ```json
 {
   "error": {
     "code": "CONFLICT",
-    "message": "Not the current step - answer earlier steps first"
+    "message": "Not the current step - answer earlier steps first",
+    "details": {
+      "lessonId": "00000000-0000-0000-0000-000000000000",
+      "attemptId": "00000000-0000-0000-0000-000000000000",
+      "currentStepIndex": 2
+    }
   }
 }
 ```
@@ -1634,6 +1649,8 @@ Server-graded and server-timed - the submitted answer is checked against the que
     "totalXpPreview": 0,
     "vmAwardedPaise": 5000,
     "totalVmAwardedPreviewPaise": 5000,
+    "passed": true,
+    "passMarkPct": 50,
     "format": "single_select",
     "correctAnswer": {
       "correctIndex": 1
@@ -1752,7 +1769,12 @@ Powers World Home's Resume banner (WH-06). Progress-aware: walks published world
           "hx": null
         }
       }
-    }
+    },
+    "chapterNumber": 1,
+    "durationSeconds": 48,
+    "xpReward": 20,
+    "vmRewardPaise": 3000,
+    "rewardEarned": false
   }
 }
 ```

@@ -2,6 +2,38 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-11-17 — v2.9.0
+
+Minor bump: no operations added or removed, additive fields only - every existing field stays as
+it was, so an old app build keeps working unchanged. Branch `feat/lesson-meta-and-pass-flag`.
+
+**`GET /api/v1/worlds/{id}/lessons`, `GET /api/v1/lessons/{id}`, `GET /api/v1/me/current-lesson`**
+(all three share the same `LessonSummary`/`LessonDetail` response shapes) gain 5 new fields:
+- `chapterNumber` - same value as the existing `chapter` field, under the name the app asked for.
+- `durationSeconds` - video/story read their own authored length; quiz/boss_quiz/role_play/
+  doubt_zone get a fixed per-kind estimate from a new admin-editable settings_kv key
+  (`lesson_default_duration_seconds`).
+- `xpReward` / `vmRewardPaise` - the reward this signed-in learner would earn on first successful
+  completion, computed by the exact same function `creditLessonCompletion` itself uses (never a
+  second copy of the reward math).
+- `rewardEarned` - true once this learner has already been credited for this lesson (checked
+  against the same `xp_events` row the real credit's idempotency key lives on) - `xpReward`/
+  `vmRewardPaise` are both `null` whenever this is true, or when there's no active reward for the
+  lesson's kind.
+
+**`POST /api/v1/lessons/{id}/steps/{n}/answer`** gains 2 new fields, filled only once
+`isAttemptComplete` is true (`null` on every earlier step):
+- `passed` - whether this attempt's accuracy cleared its pass mark, using the exact same
+  value fed into the real XP/VM credit decision.
+- `passMarkPct` - the accuracy % `passed` was judged against (the lower `lessonPassMarkPct` for
+  video/quiz/role_play, the higher `bossQuizPassMarkPct` for boss_quiz).
+
+**`POST /api/v1/lessons/{id}/steps/{n}/serve`**'s existing 409 ("Not the current step") now
+includes `error.details`: `lessonId`, `attemptId`, and `currentStepIndex` (the step this learner
+should actually be served next, capped at the lesson's total step count) - so the app can recover
+by resuming at the right step instead of just retrying blindly. The error code/message are
+unchanged.
+
 ## 2026-11-10 — v2.8.0
 
 Minor bump: no operations added or removed. News data-quality fix, triggered by the app seeing a
