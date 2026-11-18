@@ -1,15 +1,48 @@
 import { Flag } from "lucide-react";
-import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
-import { listFlaggedMessagesForModeration } from "@/server/doubt-zone/service";
+import { readDateRangeFilter } from "@/lib/admin/date-range";
+import {
+  listFlaggedMessagesForAdmin,
+  type DoubtMessageFlagCategory,
+} from "@/server/doubt-zone/admin-queries";
 import { DoubtZoneModerationTable } from "./doubt-zone-moderation-table";
+
+// Task 3b follow-up (approved plan): real-DB pagination replacing the
+// 100-row hard cap. listFlaggedMessagesForAdmin (src/server/doubt-zone/
+// admin-queries.ts) is a NEW file - the existing listFlaggedMessagesForReview
+// is untouched, and nothing here imports requireFullAccess or any other
+// part of the app-facing access gate. Fields, the doubt_zone.moderate
+// check below, and every action this page links to are unchanged.
+const PAGE_SIZE = 20;
+
+const FLAG_CATEGORIES: DoubtMessageFlagCategory[] = [
+  "self_harm_or_suicide",
+  "abuse_or_neglect",
+  "other_wellbeing_concern",
+  "classifier_unavailable",
+  "learner_reported",
+  "advice_language",
+];
+
+function parseFlaggedCategory(raw: string | string[] | undefined): DoubtMessageFlagCategory | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return (FLAG_CATEGORIES as readonly string[]).includes(value ?? "")
+    ? (value as DoubtMessageFlagCategory)
+    : null;
+}
+
+function parsePage(raw: string | string[] | undefined): number {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
 
 export default async function DoubtZoneModerationPage({
   searchParams,
 }: {
-  searchParams: Promise<{ includeReviewed?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   try {
     await requireStaff("doubt_zone.moderate");
@@ -18,9 +51,20 @@ export default async function DoubtZoneModerationPage({
   }
 
   const params = await searchParams;
-  const includeReviewed = params.includeReviewed === "1";
+  const includeReviewed =
+    (Array.isArray(params.includeReviewed) ? params.includeReviewed[0] : params.includeReviewed) === "1";
+  const flaggedCategoryFilter = parseFlaggedCategory(params.flaggedCategory);
+  const { from, to } = readDateRangeFilter(params);
+  const page = parsePage(params.page);
 
-  const rows = await listFlaggedMessagesForModeration({ includeReviewed, limit: 100 });
+  const paged = await listFlaggedMessagesForAdmin({
+    page,
+    pageSize: PAGE_SIZE,
+    includeReviewed,
+    flaggedCategory: flaggedCategoryFilter,
+    flaggedFrom: from,
+    flaggedTo: to,
+  });
 
   return (
     <div className="space-y-6">
@@ -31,15 +75,8 @@ export default async function DoubtZoneModerationPage({
         description="Flagged Doubt Zone AI messages only - either the safety classifier tripped on a learner message, or a learner reported a reply. Full, unflagged conversations are never browsable here, by anyone. Viewing a flagged message's content is logged."
       />
 
-      <Link
-        href={includeReviewed ? "/admin/doubt-zone" : "/admin/doubt-zone?includeReviewed=1"}
-        className="text-sm font-medium underline"
-      >
-        {includeReviewed ? "Hide reviewed" : "Show reviewed"}
-      </Link>
-
       <DoubtZoneModerationTable
-        rows={rows.map((r) => ({
+        rows={paged.rows.map((r) => ({
           id: r.id,
           threadId: r.threadId,
           role: r.role,
@@ -49,6 +86,13 @@ export default async function DoubtZoneModerationPage({
           displayName: r.lastInitial ? `${r.firstName ?? "—"} ${r.lastInitial}.` : (r.firstName ?? "—"),
           mentorName: r.mentorName.en,
         }))}
+        total={paged.total}
+        page={paged.page}
+        pageCount={paged.pageCount}
+        flaggedCategory={flaggedCategoryFilter}
+        includeReviewed={includeReviewed}
+        from={params.from && !Array.isArray(params.from) ? params.from : ""}
+        to={params.to && !Array.isArray(params.to) ? params.to : ""}
       />
     </div>
   );
