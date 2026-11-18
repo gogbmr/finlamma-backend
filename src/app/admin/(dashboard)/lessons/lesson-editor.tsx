@@ -114,13 +114,16 @@ function useDynamicLessonResolver(kindRef: { current: LessonKindCreate }): Resol
 }
 
 // ---------------------------------------------------------------------------
-// Non-blocking warnings (Task 4): empty hi/hx, a non-https video URL, a cue
-// timerSeconds beyond lengthSeconds, empty scenes. Computed separately from
-// the zodResolver schema above - these never block handleSubmit/draft save,
-// only render as inline notices next to the field they're about. If any of
-// these looks like it should become a hard server rule (https-only is the
-// obvious candidate), that's a product decision, listed in this round's
-// summary - not added here.
+// Non-blocking warnings (Task 4): empty hi/hx, a non-https video URL, a
+// cue's position (at) beyond lengthSeconds or out of order, empty scenes.
+// Computed separately from the zodResolver schema above - these never
+// block handleSubmit/draft save, only render as inline notices next to the
+// field they're about, previewing what Task 4b's validateLessonForPublish
+// (src/server/lessons/service.ts) will actually enforce at publish time:
+// https-only video URLs (Rule A) and cue position/ordering (Rule B's
+// position half - Rule B's timerSeconds > 0 half is already a BLOCKING
+// Zod error here, via VideoCueSchema's own `.positive()`, so it never needs
+// a warning of its own).
 // ---------------------------------------------------------------------------
 
 type Warning = { path: string; message: string };
@@ -152,7 +155,7 @@ function computeLessonWarnings(
         if (value && !/^https:\/\//i.test(value)) {
           warnings.push({
             path: `content.video.url.${lang}`,
-            message: `URL (${lang}) doesn't start with https:// - most players/webviews will refuse a plain http:// source.`,
+            message: `URL (${lang}) doesn't start with https:// - most players/webviews will refuse a plain http:// source, and publish will block on this.`,
           });
         }
       }
@@ -174,16 +177,29 @@ function computeLessonWarnings(
         ),
       );
     });
+    // Mirrors validateVideoCueTiming's two position-based checks exactly
+    // (src/server/lessons/service.ts) - at (not timerSeconds) is the cue's
+    // position in the video; timerSeconds is the learner's answer
+    // countdown, a separate field the length check was never about.
     const cues = Array.isArray(content.cues) ? content.cues : [];
-    const lengthSeconds = Number(content.lengthSeconds) || 0;
+    const lengthSecondsRaw = content.lengthSeconds;
+    const lengthSeconds = typeof lengthSecondsRaw === "number" ? lengthSecondsRaw : null;
+    let previousAt: number | null = null;
     cues.forEach((cue: Record<string, unknown>, i: number) => {
-      const timerSeconds = Number(cue.timerSeconds) || 0;
-      if (timerSeconds > lengthSeconds) {
+      const at = typeof cue.at === "number" ? cue.at : null;
+      if (at !== null && lengthSeconds !== null && at > lengthSeconds) {
         warnings.push({
-          path: `content.cues.${i}.timerSeconds`,
-          message: `Cue ${i + 1}'s timer (${timerSeconds}s) is longer than the video (${lengthSeconds}s).`,
+          path: `content.cues.${i}.at`,
+          message: `Cue ${i + 1} fires at ${at}s, after the video ends (${lengthSeconds}s).`,
         });
       }
+      if (at !== null && previousAt !== null && at < previousAt) {
+        warnings.push({
+          path: `content.cues.${i}.at`,
+          message: `Cue ${i + 1} fires at ${at}s, before the previous cue - cues must be in order.`,
+        });
+      }
+      if (at !== null) previousAt = at;
     });
   }
 
@@ -253,7 +269,11 @@ function parsePublishError(message: string): { fieldErrors: Warning[]; summary: 
       fieldErrors.push({ path: rhfPath, message: "Missing translation - required before publish." });
       continue;
     }
-    const pathMatch = part.match(/^(content\.[\w.[\]]+)\s/);
+    // Matches both "content.cues[0].at (5s) is after..." (space) and
+    // service.ts's "content.lengthSeconds: Required" (colon) error shapes -
+    // validateVideoContentShape (the latter) reuses updateLessonDraft/
+    // hotfixLesson's own "content.path: message" convention.
+    const pathMatch = part.match(/^(content\.[\w.[\]]+)[\s:]/);
     if (pathMatch) {
       const rhfPath = pathMatch[1]!.replace(/\[(\d+)\]/g, ".$1");
       fieldErrors.push({ path: rhfPath, message: part });
@@ -638,7 +658,7 @@ function CueFields({
 }) {
   const { register } = useFormContext();
   const base = `content.cues.${index}`;
-  const warning = findWarning(warnings, `${base}.timerSeconds`);
+  const warning = findWarning(warnings, `${base}.at`);
   return (
     <div className="space-y-2 rounded-md border border-border p-3">
       <div className="flex items-center justify-between">
