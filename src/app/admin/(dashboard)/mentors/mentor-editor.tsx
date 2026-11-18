@@ -1,20 +1,13 @@
 "use client";
 
 import { Users } from "lucide-react";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { LocalizedText } from "@/server/mentors/schemas";
 import {
@@ -25,6 +18,7 @@ import {
   updateMentorDraftAction,
   uploadMentorArtAction,
 } from "./actions";
+import { MentorsTable } from "./mentors-table";
 
 type UsedByWorld = { id: string; title: LocalizedText; status: "draft" | "published" };
 
@@ -47,14 +41,47 @@ export function MentorEditor({
   mentors,
   canManage,
   canPublish,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  status,
 }: {
   mentors: MentorRow[];
   canManage: boolean;
   canPublish: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  status: "draft" | "published" | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(mentors[0]?.id ?? "new");
+  // Few-line confirm() guard against silently losing an in-progress edit
+  // when switching the selected mentor (MentorForm remounts on a `key`
+  // change) - same pattern as Worlds (Task 2). Doesn't cover Prev/Next/
+  // search/sort/status, which are plain <Link>s - deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (mentors.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this mentor?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return (
       <EmptyState
         icon={Users}
@@ -64,29 +91,43 @@ export function MentorEditor({
     );
   }
 
+  // `mentors` is only the current page - a selection made on a page that's
+  // since changed under it falls back to this page's first row.
+  const effectiveId: string | "new" =
+    selectedId === "new" || mentors.some((m) => m.id === selectedId)
+      ? (selectedId as string | "new")
+      : mentors[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Select value={selectedId ?? "new"} onValueChange={(v) => setSelectedId(v)}>
-          <SelectTrigger className="w-64">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {mentors.map((m) => (
-              <SelectItem key={m.id} value={m.id}>
-                {m.name.en || m.key} ({m.status})
-              </SelectItem>
-            ))}
-            {canManage && <SelectItem value="new">+ New mentor</SelectItem>}
-          </SelectContent>
-        </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a mentor below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New mentor
+          </Button>
+        )}
       </div>
 
-      {selectedId === "new" && canManage ? (
-        <NewMentorForm />
+      <MentorsTable
+        rows={mentors.map((m) => ({ id: m.id, key: m.key, order: m.order, name: m.name, status: m.status }))}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        status={status}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <NewMentorForm onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const mentor = mentors.find((m) => m.id === selectedId);
+          const mentor = mentors.find((m) => m.id === effectiveId);
           if (!mentor) return null;
           return (
             <MentorForm
@@ -94,6 +135,7 @@ export function MentorEditor({
               mentor={mentor}
               canManage={canManage}
               canPublish={canPublish}
+              onDirtyChange={setIsDirty}
             />
           );
         })()
@@ -130,13 +172,27 @@ function LocalizedFields({
   );
 }
 
-function NewMentorForm() {
+function NewMentorForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const [isPending, startTransition] = useTransition();
   const [key, setKey] = useState("");
   const [order, setOrder] = useState("");
   const [persona, setPersona] = useState("");
   const [name, setName] = useState<LocalizedText>(EMPTY_LOCALIZED);
   const [bio, setBio] = useState<LocalizedText>(EMPTY_LOCALIZED);
+
+  // Derived from this form's own empty baseline - see WorldEditor's
+  // NewWorldForm for why this is simpler/safer than an effect that fires
+  // on every keystroke and has to be manually "un-dirtied" after save.
+  const dirty =
+    key !== "" ||
+    order !== "" ||
+    persona !== "" ||
+    LANGUAGES.some((l) => name[l] !== "") ||
+    LANGUAGES.some((l) => bio[l] !== "");
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function create() {
     startTransition(async () => {
@@ -196,10 +252,12 @@ function MentorForm({
   mentor,
   canManage,
   canPublish,
+  onDirtyChange,
 }: {
   mentor: MentorRow;
   canManage: boolean;
   canPublish: boolean;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState(String(mentor.order));
@@ -207,6 +265,27 @@ function MentorForm({
   const [name, setName] = useState<LocalizedText>(mentor.name);
   const [bio, setBio] = useState<LocalizedText>(mentor.bio);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The "pristine" baseline to compare against - moves forward after each
+  // successful save, since `mentor` itself stays stale (see Worlds'
+  // WorldForm for why comparing against the prop directly false-positives
+  // "still dirty" right after a successful save).
+  const [savedSnapshot, setSavedSnapshot] = useState({
+    order: String(mentor.order),
+    persona: mentor.persona,
+    name: mentor.name,
+    bio: mentor.bio,
+  });
+
+  const dirty =
+    order !== savedSnapshot.order ||
+    persona !== savedSnapshot.persona ||
+    LANGUAGES.some((l) => name[l] !== savedSnapshot.name[l]) ||
+    LANGUAGES.some((l) => bio[l] !== savedSnapshot.bio[l]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = mentor.status === "draft";
   const editable = canManage && isDraft;
@@ -231,6 +310,7 @@ function MentorForm({
         return;
       }
       toast.success("Draft saved");
+      setSavedSnapshot({ order, persona, name, bio });
     });
   }
 
@@ -242,6 +322,7 @@ function MentorForm({
         return;
       }
       toast.success("Fix saved - live immediately");
+      setSavedSnapshot((prev) => ({ ...prev, name, bio }));
     });
   }
 

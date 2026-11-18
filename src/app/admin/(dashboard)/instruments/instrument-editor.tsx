@@ -1,23 +1,17 @@
 "use client";
 
 import { TrendingUp } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { findAdviceLikePhrases } from "@/server/trading/advice-language";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { createInstrumentAction, updateInstrumentAction } from "./actions";
+import { InstrumentsTable } from "./instruments-table";
 
 type InstrumentRow = {
   id: string;
@@ -88,13 +82,44 @@ function LocalizedFields({
 export function InstrumentEditor({
   instruments,
   canManage,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  active,
 }: {
   instruments: InstrumentRow[];
   canManage: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  active: "active" | "inactive" | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(instruments[0]?.id ?? "new");
+  // Few-line confirm() guard, same pattern as the other small catalogs -
+  // doesn't cover Prev/Next/search/sort/active, deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (instruments.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this instrument?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return (
       <EmptyState
         icon={TrendingUp}
@@ -104,36 +129,64 @@ export function InstrumentEditor({
     );
   }
 
+  const effectiveId: string | "new" =
+    selectedId === "new" || instruments.some((i) => i.id === selectedId)
+      ? (selectedId as string | "new")
+      : instruments[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <Select value={selectedId ?? "new"} onValueChange={(v) => setSelectedId(v)}>
-        <SelectTrigger className="w-64">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {instruments.map((i) => (
-            <SelectItem key={i.id} value={i.id}>
-              {i.symbol} - {i.name} {i.active ? "" : "(inactive)"}
-            </SelectItem>
-          ))}
-          {canManage && <SelectItem value="new">+ New instrument</SelectItem>}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select an instrument below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New instrument
+          </Button>
+        )}
+      </div>
 
-      {selectedId === "new" && canManage ? (
-        <NewInstrumentForm />
+      <InstrumentsTable
+        rows={instruments.map((i) => ({
+          id: i.id,
+          symbol: i.symbol,
+          name: i.name,
+          sector: i.sector,
+          active: i.active,
+          halted: i.halted,
+        }))}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        active={active}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <NewInstrumentForm onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const instrument = instruments.find((i) => i.id === selectedId);
+          const instrument = instruments.find((i) => i.id === effectiveId);
           if (!instrument) return null;
-          return <InstrumentForm key={instrument.id} instrument={instrument} canManage={canManage} />;
+          return (
+            <InstrumentForm
+              key={instrument.id}
+              instrument={instrument}
+              canManage={canManage}
+              onDirtyChange={setIsDirty}
+            />
+          );
         })()
       )}
     </div>
   );
 }
 
-function NewInstrumentForm() {
+function NewInstrumentForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const [isPending, startTransition] = useTransition();
   const [symbol, setSymbol] = useState("");
   const [name, setName] = useState("");
@@ -142,6 +195,23 @@ function NewInstrumentForm() {
   const [lotSize, setLotSize] = useState("1");
   const [about, setAbout] = useState<LocalizedText>(EMPTY_LOCALIZED);
   const [tip, setTip] = useState<LocalizedText>(EMPTY_LOCALIZED);
+
+  // Derived from this form's own empty baseline (lotSize's baseline is its
+  // default "1", not "") - see Worlds' NewWorldForm for why this is safer
+  // than an effect that fires on every keystroke and must be manually
+  // "un-dirtied" after the reset below.
+  const dirty =
+    symbol !== "" ||
+    name !== "" ||
+    sector !== "" ||
+    tags !== "" ||
+    lotSize !== "1" ||
+    LANGUAGES.some((l) => about[l] !== "") ||
+    LANGUAGES.some((l) => tip[l] !== "");
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function create() {
     startTransition(async () => {
@@ -224,7 +294,15 @@ function NewInstrumentForm() {
   );
 }
 
-function InstrumentForm({ instrument, canManage }: { instrument: InstrumentRow; canManage: boolean }) {
+function InstrumentForm({
+  instrument,
+  canManage,
+  onDirtyChange,
+}: {
+  instrument: InstrumentRow;
+  canManage: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState(instrument.name);
   const [sector, setSector] = useState(instrument.sector);
@@ -235,6 +313,24 @@ function InstrumentForm({ instrument, canManage }: { instrument: InstrumentRow; 
   const [active, setActive] = useState(instrument.active);
   const [about, setAbout] = useState<LocalizedText>(instrument.about);
   const [tip, setTip] = useState<LocalizedText>(instrument.tip);
+
+  // Unlike the New*Form create flows, a successful save here never resets
+  // these fields (they keep the just-saved values) - safe to just mark
+  // dirty on any change after the first render and clear it explicitly on
+  // save, with no risk of the clear racing a field reset.
+  const isFirstRender = useRef(true);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setDirty(true);
+  }, [name, sector, tags, lotSize, mcap, pe, active, about, tip]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function save() {
     startTransition(async () => {
@@ -259,6 +355,7 @@ function InstrumentForm({ instrument, canManage }: { instrument: InstrumentRow; 
         return;
       }
       toast.success("Saved");
+      setDirty(false);
     });
   }
 

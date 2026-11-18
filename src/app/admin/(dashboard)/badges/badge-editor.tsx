@@ -1,7 +1,7 @@
 "use client";
 
 import { Award } from "lucide-react";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -18,6 +18,7 @@ import {
   updateBadgeDraftAction,
   uploadBadgeIconAction,
 } from "./actions";
+import { BadgesTable } from "./badges-table";
 
 type BadgeRow = {
   id: string;
@@ -60,43 +61,104 @@ function LocalizedFields({
   );
 }
 
-export function BadgeEditor({ badges, canManage }: { badges: BadgeRow[]; canManage: boolean }) {
+export function BadgeEditor({
+  badges,
+  canManage,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  status,
+}: {
+  badges: BadgeRow[];
+  canManage: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  status: "draft" | "published" | null;
+}) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(badges[0]?.id ?? "new");
+  // Few-line confirm() guard, same pattern as Worlds/Mentors - doesn't
+  // cover Prev/Next/search/sort/status (plain <Link>s), deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (badges.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this badge?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return <EmptyState icon={Award} title="No badges yet" description="A staff member with economy.manage can create the first one." />;
   }
 
+  const effectiveId: string | "new" =
+    selectedId === "new" || badges.some((b) => b.id === selectedId)
+      ? (selectedId as string | "new")
+      : badges[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
-        <SelectTrigger className="w-72">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {badges.map((b) => (
-            <SelectItem key={b.id} value={b.id}>
-              {b.name.en || "(untitled)"} ({b.status})
-            </SelectItem>
-          ))}
-          {canManage && <SelectItem value="new">+ New badge</SelectItem>}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a badge below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New badge
+          </Button>
+        )}
+      </div>
 
-      {selectedId === "new" && canManage ? (
-        <BadgeForm canManage={canManage} />
+      <BadgesTable
+        rows={badges.map((b) => ({ id: b.id, name: b.name, category: b.category, vmReward: b.vmReward, status: b.status }))}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        status={status}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <BadgeForm canManage={canManage} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const badge = badges.find((b) => b.id === selectedId);
+          const badge = badges.find((b) => b.id === effectiveId);
           if (!badge) return null;
-          return <BadgeForm key={badge.id} badge={badge} canManage={canManage} />;
+          return (
+            <BadgeForm key={badge.id} badge={badge} canManage={canManage} onDirtyChange={setIsDirty} />
+          );
         })()
       )}
     </div>
   );
 }
 
-function BadgeForm({ badge, canManage }: { badge?: BadgeRow; canManage: boolean }) {
+function BadgeForm({
+  badge,
+  canManage,
+  onDirtyChange,
+}: {
+  badge?: BadgeRow;
+  canManage: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState<LocalizedText>(badge?.name ?? EMPTY_LOCALIZED);
@@ -106,6 +168,45 @@ function BadgeForm({ badge, canManage }: { badge?: BadgeRow; canManage: boolean 
   const [threshold, setThreshold] = useState(String(badge?.criteria.threshold ?? ""));
   const [vmReward, setVmReward] = useState(String(badge?.vmReward ?? ""));
   const [iconKey, setIconKey] = useState(badge?.iconKey ?? "");
+
+  // One form serves both create and edit (unlike Worlds/Mentors' separate
+  // New*Form) - the "pristine" baseline is the loaded badge's fields, or
+  // this form's own empty defaults when creating. Moves forward after a
+  // successful save, same reasoning as Worlds' WorldForm.
+  const [savedSnapshot, setSavedSnapshot] = useState(
+    badge
+      ? {
+          name: badge.name,
+          description: badge.description,
+          category: badge.category as string,
+          criteriaType: badge.criteria.type,
+          threshold: String(badge.criteria.threshold),
+          vmReward: String(badge.vmReward),
+          iconKey: badge.iconKey ?? "",
+        }
+      : {
+          name: EMPTY_LOCALIZED,
+          description: EMPTY_LOCALIZED,
+          category: "learning",
+          criteriaType: "lessons_completed",
+          threshold: "",
+          vmReward: "",
+          iconKey: "",
+        },
+  );
+
+  const dirty =
+    LANGUAGES.some((l) => name[l] !== savedSnapshot.name[l]) ||
+    LANGUAGES.some((l) => description[l] !== savedSnapshot.description[l]) ||
+    category !== savedSnapshot.category ||
+    criteriaType !== savedSnapshot.criteriaType ||
+    threshold !== savedSnapshot.threshold ||
+    vmReward !== savedSnapshot.vmReward ||
+    iconKey !== savedSnapshot.iconKey;
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = !badge || badge.status === "draft";
   const editable = canManage && isDraft;
@@ -131,6 +232,7 @@ function BadgeForm({ badge, canManage }: { badge?: BadgeRow; canManage: boolean 
         return;
       }
       toast.success(badge ? "Draft saved" : "Badge created as a draft");
+      setSavedSnapshot({ name, description, category, criteriaType, threshold, vmReward, iconKey });
     });
   }
 

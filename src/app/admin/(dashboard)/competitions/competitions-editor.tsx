@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   updateCompetitionDraftAction,
   updateCompetitionSettingsAction,
 } from "./actions";
+import { CompetitionsTable } from "./competitions-table";
 
 type PrizeBand = { rankFrom: number; rankTo: number; vmAmount: number; badgeId: string | null };
 
@@ -112,11 +113,13 @@ function CompetitionForm({
   instruments,
   badges,
   onSaved,
+  onDirtyChange,
 }: {
   competition: CompetitionRow | null;
   instruments: InstrumentOption[];
   badges: BadgeOption[];
   onSaved: () => void;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState<LocalizedText>(competition?.name ?? BLANK_TEXT);
@@ -126,6 +129,25 @@ function CompetitionForm({
   const [windowEnd, setWindowEnd] = useState(competition ? toDatetimeLocal(competition.windowEnd) : "");
   const [prizes, setPrizes] = useState<PrizeBand[]>(competition?.prizes ?? DEFAULT_PRIZES);
   const [rules, setRules] = useState<LocalizedText>(competition?.rules ?? BLANK_TEXT);
+
+  // Dirty the moment anything changes after the first render - safe here
+  // (unlike a reset-in-place form) because onSaved() below always triggers
+  // a full remount on success (the parent resets selectedId, changing this
+  // component's `key`), so there's no "reset fields while keeping this
+  // instance" case that would re-fire this effect and undo the save.
+  const isFirstRender = useRef(true);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setDirty(true);
+  }, [name, instrumentId, capitalRupees, windowStart, windowEnd, prizes, rules]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function save() {
     startTransition(async () => {
@@ -146,6 +168,7 @@ function CompetitionForm({
         return;
       }
       toast.success(competition ? "Competition updated" : "Competition created");
+      setDirty(false);
       onSaved();
     });
   }
@@ -282,17 +305,48 @@ function SettingsPanel({ initial }: { initial: SettingsValue }) {
 
 export function CompetitionsEditor({
   competitions,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  status,
   instruments,
   badges,
   settings,
 }: {
   competitions: CompetitionRow[];
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  status: "draft" | "published" | null;
   instruments: InstrumentOption[];
   badges: BadgeOption[];
   settings: SettingsValue;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new">(competitions[0]?.id ?? "new");
   const selected = competitions.find((c) => c.id === selectedId) ?? null;
+  // Few-line confirm() guard, same pattern as the other economy.manage
+  // pages - doesn't cover Prev/Next/search/sort/status, deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
+
+  function trySelect(id: string) {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this competition?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
 
   return (
     <div className="space-y-6">
@@ -306,26 +360,43 @@ export function CompetitionsEditor({
           </p>
         </div>
 
-        <Select value={selectedId} onValueChange={setSelectedId}>
-          <SelectTrigger className="w-96">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {competitions.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name.en} ({c.status})
-              </SelectItem>
-            ))}
-            <SelectItem value="new">+ New competition</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">Select a competition below to edit it.</p>
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New competition
+          </Button>
+        </div>
+
+        <CompetitionsTable
+          rows={competitions.map((c) => ({
+            id: c.id,
+            name: c.name,
+            windowStart: c.windowStart,
+            windowEnd: c.windowEnd,
+            status: c.status,
+          }))}
+          total={total}
+          page={page}
+          pageCount={pageCount}
+          pageSize={pageSize}
+          q={q}
+          sort={sort}
+          dir={dir}
+          status={status}
+          selectedId={selectedId}
+          onSelect={trySelect}
+        />
 
         <CompetitionForm
           key={selectedId}
           competition={selected}
           instruments={instruments}
           badges={badges}
-          onSaved={() => setSelectedId("new")}
+          onDirtyChange={setIsDirty}
+          onSaved={() => {
+            setIsDirty(false);
+            setSelectedId("new");
+          }}
         />
       </div>
 
