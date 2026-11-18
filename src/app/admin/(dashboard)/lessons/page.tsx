@@ -142,6 +142,7 @@ export default async function LessonsPage({
 
       <LessonEditor
         worldId={selectedWorld.id}
+        worldTitle={selectedWorld.title}
         worldMentorKey={worldMentorKey}
         lessons={paged.rows}
         canManage={canManage}

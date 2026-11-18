@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { cn } from "@/lib/cn";
 
 type NavItem = {
@@ -188,44 +188,82 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
 }
 
 const NAV_COLLAPSE_STORAGE_KEY = "finlamma-admin-nav-collapsed-groups";
+const EMPTY_COLLAPSED_GROUPS: Set<string> = new Set();
 
 // Per-viewer convenience only (which groups are collapsed) - never read back
-// by the server, never shared between staff members or devices. Read after
-// mount (not in useState's initializer) so the very first render matches on
-// both server and client - "everything expanded" - and collapsing from a
-// stored preference only happens as a second, client-only update. Avoids a
-// hydration mismatch instead of risking one for a cosmetic preference.
-function useCollapsedGroups() {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+// by the server, never shared between staff members or devices.
+// useSyncExternalStore (not useEffect+setState, which the lint config flags
+// as a cascading-render anti-pattern for exactly this "read an external
+// store on mount" case - see the same fix already applied in
+// src/app/legal/[type]/legal-document-client.tsx) - getServerSnapshot always
+// returns the same empty-Set constant ("everything expanded"), so SSR/
+// hydration never touches localStorage and the server-rendered markup
+// always matches the client's first paint; collapsing from a stored
+// preference only happens as a second, client-only read.
+//
+// A plain useSyncExternalStore getSnapshot must return a stable (===)
+// value when nothing changed, or it re-renders forever - so the parsed Set
+// is cached and only rebuilt when the underlying localStorage string
+// actually changes.
+let cachedRaw: string | null = null;
+let cachedSnapshot: Set<string> = EMPTY_COLLAPSED_GROUPS;
+const listeners = new Set<() => void>();
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY);
-      if (raw) setCollapsed(new Set(JSON.parse(raw) as string[]));
-    } catch {
-      // Private window, blocked storage, corrupt value, ... - just keep
-      // everything expanded.
-    }
-  }, []);
-
-  function toggle(label: string) {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      try {
-        window.localStorage.setItem(
-          NAV_COLLAPSE_STORAGE_KEY,
-          JSON.stringify([...next]),
-        );
-      } catch {
-        // Nothing to persist to - the toggle still works for this render.
-      }
-      return next;
-    });
+function readRawCollapsedGroups(): string | null {
+  try {
+    return window.localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY);
+  } catch {
+    // Private window, blocked storage, ... - just keep everything expanded.
+    return null;
   }
+}
 
-  return { collapsed, toggle };
+function getCollapsedGroupsSnapshot(): Set<string> {
+  const raw = readRawCollapsedGroups();
+  if (raw !== cachedRaw) {
+    cachedRaw = raw;
+    try {
+      cachedSnapshot = raw ? new Set(JSON.parse(raw) as string[]) : EMPTY_COLLAPSED_GROUPS;
+    } catch {
+      // Corrupt stored value - keep everything expanded.
+      cachedSnapshot = EMPTY_COLLAPSED_GROUPS;
+    }
+  }
+  return cachedSnapshot;
+}
+
+function getServerCollapsedGroupsSnapshot(): Set<string> {
+  return EMPTY_COLLAPSED_GROUPS;
+}
+
+function subscribeToCollapsedGroups(onStoreChange: () => void) {
+  listeners.add(onStoreChange);
+  return () => listeners.delete(onStoreChange);
+}
+
+function toggleCollapsedGroup(label: string) {
+  const next = new Set(getCollapsedGroupsSnapshot());
+  if (next.has(label)) next.delete(label);
+  else next.add(label);
+
+  const raw = JSON.stringify([...next]);
+  try {
+    window.localStorage.setItem(NAV_COLLAPSE_STORAGE_KEY, raw);
+  } catch {
+    // Nothing to persist to - the toggle still works for this render.
+  }
+  cachedRaw = raw;
+  cachedSnapshot = next;
+  for (const listener of listeners) listener();
+}
+
+function useCollapsedGroups() {
+  const collapsed = useSyncExternalStore(
+    subscribeToCollapsedGroups,
+    getCollapsedGroupsSnapshot,
+    getServerCollapsedGroupsSnapshot,
+  );
+  return { collapsed, toggle: toggleCollapsedGroup };
 }
 
 export function AdminSidebar({ visibility }: { visibility: AdminNavVisibility }) {

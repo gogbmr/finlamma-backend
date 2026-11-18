@@ -1,7 +1,16 @@
 "use client";
 
-import { BookOpen } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import {
+  FormProvider,
+  useFieldArray,
+  useForm,
+  useFormContext,
+  type FieldPath,
+  type Resolver,
+} from "react-hook-form";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -19,7 +28,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { LocalizedText } from "@/server/shared/schemas";
-import { LESSON_CONTENT_TEMPLATES } from "@/server/lessons/schemas";
+import { LESSON_CONTENT_TEMPLATES, type LessonKindCreate } from "@/server/lessons/schemas";
 import {
   createLessonDraftAction,
   hotfixLessonAction,
@@ -28,20 +37,18 @@ import {
   unpublishLessonAction,
   updateLessonDraftAction,
 } from "./actions";
+import {
+  buildLessonFormSchema,
+  contentToFormValues,
+  CREATABLE_KINDS,
+  extractUnknownContentKeys,
+  formValuesToContent,
+  type CreatableKind,
+} from "./lesson-content";
 import { LessonPreview } from "./lesson-preview";
 import { LessonsTable } from "./lessons-table";
 
 type PreviewData = Extract<Awaited<ReturnType<typeof previewLessonAction>>, { ok: true }>["data"];
-
-const CREATABLE_KINDS = [
-  "video",
-  "story",
-  "quiz",
-  "boss_quiz",
-  "role_play",
-  "doubt_zone",
-] as const;
-type CreatableKind = (typeof CREATABLE_KINDS)[number];
 
 const KIND_LABELS: Record<string, string> = {
   video: "Video",
@@ -65,10 +72,202 @@ type LessonRow = {
 };
 
 const LANGUAGES = ["en", "hi", "hx"] as const;
+const WARNABLE_LANGUAGES = ["hi", "hx"] as const; // en is required by the base schema already
 const EMPTY_LOCALIZED: LocalizedText = { en: "", hi: "", hx: "" };
+
+type LessonFormValues = {
+  chapter: number;
+  step: number;
+  title: LocalizedText;
+  blurb: LocalizedText;
+  // Loosely typed, same reasoning src/server/lessons/schemas.ts's own
+  // CreateLessonDraftSchema has for its `content` field (z.record(string,
+  // unknown())) - the real shape is one of 4 kind-specific schemas above,
+  // dispatched at runtime by the section components below, not something
+  // a single static TS type usefully discriminates here without far more
+  // machinery than this form needs.
+  content: Record<string, unknown>;
+};
+
+// Wraps zodResolver so the schema used for validation always matches the
+// LIVE kind, without remounting the whole form when kind changes (which
+// would reset title/blurb too - existing behavior that stays unchanged).
+// Standard RHF pattern for "resolver depends on another field's value".
+function useDynamicLessonResolver(kindRef: { current: LessonKindCreate }): Resolver<LessonFormValues> {
+  return useMemo(() => {
+    // The schema's inferred content shape is narrower per-kind than
+    // LessonFormValues's loose `Record<string, unknown>` (see the comment
+    // on that type above) - that's the whole point of switching schemas by
+    // kind, so bridging through `any` here is intentional, not a type
+    // hole: zodResolver still runs the real per-kind validation at
+    // runtime, against whichever schema buildLessonFormSchema picks.
+    const dynamicResolver = async (values: unknown, context: unknown, options: unknown) => {
+      const schema = buildLessonFormSchema(kindRef.current);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return zodResolver(schema)(values as any, context as any, options as any);
+    };
+    return dynamicResolver as unknown as Resolver<LessonFormValues>;
+    // kindRef is a stable ref object - the resolver always reads its
+    // CURRENT .current, so it never needs to be recreated.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
+// ---------------------------------------------------------------------------
+// Non-blocking warnings (Task 4): empty hi/hx, a non-https video URL, a cue
+// timerSeconds beyond lengthSeconds, empty scenes. Computed separately from
+// the zodResolver schema above - these never block handleSubmit/draft save,
+// only render as inline notices next to the field they're about. If any of
+// these looks like it should become a hard server rule (https-only is the
+// obvious candidate), that's a product decision, listed in this round's
+// summary - not added here.
+// ---------------------------------------------------------------------------
+
+type Warning = { path: string; message: string };
+
+function warnIfEmpty(value: LocalizedText | undefined, pathPrefix: string, label: string): Warning[] {
+  if (!value) return [];
+  return WARNABLE_LANGUAGES.filter((lang) => !value[lang]?.trim()).map((lang) => ({
+    path: `${pathPrefix}.${lang}`,
+    message: `${label} (${lang}) is empty - required before publish.`,
+  }));
+}
+
+function computeLessonWarnings(
+  kind: string,
+  title: LocalizedText,
+  blurb: LocalizedText,
+  content: Record<string, unknown>,
+): Warning[] {
+  const warnings: Warning[] = [
+    ...warnIfEmpty(title, "title", "Title"),
+    ...warnIfEmpty(blurb, "blurb", "Blurb"),
+  ];
+
+  if (kind === "video") {
+    const url = (content.video as { url?: Record<string, string | null> } | undefined)?.url;
+    if (url) {
+      for (const lang of LANGUAGES) {
+        const value = url[lang];
+        if (value && !/^https:\/\//i.test(value)) {
+          warnings.push({
+            path: `content.video.url.${lang}`,
+            message: `URL (${lang}) doesn't start with https:// - most players/webviews will refuse a plain http:// source.`,
+          });
+        }
+      }
+    }
+    const scenes = Array.isArray(content.scenes) ? content.scenes : [];
+    if (scenes.length === 0) {
+      warnings.push({ path: "content.scenes", message: "No scenes added yet." });
+    }
+    scenes.forEach((scene: Record<string, unknown>, i: number) => {
+      warnings.push(...warnIfEmpty(scene.title as LocalizedText, `content.scenes.${i}.title`, `Scene ${i + 1} title`));
+      warnings.push(
+        ...warnIfEmpty(scene.caption as LocalizedText, `content.scenes.${i}.caption`, `Scene ${i + 1} caption`),
+      );
+      warnings.push(
+        ...warnIfEmpty(
+          scene.mascotLine as LocalizedText,
+          `content.scenes.${i}.mascotLine`,
+          `Scene ${i + 1} mascot line`,
+        ),
+      );
+    });
+    const cues = Array.isArray(content.cues) ? content.cues : [];
+    const lengthSeconds = Number(content.lengthSeconds) || 0;
+    cues.forEach((cue: Record<string, unknown>, i: number) => {
+      const timerSeconds = Number(cue.timerSeconds) || 0;
+      if (timerSeconds > lengthSeconds) {
+        warnings.push({
+          path: `content.cues.${i}.timerSeconds`,
+          message: `Cue ${i + 1}'s timer (${timerSeconds}s) is longer than the video (${lengthSeconds}s).`,
+        });
+      }
+    });
+  }
+
+  if (kind === "story") {
+    const pages = Array.isArray(content.pages) ? content.pages : [];
+    pages.forEach((page: Record<string, unknown>, i: number) => {
+      warnings.push(...warnIfEmpty(page.text as LocalizedText, `content.pages.${i}.text`, `Page ${i + 1} text`));
+    });
+  }
+
+  if (kind === "quiz" || kind === "boss_quiz" || kind === "role_play") {
+    const framing = content.framing as LocalizedText | undefined;
+    if (framing) warnings.push(...warnIfEmpty(framing, "content.framing", "Framing"));
+  }
+
+  if (kind === "doubt_zone") {
+    warnings.push(
+      ...warnIfEmpty(
+        content.educationalOnlyNote as LocalizedText,
+        "content.educationalOnlyNote",
+        "Educational note",
+      ),
+    );
+    const chips = Array.isArray(content.chips) ? content.chips : [];
+    chips.forEach((chip: Record<string, unknown>, i: number) => {
+      warnings.push(
+        ...warnIfEmpty(chip.chipLabel as LocalizedText, `content.chips.${i}.chipLabel`, `Chip ${i + 1} label`),
+      );
+      warnings.push(...warnIfEmpty(chip.reply as LocalizedText, `content.chips.${i}.reply`, `Chip ${i + 1} reply`));
+    });
+  }
+
+  return warnings;
+}
+
+function findWarning(warnings: Warning[], path: string): string | undefined {
+  return warnings.find((w) => w.path === path)?.message;
+}
+
+// Turns the server's unchanged, flat publish-error message ("Cannot
+// publish: missing translation for title.hi; missing translation for
+// content.scenes[0].title.hi; content.cues[0].at (5s) is after the video
+// ends (4s)") into per-field RHF errors where a leading field path can be
+// recognized, and a plain-English summary list for anything else (e.g. a
+// question-reference problem, which names a question id, not a form
+// field). Deliberately just string-parsing of the EXISTING message - the
+// server's AppError.details already carries this as structured data
+// (src/server/lessons/service.ts's validateLessonForPublish), but
+// publishLessonAction (unchanged, per this task) only ever returns
+// `err.message`, never `err.details`, so that's the only thing available
+// here without touching the action.
+function parsePublishError(message: string): { fieldErrors: Warning[]; summary: string[] } {
+  const prefix = "Cannot publish: ";
+  const body = message.startsWith(prefix) ? message.slice(prefix.length) : message;
+  const parts = body
+    .split(";")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const fieldErrors: Warning[] = [];
+  const summary: string[] = [];
+
+  for (const part of parts) {
+    const missingMatch = part.match(/^missing translation for (\S+)$/);
+    if (missingMatch) {
+      const rhfPath = missingMatch[1]!.replace(/\[(\d+)\]/g, ".$1");
+      fieldErrors.push({ path: rhfPath, message: "Missing translation - required before publish." });
+      continue;
+    }
+    const pathMatch = part.match(/^(content\.[\w.[\]]+)\s/);
+    if (pathMatch) {
+      const rhfPath = pathMatch[1]!.replace(/\[(\d+)\]/g, ".$1");
+      fieldErrors.push({ path: rhfPath, message: part });
+      continue;
+    }
+    summary.push(part);
+  }
+
+  return { fieldErrors, summary };
+}
 
 export function LessonEditor({
   worldId,
+  worldTitle,
   worldMentorKey,
   lessons,
   canManage,
@@ -84,6 +283,7 @@ export function LessonEditor({
   status,
 }: {
   worldId: string;
+  worldTitle: LocalizedText;
   worldMentorKey: string | null;
   lessons: LessonRow[];
   canManage: boolean;
@@ -99,9 +299,7 @@ export function LessonEditor({
   status: "draft" | "published" | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(lessons[0]?.id ?? "new");
-  // Few-line confirm() guard, same pattern as every other entity table -
-  // doesn't cover Prev/Next/search/sort/kind/status (plain <Link>s),
-  // deferred to Task 4.
+  // Few-line confirm() guard, same pattern as every other entity table.
   const [isDirty, setIsDirty] = useState(false);
 
   function trySelect(id: string | "new") {
@@ -115,6 +313,46 @@ export function LessonEditor({
     setIsDirty(false);
     setSelectedId(id);
   }
+
+  // Task 4's unsaved-changes guard, part 1: the real browser tab-close/
+  // reload/navigate-away prompt. Native API, no package.
+  useEffect(() => {
+    if (!isDirty) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
+
+  // Task 4's unsaved-changes guard, part 2: intercepts a click on any
+  // same-page link while dirty - the world-chips above (page.tsx) and the
+  // search/sort/pager/kind/status links inside LessonsTable below, all of
+  // which render as plain <a> tags pointing at this same pathname with
+  // different query params. A capturing document-level listener, not a
+  // change to data-table.tsx/lessons-table.tsx (neither is touched) or any
+  // new package - just the DOM's own click/beforeunload APIs.
+  useEffect(() => {
+    if (!isDirty) return;
+    function handleClick(e: MouseEvent) {
+      const anchor = (e.target as HTMLElement)?.closest?.("a");
+      if (!anchor || !(anchor instanceof HTMLAnchorElement) || !anchor.href) return;
+      let url: URL;
+      try {
+        url = new URL(anchor.href, window.location.origin);
+      } catch {
+        return;
+      }
+      if (url.pathname !== window.location.pathname) return; // only guard in-page nav
+      if (!window.confirm("Discard unsaved changes to this lesson?")) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
+  }, [isDirty]);
 
   if (total === 0 && !canManage) {
     return (
@@ -168,7 +406,7 @@ export function LessonEditor({
       />
 
       {effectiveId === "new" && canManage ? (
-        <NewLessonForm worldId={worldId} onDirtyChange={setIsDirty} />
+        <NewLessonForm worldId={worldId} worldTitle={worldTitle} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
           const lesson = lessons.find((l) => l.id === effectiveId);
@@ -177,6 +415,7 @@ export function LessonEditor({
             <LessonForm
               key={lesson.id}
               worldId={worldId}
+              worldTitle={worldTitle}
               worldMentorKey={worldMentorKey}
               lesson={lesson}
               canManage={canManage}
@@ -190,165 +429,618 @@ export function LessonEditor({
   );
 }
 
-function LocalizedFields({
-  label,
-  value,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  value: LocalizedText;
-  onChange: (value: LocalizedText) => void;
-  disabled: boolean;
-}) {
+// ---------------------------------------------------------------------------
+// Shared section building blocks
+// ---------------------------------------------------------------------------
+
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
-      <p className="text-sm font-medium text-foreground">{label}</p>
-      {LANGUAGES.map((lang) => (
-        <div key={lang} className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
-          <Textarea
-            value={value[lang]}
-            disabled={disabled}
-            onChange={(e) => onChange({ ...value, [lang]: e.target.value })}
-          />
-        </div>
-      ))}
+    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{title}</h3>
+      {children}
     </div>
   );
 }
 
-// Parses the content textarea's JSON, turning a syntax error into the same
-// human-readable ActionResult shape a server-side validation failure
-// produces, so the caller only has one error path to handle.
-function parseContentOrError(raw: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return { ok: false, error: "Content must be a JSON object" };
-    }
-    return { ok: true, value: parsed as Record<string, unknown> };
-  } catch (err) {
-    return { ok: false, error: `Invalid JSON: ${err instanceof Error ? err.message : String(err)}` };
-  }
+// Read-only escape hatch for staff who want to see exactly what's in the
+// database right now - e.g. to confirm this round-trip (and its
+// unknown-key passthrough above) really did preserve everything, without
+// leaving the admin UI. Collapsed by default (native <details>, no new
+// package); shows the lesson exactly as loaded, never the live-edited
+// form state, so it stays a trustworthy "what's stored" reference even
+// while the form above it is mid-edit.
+function StoredJsonPanel({ data }: { data: unknown }) {
+  return (
+    <details className="rounded-lg border border-border bg-card">
+      <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+        Advanced: view stored JSON
+      </summary>
+      <pre className="overflow-x-auto border-t border-border bg-muted/30 p-4 text-xs text-foreground">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    </details>
+  );
 }
+
+// en/hi/hx grouped SIDE BY SIDE for one field (Task 4), each column
+// clearly labelled - replaces the old stacked-rows layout. `name` is the
+// RHF field path prefix (e.g. "title", or "content.scenes.0.title").
+function LocalizedFieldGroup({
+  label,
+  name,
+  disabled,
+  warnings,
+  multiline = true,
+}: {
+  label: string;
+  name: string;
+  disabled: boolean;
+  warnings: Warning[];
+  multiline?: boolean;
+}) {
+  const { register } = useFormContext();
+  return (
+    <div className="space-y-1.5">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {LANGUAGES.map((lang) => {
+          const path = `${name}.${lang}`;
+          const warning = findWarning(warnings, path);
+          return (
+            <div key={lang} className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground uppercase">{lang}</label>
+              {multiline ? (
+                <Textarea {...register(path as FieldPath<LessonFormValues>)} disabled={disabled} className="min-h-20" />
+              ) : (
+                <Input {...register(path as FieldPath<LessonFormValues>)} disabled={disabled} />
+              )}
+              {warning && (
+                <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-1 text-xs text-amber-700 dark:text-amber-400">
+                  {warning}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function BasicsSection({
+  worldTitle,
+  kind,
+  kindEditable,
+  onKindChange,
+  status,
+  editable,
+}: {
+  worldTitle: LocalizedText;
+  kind: CreatableKind;
+  kindEditable: boolean;
+  onKindChange?: (kind: CreatableKind) => void;
+  status: "draft" | "published" | null;
+  editable: boolean;
+}) {
+  const { register } = useFormContext<LessonFormValues>();
+  return (
+    <SectionCard title="Basics">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="space-y-1">
+          <Label>World</Label>
+          <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
+            {worldTitle.en || "(untitled)"}
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label>Kind</Label>
+          {kindEditable ? (
+            <Select value={kind} onValueChange={(v) => onKindChange?.(v as CreatableKind)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CREATABLE_KINDS.map((k) => (
+                  <SelectItem key={k} value={k}>
+                    {KIND_LABELS[k]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">
+              {KIND_LABELS[kind] ?? kind} <span className="text-muted-foreground">(fixed)</span>
+            </p>
+          )}
+        </div>
+        <div className="space-y-1">
+          <Label>Chapter (1-8)</Label>
+          <Input type="number" min={1} max={8} disabled={!editable} {...register("chapter", { valueAsNumber: true })} />
+        </div>
+        <div className="space-y-1">
+          <Label>Step (1-5)</Label>
+          <Input type="number" min={1} max={5} disabled={!editable} {...register("step", { valueAsNumber: true })} />
+        </div>
+      </div>
+      {status && (
+        <div className="flex items-center gap-2">
+          <Label>Status</Label>
+          <StatusBadge status={status}>{status}</StatusBadge>
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function TextSection({ disabled, warnings }: { disabled: boolean; warnings: Warning[] }) {
+  return (
+    <SectionCard title="Text">
+      <LocalizedFieldGroup label="Title" name="title" disabled={disabled} warnings={warnings} />
+      <LocalizedFieldGroup label="Blurb" name="blurb" disabled={disabled} warnings={warnings} />
+    </SectionCard>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Content sections, one per kind - Task 4
+// ---------------------------------------------------------------------------
+
+function SceneFields({
+  index,
+  disabled,
+  warnings,
+  onRemove,
+}: {
+  index: number;
+  disabled: boolean;
+  warnings: Warning[];
+  onRemove: () => void;
+}) {
+  const { register } = useFormContext();
+  const base = `content.scenes.${index}`;
+  return (
+    <div className="space-y-3 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground">Scene {index + 1}</p>
+        {!disabled && (
+          <Button type="button" variant="outline" size="sm" onClick={onRemove}>
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label>At (seconds)</Label>
+          <Input type="number" min={0} disabled={disabled} {...register(`${base}.at`, { valueAsNumber: true })} />
+        </div>
+        <div className="space-y-1">
+          <Label>Kind (free text, e.g. &quot;trade&quot;)</Label>
+          <Input disabled={disabled} {...register(`${base}.kind`)} />
+        </div>
+      </div>
+      <LocalizedFieldGroup label="Title" name={`${base}.title`} disabled={disabled} warnings={warnings} multiline={false} />
+      <LocalizedFieldGroup label="Caption" name={`${base}.caption`} disabled={disabled} warnings={warnings} />
+      <LocalizedFieldGroup label="Mascot line" name={`${base}.mascotLine`} disabled={disabled} warnings={warnings} />
+    </div>
+  );
+}
+
+function CueFields({
+  index,
+  disabled,
+  warnings,
+  onRemove,
+}: {
+  index: number;
+  disabled: boolean;
+  warnings: Warning[];
+  onRemove: () => void;
+}) {
+  const { register } = useFormContext();
+  const base = `content.cues.${index}`;
+  const warning = findWarning(warnings, `${base}.timerSeconds`);
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-foreground">Cue {index + 1}</p>
+        {!disabled && (
+          <Button type="button" variant="outline" size="sm" onClick={onRemove}>
+            <Trash2 className="h-3.5 w-3.5" aria-hidden />
+          </Button>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="space-y-1">
+          <Label>At (seconds)</Label>
+          <Input type="number" min={0} disabled={disabled} {...register(`${base}.at`, { valueAsNumber: true })} />
+        </div>
+        <div className="space-y-1">
+          <Label>Question id</Label>
+          <Input disabled={disabled} {...register(`${base}.questionId`)} placeholder="uuid" />
+        </div>
+        <div className="space-y-1">
+          <Label>Timer (seconds)</Label>
+          <Input
+            type="number"
+            min={1}
+            disabled={disabled}
+            {...register(`${base}.timerSeconds`, { valueAsNumber: true })}
+          />
+        </div>
+      </div>
+      {warning && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-1 text-xs text-amber-700 dark:text-amber-400">
+          {warning}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function VideoContentSection({ disabled, warnings }: { disabled: boolean; warnings: Warning[] }) {
+  const { register, control } = useFormContext();
+  const scenes = useFieldArray({ control, name: "content.scenes" });
+  const cues = useFieldArray({ control, name: "content.cues" });
+  const scenesWarning = findWarning(warnings, "content.scenes");
+
+  return (
+    <SectionCard title="Content - Video">
+      <div className="space-y-1">
+        <Label>Length (seconds)</Label>
+        <Input
+          type="number"
+          min={1}
+          disabled={disabled}
+          className="w-40"
+          {...register("content.lengthSeconds", { valueAsNumber: true })}
+        />
+      </div>
+
+      <LocalizedFieldGroup label="Video URL" name="content.video.url" disabled={disabled} warnings={warnings} multiline={false} />
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Scenes</Label>
+          {!disabled && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                scenes.append({
+                  at: 0,
+                  kind: "trade",
+                  title: EMPTY_LOCALIZED,
+                  caption: EMPTY_LOCALIZED,
+                  mascotLine: EMPTY_LOCALIZED,
+                })
+              }
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add scene
+            </Button>
+          )}
+        </div>
+        {scenesWarning && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-1.5 py-1 text-xs text-amber-700 dark:text-amber-400">
+            {scenesWarning}
+          </p>
+        )}
+        {scenes.fields.map((field, i) => (
+          <SceneFields key={field.id} index={i} disabled={disabled} warnings={warnings} onRemove={() => scenes.remove(i)} />
+        ))}
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Pop-quiz cues</Label>
+          {!disabled && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => cues.append({ at: 0, questionId: "", timerSeconds: 15 })}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add cue
+            </Button>
+          )}
+        </div>
+        {cues.fields.map((field, i) => (
+          <CueFields key={field.id} index={i} disabled={disabled} warnings={warnings} onRemove={() => cues.remove(i)} />
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function StoryContentSection({ disabled, warnings }: { disabled: boolean; warnings: Warning[] }) {
+  const { register, control } = useFormContext();
+  const pages = useFieldArray({ control, name: "content.pages" });
+
+  return (
+    <SectionCard title="Content - Story">
+      <div className="space-y-1">
+        <Label>Length (seconds)</Label>
+        <Input
+          type="number"
+          min={1}
+          disabled={disabled}
+          className="w-40"
+          {...register("content.lengthSeconds", { valueAsNumber: true })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Pages</Label>
+          {!disabled && (
+            <Button type="button" variant="outline" size="sm" onClick={() => pages.append({ text: EMPTY_LOCALIZED })}>
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add page
+            </Button>
+          )}
+        </div>
+        {pages.fields.map((field, i) => (
+          <div key={field.id} className="space-y-2 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-foreground">Page {i + 1}</p>
+              {!disabled && pages.fields.length > 1 && (
+                <Button type="button" variant="outline" size="sm" onClick={() => pages.remove(i)}>
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              )}
+            </div>
+            <LocalizedFieldGroup label="Text" name={`content.pages.${i}.text`} disabled={disabled} warnings={warnings} />
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+// "The existing question picking, same behaviour" (Task 4) - this app has
+// no searchable question browser anywhere; staff have always specified a
+// question by pasting its id. This keeps that exact capability, just as an
+// add/remove list instead of a raw JSON array - not a new picker UI.
+function QuestionIdListField({ disabled }: { disabled: boolean }) {
+  const { register, control } = useFormContext();
+  const ids = useFieldArray({ control, name: "content.questionIds" });
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label>Question ids, in order</Label>
+        {!disabled && (
+          <Button type="button" variant="outline" size="sm" onClick={() => ids.append({ value: "" })}>
+            <Plus className="h-3.5 w-3.5" aria-hidden /> Add question
+          </Button>
+        )}
+      </div>
+      {ids.fields.map((field, i) => (
+        <div key={field.id} className="flex items-center gap-2">
+          <span className="w-6 text-xs text-muted-foreground">{i + 1}.</span>
+          <Input disabled={disabled} placeholder="uuid" {...register(`content.questionIds.${i}.value`)} />
+          {!disabled && (
+            <Button type="button" variant="outline" size="sm" onClick={() => ids.remove(i)}>
+              <Trash2 className="h-3.5 w-3.5" aria-hidden />
+            </Button>
+          )}
+        </div>
+      ))}
+      {ids.fields.length === 0 && <p className="text-xs text-muted-foreground">No questions added yet.</p>}
+    </div>
+  );
+}
+
+function QuizLikeContentSection({
+  kind,
+  kindLabel,
+  disabled,
+  warnings,
+}: {
+  kind: "quiz" | "boss_quiz" | "role_play";
+  kindLabel: string;
+  disabled: boolean;
+  warnings: Warning[];
+}) {
+  return (
+    <SectionCard title={`Content - ${kindLabel}`}>
+      <QuestionIdListField disabled={disabled} />
+      {/* Framing is Role Play's own dialogue/receipt-graphic text (see
+          QuizLikeContentSchema's comment in schemas.ts) - the schema shares
+          one shape across quiz/boss_quiz/role_play for reuse, but only Role
+          Play actually uses this field today. Rendering it for quiz/
+          boss_quiz too would silently write an empty {en:"",hi:"",hx:""}
+          framing object onto every quiz/boss_quiz save even though neither
+          kind has ever had one - exactly the kind of reformatting Task 4's
+          round-trip check exists to catch. */}
+      {kind === "role_play" && (
+        <LocalizedFieldGroup label="Framing (optional)" name="content.framing" disabled={disabled} warnings={warnings} />
+      )}
+    </SectionCard>
+  );
+}
+
+function DoubtZoneContentSection({ disabled, warnings }: { disabled: boolean; warnings: Warning[] }) {
+  const { register, control } = useFormContext();
+  const chips = useFieldArray({ control, name: "content.chips" });
+
+  return (
+    <SectionCard title="Content - Doubt Zone">
+      <div className="space-y-1">
+        <Label>Mentor key</Label>
+        <Input disabled={disabled} className="w-48" {...register("content.mentorKey")} />
+      </div>
+      <LocalizedFieldGroup
+        label="Educational-only note"
+        name="content.educationalOnlyNote"
+        disabled={disabled}
+        warnings={warnings}
+      />
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label>Chips (suggested questions)</Label>
+          {!disabled && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => chips.append({ chipLabel: EMPTY_LOCALIZED, reply: EMPTY_LOCALIZED })}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden /> Add chip
+            </Button>
+          )}
+        </div>
+        {chips.fields.map((field, i) => (
+          <div key={field.id} className="space-y-2 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-foreground">Chip {i + 1}</p>
+              {!disabled && chips.fields.length > 1 && (
+                <Button type="button" variant="outline" size="sm" onClick={() => chips.remove(i)}>
+                  <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              )}
+            </div>
+            <LocalizedFieldGroup
+              label="Chip label"
+              name={`content.chips.${i}.chipLabel`}
+              disabled={disabled}
+              warnings={warnings}
+              multiline={false}
+            />
+            <LocalizedFieldGroup label="Reply" name={`content.chips.${i}.reply`} disabled={disabled} warnings={warnings} />
+          </div>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function ContentSection({ kind, disabled, warnings }: { kind: string; disabled: boolean; warnings: Warning[] }) {
+  if (kind === "video") return <VideoContentSection disabled={disabled} warnings={warnings} />;
+  if (kind === "story") return <StoryContentSection disabled={disabled} warnings={warnings} />;
+  if (kind === "quiz" || kind === "boss_quiz" || kind === "role_play") {
+    return (
+      <QuizLikeContentSection
+        kind={kind}
+        kindLabel={KIND_LABELS[kind] ?? kind}
+        disabled={disabled}
+        warnings={warnings}
+      />
+    );
+  }
+  if (kind === "doubt_zone") return <DoubtZoneContentSection disabled={disabled} warnings={warnings} />;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// New lesson form
+// ---------------------------------------------------------------------------
 
 function NewLessonForm({
   worldId,
+  worldTitle,
   onDirtyChange,
 }: {
   worldId: string;
+  worldTitle: LocalizedText;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [chapter, setChapter] = useState("");
-  const [step, setStep] = useState("");
   const [kind, setKind] = useState<CreatableKind>("video");
-  const [title, setTitle] = useState<LocalizedText>(EMPTY_LOCALIZED);
-  const [blurb, setBlurb] = useState<LocalizedText>(EMPTY_LOCALIZED);
-  const [contentText, setContentText] = useState(
-    JSON.stringify(LESSON_CONTENT_TEMPLATES.video, null, 2),
-  );
+  const kindRef = useRef<CreatableKind>(kind);
+  kindRef.current = kind;
+  const resolver = useDynamicLessonResolver(kindRef);
 
-  // Derived from this form's own empty baseline - contentText's baseline is
-  // the current kind's template (changeKind resets it there too), not "",
-  // so this stays clean right after a kind switch and right after a
-  // successful create resets everything back to this same baseline. See
-  // Worlds' NewWorldForm for why derived beats an effect-driven flag here.
-  const dirty =
-    chapter !== "" ||
-    step !== "" ||
-    LANGUAGES.some((l) => title[l] !== "") ||
-    LANGUAGES.some((l) => blurb[l] !== "") ||
-    contentText !== JSON.stringify(LESSON_CONTENT_TEMPLATES[kind], null, 2);
+  const methods = useForm<LessonFormValues>({
+    resolver,
+    defaultValues: {
+      chapter: 1,
+      step: 1,
+      title: EMPTY_LOCALIZED,
+      blurb: EMPTY_LOCALIZED,
+      content: contentToFormValues("video", LESSON_CONTENT_TEMPLATES.video),
+    },
+  });
+  const { handleSubmit, watch, reset, formState } = methods;
 
   useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange(formState.isDirty);
+  }, [formState.isDirty, onDirtyChange]);
+
+  const [title, blurb, content] = watch(["title", "blurb", "content"]);
+  const warnings = useMemo(() => computeLessonWarnings(kind, title, blurb, content), [kind, title, blurb, content]);
 
   function changeKind(newKind: CreatableKind) {
     setKind(newKind);
-    setContentText(JSON.stringify(LESSON_CONTENT_TEMPLATES[newKind], null, 2));
+    reset(
+      {
+        ...methods.getValues(),
+        content: contentToFormValues(newKind, LESSON_CONTENT_TEMPLATES[newKind]),
+      },
+      { keepDirty: true },
+    );
   }
 
-  function create() {
-    const parsed = parseContentOrError(contentText);
-    if (!parsed.ok) {
-      toast.error(parsed.error);
-      return;
-    }
+  function onSubmit(values: LessonFormValues) {
     startTransition(async () => {
       const result = await createLessonDraftAction({
         worldId,
-        chapter: Number(chapter),
-        step: Number(step),
+        chapter: values.chapter,
+        step: values.step,
         kind,
-        title,
-        blurb,
-        content: parsed.value,
+        title: values.title,
+        blurb: values.blurb,
+        content: formValuesToContent(kind, values.content),
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
       toast.success("Lesson created as a draft");
-      setChapter("");
-      setStep("");
-      setTitle(EMPTY_LOCALIZED);
-      setBlurb(EMPTY_LOCALIZED);
-      setContentText(JSON.stringify(LESSON_CONTENT_TEMPLATES[kind], null, 2));
+      reset({
+        chapter: 1,
+        step: 1,
+        title: EMPTY_LOCALIZED,
+        blurb: EMPTY_LOCALIZED,
+        content: contentToFormValues(kind, LESSON_CONTENT_TEMPLATES[kind]),
+      });
     });
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-      <div className="grid grid-cols-3 gap-3">
-        <div className="space-y-1">
-          <Label>Chapter (1-8)</Label>
-          <Input type="number" min={1} max={8} value={chapter} onChange={(e) => setChapter(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label>Step (1-5)</Label>
-          <Input type="number" min={1} max={5} value={step} onChange={(e) => setStep(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <Label>Kind</Label>
-          <Select value={kind} onValueChange={(v) => changeKind(v as CreatableKind)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {CREATABLE_KINDS.map((k) => (
-                <SelectItem key={k} value={k}>
-                  {KIND_LABELS[k]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <LocalizedFields label="Title" value={title} onChange={setTitle} disabled={false} />
-      <LocalizedFields label="Blurb" value={blurb} onChange={setBlurb} disabled={false} />
-
-      <div className="space-y-1">
-        <Label>Content (JSON) - starter template pre-filled for this kind</Label>
-        <Textarea
-          value={contentText}
-          onChange={(e) => setContentText(e.target.value)}
-          className="min-h-64 font-mono text-xs"
+    <FormProvider {...methods}>
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pb-20">
+        <BasicsSection
+          worldTitle={worldTitle}
+          kind={kind}
+          kindEditable
+          onKindChange={changeKind}
+          status={null}
+          editable
         />
-      </div>
+        <TextSection disabled={false} warnings={warnings} />
+        <ContentSection kind={kind} disabled={false} warnings={warnings} />
 
-      <Button type="button" onClick={create} disabled={isPending || !chapter || !step}>
-        Create draft
-      </Button>
-    </div>
+        <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Creating..." : "Create draft"}
+          </Button>
+          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+            Cancel
+          </Button>
+          {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        </div>
+      </form>
+    </FormProvider>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Existing lesson form
+// ---------------------------------------------------------------------------
+
 function LessonForm({
   worldId,
+  worldTitle,
   worldMentorKey,
   lesson,
   canManage,
@@ -356,6 +1048,7 @@ function LessonForm({
   onDirtyChange,
 }: {
   worldId: string;
+  worldTitle: LocalizedText;
   worldMentorKey: string | null;
   lesson: LessonRow;
   canManage: boolean;
@@ -363,35 +1056,42 @@ function LessonForm({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
-  const [chapter, setChapter] = useState(String(lesson.chapter));
-  const [step, setStep] = useState(String(lesson.step));
-  const [title, setTitle] = useState<LocalizedText>(lesson.title);
-  const [blurb, setBlurb] = useState<LocalizedText>(lesson.blurb);
-  const [contentText, setContentText] = useState(JSON.stringify(lesson.content, null, 2));
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
+  const [publishSummary, setPublishSummary] = useState<string[]>([]);
 
-  // The "pristine" baseline, moved forward after each successful save -
-  // see Worlds' WorldForm for why comparing against the `lesson` prop
-  // directly would false-positive "still dirty" right after a save.
-  const [savedSnapshot, setSavedSnapshot] = useState({
-    chapter: String(lesson.chapter),
-    step: String(lesson.step),
-    title: lesson.title,
-    blurb: lesson.blurb,
-    contentText: JSON.stringify(lesson.content, null, 2),
-  });
+  const kind = lesson.kind as CreatableKind;
+  const kindRef = useRef(kind);
+  kindRef.current = kind;
+  const resolver = useDynamicLessonResolver(kindRef);
 
-  const dirty =
-    chapter !== savedSnapshot.chapter ||
-    step !== savedSnapshot.step ||
-    LANGUAGES.some((l) => title[l] !== savedSnapshot.title[l]) ||
-    LANGUAGES.some((l) => blurb[l] !== savedSnapshot.blurb[l]) ||
-    contentText !== savedSnapshot.contentText;
+  const defaultValues = useMemo<LessonFormValues>(
+    () => ({
+      chapter: lesson.chapter,
+      step: lesson.step,
+      title: lesson.title,
+      blurb: lesson.blurb,
+      content: contentToFormValues(kind, lesson.content),
+    }),
+    [lesson, kind],
+  );
+  // Snapshot of this lesson's own content, taken once per lesson/kind - see
+  // extractUnknownContentKeys's comment. Frozen at load, since nothing in
+  // the form can ever edit these keys.
+  const unknownContentKeys = useMemo(
+    () => extractUnknownContentKeys(kind, lesson.content),
+    [lesson, kind],
+  );
+
+  const methods = useForm<LessonFormValues>({ resolver, defaultValues });
+  const { handleSubmit, watch, reset, setError, clearErrors, formState } = methods;
 
   useEffect(() => {
-    onDirtyChange(dirty);
-  }, [dirty, onDirtyChange]);
+    onDirtyChange(formState.isDirty);
+  }, [formState.isDirty, onDirtyChange]);
+
+  const [title, blurb, content] = watch(["title", "blurb", "content"]);
+  const warnings = useMemo(() => computeLessonWarnings(kind, title, blurb, content), [kind, title, blurb, content]);
 
   const isDraft = lesson.status === "draft";
   const editable = canManage && isDraft;
@@ -402,6 +1102,9 @@ function LessonForm({
   const hotfixable = canPublish && !isDraft;
   const contentEditable = editable || hotfixable;
   const isBossQuiz = lesson.kind === "boss_quiz";
+  // Chapter/step stay draft-only even when a hotfix is otherwise allowed -
+  // same rule as before this redesign.
+  const structuralEditable = editable;
 
   // Doubt Zone scripts are written in a specific mentor's voice
   // (content.mentorKey, fixed at authoring time) - if the world's current
@@ -416,36 +1119,55 @@ function LessonForm({
     worldMentorKey !== null &&
     scriptedMentorKey !== worldMentorKey;
 
-  function saveDraft() {
-    const parsed = parseContentOrError(contentText);
-    if (!parsed.ok) {
-      toast.error(parsed.error);
-      return;
-    }
+  function onSaveDraft(values: LessonFormValues) {
     startTransition(async () => {
       const result = await updateLessonDraftAction({
         id: lesson.id,
         worldId,
-        chapter: Number(chapter),
-        step: Number(step),
-        title,
-        blurb,
-        content: parsed.value,
+        chapter: values.chapter,
+        step: values.step,
+        title: values.title,
+        blurb: values.blurb,
+        content: { ...unknownContentKeys, ...formValuesToContent(kind, values.content) },
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
       toast.success("Draft saved");
-      setSavedSnapshot({ chapter, step, title, blurb, contentText });
+      reset(values);
+    });
+  }
+
+  function onSaveHotfix(values: LessonFormValues) {
+    startTransition(async () => {
+      const result = await hotfixLessonAction({
+        id: lesson.id,
+        title: values.title,
+        blurb: values.blurb,
+        content: { ...unknownContentKeys, ...formValuesToContent(kind, values.content) },
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Fix saved - live immediately");
+      reset(values);
     });
   }
 
   function publish() {
+    clearErrors();
+    setPublishSummary([]);
     startTransition(async () => {
       const result = await publishLessonAction({ id: lesson.id });
       if (!result.ok) {
-        toast.error(result.error);
+        const { fieldErrors, summary } = parsePublishError(result.error);
+        fieldErrors.forEach(({ path, message }) =>
+          setError(path as FieldPath<LessonFormValues>, { type: "server", message }),
+        );
+        setPublishSummary(summary.length > 0 ? summary : fieldErrors.length === 0 ? [result.error] : []);
+        toast.error("Can't publish yet - see the errors below.");
         return;
       }
       toast.success("Published");
@@ -476,23 +1198,6 @@ function LessonForm({
     });
   }
 
-  function saveHotfix() {
-    const parsed = parseContentOrError(contentText);
-    if (!parsed.ok) {
-      toast.error(parsed.error);
-      return;
-    }
-    startTransition(async () => {
-      const result = await hotfixLessonAction({ id: lesson.id, title, blurb, content: parsed.value });
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("Fix saved - live immediately");
-      setSavedSnapshot((prev) => ({ ...prev, title, blurb, contentText }));
-    });
-  }
-
   function openPreview() {
     startTransition(async () => {
       const result = await previewLessonAction({ id: lesson.id });
@@ -505,101 +1210,98 @@ function LessonForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-      {mentorMismatch && (
-        <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
-          This Doubt Zone script was written for mentor &quot;{scriptedMentorKey}&quot;, but this
-          world&apos;s current mentor is &quot;{worldMentorKey}&quot;. Review the script before
-          publishing.
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-        <StatusBadge status={lesson.status}>{lesson.status}</StatusBadge>
-        <span>Kind: {KIND_LABELS[lesson.kind] ?? lesson.kind} (fixed, can&apos;t change after creation)</span>
-        {!isDraft && (
-          <span className="text-xs text-muted-foreground">
-            Published - title/blurb/content can be fixed directly below. Chapter/step need
-            unpublish first.
-          </span>
+    <FormProvider {...methods}>
+      <form
+        onSubmit={handleSubmit(editable ? onSaveDraft : onSaveHotfix)}
+        className="space-y-4 pb-20"
+      >
+        {mentorMismatch && (
+          <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
+            This Doubt Zone script was written for mentor &quot;{scriptedMentorKey}&quot;, but this
+            world&apos;s current mentor is &quot;{worldMentorKey}&quot;. Review the script before
+            publishing.
+          </div>
         )}
+
+        {!isDraft && (
+          <p className="text-xs text-muted-foreground">
+            Published - title/blurb/content can be fixed directly below. Chapter/step need unpublish
+            first.
+          </p>
+        )}
+
         {!isDraft && lesson.inProgressLearnerCount > 0 && (
           <Badge variant="info">
             {lesson.inProgressLearnerCount} learner{lesson.inProgressLearnerCount > 1 ? "s" : ""} mid-lesson
           </Badge>
         )}
-      </div>
 
-      {isBossQuiz && !isDraft && (
-        <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
-          This is a world&apos;s Boss Quiz - it can never be unpublished (it gates every later
-          world&apos;s unlock). Use &quot;Save fix&quot; to correct it instead.
-        </div>
-      )}
+        {isBossQuiz && !isDraft && (
+          <div className="rounded-md border border-status-draft-fg/30 bg-status-draft-bg p-3 text-sm text-status-draft-fg">
+            This is a world&apos;s Boss Quiz - it can never be unpublished (it gates every later
+            world&apos;s unlock). Use &quot;Save fix&quot; to correct it instead.
+          </div>
+        )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="space-y-1">
-          <Label>Chapter (1-8)</Label>
-          <Input
-            type="number"
-            min={1}
-            max={8}
-            value={chapter}
-            disabled={!editable}
-            onChange={(e) => setChapter(e.target.value)}
-          />
-        </div>
-        <div className="space-y-1">
-          <Label>Step (1-5)</Label>
-          <Input
-            type="number"
-            min={1}
-            max={5}
-            value={step}
-            disabled={!editable}
-            onChange={(e) => setStep(e.target.value)}
-          />
-        </div>
-      </div>
+        {publishSummary.length > 0 && (
+          <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            <p className="font-medium">Can&apos;t publish yet:</p>
+            <ul className="ml-4 list-disc">
+              {publishSummary.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-      <LocalizedFields label="Title" value={title} onChange={setTitle} disabled={!contentEditable} />
-      <LocalizedFields label="Blurb" value={blurb} onChange={setBlurb} disabled={!contentEditable} />
-
-      <div className="space-y-1">
-        <Label>Content (JSON)</Label>
-        <Textarea
-          value={contentText}
-          disabled={!contentEditable}
-          onChange={(e) => setContentText(e.target.value)}
-          className="min-h-64 font-mono text-xs"
+        <BasicsSection
+          worldTitle={worldTitle}
+          kind={kind}
+          kindEditable={false}
+          status={lesson.status}
+          editable={structuralEditable}
         />
-      </div>
+        <TextSection disabled={!contentEditable} warnings={warnings} />
+        <ContentSection kind={lesson.kind} disabled={!contentEditable} warnings={warnings} />
 
-      <div className="flex gap-2">
-        {editable && (
-          <Button type="button" variant="outline" onClick={saveDraft} disabled={isPending}>
-            Save draft
+        <StoredJsonPanel
+          data={{
+            id: lesson.id,
+            chapter: lesson.chapter,
+            step: lesson.step,
+            kind: lesson.kind,
+            status: lesson.status,
+            title: lesson.title,
+            blurb: lesson.blurb,
+            content: lesson.content,
+          }}
+        />
+
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+          {(editable || hotfixable) && (
+            <Button type="submit" variant="outline" disabled={isPending}>
+              {editable ? "Save draft" : "Save fix"}
+            </Button>
+          )}
+          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+            Cancel
           </Button>
-        )}
-        {hotfixable && (
-          <Button type="button" variant="outline" onClick={saveHotfix} disabled={isPending}>
-            Save fix
+          {canPublish && isDraft && (
+            <Button type="button" onClick={publish} disabled={isPending}>
+              Publish
+            </Button>
+          )}
+          {canPublish && !isDraft && !isBossQuiz && (
+            <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
+              Unpublish
+            </Button>
+          )}
+          <Button type="button" variant="outline" onClick={openPreview} disabled={isPending}>
+            Preview
           </Button>
-        )}
-        {canPublish && isDraft && (
-          <Button type="button" onClick={publish} disabled={isPending}>
-            Publish
-          </Button>
-        )}
-        {canPublish && !isDraft && !isBossQuiz && (
-          <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
-            Unpublish
-          </Button>
-        )}
-        <Button type="button" variant="outline" onClick={openPreview} disabled={isPending}>
-          Preview
-        </Button>
-      </div>
+          {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
+        </div>
+      </form>
 
       {preview && <LessonPreview data={preview} onClose={() => setPreview(null)} />}
 
@@ -618,6 +1320,6 @@ function LessonForm({
           doUnpublish();
         }}
       />
-    </div>
+    </FormProvider>
   );
 }
