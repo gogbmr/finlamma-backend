@@ -299,41 +299,125 @@ export async function getCurrentLesson(userId: string) {
 
 // --- Staff (admin) ---
 
-// Cross-field checks Zod's structural parse can't express on its own:
-// every cue must fire within the video's length, and cues must be in
-// non-decreasing timestamp order (matches how they'd actually fire during
-// playback) - per the Phase 2b kickoff's content-editor requirements.
-function validateVideoCueTiming(content: unknown): string[] {
+// Catches content that doesn't match VideoContentSchema's shape AT ALL
+// (missing lengthSeconds, cues/scenes not arrays, a cue missing `at`, ...) -
+// the gap the checks below deliberately don't gate behind. Content reaching
+// this far should already be schema-valid (createLessonDraft/
+// updateLessonDraft/hotfixLesson all contentSchemaForKind-validate before
+// persisting), so in practice this only ever fires for content written
+// outside that path (a seed script, a migration, a direct DB write) - same
+// as validateVideoCueTiming's timerSeconds check below. Runs independently
+// of (not instead of) the manual field-by-field checks, so a lesson with
+// one broken field still gets every OTHER check's errors too, not just
+// this one. Same "content.path: message" format as
+// updateLessonDraft/hotfixLesson's own structural-rejection errors above,
+// for the same kind of problem.
+function validateVideoContentShape(content: unknown): string[] {
   const parsed = VideoContentSchema.safeParse(content);
-  if (!parsed.success) return []; // structural errors are reported separately
+  if (parsed.success) return [];
+  return parsed.error.issues.map((issue) => `content.${issue.path.join(".")}: ${issue.message}`);
+}
+
+// Cross-field checks Zod's structural parse can't express on its own: every
+// cue must fire within the video's length (skipped if lengthSeconds isn't a
+// number), cues must be in non-decreasing timestamp order (matches how
+// they'd actually fire during playback), and timerSeconds must be positive
+// - per the Phase 2b kickoff's content-editor requirements.
+//
+// Deliberately NOT gated behind VideoContentSchema.safeParse(content) (see
+// validateVideoContentShape above for that check) - gating these checks
+// behind the SAME full-schema parse would make them unreachable for
+// exactly the content they exist to catch. VideoCueSchema's own
+// `.positive()` already guarantees timerSeconds > 0 for anything saved
+// through createLessonDraft/updateLessonDraft/hotfixLesson (all three
+// contentSchemaForKind-validate before persisting) - so content that
+// reaches here with a non-positive timerSeconds can only have gotten there
+// some other way (a seed script, a migration, a direct DB write). A
+// full-schema safeParse would fail on that same malformed cue and swallow
+// every other structural error for the lesson too - silently waving the
+// rest of this content through publish even while validateVideoContentShape
+// is separately reporting the shape problem. Reading fields directly
+// (manual typeof guards, no schema) keeps every other well-formed check
+// independent of any one field being broken.
+function validateVideoCueTiming(content: unknown): string[] {
+  if (typeof content !== "object" || content === null) return [];
+  const raw = content as Record<string, unknown>;
+  const lengthSeconds = typeof raw.lengthSeconds === "number" ? raw.lengthSeconds : null;
+  const cues = Array.isArray(raw.cues) ? raw.cues : [];
+
   const errors: string[] = [];
-  const { cues, lengthSeconds } = parsed.data;
+  let previousAt: number | null = null;
   for (let i = 0; i < cues.length; i++) {
-    const cue = cues[i]!;
-    if (cue.at > lengthSeconds) {
-      errors.push(
-        `content.cues[${i}].at (${cue.at}s) is after the video ends (${lengthSeconds}s)`,
-      );
+    const cue = cues[i] as Record<string, unknown>;
+    const at = typeof cue.at === "number" ? cue.at : null;
+    const timerSeconds = typeof cue.timerSeconds === "number" ? cue.timerSeconds : null;
+
+    if (at !== null && lengthSeconds !== null && at > lengthSeconds) {
+      errors.push(`content.cues[${i}].at (${at}s) is after the video ends (${lengthSeconds}s)`);
     }
-    if (i > 0 && cue.at < cues[i - 1]!.at) {
-      errors.push(`content.cues[${i}].at (${cue.at}s) is out of order - cues must be sorted by timestamp`);
+    if (timerSeconds !== null && timerSeconds <= 0) {
+      errors.push(`content.cues[${i}].timerSeconds (${timerSeconds}s) must be greater than 0`);
+    }
+    if (at !== null && previousAt !== null && at < previousAt) {
+      errors.push(`content.cues[${i}].at (${at}s) is out of order - cues must be sorted by timestamp`);
+    }
+    if (at !== null) previousAt = at;
+  }
+  return errors;
+}
+
+// A non-https video source is the kind of thing a webview/native player may
+// simply refuse to load, silently - checked at publish time (not structural
+// save-time rejection) so a draft can still be saved mid-authoring before a
+// real CDN URL is ready. Only checked when a language's url is actually
+// set - the all-null default (hosting undecided, App asks batch item A12)
+// is never itself an error. Same manual-extraction reasoning as
+// validateVideoCueTiming above, for the same reason.
+function validateVideoUrlProtocol(content: unknown): string[] {
+  if (typeof content !== "object" || content === null) return [];
+  const raw = content as Record<string, unknown>;
+  const video = raw.video as Record<string, unknown> | undefined;
+  const url = (video?.url as Record<string, unknown> | undefined) ?? {};
+
+  const errors: string[] = [];
+  for (const lang of ["en", "hi", "hx"] as const) {
+    const value = url[lang];
+    if (typeof value === "string" && value && !/^https:\/\//i.test(value)) {
+      errors.push(`content.video.url.${lang} ("${value}") must start with https://`);
     }
   }
   return errors;
 }
 
+// Runs the targeted field-by-field checks first (validateVideoCueTiming,
+// validateVideoUrlProtocol) and only falls back to the generic
+// validateVideoContentShape issues when those found NOTHING wrong - e.g. a
+// cue missing `questionId` entirely, which no targeted check above looks
+// at. Deliberately not "all four, concatenated": a single malformed field
+// (like a non-positive timerSeconds) already fails VideoContentSchema's
+// overall parse too, and surfacing BOTH the targeted message and the
+// generic Zod one for the same root cause would just be noise on top of
+// the specific, actionable error the targeted check already gives.
+function validateVideoForPublish(content: unknown): string[] {
+  const targeted = [...validateVideoCueTiming(content), ...validateVideoUrlProtocol(content)];
+  if (targeted.length > 0) return targeted;
+  return validateVideoContentShape(content);
+}
+
 // Publish is blocked until every en/hi/hx leaf (title, blurb, and every
 // LocalizedText leaf inside content, however deeply nested) is filled, and
-// - for video - cues are in order and within the video length. Errors name
-// the exact field/cue, same "name it, don't just say invalid" pattern as
-// src/server/mentors/service.ts and src/server/worlds/service.ts.
+// - for video - the content matches VideoContentSchema's shape at all,
+// cues are in order, within the video length, have a positive timer, and
+// every set video URL is https. Errors name the exact field/cue, same
+// "name it, don't just say invalid" pattern as src/server/mentors/
+// service.ts and src/server/worlds/service.ts.
 function validateLessonForPublish(lesson: LessonRow): void {
   const missingFields = [
     ...findMissingLocalizedText(lesson.title, "title"),
     ...findMissingLocalizedText(lesson.blurb, "blurb"),
     ...findMissingLocalizedText(lesson.content, "content"),
   ];
-  const structuralErrors = lesson.kind === "video" ? validateVideoCueTiming(lesson.content) : [];
+  const structuralErrors = lesson.kind === "video" ? validateVideoForPublish(lesson.content) : [];
 
   if (missingFields.length === 0 && structuralErrors.length === 0) return;
 

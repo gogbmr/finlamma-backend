@@ -666,6 +666,53 @@ describe("updateLessonDraft", () => {
 });
 
 describe("publishLesson - translation-completeness and cue-timing gate", () => {
+  // Task 4b follow-up: content that doesn't match VideoContentSchema's
+  // shape AT ALL (not just one bad field a targeted check already names)
+  // must still be rejected, not silently waved through because none of
+  // the targeted checks (cue timing, url protocol) happen to look at
+  // whatever's actually broken. validateVideoCueTiming/
+  // validateVideoUrlProtocol read fields with manual typeof guards (so a
+  // missing lengthSeconds or a non-array cues never throws), so this
+  // exercises the validateVideoContentShape fallback specifically.
+  it("blocks publish when video content doesn't match the schema at all (no targeted check catches it)", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "video",
+        content: {}, // missing lengthSeconds entirely - not just a bad field
+      }),
+    );
+
+    await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: {
+        structuralErrors: [expect.stringMatching(/content\.lengthSeconds/)],
+      },
+    });
+    expect(mockPublishLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("blocks publish when a video cue is missing a required field no targeted check names", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "video",
+        content: {
+          lengthSeconds: 48,
+          scenes: [],
+          // Valid `at`/`timerSeconds` (so validateVideoCueTiming finds
+          // nothing wrong) but missing questionId entirely.
+          cues: [{ at: 10, timerSeconds: 8 }],
+        },
+      }),
+    );
+
+    await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: {
+        structuralErrors: [expect.stringMatching(/questionId/)],
+      },
+    });
+  });
+
   it("blocks publish and names every missing field, including deeply nested content leaves", async () => {
     mockGetLessonById.mockResolvedValueOnce(
       lessonRow({
@@ -727,6 +774,78 @@ describe("publishLesson - translation-completeness and cue-timing gate", () => {
         structuralErrors: [expect.stringMatching(/out of order/)],
       },
     });
+  });
+
+  // Task 4b, Rule B's timerSeconds half: already guaranteed by
+  // VideoCueSchema's `.positive()` for anything saved through
+  // createLessonDraft/updateLessonDraft/hotfixLesson - this exercises the
+  // only way it's actually reachable, content that got into the row some
+  // other way (direct DB write, a seed/migration script), which is exactly
+  // why validateVideoCueTiming reads fields manually instead of gating on
+  // a full VideoContentSchema.safeParse (that gate would swallow this
+  // error, and every other structural error for the lesson, silently).
+  it("rejects a cue with a non-positive timerSeconds", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "video",
+        content: {
+          lengthSeconds: 48,
+          scenes: [],
+          cues: [{ at: 10, questionId: "11111111-1111-4111-8111-111111111111", timerSeconds: 0 }],
+        },
+      }),
+    );
+
+    await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: {
+        structuralErrors: [expect.stringMatching(/must be greater than 0/)],
+      },
+    });
+  });
+
+  // Task 4b, Rule A: a non-https video source a webview/native player may
+  // simply refuse to load. The all-null default (hosting undecided) must
+  // never itself be flagged - only an actually-set, non-https value.
+  it("rejects a non-https video url", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "video",
+        content: {
+          lengthSeconds: 48,
+          scenes: [],
+          cues: [],
+          video: { url: { en: "http://example.com/video.mp4", hi: null, hx: null } },
+        },
+      }),
+    );
+
+    await expect(publishLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: {
+        structuralErrors: [expect.stringMatching(/must start with https/)],
+      },
+    });
+  });
+
+  it("accepts an https video url", async () => {
+    mockGetLessonById.mockResolvedValueOnce(
+      lessonRow({
+        kind: "video",
+        content: {
+          lengthSeconds: 48,
+          scenes: [],
+          cues: [],
+          video: { url: { en: "https://cdn.example.com/video.mp4", hi: null, hx: null } },
+        },
+      }),
+    );
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockPublishLessonRow.mockResolvedValueOnce(lessonRow({ status: "published" }));
+
+    const result = await publishLesson(ACTOR, "lesson_1", META);
+
+    expect(result.status).toBe("published");
   });
 
   it("accepts cues within bounds and in order", async () => {
