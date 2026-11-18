@@ -263,6 +263,35 @@ describe("hotfixWorldRow", () => {
     expect(fixed?.status).toBe("published");
   });
 
+  // Task 5b: the admin editor's hotfix path (HotfixWorldInput, order/code/
+  // theme/displayXpTarget/mentorId omitted - draft-only fields) relies on
+  // this being a PARTIAL column update, not a full-row overwrite -
+  // confirms Drizzle's .set(rest) (repo.ts) only ever touches the columns
+  // actually present in `rest`, never nulling/blanking the others just
+  // because a hotfix call didn't mention them.
+  it("leaves order/code/theme/displayXpTarget/mentorId untouched - a hotfix only ever sets the columns it's given", async () => {
+    const input = await draftInput({
+      order: uniqueOrder(),
+      code: "ZZ",
+      theme: "#123456",
+      displayXpTarget: 77,
+    });
+    const created = await insertDraftWorld(input);
+    await publishWorldRow(created.id, staffId);
+
+    const fixed = await hotfixWorldRow({
+      id: created.id,
+      title: { en: "Fixed", hi: "x", hx: "x" },
+      tagline: created.tagline,
+    });
+
+    expect(fixed?.order).toBe(input.order);
+    expect(fixed?.code).toBe("ZZ");
+    expect(fixed?.theme).toBe("#123456");
+    expect(fixed?.displayXpTarget).toBe(77);
+    expect(fixed?.mentorId).toBe(input.mentorId);
+  });
+
   it("returns null (does not update) when the world is currently a draft", async () => {
     const created = await insertDraftWorld(await draftInput());
 

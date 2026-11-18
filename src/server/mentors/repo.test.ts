@@ -174,6 +174,27 @@ describe("hotfixMentorRow", () => {
     expect(fixed?.status).toBe("published");
   });
 
+  // Task 5b: the admin editor's hotfix path (HotfixMentorInput, order/
+  // persona omitted - draft-only fields) relies on this being a PARTIAL
+  // column update, not a full-row overwrite - confirms Drizzle's
+  // .set(rest) (repo.ts) only ever touches the columns actually present
+  // in `rest`, never nulling/blanking order or persona just because a
+  // hotfix call didn't mention them.
+  it("leaves order and persona untouched - a hotfix only ever sets the columns it's given", async () => {
+    const input = draftInput({ order: uniqueOrder(), persona: "original persona" });
+    const created = await insertDraftMentor(input);
+    await publishMentorRow(created.id, staffId);
+
+    const fixed = await hotfixMentorRow({
+      id: created.id,
+      name: { en: "Fixed", hi: "x", hx: "x" },
+      bio: created.bio,
+    });
+
+    expect(fixed?.order).toBe(input.order);
+    expect(fixed?.persona).toBe("original persona");
+  });
+
   it("returns null (does not update) when the mentor is currently a draft", async () => {
     const created = await insertDraftMentor(draftInput());
 
