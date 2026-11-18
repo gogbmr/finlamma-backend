@@ -2,12 +2,39 @@ import { HelpCircle } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
+import { readPageParams } from "@/lib/admin/paginate";
 import { roleHasPermission } from "@/server/staff/repo";
-import { getQuestionEditorData } from "@/server/questions/service";
+import { QUESTION_ADMIN_SORT_COLUMNS, listQuestionsForAdmin } from "@/server/questions/admin-queries";
+import { QuestionFormatSchema } from "@/server/questions/schemas";
 import { listActiveTopicsForPicker } from "@/server/topics/service";
 import { QuestionEditor } from "./question-editor";
 
-export default async function QuestionsPage() {
+// Task 3b: real DB pagination (questions is a growing table, unlike Task
+// 3a's small catalogs) via src/server/questions/admin-queries.ts - a new,
+// admin-only file. repo.ts/service.ts are unchanged.
+type StatusFilter = "draft" | "published" | null;
+
+function parseStatusFilter(raw: string | string[] | undefined): StatusFilter {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "draft" || value === "published" ? value : null;
+}
+
+function parseFormatFilter(raw: string | string[] | undefined) {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  const parsed = QuestionFormatSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
+function parseTopicIdFilter(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value ?? null;
+}
+
+export default async function QuestionsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
   const staff = await getStaffMember();
   if (!staff) {
     return <Forbidden message="Staff sign-in required." />;
@@ -21,7 +48,27 @@ export default async function QuestionsPage() {
     return <Forbidden message="You don't have permission to manage questions." />;
   }
 
-  const [questions, topics] = await Promise.all([getQuestionEditorData(), listActiveTopicsForPicker()]);
+  const topics = await listActiveTopicsForPicker();
+
+  const params = searchParams ? await searchParams : {};
+  const pageState = readPageParams(params, {
+    defaultSort: "createdAt",
+    allowedSorts: QUESTION_ADMIN_SORT_COLUMNS,
+  });
+  const statusFilter = parseStatusFilter(params.status);
+  const formatFilter = parseFormatFilter(params.format);
+  const topicIdFilter = parseTopicIdFilter(params.topicId);
+
+  const paged = await listQuestionsForAdmin({
+    page: pageState.page,
+    pageSize: pageState.pageSize,
+    sort: pageState.sort as (typeof QUESTION_ADMIN_SORT_COLUMNS)[number],
+    dir: pageState.dir,
+    q: pageState.q,
+    format: formatFilter,
+    status: statusFilter,
+    topicId: topicIdFilter,
+  });
 
   return (
     <div className="space-y-6">
@@ -33,19 +80,20 @@ export default async function QuestionsPage() {
       />
 
       <QuestionEditor
-        questions={questions.map((q) => ({
-          id: q.id,
-          format: q.format,
-          topicId: q.topicId,
-          prompt: q.prompt,
-          explanation: q.explanation,
-          payload: q.payload,
-          answer: q.answer,
-          status: q.status,
-        }))}
+        questions={paged.rows}
         topics={topics.map((t) => ({ id: t.id, name: t.name }))}
         canManage={canManage}
         canPublish={canPublish}
+        total={paged.total}
+        page={paged.page}
+        pageCount={paged.pageCount}
+        pageSize={pageState.pageSize}
+        q={pageState.q}
+        sort={pageState.sort ?? "createdAt"}
+        dir={pageState.dir}
+        format={formatFilter}
+        status={statusFilter}
+        topicId={topicIdFilter}
       />
     </div>
   );

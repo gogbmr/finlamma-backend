@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
 const mockRequireStaff = vi.fn();
+const mockRequireStaffAny = vi.fn();
 vi.mock("@/lib/auth", () => ({
   requireStaff: (permission: unknown) => mockRequireStaff(permission),
+  requireStaffAny: (permissions: unknown) => mockRequireStaffAny(permissions),
 }));
 
 vi.mock("next/headers", () => ({
@@ -33,9 +35,22 @@ vi.mock("@/server/questions/service", () => ({
     mockUnpublishQuestion(actor, id, meta),
 }));
 
+// admin-queries.ts imports @/db/client directly (it's a real-DB-querying
+// file, see its own test at src/server/questions/admin-queries.test.ts) -
+// mocked here so importing ./actions in this test file never reaches it,
+// same reasoning CLAUDE.md rule 12 gives for src/db/client.ts throwing
+// under NODE_ENV=test: an unmocked import must fail loudly, not silently
+// reach production, so every test file touching a DB-querying import
+// mocks it explicitly instead of relying on it resolving on its own.
+const mockGetQuestionDetailForAdmin = vi.fn();
+vi.mock("@/server/questions/admin-queries", () => ({
+  getQuestionDetailForAdmin: (id: unknown) => mockGetQuestionDetailForAdmin(id),
+}));
+
 import {
   createQuestionDraftAction,
   hotfixQuestionAction,
+  loadQuestionDetailForAdminAction,
   publishQuestionAction,
   unpublishQuestionAction,
   updateQuestionDraftAction,
@@ -235,5 +250,61 @@ describe("happy paths", () => {
       ok: false,
       error: "Cannot save: answer.correctIndex (99) is out of range for 2 options",
     });
+  });
+});
+
+// Task 3b: the Questions admin list is now real-DB-paginated, so the full
+// record for a selected question is fetched on demand rather than already
+// sitting in memory - this is that fetch.
+describe("loadQuestionDetailForAdminAction", () => {
+  const FULL_QUESTION = {
+    id: QUESTION_ID,
+    format: "single_select" as const,
+    topicId: null,
+    prompt: VALID_INPUT.prompt,
+    explanation: VALID_INPUT.explanation,
+    payload: VALID_INPUT.payload,
+    answer: VALID_INPUT.answer,
+    status: "draft" as const,
+  };
+
+  it("requires question.manage or question.publish", async () => {
+    mockRequireStaffAny.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: one of question.manage, question.publish"),
+    );
+
+    const result = await loadQuestionDetailForAdminAction({ id: QUESTION_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["question.manage", "question.publish"]);
+    expect(mockGetQuestionDetailForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("returns the full record for a valid id", async () => {
+    mockRequireStaffAny.mockResolvedValueOnce(ACTOR);
+    mockGetQuestionDetailForAdmin.mockResolvedValueOnce(FULL_QUESTION);
+
+    const result = await loadQuestionDetailForAdminAction({ id: QUESTION_ID });
+
+    expect(result).toEqual({ ok: true, data: FULL_QUESTION });
+    expect(mockGetQuestionDetailForAdmin).toHaveBeenCalledWith(QUESTION_ID);
+  });
+
+  it("returns a not-found error without throwing when the question doesn't exist", async () => {
+    mockRequireStaffAny.mockResolvedValueOnce(ACTOR);
+    mockGetQuestionDetailForAdmin.mockResolvedValueOnce(null);
+
+    const result = await loadQuestionDetailForAdminAction({ id: QUESTION_ID });
+
+    expect(result).toEqual({ ok: false, error: "Question not found" });
+  });
+
+  it("rejects a malformed id without calling getQuestionDetailForAdmin", async () => {
+    mockRequireStaffAny.mockResolvedValueOnce(ACTOR);
+
+    const result = await loadQuestionDetailForAdminAction({ id: "not-a-uuid" });
+
+    expect(result.ok).toBe(false);
+    expect(mockGetQuestionDetailForAdmin).not.toHaveBeenCalled();
   });
 });
