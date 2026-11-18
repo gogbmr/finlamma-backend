@@ -1,39 +1,24 @@
-"use client";
-
-import { AlertTriangle } from "lucide-react";
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
+"use client"; // Error boundaries must be Client Components - Next.js checks
+// this file literally, not just whether the component it renders is a
+// client component elsewhere, so re-exporting AdminPageError without this
+// directive here fails the build (confirmed: pnpm build rejected this
+// exact file with "must be a Client Component" until this line was added).
 
 // Catches an unhandled error from any admin page's Server Component render
 // (a data fetch that throws) so staff see a recoverable panel instead of the
 // framework's default error screen. Client-side mutation errors are handled
-// separately per-action via toast.error, not this boundary.
-export default function AdminDashboardError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string };
-  reset: () => void;
-}) {
-  useEffect(() => {
-    console.error(error);
-  }, [error]);
-
-  return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-destructive/10 text-destructive">
-        <AlertTriangle className="h-5 w-5" aria-hidden />
-      </div>
-      <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">Something went wrong</p>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          This page hit an unexpected error. You can try again, or head back once it&apos;s
-          resolved.
-        </p>
-      </div>
-      <Button type="button" variant="outline" size="sm" onClick={reset}>
-        Try again
-      </Button>
-    </div>
-  );
-}
+// separately per-action via toast.error, not this boundary. A thrown error
+// here is NOT caught by this file's own layout.tsx - Next.js error
+// boundaries never catch an error thrown by the layout.tsx in their own
+// route segment, only by page.tsx/nested layouts below it (confirmed
+// against this Next version's own docs,
+// node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/
+// error.md: "It does not wrap the layout.js ... above it in the same
+// segment").
+//
+// This is the catch-all for every admin page that doesn't have its own
+// error.tsx. A page can register a more specific one in its own folder
+// (e.g. worlds/error.tsx) - Next.js picks the closest boundary to the
+// error's source, so that one wins for errors thrown in that page alone.
+// Both render the same AdminPageError panel.
+export { AdminPageError as default } from "@/components/admin/page-error";

@@ -26,7 +26,7 @@ export default async function QuestionsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Questions" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Questions" }]}
         icon={HelpCircle}
         title="Questions"
         description="Every question a lesson can reference (video pop-quiz cues, quiz/boss_quiz/role_play question lists) - single source of truth, never duplicated into lesson content. Publish is blocked until every en/hi/hx field is filled. A lesson can't be published while it references a missing or unpublished question."

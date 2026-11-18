@@ -53,7 +53,7 @@ export default async function SettingsPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Settings" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Settings" }]}
         title="Settings"
         description="Admin-tunable constants that affect every learner immediately. Every change is logged."
       />

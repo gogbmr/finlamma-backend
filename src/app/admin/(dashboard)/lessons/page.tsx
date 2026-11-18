@@ -36,7 +36,7 @@ export default async function LessonsPage({
     return (
       <div className="space-y-4">
         <PageHeader
-          breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Lessons" }]}
+          breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Lessons" }]}
           icon={BookOpen}
           title="Lessons"
         />
@@ -63,7 +63,7 @@ export default async function LessonsPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Lessons" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Lessons" }]}
         icon={BookOpen}
         title="Lessons"
         description="Each world is a trail of up to 8 chapters x 5 steps. Publish is blocked until every en/hi/hx field (title, blurb, every localized field inside content) is filled, and until the lesson's world is itself published."

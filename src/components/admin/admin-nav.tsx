@@ -4,6 +4,7 @@ import {
   Award,
   BarChart3,
   BookOpen,
+  ChevronDown,
   FileText,
   Flag,
   Gauge,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/cn";
 
 type NavItem = {
@@ -128,8 +130,45 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
     .filter((group) => group.items.length > 0);
 }
 
+// Where / admin lands a signed-in staff member, in priority order - the
+// first entry whose visibility flag is true wins. Analytics first (a
+// read-only overview, the closest thing to a "home" page); everything else
+// follows the same order as navGroups above. Kept here, next to
+// AdminNavVisibility, so the landing choice and the sidebar never drift
+// apart - see src/lib/admin/nav-visibility.ts and the root (dashboard)
+// page.tsx.
+export const ADMIN_LANDING_PRIORITY: {
+  key: keyof AdminNavVisibility;
+  href: string;
+}[] = [
+  { key: "analytics", href: "/admin/analytics" },
+  { key: "worlds", href: "/admin/worlds" },
+  { key: "lessons", href: "/admin/lessons" },
+  { key: "questions", href: "/admin/questions" },
+  { key: "mentors", href: "/admin/mentors" },
+  { key: "newsDesk", href: "/admin/news" },
+  { key: "consent", href: "/admin/consent" },
+  { key: "doubtZoneModeration", href: "/admin/doubt-zone" },
+  { key: "staff", href: "/admin/staff" },
+  { key: "activityLog", href: "/admin/activity-log" },
+  { key: "legal", href: "/admin/legal" },
+  { key: "badges", href: "/admin/badges" },
+  { key: "rewards", href: "/admin/rewards" },
+  { key: "competitions", href: "/admin/competitions" },
+  { key: "instruments", href: "/admin/instruments" },
+  { key: "opsConsole", href: "/admin/ops" },
+  { key: "coachNotes", href: "/admin/coach-notes" },
+  { key: "settings", href: "/admin/settings" },
+];
+
+// Shared by NavLink, AdminNavStrip and AdminSidebar's collapse-override
+// logic, so "is this item active" is defined exactly once.
+function isItemActive(pathname: string, href: string): boolean {
+  return pathname === href || pathname.startsWith(href + "/");
+}
+
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const active = pathname === item.href || pathname.startsWith(item.href + "/");
+  const active = isItemActive(pathname, item.href);
   const Icon = item.icon;
   return (
     <Link
@@ -148,22 +187,87 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   );
 }
 
+const NAV_COLLAPSE_STORAGE_KEY = "finlamma-admin-nav-collapsed-groups";
+
+// Per-viewer convenience only (which groups are collapsed) - never read back
+// by the server, never shared between staff members or devices. Read after
+// mount (not in useState's initializer) so the very first render matches on
+// both server and client - "everything expanded" - and collapsing from a
+// stored preference only happens as a second, client-only update. Avoids a
+// hydration mismatch instead of risking one for a cosmetic preference.
+function useCollapsedGroups() {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(NAV_COLLAPSE_STORAGE_KEY);
+      if (raw) setCollapsed(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      // Private window, blocked storage, corrupt value, ... - just keep
+      // everything expanded.
+    }
+  }, []);
+
+  function toggle(label: string) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      try {
+        window.localStorage.setItem(
+          NAV_COLLAPSE_STORAGE_KEY,
+          JSON.stringify([...next]),
+        );
+      } catch {
+        // Nothing to persist to - the toggle still works for this render.
+      }
+      return next;
+    });
+  }
+
+  return { collapsed, toggle };
+}
+
 export function AdminSidebar({ visibility }: { visibility: AdminNavVisibility }) {
   const pathname = usePathname();
   const groups = navGroups(visibility);
+  const { collapsed, toggle } = useCollapsedGroups();
 
   return (
-    <nav className="flex flex-col gap-5" aria-label="Admin">
-      {groups.map((group) => (
-        <div key={group.label} className="space-y-1">
-          <p className="px-3 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-            {group.label}
-          </p>
-          {group.items.map((item) => (
-            <NavLink key={item.href} item={item} pathname={pathname} />
-          ))}
-        </div>
-      ))}
+    <nav className="flex flex-col gap-1" aria-label="Admin">
+      {groups.map((group) => {
+        const hasActiveItem = group.items.some((item) =>
+          isItemActive(pathname, item.href),
+        );
+        const isCollapsed = collapsed.has(group.label) && !hasActiveItem;
+
+        return (
+          <div key={group.label} className="space-y-1">
+            <button
+              type="button"
+              onClick={() => toggle(group.label)}
+              aria-expanded={!isCollapsed}
+              className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
+            >
+              {group.label}
+              <ChevronDown
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 transition-transform",
+                  isCollapsed && "-rotate-90",
+                )}
+                aria-hidden
+              />
+            </button>
+            {!isCollapsed && (
+              <div className="space-y-1">
+                {group.items.map((item) => (
+                  <NavLink key={item.href} item={item} pathname={pathname} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </nav>
   );
 }
@@ -181,7 +285,7 @@ export function AdminNavStrip({ visibility }: { visibility: AdminNavVisibility }
       className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card px-3 py-2 lg:hidden"
     >
       {items.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(item.href + "/");
+        const active = isItemActive(pathname, item.href);
         const Icon = item.icon;
         return (
           <Link

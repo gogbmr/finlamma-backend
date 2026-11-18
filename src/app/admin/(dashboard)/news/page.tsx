@@ -74,7 +74,7 @@ export default async function NewsDeskPage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[
-          { label: "Admin", href: "/admin/staff" },
+          { label: "Admin", href: "/admin" },
           { label: "News Desk" },
         ]}
         icon={Newspaper}

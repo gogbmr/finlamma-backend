@@ -28,7 +28,7 @@ export default async function CompetitionsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Competitions" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Competitions" }]}
         title="Monthly Competition"
         description="A single isolated sandbox portfolio per competition - the starting capital is never V Money and never touches vmoney_ledger (docs/ARCHITECTURE.md D57). Only the prizes paid at settlement create real VM."
       />

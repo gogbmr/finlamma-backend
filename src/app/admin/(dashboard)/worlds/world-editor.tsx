@@ -1,7 +1,7 @@
 "use client";
 
 import { Globe2 } from "lucide-react";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -28,6 +28,7 @@ import {
   updateWorldDraftAction,
   uploadWorldArtAction,
 } from "./actions";
+import { WorldsTable } from "./worlds-table";
 
 type WorldRow = {
   id: string;
@@ -54,16 +55,53 @@ export function WorldEditor({
   doubtZoneLessonsByWorldId,
   canManage,
   canPublish,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  status,
 }: {
   worlds: WorldRow[];
   mentors: MentorOption[];
   doubtZoneLessonsByWorldId: Record<string, DoubtZoneLessonRef[]>;
   canManage: boolean;
   canPublish: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  status: "draft" | "published" | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(worlds[0]?.id ?? "new");
+  // Tracks whether the currently-open WorldForm/NewWorldForm has unsaved
+  // edits (lifted up via onDirtyChange below) - switching the selected
+  // world changes WorldForm's `key`, which unmounts/remounts it, silently
+  // discarding any in-progress edit. This guard only covers switching
+  // selection WITHIN this page (row click, "+ New world") - changing page/
+  // search/sort/status is a plain <Link> in WorldsTable/DataTablePagination
+  // and isn't intercepted here; that's real, un-covered scope, left for
+  // Task 4's full unsaved-changes work rather than a few-line patch.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (worlds.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this world?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return (
       <EmptyState
         icon={Globe2}
@@ -73,29 +111,54 @@ export function WorldEditor({
     );
   }
 
+  // `worlds` is only the current page (search/sort/filter/pagination moved
+  // the rest off-screen - see WorldsTable) - a selection made on a page
+  // that's since changed under it (new search, Prev/Next, ...) falls back
+  // to this page's first row rather than rendering nothing. "new" is
+  // always valid.
+  const effectiveId: string | "new" =
+    selectedId === "new" || worlds.some((w) => w.id === selectedId)
+      ? (selectedId as string | "new")
+      : worlds[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Select value={selectedId ?? "new"} onValueChange={(v) => setSelectedId(v)}>
-          <SelectTrigger className="w-64">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {worlds.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.order}. {w.title.en || "(untitled)"} ({w.status})
-              </SelectItem>
-            ))}
-            {canManage && <SelectItem value="new">+ New world</SelectItem>}
-          </SelectContent>
-        </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a world below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New world
+          </Button>
+        )}
       </div>
 
-      {selectedId === "new" && canManage ? (
-        <NewWorldForm mentors={mentors} />
+      <WorldsTable
+        rows={worlds.map((w) => ({
+          id: w.id,
+          order: w.order,
+          code: w.code,
+          title: w.title,
+          status: w.status,
+          mentorId: w.mentorId,
+        }))}
+        mentors={mentors}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        status={status}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <NewWorldForm mentors={mentors} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const world = worlds.find((w) => w.id === selectedId);
+          const world = worlds.find((w) => w.id === effectiveId);
           if (!world) return null;
           return (
             <WorldForm
@@ -105,7 +168,11 @@ export function WorldEditor({
               doubtZoneLessons={doubtZoneLessonsByWorldId[world.id] ?? []}
               canManage={canManage}
               canPublish={canPublish}
-              onDeleted={() => setSelectedId(worlds.find((w) => w.id !== world.id)?.id ?? "new")}
+              onDirtyChange={setIsDirty}
+              onDeleted={() => {
+                setIsDirty(false);
+                setSelectedId(worlds.find((w) => w.id !== world.id)?.id ?? "new");
+              }}
             />
           );
         })()
@@ -175,7 +242,13 @@ function MentorSelect({
   );
 }
 
-function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
+function NewWorldForm({
+  mentors,
+  onDirtyChange,
+}: {
+  mentors: MentorOption[];
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [order, setOrder] = useState("");
   const [code, setCode] = useState("");
@@ -184,6 +257,24 @@ function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
   const [mentorId, setMentorId] = useState("");
   const [title, setTitle] = useState<LocalizedText>(EMPTY_LOCALIZED);
   const [tagline, setTagline] = useState<LocalizedText>(EMPTY_LOCALIZED);
+
+  // Derived, not effect-tracked-by-mutation: dirty whenever any field
+  // differs from this form's own empty baseline. After a successful
+  // create resets every field back to that same baseline, this naturally
+  // recomputes to false on its own - no manual "clear the dirty flag" call
+  // that a later edit could race with.
+  const dirty =
+    order !== "" ||
+    code !== "" ||
+    theme !== "" ||
+    displayXpTarget !== "" ||
+    mentorId !== "" ||
+    LANGUAGES.some((l) => title[l] !== "") ||
+    LANGUAGES.some((l) => tagline[l] !== "");
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function create() {
     startTransition(async () => {
@@ -266,6 +357,7 @@ function WorldForm({
   doubtZoneLessons,
   canManage,
   canPublish,
+  onDirtyChange,
   onDeleted,
 }: {
   world: WorldRow;
@@ -273,6 +365,7 @@ function WorldForm({
   doubtZoneLessons: DoubtZoneLessonRef[];
   canManage: boolean;
   canPublish: boolean;
+  onDirtyChange: (dirty: boolean) => void;
   onDeleted: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -287,6 +380,37 @@ function WorldForm({
   const [confirmMentorChange, setConfirmMentorChange] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The "pristine" baseline to compare against for dirtiness - starts as
+  // the loaded `world`, but moves forward after each successful save.
+  // Comparing against `world` itself instead would false-positive "still
+  // dirty" right after a successful save: `world` is this page's props as
+  // of the initial server fetch, never refreshed by revalidatePath() alone
+  // (that only invalidates Next's cache for the next real navigation), so
+  // it stays stale for the rest of this component's lifetime even though
+  // the save succeeded.
+  const [savedSnapshot, setSavedSnapshot] = useState({
+    order: String(world.order),
+    code: world.code ?? "",
+    theme: world.theme,
+    displayXpTarget: String(world.displayXpTarget),
+    mentorId: world.mentorId,
+    title: world.title,
+    tagline: world.tagline,
+  });
+
+  const dirty =
+    order !== savedSnapshot.order ||
+    code !== savedSnapshot.code ||
+    theme !== savedSnapshot.theme ||
+    displayXpTarget !== savedSnapshot.displayXpTarget ||
+    mentorId !== savedSnapshot.mentorId ||
+    LANGUAGES.some((l) => title[l] !== savedSnapshot.title[l]) ||
+    LANGUAGES.some((l) => tagline[l] !== savedSnapshot.tagline[l]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = world.status === "draft";
   const editable = canManage && isDraft;
@@ -334,6 +458,7 @@ function WorldForm({
         return;
       }
       toast.success("Draft saved");
+      setSavedSnapshot({ order, code, theme, displayXpTarget, mentorId, title, tagline });
     });
   }
 
@@ -345,6 +470,7 @@ function WorldForm({
         return;
       }
       toast.success("Fix saved - live immediately");
+      setSavedSnapshot((prev) => ({ ...prev, title, tagline }));
     });
   }
 

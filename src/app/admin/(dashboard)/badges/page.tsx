@@ -22,7 +22,7 @@ export default async function BadgesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Badges" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Badges" }]}
         icon={Award}
         title="Badges"
         description="Badges pay V Money on unlock, once per learner, automatically evaluated after every real lesson credit. Publish is blocked until every en/hi/hx field is filled."

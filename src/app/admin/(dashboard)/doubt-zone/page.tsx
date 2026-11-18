@@ -25,7 +25,7 @@ export default async function DoubtZoneModerationPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Doubt Zone" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Doubt Zone" }]}
         icon={Flag}
         title="Doubt Zone moderation"
         description="Flagged Doubt Zone AI messages only - either the safety classifier tripped on a learner message, or a learner reported a reply. Full, unflagged conversations are never browsable here, by anyone. Viewing a flagged message's content is logged."

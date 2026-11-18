@@ -67,7 +67,7 @@ export default async function OpsConsolePage() {
     <div className="space-y-6">
       <PageHeader
         breadcrumbs={[
-          { label: "Admin", href: "/admin/staff" },
+          { label: "Admin", href: "/admin" },
           { label: "Ops Console" },
         ]}
         icon={Siren}

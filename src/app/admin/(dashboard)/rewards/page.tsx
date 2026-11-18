@@ -23,7 +23,7 @@ export default async function RewardsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Rewards" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Rewards" }]}
         icon={Gift}
         title="Rewards"
         description="A learner can claim each reward at most once. Price is fixed and admin-set - never computed from the viewing learner's own balance. Publish is blocked until every en/hi/hx field is filled."
