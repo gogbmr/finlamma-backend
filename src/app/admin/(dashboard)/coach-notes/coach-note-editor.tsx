@@ -1,7 +1,7 @@
 "use client";
 
 import { MessageSquareText } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -15,6 +15,7 @@ import {
   unpublishCoachNoteTemplateAction,
   updateCoachNoteTemplateAction,
 } from "./actions";
+import { CoachNotesTable } from "./coach-notes-table";
 
 type TemplateRow = {
   id: string;
@@ -62,14 +63,45 @@ export function CoachNoteEditor({
   templates,
   canManage,
   canPublish,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  status,
 }: {
   templates: TemplateRow[];
   canManage: boolean;
   canPublish: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  status: "draft" | "published" | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(templates[0]?.id ?? "new");
+  // Few-line confirm() guard, same pattern as the other small catalogs -
+  // doesn't cover Prev/Next/search/sort/status, deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (templates.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this template?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return (
       <EmptyState
         icon={MessageSquareText}
@@ -79,29 +111,51 @@ export function CoachNoteEditor({
     );
   }
 
+  const effectiveId: string | "new" =
+    selectedId === "new" || templates.some((t) => t.id === selectedId)
+      ? (selectedId as string | "new")
+      : templates[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
-        <SelectTrigger className="w-96">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {templates.map((t) => (
-            <SelectItem key={t.id} value={t.id}>
-              {t.category} - {t.template.en || "(untitled)"} ({t.status})
-            </SelectItem>
-          ))}
-          {canManage && <SelectItem value="new">+ New template</SelectItem>}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a template below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New template
+          </Button>
+        )}
+      </div>
 
-      {selectedId === "new" && canManage ? (
-        <TemplateForm canManage={canManage} canPublish={canPublish} />
+      <CoachNotesTable
+        rows={templates.map((t) => ({ id: t.id, category: t.category, template: t.template, status: t.status }))}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        status={status}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <TemplateForm canManage={canManage} canPublish={canPublish} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const template = templates.find((t) => t.id === selectedId);
+          const template = templates.find((t) => t.id === effectiveId);
           if (!template) return null;
-          return <TemplateForm key={template.id} template={template} canManage={canManage} canPublish={canPublish} />;
+          return (
+            <TemplateForm
+              key={template.id}
+              template={template}
+              canManage={canManage}
+              canPublish={canPublish}
+              onDirtyChange={setIsDirty}
+            />
+          );
         })()
       )}
     </div>
@@ -112,14 +166,32 @@ function TemplateForm({
   template,
   canManage,
   canPublish,
+  onDirtyChange,
 }: {
   template?: TemplateRow;
   canManage: boolean;
   canPublish: boolean;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [category, setCategory] = useState<string>(template?.category ?? "strength");
   const [text, setText] = useState<LocalizedText>(template?.template ?? EMPTY_LOCALIZED);
+
+  // One form serves both create and edit - same reasoning as Badges'
+  // BadgeForm: the baseline is the loaded template's fields, or this
+  // form's own empty defaults when creating, moving forward after save.
+  const [savedSnapshot, setSavedSnapshot] = useState(
+    template
+      ? { category: template.category as string, text: template.template }
+      : { category: "strength", text: EMPTY_LOCALIZED },
+  );
+
+  const dirty =
+    category !== savedSnapshot.category || LANGUAGES.some((l) => text[l] !== savedSnapshot.text[l]);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = !template || template.status === "draft";
   const editable = canManage && isDraft;
@@ -138,6 +210,7 @@ function TemplateForm({
         return;
       }
       toast.success(template ? "Draft saved" : "Template created as a draft");
+      setSavedSnapshot({ category, text });
     });
   }
 

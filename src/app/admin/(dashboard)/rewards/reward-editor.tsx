@@ -1,7 +1,7 @@
 "use client";
 
 import { Gift } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -17,6 +17,7 @@ import {
   unpublishRewardAction,
   updateRewardDraftAction,
 } from "./actions";
+import { RewardsTable } from "./rewards-table";
 
 type RewardRow = {
   id: string;
@@ -56,49 +57,142 @@ function LocalizedFields({
   );
 }
 
-export function RewardEditor({ rewards, canManage }: { rewards: RewardRow[]; canManage: boolean }) {
+export function RewardEditor({
+  rewards,
+  canManage,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  status,
+}: {
+  rewards: RewardRow[];
+  canManage: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  status: "draft" | "published" | null;
+}) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(rewards[0]?.id ?? "new");
+  // Few-line confirm() guard, same pattern as Worlds/Mentors/Badges -
+  // doesn't cover Prev/Next/search/sort/status, deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (rewards.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this reward?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return <EmptyState icon={Gift} title="No rewards yet" description="A staff member with economy.manage can create the first one." />;
   }
 
+  const effectiveId: string | "new" =
+    selectedId === "new" || rewards.some((r) => r.id === selectedId)
+      ? (selectedId as string | "new")
+      : rewards[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
-        <SelectTrigger className="w-72">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {rewards.map((r) => (
-            <SelectItem key={r.id} value={r.id}>
-              {r.name.en || "(untitled)"} ({r.status})
-            </SelectItem>
-          ))}
-          {canManage && <SelectItem value="new">+ New reward</SelectItem>}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a reward below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New reward
+          </Button>
+        )}
+      </div>
 
-      {selectedId === "new" && canManage ? (
-        <RewardForm canManage={canManage} />
+      <RewardsTable
+        rows={rewards.map((r) => ({ id: r.id, name: r.name, category: r.category, priceVm: r.priceVm, status: r.status }))}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        status={status}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <RewardForm canManage={canManage} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const reward = rewards.find((r) => r.id === selectedId);
+          const reward = rewards.find((r) => r.id === effectiveId);
           if (!reward) return null;
-          return <RewardForm key={reward.id} reward={reward} canManage={canManage} />;
+          return (
+            <RewardForm key={reward.id} reward={reward} canManage={canManage} onDirtyChange={setIsDirty} />
+          );
         })()
       )}
     </div>
   );
 }
 
-function RewardForm({ reward, canManage }: { reward?: RewardRow; canManage: boolean }) {
+function RewardForm({
+  reward,
+  canManage,
+  onDirtyChange,
+}: {
+  reward?: RewardRow;
+  canManage: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [name, setName] = useState<LocalizedText>(reward?.name ?? EMPTY_LOCALIZED);
   const [description, setDescription] = useState<LocalizedText>(reward?.description ?? EMPTY_LOCALIZED);
   const [category, setCategory] = useState<string>(reward?.category ?? "finlamma");
   const [priceVm, setPriceVm] = useState(String(reward?.priceVm ?? ""));
   const [iconKey, setIconKey] = useState(reward?.iconKey ?? "");
+
+  // One form serves both create and edit - same reasoning as Badges'
+  // BadgeForm for why the baseline is the loaded reward's fields (or this
+  // form's own empty defaults when creating), moving forward after save.
+  const [savedSnapshot, setSavedSnapshot] = useState(
+    reward
+      ? {
+          name: reward.name,
+          description: reward.description,
+          category: reward.category as string,
+          priceVm: String(reward.priceVm),
+          iconKey: reward.iconKey ?? "",
+        }
+      : {
+          name: EMPTY_LOCALIZED,
+          description: EMPTY_LOCALIZED,
+          category: "finlamma",
+          priceVm: "",
+          iconKey: "",
+        },
+  );
+
+  const dirty =
+    LANGUAGES.some((l) => name[l] !== savedSnapshot.name[l]) ||
+    LANGUAGES.some((l) => description[l] !== savedSnapshot.description[l]) ||
+    category !== savedSnapshot.category ||
+    priceVm !== savedSnapshot.priceVm ||
+    iconKey !== savedSnapshot.iconKey;
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = !reward || reward.status === "draft";
   const editable = canManage && isDraft;
@@ -123,6 +217,7 @@ function RewardForm({ reward, canManage }: { reward?: RewardRow; canManage: bool
         return;
       }
       toast.success(reward ? "Draft saved" : "Reward created as a draft");
+      setSavedSnapshot({ name, description, category, priceVm, iconKey });
     });
   }
 
