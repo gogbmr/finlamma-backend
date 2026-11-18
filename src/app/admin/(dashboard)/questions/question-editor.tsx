@@ -1,7 +1,7 @@
 "use client";
 
 import { HelpCircle } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
@@ -24,12 +24,14 @@ import {
 import {
   createQuestionDraftAction,
   hotfixQuestionAction,
+  loadQuestionDetailForAdminAction,
   publishQuestionAction,
   unpublishQuestionAction,
   updateQuestionDraftAction,
 } from "./actions";
+import { QuestionsTable } from "./questions-table";
 
-const FORMATS: QuestionFormat[] = [
+export const FORMATS: QuestionFormat[] = [
   "single_select",
   "ordering",
   "sort_buckets",
@@ -39,7 +41,7 @@ const FORMATS: QuestionFormat[] = [
   "number_guess",
 ];
 
-const FORMAT_LABELS: Record<QuestionFormat, string> = {
+export const FORMAT_LABELS: Record<QuestionFormat, string> = {
   single_select: "Single select",
   ordering: "Ordering",
   sort_buckets: "Sort into 2 buckets",
@@ -49,6 +51,10 @@ const FORMAT_LABELS: Record<QuestionFormat, string> = {
   number_guess: "Number guess (slider)",
 };
 
+// The full record, as QuestionForm needs it - loaded on demand per
+// selection (see QuestionDetailLoader below), never all at once: the
+// Questions list is now real-DB-paginated (Task 3b), so unlike the small
+// catalogs (Task 3a) the full table is never sitting in memory.
 type QuestionRow = {
   id: string;
   format: QuestionFormat;
@@ -57,6 +63,16 @@ type QuestionRow = {
   explanation: LocalizedText;
   payload: unknown;
   answer: unknown;
+  status: "draft" | "published";
+};
+
+// The lightweight row the admin list itself needs - exactly what
+// src/server/questions/admin-queries.ts's listQuestionsForAdmin returns.
+export type QuestionListRow = {
+  id: string;
+  format: QuestionFormat;
+  topicId: string | null;
+  promptEn: string;
   status: "draft" | "published";
 };
 
@@ -107,15 +123,51 @@ export function QuestionEditor({
   topics,
   canManage,
   canPublish,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  format,
+  status,
+  topicId,
 }: {
-  questions: QuestionRow[];
+  questions: QuestionListRow[];
   topics: TopicOption[];
   canManage: boolean;
   canPublish: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string;
+  dir: "asc" | "desc";
+  format: QuestionFormat | null;
+  status: "draft" | "published" | null;
+  topicId: string | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(questions[0]?.id ?? "new");
+  // Few-line confirm() guard, same pattern as every other entity table -
+  // doesn't cover Prev/Next/search/sort/filters (plain <Link>s), deferred
+  // to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (questions.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this question?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return (
       <EmptyState
         icon={HelpCircle}
@@ -125,40 +177,125 @@ export function QuestionEditor({
     );
   }
 
+  // `questions` is only the current page (it's now real-DB-paginated,
+  // Task 3b) - a selection made on a page that's since changed under it
+  // falls back to this page's first row.
+  const effectiveId: string | "new" =
+    selectedId === "new" || questions.some((qu) => qu.id === selectedId)
+      ? (selectedId as string | "new")
+      : questions[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
-        <SelectTrigger className="w-96">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {questions.map((q) => (
-            <SelectItem key={q.id} value={q.id}>
-              {q.prompt.en || "(untitled)"} ({FORMAT_LABELS[q.format]}, {q.status})
-            </SelectItem>
-          ))}
-          {canManage && <SelectItem value="new">+ New question</SelectItem>}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a question below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New question
+          </Button>
+        )}
+      </div>
 
-      {selectedId === "new" && canManage ? (
-        <NewQuestionForm topics={topics} />
+      <QuestionsTable
+        rows={questions}
+        topics={topics}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        format={format}
+        status={status}
+        topicId={topicId}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <NewQuestionForm topics={topics} onDirtyChange={setIsDirty} />
       ) : (
-        (() => {
-          const question = questions.find((q) => q.id === selectedId);
-          if (!question) return null;
-          return (
-            <QuestionForm
-              key={question.id}
-              question={question}
-              topics={topics}
-              canManage={canManage}
-              canPublish={canPublish}
-            />
-          );
-        })()
+        questions.some((qu) => qu.id === effectiveId) && (
+          <QuestionDetailLoader
+            key={effectiveId}
+            id={effectiveId}
+            topics={topics}
+            canManage={canManage}
+            canPublish={canPublish}
+            onDirtyChange={setIsDirty}
+          />
+        )
       )}
     </div>
+  );
+}
+
+// Fetches a question's full record on demand (loadQuestionDetailForAdminAction)
+// once it's selected - the admin list is now real-DB-paginated (Task 3b),
+// so unlike the small catalogs the full record was never already in
+// memory. Keyed by id in the parent so switching questions always starts a
+// fresh fetch rather than reusing stale state.
+function QuestionDetailLoader({
+  id,
+  topics,
+  canManage,
+  canPublish,
+  onDirtyChange,
+}: {
+  id: string;
+  topics: TopicOption[];
+  canManage: boolean;
+  canPublish: boolean;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
+  const [state, setState] = useState<
+    | { status: "loading" }
+    | { status: "error"; error: string }
+    | { status: "ready"; question: QuestionRow }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    // No "reset to loading" call needed here: the parent keys this
+    // component by id (see QuestionEditor's `key={effectiveId}`), so a
+    // changed id always remounts a fresh instance - this effect only ever
+    // runs once per mount, with state already starting at "loading".
+    let cancelled = false;
+    loadQuestionDetailForAdminAction({ id }).then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setState({ status: "error", error: result.error });
+        return;
+      }
+      setState({ status: "ready", question: result.data });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (state.status === "loading") {
+    return (
+      <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+        Loading question…
+      </div>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+        {state.error}
+      </div>
+    );
+  }
+  return (
+    <QuestionForm
+      question={state.question}
+      topics={topics}
+      canManage={canManage}
+      canPublish={canPublish}
+      onDirtyChange={onDirtyChange}
+    />
   );
 }
 
@@ -198,7 +335,13 @@ function parseJsonOrError(raw: string): { ok: true; value: unknown } | { ok: fal
   }
 }
 
-function NewQuestionForm({ topics }: { topics: TopicOption[] }) {
+function NewQuestionForm({
+  topics,
+  onDirtyChange,
+}: {
+  topics: TopicOption[];
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [format, setFormat] = useState<QuestionFormat>("single_select");
   const [topicId, setTopicId] = useState<string | null>(null);
@@ -210,6 +353,21 @@ function NewQuestionForm({ topics }: { topics: TopicOption[] }) {
   const [answerText, setAnswerText] = useState(
     JSON.stringify(QUESTION_ANSWER_TEMPLATES.single_select, null, 2),
   );
+
+  // Derived from this form's own baseline for the current format (changing
+  // format resets payload/answer text to that format's template too, and a
+  // successful create resets everything back to this same baseline) - see
+  // Worlds' NewWorldForm for why derived beats an effect-driven flag here.
+  const dirty =
+    topicId !== null ||
+    LANGUAGES.some((l) => prompt[l] !== "") ||
+    LANGUAGES.some((l) => explanation[l] !== "") ||
+    payloadText !== JSON.stringify(QUESTION_PAYLOAD_TEMPLATES[format], null, 2) ||
+    answerText !== JSON.stringify(QUESTION_ANSWER_TEMPLATES[format], null, 2);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function changeFormat(newFormat: QuestionFormat) {
     setFormat(newFormat);
@@ -307,11 +465,13 @@ function QuestionForm({
   topics,
   canManage,
   canPublish,
+  onDirtyChange,
 }: {
   question: QuestionRow;
   topics: TopicOption[];
   canManage: boolean;
   canPublish: boolean;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [topicId, setTopicId] = useState<string | null>(question.topicId);
@@ -319,6 +479,28 @@ function QuestionForm({
   const [explanation, setExplanation] = useState<LocalizedText>(question.explanation);
   const [payloadText, setPayloadText] = useState(JSON.stringify(question.payload, null, 2));
   const [answerText, setAnswerText] = useState(JSON.stringify(question.answer, null, 2));
+
+  // The "pristine" baseline, moved forward after each successful save -
+  // see Worlds' WorldForm for why comparing against the `question` prop
+  // directly would false-positive "still dirty" right after a save.
+  const [savedSnapshot, setSavedSnapshot] = useState({
+    topicId: question.topicId,
+    prompt: question.prompt,
+    explanation: question.explanation,
+    payloadText: JSON.stringify(question.payload, null, 2),
+    answerText: JSON.stringify(question.answer, null, 2),
+  });
+
+  const dirty =
+    topicId !== savedSnapshot.topicId ||
+    LANGUAGES.some((l) => prompt[l] !== savedSnapshot.prompt[l]) ||
+    LANGUAGES.some((l) => explanation[l] !== savedSnapshot.explanation[l]) ||
+    payloadText !== savedSnapshot.payloadText ||
+    answerText !== savedSnapshot.answerText;
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = question.status === "draft";
   const editable = canManage && isDraft;
@@ -354,6 +536,7 @@ function QuestionForm({
         return;
       }
       toast.success("Draft saved");
+      setSavedSnapshot({ topicId, prompt, explanation, payloadText, answerText });
     });
   }
 
@@ -381,6 +564,7 @@ function QuestionForm({
         return;
       }
       toast.success("Fix saved - live immediately");
+      setSavedSnapshot((prev) => ({ ...prev, prompt, explanation, payloadText, answerText }));
     });
   }
 

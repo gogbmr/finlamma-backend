@@ -4,16 +4,50 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { cn } from "@/lib/cn";
 import { getStaffMember } from "@/lib/auth";
+import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getWorldEditorData } from "@/server/worlds/service";
 import { getLessonEditorData } from "@/server/lessons/service";
 import { LessonEditor } from "./lesson-editor";
 
+type LessonRow = Awaited<ReturnType<typeof getLessonEditorData>>[number];
+
+// Task 3b: same in-memory recipe as Task 3a's small catalogs - see
+// src/lib/admin/paginate.ts. getLessonEditorData(worldId) itself is
+// unchanged; it's still called once per selected world, exactly as before,
+// and this only slices that one world's result. Lessons keeps its world
+// selector (the Link chips below) alongside the new search/sort/filter/
+// pagination - the two coexist via extraParams (worldId) on every
+// generated link, so paging/sorting/searching never silently drops you
+// onto a different world.
+const LESSON_SORT_COMPARATORS: Record<string, (a: LessonRow, b: LessonRow) => number> = {
+  chapter: (a, b) => a.chapter - b.chapter || a.step - b.step,
+  step: (a, b) => a.step - b.step || a.chapter - b.chapter,
+  kind: (a, b) => a.kind.localeCompare(b.kind),
+  status: (a, b) => a.status.localeCompare(b.status),
+};
+
+function lessonSearchText(l: LessonRow): string {
+  return `${l.title.en} ${l.title.hi} ${l.title.hx}`;
+}
+
+type StatusFilter = "draft" | "published" | null;
+
+function parseStatusFilter(raw: string | string[] | undefined): StatusFilter {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "draft" || value === "published" ? value : null;
+}
+
+function parseKindFilter(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value ?? null;
+}
+
 export default async function LessonsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ worldId?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const staff = await getStaffMember();
   if (!staff) {
@@ -29,7 +63,8 @@ export default async function LessonsPage({
   }
 
   const worlds = await getWorldEditorData();
-  const { worldId: requestedWorldId } = await searchParams;
+  const params = await searchParams;
+  const requestedWorldId = Array.isArray(params.worldId) ? params.worldId[0] : params.worldId;
   const selectedWorld = worlds.find((w) => w.id === requestedWorldId) ?? worlds[0];
 
   if (!selectedWorld) {
@@ -60,6 +95,25 @@ export default async function LessonsPage({
   // warn staff when they've drifted apart. See docs/ARCHITECTURE.md D19.
   const worldMentorKey = mentors.find((m) => m.id === selectedWorld.mentorId)?.key ?? null;
 
+  const pageState = readPageParams(params, {
+    defaultSort: "chapter",
+    allowedSorts: Object.keys(LESSON_SORT_COMPARATORS),
+  });
+  const statusFilter = parseStatusFilter(params.status);
+  const kindFilter = parseKindFilter(params.kind);
+
+  const paged = paginateRows(lessons, {
+    search: pageState.q,
+    searchText: lessonSearchText,
+    filter: (l) =>
+      (!statusFilter || l.status === statusFilter) && (!kindFilter || l.kind === kindFilter),
+    sort: pageState.sort,
+    dir: pageState.dir,
+    comparators: LESSON_SORT_COMPARATORS,
+    page: pageState.page,
+    pageSize: pageState.pageSize,
+  });
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -89,19 +143,18 @@ export default async function LessonsPage({
       <LessonEditor
         worldId={selectedWorld.id}
         worldMentorKey={worldMentorKey}
-        lessons={lessons.map((l) => ({
-          id: l.id,
-          chapter: l.chapter,
-          step: l.step,
-          kind: l.kind,
-          title: l.title,
-          blurb: l.blurb,
-          content: l.content,
-          status: l.status,
-          inProgressLearnerCount: l.inProgressLearnerCount,
-        }))}
+        lessons={paged.rows}
         canManage={canManage}
         canPublish={canPublish}
+        total={paged.total}
+        page={paged.page}
+        pageCount={paged.pageCount}
+        pageSize={paged.pageSize}
+        q={pageState.q}
+        sort={pageState.sort}
+        dir={pageState.dir}
+        kind={kindFilter}
+        status={statusFilter}
       />
     </div>
   );

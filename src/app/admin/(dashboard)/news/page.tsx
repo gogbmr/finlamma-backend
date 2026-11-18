@@ -10,11 +10,16 @@ import {
   DB_CONCURRENCY_LIMIT,
   runWithConcurrencyLimit,
 } from "@/lib/concurrency-limit";
+import { readPageParams } from "@/lib/admin/paginate";
 import { roleHasPermission } from "@/server/staff/repo";
+import {
+  NEWS_ADMIN_SORT_COLUMNS,
+  listNewsStoriesForAdmin,
+  type NewsCategory,
+} from "@/server/news/admin-queries";
 import {
   getNewsAuditLogForAdmin,
   getNewsKpisForAdmin,
-  getNewsPipelineForAdmin,
   getNewsQuizGeneratorSettings,
 } from "@/server/news/service";
 import {
@@ -27,7 +32,48 @@ import { PipelineTable } from "./pipeline-table";
 import { PulseCheckScoringEditor } from "./pulse-check-scoring-editor";
 import { QuizGeneratorSettingsEditor } from "./quiz-generator-settings-editor";
 
-export default async function NewsDeskPage() {
+// Task 3b: the pipeline table below is now real-DB-paginated (news_stories
+// is a growing table, unlike Task 3a's small catalogs) via
+// src/server/news/admin-queries.ts, a new admin-only file. KPIs, the
+// engagement chart, quiz-gen/Pulse Check settings and the audit feed below
+// are all untouched - only the pipeline table itself changed.
+type NewsStatusFilter = "draft" | "published" | "hidden" | null;
+
+function parseStatusFilter(raw: string | string[] | undefined): NewsStatusFilter {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "draft" || value === "published" || value === "hidden" ? value : null;
+}
+
+const NEWS_CATEGORY_VALUES = [
+  "rbi_rates",
+  "inflation",
+  "stock_market_basics",
+  "ipos_new_listings",
+  "mutual_funds",
+  "banking",
+  "scams_fraud",
+  "government_budget",
+  "global_markets",
+  "currency",
+] as const;
+
+function parseCategoryFilter(raw: string | string[] | undefined): NewsCategory | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return (NEWS_CATEGORY_VALUES as readonly string[]).includes(value ?? "")
+    ? (value as NewsCategory)
+    : null;
+}
+
+function parseTopicIdFilter(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value ?? null;
+}
+
+export default async function NewsDeskPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
   const staff = await getStaffMember();
   if (!staff) {
     return <Forbidden message="Staff sign-in required." />;
@@ -44,9 +90,18 @@ export default async function NewsDeskPage() {
     );
   }
 
+  const params = searchParams ? await searchParams : {};
+  const pageState = readPageParams(params, {
+    defaultSort: "createdAt",
+    allowedSorts: NEWS_ADMIN_SORT_COLUMNS,
+  });
+  const statusFilter = parseStatusFilter(params.status);
+  const categoryFilter = parseCategoryFilter(params.category);
+  const topicIdFilter = parseTopicIdFilter(params.topicId);
+
   const [
     kpis,
-    stories,
+    pipelinePage,
     topics,
     quizSettings,
     pulseCheckScoring,
@@ -55,7 +110,17 @@ export default async function NewsDeskPage() {
   ] = await runWithConcurrencyLimit(
     [
       () => getNewsKpisForAdmin(),
-      () => getNewsPipelineForAdmin(),
+      () =>
+        listNewsStoriesForAdmin({
+          page: pageState.page,
+          pageSize: pageState.pageSize,
+          sort: pageState.sort as (typeof NEWS_ADMIN_SORT_COLUMNS)[number],
+          dir: pageState.dir,
+          q: pageState.q,
+          status: statusFilter,
+          topicId: topicIdFilter,
+          category: categoryFilter,
+        }),
       () => listActiveTopicsForPicker(),
       () => getNewsQuizGeneratorSettings(),
       () => getPulseCheckScoring(),
@@ -64,6 +129,7 @@ export default async function NewsDeskPage() {
     ],
     DB_CONCURRENCY_LIMIT,
   );
+  const stories = pipelinePage.rows;
 
   const pipelineStatusBadge =
     kpis.draftCount === 0 && kpis.undraftedCount === 0
@@ -118,23 +184,20 @@ export default async function NewsDeskPage() {
       />
 
       <PipelineTable
-        stories={stories.map((s) => ({
-          id: s.id,
-          headline: (
-            s.content as { headline: { en: string; hi: string; hx: string } }
-          ).headline,
-          outlet: s.outlet,
-          category: s.category,
-          qualityGrade: s.qualityGrade,
-          qualityGradeOverride: s.qualityGradeOverride,
-          topicId: s.topicId,
-          status: s.status,
-          adviceLikeWarnings: s.adviceLikeWarnings,
-          createdAt: s.createdAt,
-        }))}
+        stories={stories}
         topics={topics.map((t) => ({ id: t.id, name: t.name }))}
         canManage={canManage}
         canPublish={canPublish}
+        total={pipelinePage.total}
+        page={pipelinePage.page}
+        pageCount={pipelinePage.pageCount}
+        pageSize={pageState.pageSize}
+        q={pageState.q}
+        sort={pageState.sort ?? "createdAt"}
+        dir={pageState.dir}
+        status={statusFilter}
+        category={categoryFilter}
+        topicId={topicIdFilter}
       />
 
       {/* NW-38..42's quiz generator settings and D51's Pulse Check scoring/

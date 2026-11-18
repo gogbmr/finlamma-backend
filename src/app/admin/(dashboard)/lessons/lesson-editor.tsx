@@ -1,7 +1,7 @@
 "use client";
 
 import { BookOpen } from "lucide-react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
@@ -29,6 +29,7 @@ import {
   updateLessonDraftAction,
 } from "./actions";
 import { LessonPreview } from "./lesson-preview";
+import { LessonsTable } from "./lessons-table";
 
 type PreviewData = Extract<Awaited<ReturnType<typeof previewLessonAction>>, { ok: true }>["data"];
 
@@ -72,16 +73,50 @@ export function LessonEditor({
   lessons,
   canManage,
   canPublish,
+  total,
+  page,
+  pageCount,
+  pageSize,
+  q,
+  sort,
+  dir,
+  kind,
+  status,
 }: {
   worldId: string;
   worldMentorKey: string | null;
   lessons: LessonRow[];
   canManage: boolean;
   canPublish: boolean;
+  total: number;
+  page: number;
+  pageCount: number;
+  pageSize: number;
+  q: string;
+  sort: string | null;
+  dir: "asc" | "desc";
+  kind: string | null;
+  status: "draft" | "published" | null;
 }) {
   const [selectedId, setSelectedId] = useState<string | "new" | null>(lessons[0]?.id ?? "new");
+  // Few-line confirm() guard, same pattern as every other entity table -
+  // doesn't cover Prev/Next/search/sort/kind/status (plain <Link>s),
+  // deferred to Task 4.
+  const [isDirty, setIsDirty] = useState(false);
 
-  if (lessons.length === 0 && !canManage) {
+  function trySelect(id: string | "new") {
+    if (
+      isDirty &&
+      typeof window !== "undefined" &&
+      !window.confirm("Discard unsaved changes to this lesson?")
+    ) {
+      return;
+    }
+    setIsDirty(false);
+    setSelectedId(id);
+  }
+
+  if (total === 0 && !canManage) {
     return (
       <EmptyState
         icon={BookOpen}
@@ -91,28 +126,52 @@ export function LessonEditor({
     );
   }
 
+  // `lessons` is only the current page - a selection made on a page that's
+  // since changed under it falls back to this page's first row.
+  const effectiveId: string | "new" =
+    selectedId === "new" || lessons.some((l) => l.id === selectedId)
+      ? (selectedId as string | "new")
+      : lessons[0]?.id ?? "new";
+
   return (
     <div className="space-y-4">
-      <Select value={selectedId ?? "new"} onValueChange={setSelectedId}>
-        <SelectTrigger className="w-80">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {lessons.map((l) => (
-            <SelectItem key={l.id} value={l.id}>
-              ch{l.chapter}/step{l.step} - {l.title.en || "(untitled)"} ({KIND_LABELS[l.kind]},{" "}
-              {l.status})
-            </SelectItem>
-          ))}
-          {canManage && <SelectItem value="new">+ New lesson</SelectItem>}
-        </SelectContent>
-      </Select>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">Select a lesson below to edit it.</p>
+        {canManage && (
+          <Button type="button" size="sm" onClick={() => trySelect("new")}>
+            + New lesson
+          </Button>
+        )}
+      </div>
 
-      {selectedId === "new" && canManage ? (
-        <NewLessonForm worldId={worldId} />
+      <LessonsTable
+        worldId={worldId}
+        rows={lessons.map((l) => ({
+          id: l.id,
+          chapter: l.chapter,
+          step: l.step,
+          kind: l.kind,
+          title: l.title,
+          status: l.status,
+        }))}
+        total={total}
+        page={page}
+        pageCount={pageCount}
+        pageSize={pageSize}
+        q={q}
+        sort={sort}
+        dir={dir}
+        kind={kind}
+        status={status}
+        selectedId={effectiveId}
+        onSelect={trySelect}
+      />
+
+      {effectiveId === "new" && canManage ? (
+        <NewLessonForm worldId={worldId} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
-          const lesson = lessons.find((l) => l.id === selectedId);
+          const lesson = lessons.find((l) => l.id === effectiveId);
           if (!lesson) return null;
           return (
             <LessonForm
@@ -122,6 +181,7 @@ export function LessonEditor({
               lesson={lesson}
               canManage={canManage}
               canPublish={canPublish}
+              onDirtyChange={setIsDirty}
             />
           );
         })()
@@ -173,7 +233,13 @@ function parseContentOrError(raw: string): { ok: true; value: Record<string, unk
   }
 }
 
-function NewLessonForm({ worldId }: { worldId: string }) {
+function NewLessonForm({
+  worldId,
+  onDirtyChange,
+}: {
+  worldId: string;
+  onDirtyChange: (dirty: boolean) => void;
+}) {
   const [isPending, startTransition] = useTransition();
   const [chapter, setChapter] = useState("");
   const [step, setStep] = useState("");
@@ -183,6 +249,22 @@ function NewLessonForm({ worldId }: { worldId: string }) {
   const [contentText, setContentText] = useState(
     JSON.stringify(LESSON_CONTENT_TEMPLATES.video, null, 2),
   );
+
+  // Derived from this form's own empty baseline - contentText's baseline is
+  // the current kind's template (changeKind resets it there too), not "",
+  // so this stays clean right after a kind switch and right after a
+  // successful create resets everything back to this same baseline. See
+  // Worlds' NewWorldForm for why derived beats an effect-driven flag here.
+  const dirty =
+    chapter !== "" ||
+    step !== "" ||
+    LANGUAGES.some((l) => title[l] !== "") ||
+    LANGUAGES.some((l) => blurb[l] !== "") ||
+    contentText !== JSON.stringify(LESSON_CONTENT_TEMPLATES[kind], null, 2);
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   function changeKind(newKind: CreatableKind) {
     setKind(newKind);
@@ -271,12 +353,14 @@ function LessonForm({
   lesson,
   canManage,
   canPublish,
+  onDirtyChange,
 }: {
   worldId: string;
   worldMentorKey: string | null;
   lesson: LessonRow;
   canManage: boolean;
   canPublish: boolean;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const [chapter, setChapter] = useState(String(lesson.chapter));
@@ -286,6 +370,28 @@ function LessonForm({
   const [contentText, setContentText] = useState(JSON.stringify(lesson.content, null, 2));
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
+
+  // The "pristine" baseline, moved forward after each successful save -
+  // see Worlds' WorldForm for why comparing against the `lesson` prop
+  // directly would false-positive "still dirty" right after a save.
+  const [savedSnapshot, setSavedSnapshot] = useState({
+    chapter: String(lesson.chapter),
+    step: String(lesson.step),
+    title: lesson.title,
+    blurb: lesson.blurb,
+    contentText: JSON.stringify(lesson.content, null, 2),
+  });
+
+  const dirty =
+    chapter !== savedSnapshot.chapter ||
+    step !== savedSnapshot.step ||
+    LANGUAGES.some((l) => title[l] !== savedSnapshot.title[l]) ||
+    LANGUAGES.some((l) => blurb[l] !== savedSnapshot.blurb[l]) ||
+    contentText !== savedSnapshot.contentText;
+
+  useEffect(() => {
+    onDirtyChange(dirty);
+  }, [dirty, onDirtyChange]);
 
   const isDraft = lesson.status === "draft";
   const editable = canManage && isDraft;
@@ -331,6 +437,7 @@ function LessonForm({
         return;
       }
       toast.success("Draft saved");
+      setSavedSnapshot({ chapter, step, title, blurb, contentText });
     });
   }
 
@@ -382,6 +489,7 @@ function LessonForm({
         return;
       }
       toast.success("Fix saved - live immediately");
+      setSavedSnapshot((prev) => ({ ...prev, title, blurb, contentText }));
     });
   }
 

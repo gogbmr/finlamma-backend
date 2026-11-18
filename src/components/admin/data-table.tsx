@@ -113,10 +113,17 @@ export type AdminListUrlState = {
 // being overridden. Changing q/sort/dir/pageSize always resets to page 1
 // (a changed filter restarting pagination is the only sane default); an
 // explicit { page } override is how Prev/Next move without resetting.
+// `extraParams` carries params this generic state doesn't know about but
+// that must survive every link anyway - e.g. Lessons' ?worldId=, a parent
+// scope the list is nested under, not itself a list param. Entity-specific
+// quick-filters (status, active, ...) still go through each table's own
+// small href builder, same as before - this is only for a parent scope
+// that every link (sort, search, pager) must carry.
 export function buildAdminListHref(
   pathname: string,
   state: AdminListUrlState,
   overrides: Partial<AdminListUrlState> & { page?: number },
+  extraParams?: Record<string, string>,
 ): string {
   const merged = {
     q: overrides.q ?? state.q,
@@ -126,6 +133,9 @@ export function buildAdminListHref(
     page: overrides.page ?? 1,
   };
   const sp = new URLSearchParams();
+  if (extraParams) {
+    for (const [key, value] of Object.entries(extraParams)) sp.set(key, value);
+  }
   if (merged.q) sp.set("q", merged.q);
   if (merged.sort) sp.set("sort", merged.sort);
   if (merged.dir === "desc") sp.set("dir", "desc");
@@ -143,17 +153,19 @@ export function DataTableSortHeader({
   field,
   pathname,
   state,
+  extraParams,
 }: {
   label: string;
   field: string;
   pathname: string;
   state: AdminListUrlState;
+  extraParams?: Record<string, string>;
 }) {
   const active = state.sort === field;
   const nextDir: "asc" | "desc" = active && state.dir === "asc" ? "desc" : "asc";
   return (
     <Link
-      href={buildAdminListHref(pathname, state, { sort: field, dir: nextDir })}
+      href={buildAdminListHref(pathname, state, { sort: field, dir: nextDir }, extraParams)}
       className="inline-flex items-center gap-1 hover:text-foreground"
     >
       {label}
@@ -171,17 +183,19 @@ export function DataTableSearchForm({
   pathname,
   state,
   placeholder = "Search…",
+  extraParams,
 }: {
   pathname: string;
   state: AdminListUrlState;
   placeholder?: string;
+  extraParams?: Record<string, string>;
 }) {
   const router = useRouter();
   const [value, setValue] = useState(state.q);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    router.push(buildAdminListHref(pathname, state, { q: value }));
+    router.push(buildAdminListHref(pathname, state, { q: value }, extraParams));
   }
 
   return (
@@ -203,7 +217,7 @@ export function DataTableSearchForm({
       </Button>
       {state.q && (
         <Link
-          href={buildAdminListHref(pathname, state, { q: "" })}
+          href={buildAdminListHref(pathname, state, { q: "" }, extraParams)}
           className="text-xs text-muted-foreground underline"
         >
           Clear
@@ -223,6 +237,7 @@ export function DataTablePagination({
   pageCount,
   total,
   noun = "results",
+  extraParams,
 }: {
   pathname: string;
   state: AdminListUrlState;
@@ -230,6 +245,7 @@ export function DataTablePagination({
   pageCount: number;
   total: number;
   noun?: string;
+  extraParams?: Record<string, string>;
 }) {
   if (total === 0) return null;
 
@@ -244,7 +260,7 @@ export function DataTablePagination({
       <div className="flex items-center gap-1">
         {page > 1 ? (
           <Link
-            href={buildAdminListHref(pathname, state, { page: page - 1 })}
+            href={buildAdminListHref(pathname, state, { page: page - 1 }, extraParams)}
             className={cn(pagerButton, "hover:bg-accent")}
           >
             <ChevronLeft className="h-3.5 w-3.5" aria-hidden /> Prev
@@ -256,7 +272,7 @@ export function DataTablePagination({
         )}
         {page < pageCount ? (
           <Link
-            href={buildAdminListHref(pathname, state, { page: page + 1 })}
+            href={buildAdminListHref(pathname, state, { page: page + 1 }, extraParams)}
             className={cn(pagerButton, "hover:bg-accent")}
           >
             Next <ChevronRight className="h-3.5 w-3.5" aria-hidden />
