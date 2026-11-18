@@ -26,7 +26,7 @@ export default async function AnalyticsDashboardPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Analytics" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Analytics" }]}
         icon={BarChart3}
         title="Analytics"
         description="Aggregate business patterns only - never an individual learner's activity. Computed directly from our own database (cached briefly), refreshed every few minutes. For behavioural/funnel analysis, see the PostHog dashboard directly."

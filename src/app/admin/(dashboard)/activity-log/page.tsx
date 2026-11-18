@@ -40,7 +40,7 @@ export default async function ActivityLogPage({
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Activity Log" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Activity Log" }]}
         icon={ScrollText}
         title="Activity Log"
         description="Append-only record of staff and user actions. Nothing here can be edited or deleted."

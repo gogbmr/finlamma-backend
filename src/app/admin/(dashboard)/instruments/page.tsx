@@ -26,7 +26,7 @@ export default async function InstrumentsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Instruments" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Instruments" }]}
         icon={TrendingUp}
         title="Instruments"
         description="The NSE stocks learners can paper-trade. No draft/publish split - edits apply immediately, same trust tier as a content hotfix. Halting a symbol lives in the Ops console (Phase 4 Checkpoint 9), not here."

@@ -27,7 +27,7 @@ export default async function CoachNotesPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Coach Notes" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Coach Notes" }]}
         icon={MessageSquareText}
         title="Coach note templates"
         description="One published template per category is picked at random to fill in a learner's weekly report card, with their own numbers substituted for the {{placeholders}}."

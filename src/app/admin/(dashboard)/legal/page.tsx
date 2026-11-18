@@ -36,7 +36,7 @@ export default async function LegalPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Legal" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Legal" }]}
         title="Legal documents"
         description="Terms, Privacy and Risk-disclosure text - staff-editable, versioned. Only super_admin can publish. Publishing a new version prompts every user (and every consenting parent) to re-accept it. v1 seeds these as DRAFT placeholders until the outside legal review in docs/ROADMAP.md's pre-launch checklist - never publish real text without that review."
       />

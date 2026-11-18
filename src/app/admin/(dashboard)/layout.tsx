@@ -6,7 +6,8 @@ import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import { getStaffMember } from "@/lib/auth";
 import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
-import { getPermissionKeysForRole, getRoleById } from "@/server/staff/repo";
+import { computeAdminNavVisibility } from "@/lib/admin/nav-visibility";
+import { getRoleById } from "@/server/staff/repo";
 import { getMarketControls } from "@/server/trading/service";
 import {
   AdminNavStrip,
@@ -113,13 +114,13 @@ export default async function DashboardLayout({
   // returns every permission key the role holds in one query; getRoleById
   // runs alongside it - 2 queries total, comfortably under max: 4, no
   // limiter needed here.
-  let grantedKeys: Set<string>;
+  let visibility: AdminNavVisibility;
   let role: Awaited<ReturnType<typeof getRoleById>>;
   try {
-    [grantedKeys, role] = await withTimingAndTimeout(
+    [visibility, role] = await withTimingAndTimeout(
       "permission keys + role (2 queries, was 23)",
       Promise.all([
-        getPermissionKeysForRole(staff.roleId),
+        computeAdminNavVisibility(staff.roleId),
         getRoleById(staff.roleId),
       ]),
       ADMIN_SHELL_TIMEOUT_MS,
@@ -127,32 +128,6 @@ export default async function DashboardLayout({
   } catch (err) {
     return <AdminShellFailure error={err} />;
   }
-
-  const visibility: AdminNavVisibility = {
-    worlds: grantedKeys.has("world.manage") || grantedKeys.has("world.publish"),
-    lessons:
-      grantedKeys.has("lesson.manage") || grantedKeys.has("lesson.publish"),
-    questions:
-      grantedKeys.has("question.manage") || grantedKeys.has("question.publish"),
-    mentors:
-      grantedKeys.has("mentor.manage") || grantedKeys.has("mentor.publish"),
-    consent: grantedKeys.has("consent.view"),
-    doubtZoneModeration: grantedKeys.has("doubt_zone.moderate"),
-    staff: grantedKeys.has("staff.manage"),
-    activityLog: grantedKeys.has("activity_log.view"),
-    legal: grantedKeys.has("legal.manage"),
-    settings: grantedKeys.has("settings.manage"),
-    badges: grantedKeys.has("economy.manage"),
-    rewards: grantedKeys.has("economy.manage"),
-    competitions: grantedKeys.has("economy.manage"),
-    coachNotes:
-      grantedKeys.has("coach_note.manage") ||
-      grantedKeys.has("coach_note.publish"),
-    instruments: grantedKeys.has("instrument.manage"),
-    opsConsole: grantedKeys.has("trading.ops"),
-    newsDesk: grantedKeys.has("news.manage") || grantedKeys.has("news.publish"),
-    analytics: grantedKeys.has("analytics.view"),
-  };
 
   // Persistent halt banner (docs/ARCHITECTURE.md D47, founder's requirement
   // 2: "make it obvious in the UI when a halt is active"). Shown on EVERY

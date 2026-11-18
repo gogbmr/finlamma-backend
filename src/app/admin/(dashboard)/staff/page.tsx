@@ -19,7 +19,7 @@ export default async function StaffPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin/staff" }, { label: "Staff" }]}
+        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Staff" }]}
         icon={Users}
         title="Staff"
         description="Manage who has access to this admin dashboard. Inviting someone sends them a Clerk invite email - they appear here automatically once they accept and sign up."
