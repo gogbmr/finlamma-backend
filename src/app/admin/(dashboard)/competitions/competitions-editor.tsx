@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import {
+  type ChangedFieldInput,
+  ConfirmChangesDialog,
+  diffChangedFields,
+} from "@/components/admin/confirm-changes-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -149,7 +154,53 @@ function CompetitionForm({
     onDirtyChange(dirty);
   }, [dirty, onDirtyChange]);
 
-  function save() {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  function instrumentLabel(id: string): string {
+    const i = instruments.find((x) => x.id === id);
+    return i ? `${i.symbol} - ${i.name}` : id;
+  }
+  function badgeLabel(id: string | null): string {
+    if (!id) return "None";
+    return badges.find((b) => b.id === id)?.name.en ?? id;
+  }
+
+  // Task 7: review-before-save only applies to editing an EXISTING
+  // competition - creating a brand-new one has no "old" value worth
+  // confirming against. This component always remounts (a new `key`) on
+  // a successful save (see the comment above), so comparing live state
+  // directly against the original `competition` prop is safe - there's no
+  // "saved once, kept editing the same instance" case that would need a
+  // separately-advancing snapshot the way Badges/Rewards do.
+  const changedFields: ChangedFieldInput[] = competition
+    ? [
+        { label: "Instrument", oldValue: instrumentLabel(competition.instrumentId), newValue: instrumentLabel(instrumentId) },
+        // virtualCapitalPaise is explicitly NOT V Money (D57) - a sandbox
+        // rupee balance - so this is pre-formatted as plain rupee text,
+        // never the "vmoney" kind/label.
+        {
+          label: "Virtual capital",
+          oldValue: `₹${(competition.virtualCapitalPaise / 100).toLocaleString("en-IN")}`,
+          newValue: `₹${capitalRupees.toLocaleString("en-IN")}`,
+        },
+        { label: "Window start", oldValue: toDatetimeLocal(competition.windowStart), newValue: windowStart },
+        { label: "Window end", oldValue: toDatetimeLocal(competition.windowEnd), newValue: windowEnd },
+        { label: "1st prize (VM)", oldValue: competition.prizes[0]!.vmAmount, newValue: prizes[0]!.vmAmount, kind: "vmoney" },
+        { label: "1st prize badge", oldValue: badgeLabel(competition.prizes[0]!.badgeId), newValue: badgeLabel(prizes[0]!.badgeId) },
+        { label: "2nd-3rd prize (VM)", oldValue: competition.prizes[1]!.vmAmount, newValue: prizes[1]!.vmAmount, kind: "vmoney" },
+        { label: "2nd-3rd prize badge", oldValue: badgeLabel(competition.prizes[1]!.badgeId), newValue: badgeLabel(prizes[1]!.badgeId) },
+        { label: "4th-10th prize (VM)", oldValue: competition.prizes[2]!.vmAmount, newValue: prizes[2]!.vmAmount, kind: "vmoney" },
+        { label: "4th-10th prize badge", oldValue: badgeLabel(competition.prizes[2]!.badgeId), newValue: badgeLabel(prizes[2]!.badgeId) },
+        { label: "Name (en)", oldValue: competition.name.en, newValue: name.en },
+        { label: "Name (hi)", oldValue: competition.name.hi, newValue: name.hi },
+        { label: "Name (hx)", oldValue: competition.name.hx, newValue: name.hx },
+        { label: "Rules (en)", oldValue: competition.rules.en, newValue: rules.en },
+        { label: "Rules (hi)", oldValue: competition.rules.hi, newValue: rules.hi },
+        { label: "Rules (hx)", oldValue: competition.rules.hx, newValue: rules.hx },
+      ]
+    : [];
+
+  function doSave() {
     startTransition(async () => {
       const input = {
         name,
@@ -171,6 +222,14 @@ function CompetitionForm({
       setDirty(false);
       onSaved();
     });
+  }
+
+  function save() {
+    if (competition) {
+      setConfirmOpen(true);
+      return;
+    }
+    doSave();
   }
 
   function publish() {
@@ -240,6 +299,20 @@ function CompetitionForm({
           </Button>
         )}
       </div>
+
+      {competition && (
+        <ConfirmChangesDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={`Save changes to "${competition.name.en || competition.id}"?`}
+          fields={diffChangedFields(changedFields)}
+          pending={isPending}
+          onConfirm={() => {
+            setConfirmOpen(false);
+            doSave();
+          }}
+        />
+      )}
     </div>
   );
 }

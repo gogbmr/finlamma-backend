@@ -2,6 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import {
+  type ChangedFieldInput,
+  ConfirmChangesDialog,
+  diffChangedFields,
+} from "@/components/admin/confirm-changes-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,8 +33,32 @@ export function ArenaLeagueSettingsEditor({
 }) {
   const [isPending, startTransition] = useTransition();
   const [form, setForm] = useState(settings);
+  // The "pristine" baseline to diff against - moves forward after a
+  // successful save (this component is never remounted/re-keyed by its
+  // parent, unlike Competitions' CompetitionForm), same reasoning as
+  // Badges'/Rewards' savedSnapshot.
+  const [saved, setSaved] = useState(settings);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  function save() {
+  function badgeLabel(id: string | null): string {
+    if (!id) return "None - pay VM only, no badge";
+    return externalBadges.find((b) => b.id === id)?.name.en ?? id;
+  }
+
+  const changedFields: ChangedFieldInput[] = [
+    { label: "Promote-zone reward", oldValue: saved.promoteVmReward, newValue: form.promoteVmReward, kind: "vmoney" },
+    { label: "Safe-zone reward", oldValue: saved.safeVmReward, newValue: form.safeVmReward, kind: "vmoney" },
+    { label: "Weekly VM cap per learner", oldValue: saved.weeklyVmCap, newValue: form.weeklyVmCap, kind: "vmoney" },
+    // XP, not V Money - never the "vmoney" kind/label.
+    {
+      label: "Cheer weekly cap, per sender-receiver pair (XP)",
+      oldValue: saved.cheerWeeklySenderReceiverCap,
+      newValue: form.cheerWeeklySenderReceiverCap,
+    },
+    { label: "Promote-zone crest badge", oldValue: badgeLabel(saved.crestBadgeId), newValue: badgeLabel(form.crestBadgeId) },
+  ];
+
+  function doSave() {
     startTransition(async () => {
       const result = await updateArenaLeagueSettingsAction(form);
       if (!result.ok) {
@@ -37,7 +66,12 @@ export function ArenaLeagueSettingsEditor({
         return;
       }
       toast.success("Arena league settings saved");
+      setSaved(form);
     });
+  }
+
+  function save() {
+    setConfirmOpen(true);
   }
 
   return (
@@ -125,6 +159,18 @@ export function ArenaLeagueSettingsEditor({
       <Button type="button" onClick={save} disabled={isPending}>
         Save
       </Button>
+
+      <ConfirmChangesDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Save Arena league settings?"
+        fields={diffChangedFields(changedFields)}
+        pending={isPending}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          doSave();
+        }}
+      />
     </div>
   );
 }
