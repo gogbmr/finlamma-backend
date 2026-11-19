@@ -48,15 +48,15 @@ pnpm contract       # regenerate openapi/openapi.json AND docs/API_ENDPOINTS.md
 ```
 Create these scripts in package.json during project setup if they don't exist.
 
-**Known limitation, dev-only (RESOLVED for production 2026-10-06/07 - see below)**: local `pnpm dev`
-returns 500 on every `/admin/*` route with a misleading Clerk "middleware might be misplaced" error,
-in this Next 16.3.5 + `@clerk/nextjs` 7.9.4 combination (confirmed: `middleware.ts` at the project
-root is correct, and renaming it to `proxy.ts` doesn't help either - both tested and reverted). This
-is a genuine Next 16/Clerk dev-mode fragility (likely the `middleware.ts`→`proxy.ts` migration being
-actively unstable upstream), separate from the production incident below even though both surfaced in
-the same subsystem a day apart - `docs/STATUS.md`'s 2026-10-07 postmortem has a "False lead #1"
-section spelling out why they're not the same bug. `pnpm build && pnpm start` works correctly, as
-does the Vercel preview, for local admin testing until this dev-mode issue is separately revisited.
+**Fixed 2026-11-19**: local `pnpm dev` used to return a misleading Clerk "middleware might be
+misplaced" error on every `/admin/*` route (root `middleware.ts`, Next 16.3.5+ / `@clerk/nextjs`
+7.9.4+). Root cause confirmed: `next dev` in this Next 16 line only runs middleware reliably from
+`src/middleware.ts`, not a root-level `middleware.ts`, even though root placement is otherwise
+valid per Next's own docs and `next build`/`next start`/Vercel were unaffected either way. Fix:
+`middleware.ts` now lives at `src/middleware.ts` (content unchanged, moved as a plain git rename).
+Verified locally: signed-in staff session, saving, and hot reload all work under `pnpm dev`. See
+`docs/STATUS.md`'s 2026-11-19 entry for the full history, including the patch-bump attempt that
+did NOT fix it before this did.
 
 A second, now-resolved issue was found while chasing the one above: a real, authenticated staff
 session hung ~300s on every `/admin/(dashboard)/*` route **in production**, not just locally

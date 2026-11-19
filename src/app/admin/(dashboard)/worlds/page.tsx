@@ -1,14 +1,14 @@
 import { Globe2 } from "lucide-react";
+import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
-import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
-import { getLessonEditorData } from "@/server/lessons/service";
 import { getWorldEditorData } from "@/server/worlds/service";
-import { WorldEditor } from "./world-editor";
+import { WorldsTable } from "./worlds-table";
 
 type WorldRow = Awaited<ReturnType<typeof getWorldEditorData>>[number];
 
@@ -79,38 +79,6 @@ export default async function WorldsPage({
     pageSize: pageState.pageSize,
   });
 
-  // Doubt Zone lessons per world, for the mentor-change warning below (see
-  // docs/ARCHITECTURE.md D19) - scoped to only the worlds on THIS page now
-  // that the table is paginated: a staff member can only select one of
-  // those for editing, so there's nothing to compute for a world that
-  // isn't currently shown. runWithConcurrencyLimit, not a bare Promise.all
-  // (CLAUDE.md rule 15, docs/ARCHITECTURE.md D13/D72): still a loop of real
-  // Postgres reads, even bounded to one page.
-  const lessonsByWorld = await runWithConcurrencyLimit(
-    paged.rows.map((w) => () => getLessonEditorData(w.id)),
-    DB_CONCURRENCY_LIMIT,
-  );
-  const doubtZoneLessonsByWorldId: Record<
-    string,
-    {
-      id: string;
-      title: { en: string; hi: string; hx: string };
-      mentorKey: string;
-    }[]
-  > = {};
-  paged.rows.forEach((w, i) => {
-    doubtZoneLessonsByWorldId[w.id] = lessonsByWorld[i]!.filter(
-      (l) => l.kind === "doubt_zone",
-    ).map((l) => ({
-      id: l.id,
-      title: l.title,
-      mentorKey:
-        typeof l.content === "object" && l.content !== null
-          ? String((l.content as Record<string, unknown>).mentorKey ?? "")
-          : "",
-    }));
-  });
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -121,30 +89,29 @@ export default async function WorldsPage({
         icon={Globe2}
         title="Worlds"
         description="Worlds a learner clears in sequential order - staff decide how many exist. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it. A world can only be deleted once it has no lessons."
+        action={
+          canManage && (
+            <Button asChild size="sm">
+              <Link href="/admin/worlds/new">+ New world</Link>
+            </Button>
+          )
+        }
       />
 
-      <WorldEditor
-        worlds={paged.rows.map((w) => ({
+      <WorldsTable
+        rows={paged.rows.map((w) => ({
           id: w.id,
           order: w.order,
           code: w.code,
           title: w.title,
-          tagline: w.tagline,
-          theme: w.theme,
-          displayXpTarget: w.displayXpTarget,
-          mentorId: w.mentorId,
           status: w.status,
-          artUrl: w.artUrl,
+          mentorId: w.mentorId,
         }))}
         mentors={mentors.map((m) => ({
           id: m.id,
           key: m.key,
           name: m.name,
-          status: m.status,
         }))}
-        doubtZoneLessonsByWorldId={doubtZoneLessonsByWorldId}
-        canManage={canManage}
-        canPublish={canPublish}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}
@@ -153,6 +120,8 @@ export default async function WorldsPage({
         sort={pageState.sort}
         dir={pageState.dir}
         status={statusFilter}
+        canManage={canManage}
+        canPublish={canPublish}
       />
     </div>
   );

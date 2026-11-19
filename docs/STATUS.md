@@ -441,6 +441,38 @@ bug reports above.
    2026-10-05's attempt only renamed the file, which may be why it reproduced identically).
 4. No evidence supports a Clerk v8 or Next 17 major jump as necessary or sufficient.
 
+**2026-11-19 update: step 1 was performed and did NOT fix it.** Patch-bumped `@clerk/nextjs`
+7.9.4 → 7.9.11, `next` 16.3.5 → 16.3.8, and `eslint-config-next` to match (`designing-upgrade`,
+commit `47dc26d`). Checked the full changelog range first: none of Next's three patch releases
+(16.3.6/7/8) touch middleware, `auth()`, server actions or route handlers (all three are
+security-advisory-only); `@clerk/nextjs` 7.9.5's cross-request-credential-leak fix in
+`clerkMiddleware()` was the one plausible lead, but it didn't resolve our symptom either, so our
+bug is evidently a different failure mode in the same function. After the bump, `pnpm dev` +
+`curl` against `/admin` and `/admin/sign-in` still returned the exact same error text
+("Clerk: clerkMiddleware() was not run...") - masked behind an HTTP 200 because the admin shell's
+own error boundary renders a friendly "Admin couldn't load" page instead of surfacing a 500.
+**Workaround is unchanged**: `pnpm build && pnpm start` locally, or the branch's Vercel preview,
+for any local `/admin/*` testing. **Decision**: step 3 (the proper `middleware.ts` → `proxy.ts`
+migration, renaming the exported function too) is deliberately not being pursued right now - it's
+a bigger, riskier change to backend-wide auth for a dev-only convenience bug, and nothing above
+suggests it's likely to succeed where the file-only rename already failed once (2026-10-05).
+Revisit only if a future Clerk/Next release's changelog names this specific failure mode.
+
+**2026-11-19, later the same day — actually fixed.** Separately from the patch-bump attempt
+above, tried moving `middleware.ts` → `src/middleware.ts` (content byte-for-byte unchanged, no
+`proxy.ts` rename, no exported-function rename) as a local-only experiment on top of the
+patch-bumped versions. This is NOT the same thing 2026-10-05 tried - that attempt moved the file
+to a sibling `proxy.ts` (same directory, new name); this moves the existing `middleware.ts` into
+`src/`, which the earlier entry never actually tested. Result: `pnpm dev` now serves `/admin/*`
+correctly - verified with a real signed-in staff session (not just the signed-out redirect that
+every earlier check in this saga relied on), including saving a draft and hot reload. Made
+permanent as its own commit, recorded as a git rename (`middleware.ts -> src/middleware.ts`),
+`designing-upgrade`. The `pnpm build && pnpm start` / Vercel-preview workaround is no longer
+needed for this - `pnpm dev` now works directly. Root cause, best understanding: this specific
+`next dev` + `@clerk/nextjs` combination only reliably detects `clerkMiddleware()` having run when
+the file lives under `src/`, even though Next's own docs call root-level placement valid (which
+is likely true for `next build`, just not for this version's `next dev`).
+
 **Mitigation shipped as diagnostics, not a fix**, on branch `admin-hang-instrumentation` (merged to
 `main` as `c29dc9e`): the dashboard layout's `getStaffMember()` call (the `auth()` call) and the
 22-permission `Promise.all` are now wrapped in a 15s timeout with start/resolve/reject timing
@@ -719,7 +751,7 @@ not by rediscovering this investigation from scratch.
 **Not yet merged** - on branch `db-pool-concurrency-fix`, held for the founder's review in one
 piece given how much this touches, per their explicit instruction.
 
-## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only
+## 2026-10-05 — Known limitation: local `pnpm dev` returns 500 on `/admin/*` (Clerk/Next 16 dev-mode bug, not a real misplacement) — CORRECTED 2026-10-06 above: this is the same bug as the production hang, not dev-only — FIXED 2026-11-19 (see the 2026-10-07 postmortem entry's "actually fixed" update above): moving `middleware.ts` to `src/middleware.ts` resolves it
 
 While doing the `design-pass-homepage-admin` design pass, local `pnpm dev` started throwing on
 every `/admin/*` request: `Clerk: clerkMiddleware() was not run, your middleware or proxy file
@@ -749,11 +781,11 @@ misleading - diagnosed in full before touching anything:
   content, `middleware.ts` moved aside), the exact same 500 reproduced. So renaming would not have
   fixed it, and the working tree was restored to clean before concluding.
 
-**Decision**: leave this as a known, documented limitation rather than chase an upstream fix now -
-bumping Next/Clerk on a project with 2,298 passing tests to fix a local dev-only convenience isn't
-worth the risk. **Workaround**: use `pnpm build && pnpm start` locally when testing `/admin/*`, or
-review on the branch's Vercel preview. See `CLAUDE.md`'s Next.js breaking-changes note and the
-pre-launch checklist item to re-test this after any future Next/Clerk upgrade.
+**Decision (2026-10-05, superseded 2026-11-19)**: leave this as a known, documented limitation
+rather than chase an upstream fix now - bumping Next/Clerk on a project with 2,298 passing tests to
+fix a local dev-only convenience isn't worth the risk. **Workaround (no longer needed - see
+2026-11-19 above)**: use `pnpm build && pnpm start` locally when testing `/admin/*`, or review on
+the branch's Vercel preview.
 
 **Separate, unrelated known issue hit during the same investigation**: killing a `next dev`
 process (e.g. via `taskkill`) can corrupt `.next/dev/types/*`, which then makes `pnpm build` fail

@@ -59,6 +59,8 @@ export async function updateWorldDraftAction(input: unknown): Promise<ActionResu
     const parsed = UpdateWorldDraftSchema.parse(input);
     await updateWorldDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${parsed.id}`);
+    revalidatePath(`/admin/worlds/${parsed.id}/edit`);
   });
 }
 
@@ -76,6 +78,8 @@ export async function reorderWorldAction(input: unknown): Promise<ActionResult> 
     const { id, newOrder } = MoveWorldSchema.parse(input);
     await reorderWorld(actor, id, newOrder, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${id}`);
+    revalidatePath(`/admin/worlds/${id}/edit`);
   });
 }
 
@@ -85,6 +89,8 @@ export async function publishWorldAction(input: unknown): Promise<ActionResult> 
     const { id } = WorldIdSchema.parse(input);
     await publishWorld(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${id}`);
+    revalidatePath(`/admin/worlds/${id}/edit`);
   });
 }
 
@@ -94,6 +100,8 @@ export async function unpublishWorldAction(input: unknown): Promise<ActionResult
     const { id } = WorldIdSchema.parse(input);
     await unpublishWorld(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${id}`);
+    revalidatePath(`/admin/worlds/${id}/edit`);
   });
 }
 
@@ -103,6 +111,8 @@ export async function hotfixWorldAction(input: unknown): Promise<ActionResult> {
     const parsed = HotfixWorldSchema.parse(input);
     await hotfixWorld(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${parsed.id}`);
+    revalidatePath(`/admin/worlds/${parsed.id}/edit`);
   });
 }
 
@@ -138,5 +148,7 @@ export async function uploadWorldArtAction(formData: FormData): Promise<ActionRe
     const body = Buffer.from(await file.arrayBuffer());
     await uploadWorldArt(actor, id, { body }, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${id}`);
+    revalidatePath(`/admin/worlds/${id}/edit`);
   });
 }
