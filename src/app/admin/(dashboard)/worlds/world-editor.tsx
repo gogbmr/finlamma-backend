@@ -1,8 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Globe2 } from "lucide-react";
+import { Info, Images, Link2, Type } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { ComponentType } from "react";
 import {
   FormProvider,
   useForm,
@@ -13,7 +15,6 @@ import {
 import { toast } from "sonner";
 import { z } from "zod";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
-import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +36,6 @@ import {
 } from "@/server/worlds/schemas";
 import {
   createWorldDraftAction,
-  deleteWorldAction,
   hotfixWorldAction,
   publishWorldAction,
   reorderWorldAction,
@@ -43,9 +43,8 @@ import {
   updateWorldDraftAction,
   uploadWorldArtAction,
 } from "./actions";
-import { WorldsTable } from "./worlds-table";
 
-type WorldRow = {
+export type WorldRow = {
   id: string;
   order: number;
   code: string | null;
@@ -58,8 +57,8 @@ type WorldRow = {
   artUrl: string | null;
 };
 
-type MentorOption = { id: string; key: string; name: LocalizedText; status: "draft" | "published" };
-type DoubtZoneLessonRef = { id: string; title: LocalizedText; mentorKey: string };
+export type MentorOption = { id: string; key: string; name: LocalizedText; status: "draft" | "published" };
+export type DoubtZoneLessonRef = { id: string; title: LocalizedText; mentorKey: string };
 
 const LANGUAGES = ["en", "hi", "hx"] as const;
 const WARNABLE_LANGUAGES = ["hi", "hx"] as const; // en is required by the base schema already
@@ -138,10 +137,25 @@ function parseWorldError(message: string): { fieldErrors: Warning[]; summary: st
 // Shared section building blocks
 // ---------------------------------------------------------------------------
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon?: ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{title}</h3>
+    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+      <h3 className="flex items-center gap-2 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+        {Icon && (
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+        )}
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -213,12 +227,14 @@ function ArtSection({
   isPending: boolean;
 }) {
   return (
-    <SectionCard title="Art">
+    <SectionCard title="Art" icon={Images}>
       {artUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
-        <img src={artUrl} alt="" className="h-20 w-36 rounded object-cover" />
+        <img src={artUrl} alt="" className="h-24 w-40 rounded-lg border border-border object-cover shadow-sm" />
       ) : (
-        <p className="text-xs text-muted-foreground">No art uploaded yet.</p>
+        <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-xs text-muted-foreground">
+          No art yet
+        </div>
       )}
       {!disabled && (
         <div className="space-y-1">
@@ -255,7 +271,7 @@ function MentorRelationSection({
   disabled: boolean;
 }) {
   return (
-    <SectionCard title="Relations">
+    <SectionCard title="Relations" icon={Link2}>
       <Label>Mentor</Label>
       <Select value={value || undefined} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger>
@@ -276,51 +292,13 @@ function MentorRelationSection({
   );
 }
 
-export function WorldEditor({
-  worlds,
-  mentors,
-  doubtZoneLessonsByWorldId,
-  canManage,
-  canPublish,
-  total,
-  page,
-  pageCount,
-  pageSize,
-  q,
-  sort,
-  dir,
-  status,
-}: {
-  worlds: WorldRow[];
-  mentors: MentorOption[];
-  doubtZoneLessonsByWorldId: Record<string, DoubtZoneLessonRef[]>;
-  canManage: boolean;
-  canPublish: boolean;
-  total: number;
-  page: number;
-  pageCount: number;
-  pageSize: number;
-  q: string;
-  sort: string | null;
-  dir: "asc" | "desc";
-  status: "draft" | "published" | null;
-}) {
-  const [selectedId, setSelectedId] = useState<string | "new" | null>(worlds[0]?.id ?? "new");
-  const [isDirty, setIsDirty] = useState(false);
-
-  function trySelect(id: string | "new") {
-    if (
-      isDirty &&
-      typeof window !== "undefined" &&
-      !window.confirm("Discard unsaved changes to this world?")
-    ) {
-      return;
-    }
-    setIsDirty(false);
-    setSelectedId(id);
-  }
-
-  // Unsaved-changes guard, part 1: browser tab-close/reload/navigate-away.
+// Unsaved-changes guard for a world form living on its own page (create/
+// edit) - part 1: browser tab-close/reload/navigate-away, part 2:
+// intercepts a click on any same-page link while dirty. Same approach as
+// lessons/questions/mentors; previously lived once in the now-removed
+// WorldEditor wrapper (when create/edit were both inline on the list page),
+// now each standalone form owns its own guard directly.
+function useUnsavedChangesGuard(isDirty: boolean) {
   useEffect(() => {
     if (!isDirty) return;
     function handleBeforeUnload(e: BeforeUnloadEvent) {
@@ -331,8 +309,6 @@ export function WorldEditor({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
-  // Unsaved-changes guard, part 2: intercepts a click on any same-page link
-  // while dirty - same approach as lessons/questions/mentors.
   useEffect(() => {
     if (!isDirty) return;
     function handleClick(e: MouseEvent) {
@@ -353,80 +329,6 @@ export function WorldEditor({
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
   }, [isDirty]);
-
-  if (total === 0 && !canManage) {
-    return (
-      <EmptyState
-        icon={Globe2}
-        title="No worlds yet"
-        description="A staff member with world.manage can create the first one."
-      />
-    );
-  }
-
-  const effectiveId: string | "new" =
-    selectedId === "new" || worlds.some((w) => w.id === selectedId)
-      ? (selectedId as string | "new")
-      : worlds[0]?.id ?? "new";
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Select a world below to edit it.</p>
-        {canManage && (
-          <Button type="button" size="sm" onClick={() => trySelect("new")}>
-            + New world
-          </Button>
-        )}
-      </div>
-
-      <WorldsTable
-        rows={worlds.map((w) => ({
-          id: w.id,
-          order: w.order,
-          code: w.code,
-          title: w.title,
-          status: w.status,
-          mentorId: w.mentorId,
-        }))}
-        mentors={mentors}
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        q={q}
-        sort={sort}
-        dir={dir}
-        status={status}
-        selectedId={effectiveId}
-        onSelect={trySelect}
-      />
-
-      {effectiveId === "new" && canManage ? (
-        <NewWorldForm mentors={mentors} onDirtyChange={setIsDirty} />
-      ) : (
-        (() => {
-          const world = worlds.find((w) => w.id === effectiveId);
-          if (!world) return null;
-          return (
-            <WorldForm
-              key={world.id}
-              world={world}
-              mentors={mentors}
-              doubtZoneLessons={doubtZoneLessonsByWorldId[world.id] ?? []}
-              canManage={canManage}
-              canPublish={canPublish}
-              onDirtyChange={setIsDirty}
-              onDeleted={() => {
-                setIsDirty(false);
-                setSelectedId(worlds.find((w) => w.id !== world.id)?.id ?? "new");
-              }}
-            />
-          );
-        })()
-      )}
-    </div>
-  );
 }
 
 const NewWorldFormSchema = CreateWorldDraftSchema.extend({ code: FormCodeSchema });
@@ -440,13 +342,8 @@ type NewWorldFormValues = {
   tagline: LocalizedText;
 };
 
-function NewWorldForm({
-  mentors,
-  onDirtyChange,
-}: {
-  mentors: MentorOption[];
-  onDirtyChange: (dirty: boolean) => void;
-}) {
+export function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const methods = useForm<NewWorldFormValues>({
     // FormCodeSchema's z.preprocess makes zod's static inference widen
@@ -467,11 +364,9 @@ function NewWorldForm({
       tagline: EMPTY_LOCALIZED,
     },
   });
-  const { handleSubmit, watch, register, setValue, reset, formState } = methods;
+  const { handleSubmit, watch, register, setValue, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [title, tagline, code, mentorId] = watch(["title", "tagline", "code", "mentorId"]);
   const warnings = useMemo(() => computeWorldWarnings(title, tagline, code), [title, tagline, code]);
@@ -484,22 +379,14 @@ function NewWorldForm({
         return;
       }
       toast.success("World created as a draft");
-      reset({
-        order: 1,
-        code: null,
-        theme: "",
-        displayXpTarget: 0,
-        mentorId: "",
-        title: EMPTY_LOCALIZED,
-        tagline: EMPTY_LOCALIZED,
-      });
+      router.push("/admin/worlds");
     });
   }
 
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pb-20">
-        <SectionCard title="Basics">
+        <SectionCard title="Basics" icon={Info}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Display order</Label>
@@ -525,7 +412,14 @@ function NewWorldForm({
             </div>
             <div className="space-y-1">
               <Label>Theme (cosmetic accent color)</Label>
-              <Input {...register("theme")} placeholder="#7C3AED" />
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-9 w-9 shrink-0 rounded-md border border-border"
+                  style={{ backgroundColor: watch("theme") || "transparent" }}
+                  aria-hidden
+                />
+                <Input {...register("theme")} placeholder="#7C3AED" />
+              </div>
               {formState.errors.theme && (
                 <p className="text-xs text-destructive">{formState.errors.theme.message}</p>
               )}
@@ -537,7 +431,7 @@ function NewWorldForm({
           </div>
         </SectionCard>
 
-        <SectionCard title="Text">
+        <SectionCard title="Text" icon={Type}>
           <LocalizedFieldGroup label="Title" name="title" disabled={false} warnings={warnings} />
           <LocalizedFieldGroup label="Tagline" name="tagline" disabled={false} warnings={warnings} />
         </SectionCard>
@@ -553,7 +447,16 @@ function NewWorldForm({
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this world?")) {
+                router.push("/admin/worlds");
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
@@ -593,28 +496,24 @@ function useDynamicWorldResolver(modeRef: { current: "update" | "hotfix" }): Res
   }, []);
 }
 
-function WorldForm({
+export function WorldForm({
   world,
   mentors,
   doubtZoneLessons,
   canManage,
   canPublish,
-  onDirtyChange,
-  onDeleted,
 }: {
   world: WorldRow;
   mentors: MentorOption[];
   doubtZoneLessons: DoubtZoneLessonRef[];
   canManage: boolean;
   canPublish: boolean;
-  onDirtyChange: (dirty: boolean) => void;
-  onDeleted: () => void;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [errorSummary, setErrorSummary] = useState<string[]>([]);
   const [reorderTarget, setReorderTarget] = useState("");
   const [confirmMentorChange, setConfirmMentorChange] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const isDraft = world.status === "draft";
   const editable = canManage && isDraft;
@@ -645,9 +544,7 @@ function WorldForm({
   const methods = useForm<WorldFormValues>({ resolver, defaultValues });
   const { handleSubmit, watch, register, setValue, reset, setError, clearErrors, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [title, tagline, code, mentorId] = watch(["title", "tagline", "code", "mentorId"]);
   const warnings = useMemo(() => computeWorldWarnings(title, tagline, code), [title, tagline, code]);
@@ -762,19 +659,6 @@ function WorldForm({
     });
   }
 
-  function deleteThisWorld() {
-    startTransition(async () => {
-      const result = await deleteWorldAction({ id: world.id });
-      setConfirmDelete(false);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      toast.success("World deleted");
-      onDeleted();
-    });
-  }
-
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(editable ? onSaveDraft : onSaveHotfix)} className="space-y-4 pb-20">
@@ -835,7 +719,7 @@ function WorldForm({
           </div>
         )}
 
-        <SectionCard title="Basics">
+        <SectionCard title="Basics" icon={Info}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Display order</Label>
@@ -858,7 +742,14 @@ function WorldForm({
             </div>
             <div className="space-y-1">
               <Label>Theme (cosmetic accent color)</Label>
-              <Input disabled={!editable} {...register("theme")} />
+              <div className="flex items-center gap-2">
+                <span
+                  className="h-9 w-9 shrink-0 rounded-md border border-border"
+                  style={{ backgroundColor: watch("theme") || "transparent" }}
+                  aria-hidden
+                />
+                <Input disabled={!editable} {...register("theme")} />
+              </div>
             </div>
             <div className="space-y-1">
               <Label>Display XP target (cosmetic only)</Label>
@@ -873,7 +764,7 @@ function WorldForm({
           </div>
         </SectionCard>
 
-        <SectionCard title="Text">
+        <SectionCard title="Text" icon={Type}>
           <LocalizedFieldGroup label="Title" name="title" disabled={!titleTaglineEditable} warnings={warnings} />
           <LocalizedFieldGroup label="Tagline" name="tagline" disabled={!titleTaglineEditable} warnings={warnings} />
         </SectionCard>
@@ -913,7 +804,17 @@ function WorldForm({
               {editable ? "Save draft" : "Save fix"}
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this world?")) {
+                reset();
+                router.push(`/admin/worlds/${world.id}`);
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           {canPublish && isDraft && (
@@ -926,28 +827,9 @@ function WorldForm({
               Unpublish
             </Button>
           )}
-          {canPublish && (
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => setConfirmDelete(true)}
-              disabled={isPending}
-            >
-              Delete
-            </Button>
-          )}
           {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
         </div>
       </form>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title="Delete this world?"
-        description="This permanently removes the world. Only possible while it has no lessons - if it does, this will fail and name them. This cannot be undone."
-        confirmLabel="Delete"
-        onConfirm={deleteThisWorld}
-      />
 
       <ConfirmDialog
         open={confirmMentorChange}

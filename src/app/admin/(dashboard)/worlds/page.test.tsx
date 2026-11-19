@@ -16,19 +16,18 @@ vi.mock("@/server/mentors/service", () => ({
   getMentorEditorData: () => mockGetMentorEditorData(),
 }));
 
-const mockGetLessonEditorData = vi.fn();
-vi.mock("@/server/lessons/service", () => ({
-  getLessonEditorData: (worldId: unknown) => mockGetLessonEditorData(worldId),
-}));
-
 const mockGetWorldEditorData = vi.fn();
 vi.mock("@/server/worlds/service", () => ({
   getWorldEditorData: () => mockGetWorldEditorData(),
 }));
 
 // Dependency-free stub, same convention settings/page.test.tsx uses - this
-// test only cares about what data reaches it, not how it renders.
-vi.mock("./world-editor", () => ({ WorldEditor: () => null }));
+// test only cares about what data reaches it, not how it renders. The list
+// page is table-only now (Task: view/edit/delete icons + dedicated pages) -
+// it no longer fetches per-world Doubt Zone lessons itself, so there's no
+// getLessonEditorData mock here anymore - see worlds/[id]/edit/page.test.tsx
+// for that coverage.
+vi.mock("./worlds-table", () => ({ WorldsTable: () => null }));
 
 import WorldsPage from "./page";
 
@@ -55,7 +54,6 @@ beforeEach(() => {
   mockGetStaffMember.mockResolvedValue(STAFF);
   mockRoleHasPermission.mockResolvedValue(true);
   mockGetMentorEditorData.mockResolvedValue([]);
-  mockGetLessonEditorData.mockResolvedValue([]);
 });
 
 describe("WorldsPage", () => {
@@ -65,34 +63,18 @@ describe("WorldsPage", () => {
 
     const result = await WorldsPage();
 
-    expect(mockGetLessonEditorData).not.toHaveBeenCalled();
     expect((result as { props?: { message?: string } }).props?.message).toMatch(/permission/i);
   });
 
-  // Phase 4 Trade audit's concurrency sweep: this used to be a bare
-  // Promise.all(worlds.map(getLessonEditorData)) - a real DB-concurrency
-  // risk as the world catalog grows (D25: no fixed count). Now
-  // runWithConcurrencyLimit - this proves the fix still fetches every
-  // world's lessons correctly, not just that it compiles.
-  it("fetches every world's lessons, even across several worlds", async () => {
+  it("fetches worlds and mentors for the table", async () => {
     mockGetWorldEditorData.mockResolvedValue([
       world({ id: "world_1" }),
       world({ id: "world_2" }),
-      world({ id: "world_3" }),
     ]);
-    mockGetLessonEditorData.mockImplementation((worldId: string) =>
-      Promise.resolve(
-        worldId === "world_2"
-          ? [{ id: "lesson_1", kind: "doubt_zone", title: { en: "DZ" }, content: { mentorKey: "baby_lamma" } }]
-          : [],
-      ),
-    );
 
     await WorldsPage();
 
-    expect(mockGetLessonEditorData).toHaveBeenCalledTimes(3);
-    expect(mockGetLessonEditorData).toHaveBeenCalledWith("world_1");
-    expect(mockGetLessonEditorData).toHaveBeenCalledWith("world_2");
-    expect(mockGetLessonEditorData).toHaveBeenCalledWith("world_3");
+    expect(mockGetWorldEditorData).toHaveBeenCalledTimes(1);
+    expect(mockGetMentorEditorData).toHaveBeenCalledTimes(1);
   });
 });
