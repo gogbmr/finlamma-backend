@@ -2,11 +2,20 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
+import {
+  type ChangedFieldInput,
+  ConfirmChangesDialog,
+  diffChangedFields,
+} from "@/components/admin/confirm-changes-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { LessonFlowScoring } from "@/server/settings/schemas";
 import { updateLessonFlowScoringAction } from "./actions";
+
+// Every field here is XP, a percentage, a count or a duration - never V
+// Money - so none of these ever use the "vmoney" kind/label, even though
+// this page lives under the same "money-related" umbrella as the others.
 
 function NumberField({
   label,
@@ -35,8 +44,31 @@ function NumberField({
 export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring }) {
   const [isPending, startTransition] = useTransition();
   const [form, setForm] = useState<LessonFlowScoring>(scoring);
+  // The "pristine" baseline to diff against - moves forward after a
+  // successful save, same reasoning as the Arena league editor.
+  const [saved, setSaved] = useState<LessonFlowScoring>(scoring);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
-  function save() {
+  const changedFields: ChangedFieldInput[] = [
+    { label: "Pop quiz - correct XP", oldValue: saved.popQuiz.correctXp, newValue: form.popQuiz.correctXp },
+    { label: "Pop quiz - wrong XP", oldValue: saved.popQuiz.wrongXp, newValue: form.popQuiz.wrongXp },
+    { label: "Practice quiz - correct XP", oldValue: saved.practiceQuiz.correctXp, newValue: form.practiceQuiz.correctXp },
+    { label: "Practice quiz - wrong XP", oldValue: saved.practiceQuiz.wrongXp, newValue: form.practiceQuiz.wrongXp },
+    { label: "Practice quiz timer (seconds)", oldValue: saved.practiceQuizTimerSeconds, newValue: form.practiceQuizTimerSeconds },
+    { label: "Speed bonus threshold (%)", oldValue: saved.speedBonusThresholdPct, newValue: form.speedBonusThresholdPct },
+    { label: "Speed bonus XP", oldValue: saved.speedBonusXp, newValue: form.speedBonusXp },
+    { label: "Combo bonus per step", oldValue: saved.comboBonusPerStep, newValue: form.comboBonusPerStep },
+    { label: "Combo bonus cap", oldValue: saved.comboBonusCap, newValue: form.comboBonusCap },
+    { label: "Fever combo threshold", oldValue: saved.feverComboThreshold, newValue: form.feverComboThreshold },
+    { label: "Fever multiplier", oldValue: saved.feverMultiplier, newValue: form.feverMultiplier },
+    { label: "Boss Quiz pass mark (%)", oldValue: saved.bossQuizPassMarkPct, newValue: form.bossQuizPassMarkPct },
+    { label: "Lesson pass mark (%)", oldValue: saved.lessonPassMarkPct, newValue: form.lessonPassMarkPct },
+    { label: "Story min. completion (seconds)", oldValue: saved.storyMinCompletionSeconds, newValue: form.storyMinCompletionSeconds },
+    { label: "Doubt Zone min. completion (seconds)", oldValue: saved.doubtZoneMinCompletionSeconds, newValue: form.doubtZoneMinCompletionSeconds },
+    { label: "Trading unlocks after world position", oldValue: saved.tradingUnlockAfterWorldPosition, newValue: form.tradingUnlockAfterWorldPosition },
+  ];
+
+  function doSave() {
     startTransition(async () => {
       const result = await updateLessonFlowScoringAction(form);
       if (!result.ok) {
@@ -44,7 +76,12 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
         return;
       }
       toast.success("Scoring settings saved - live immediately for every learner");
+      setSaved(form);
     });
+  }
+
+  function save() {
+    setConfirmOpen(true);
   }
 
   return (
@@ -158,6 +195,18 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
       <Button type="button" onClick={save} disabled={isPending}>
         Save
       </Button>
+
+      <ConfirmChangesDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Save Lesson Flow scoring settings?"
+        fields={diffChangedFields(changedFields)}
+        pending={isPending}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          doSave();
+        }}
+      />
     </div>
   );
 }

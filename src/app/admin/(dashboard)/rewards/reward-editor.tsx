@@ -3,6 +3,11 @@
 import { Gift } from "lucide-react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
+import {
+  type ChangedFieldInput,
+  ConfirmChangesDialog,
+  diffChangedFields,
+} from "@/components/admin/confirm-changes-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
@@ -197,6 +202,8 @@ function RewardForm({
   const isDraft = !reward || reward.status === "draft";
   const editable = canManage && isDraft;
 
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   function payload() {
     return {
       name,
@@ -207,7 +214,21 @@ function RewardForm({
     };
   }
 
-  function save() {
+  // Task 7: review-before-save only applies to editing an EXISTING reward -
+  // creating a brand-new one has no "old" value worth confirming against.
+  const changedFields: ChangedFieldInput[] = [
+    { label: "Category", oldValue: savedSnapshot.category, newValue: category },
+    { label: "Icon key", oldValue: savedSnapshot.iconKey || null, newValue: iconKey || null },
+    { label: "Price", oldValue: Number(savedSnapshot.priceVm) || 0, newValue: Number(priceVm) || 0, kind: "vmoney" },
+    { label: "Name (en)", oldValue: savedSnapshot.name.en, newValue: name.en },
+    { label: "Name (hi)", oldValue: savedSnapshot.name.hi, newValue: name.hi },
+    { label: "Name (hx)", oldValue: savedSnapshot.name.hx, newValue: name.hx },
+    { label: "Description (en)", oldValue: savedSnapshot.description.en, newValue: description.en },
+    { label: "Description (hi)", oldValue: savedSnapshot.description.hi, newValue: description.hi },
+    { label: "Description (hx)", oldValue: savedSnapshot.description.hx, newValue: description.hx },
+  ];
+
+  function doSave() {
     startTransition(async () => {
       const result = reward
         ? await updateRewardDraftAction({ id: reward.id, ...payload() })
@@ -219,6 +240,14 @@ function RewardForm({
       toast.success(reward ? "Draft saved" : "Reward created as a draft");
       setSavedSnapshot({ name, description, category, priceVm, iconKey });
     });
+  }
+
+  function save() {
+    if (reward) {
+      setConfirmOpen(true);
+      return;
+    }
+    doSave();
   }
 
   function publish() {
@@ -300,6 +329,20 @@ function RewardForm({
           </Button>
         )}
       </div>
+
+      {reward && (
+        <ConfirmChangesDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          title={`Save changes to "${reward.name.en || reward.id}"?`}
+          fields={diffChangedFields(changedFields)}
+          pending={isPending}
+          onConfirm={() => {
+            setConfirmOpen(false);
+            doSave();
+          }}
+        />
+      )}
     </div>
   );
 }
