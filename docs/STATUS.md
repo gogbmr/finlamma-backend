@@ -441,6 +441,23 @@ bug reports above.
    2026-10-05's attempt only renamed the file, which may be why it reproduced identically).
 4. No evidence supports a Clerk v8 or Next 17 major jump as necessary or sufficient.
 
+**2026-11-19 update: step 1 was performed and did NOT fix it.** Patch-bumped `@clerk/nextjs`
+7.9.4 → 7.9.11, `next` 16.3.5 → 16.3.8, and `eslint-config-next` to match (`designing-upgrade`,
+commit `47dc26d`). Checked the full changelog range first: none of Next's three patch releases
+(16.3.6/7/8) touch middleware, `auth()`, server actions or route handlers (all three are
+security-advisory-only); `@clerk/nextjs` 7.9.5's cross-request-credential-leak fix in
+`clerkMiddleware()` was the one plausible lead, but it didn't resolve our symptom either, so our
+bug is evidently a different failure mode in the same function. After the bump, `pnpm dev` +
+`curl` against `/admin` and `/admin/sign-in` still returned the exact same error text
+("Clerk: clerkMiddleware() was not run...") - masked behind an HTTP 200 because the admin shell's
+own error boundary renders a friendly "Admin couldn't load" page instead of surfacing a 500.
+**Workaround is unchanged**: `pnpm build && pnpm start` locally, or the branch's Vercel preview,
+for any local `/admin/*` testing. **Decision**: step 3 (the proper `middleware.ts` → `proxy.ts`
+migration, renaming the exported function too) is deliberately not being pursued right now - it's
+a bigger, riskier change to backend-wide auth for a dev-only convenience bug, and nothing above
+suggests it's likely to succeed where the file-only rename already failed once (2026-10-05).
+Revisit only if a future Clerk/Next release's changelog names this specific failure mode.
+
 **Mitigation shipped as diagnostics, not a fix**, on branch `admin-hang-instrumentation` (merged to
 `main` as `c29dc9e`): the dashboard layout's `getStaffMember()` call (the `auth()` call) and the
 22-permission `Promise.all` are now wrapped in a 15s timeout with start/resolve/reject timing
