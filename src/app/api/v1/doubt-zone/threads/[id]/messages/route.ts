@@ -97,7 +97,7 @@ registry.registerPath({
     "Every message runs through a safety classifier BEFORE the AI ever sees it, biased heavily " +
     "toward flagging when uncertain (docs/ARCHITECTURE.md's Phase 7 kickoff decisions) - a " +
     "flagged message gets a fixed, settings_kv-driven safety redirect instead of a normal reply, " +
-    "and is queued for staff review (doubt_zone.moderate). The AI never receives the learner's " +
+    "and is queued for staff review (doubt_zone.view). The AI never receives the learner's " +
     "name, age, email, phone, state, school or any other identifying detail - only language, the " +
     "mentor's persona, and (when opened from a lesson) that lesson's own public topic.",
   tags: ["Doubt Zone"],

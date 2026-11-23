@@ -3,7 +3,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getCoachNoteTemplateEditorData } from "@/server/report-card/service";
 import { CoachNoteEditor } from "./coach-note-editor";
 
@@ -39,13 +39,13 @@ export default async function CoachNotesPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "coach_note.manage"),
-    roleHasPermission(staff.roleId, "coach_note.publish"),
-  ]);
-  if (!canManage && !canPublish) {
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("coach_note.create");
+  const canEdit = grantedKeys.has("coach_note.edit");
+  const canDelete = grantedKeys.has("coach_note.delete");
+  if (!grantedKeys.has("coach_note.view")) {
     return (
-      <Forbidden message="You don't have permission to manage coach note templates. Only super_admin does." />
+      <Forbidden message="You don't have permission to view coach note templates. Only super_admin does." />
     );
   }
 
@@ -90,8 +90,9 @@ export default async function CoachNotesPage({
 
       <CoachNoteEditor
         templates={paged.rows}
-        canManage={canManage}
-        canPublish={canPublish}
+        canCreate={canCreate}
+        canEdit={canEdit}
+        canDelete={canDelete}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}

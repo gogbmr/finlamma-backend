@@ -3,18 +3,29 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { ZodError } from "zod";
-import { requireStaff } from "@/lib/auth";
+import { getStaffMember, requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import {
+  CreateRoleSchema,
+  DeleteRoleSchema,
   InviteStaffMemberSchema,
+  SetRolePermissionsSchema,
   SetStaffActiveSchema,
+  UpdateRoleSchema,
+  UpdateStaffProfileSchema,
   UpdateStaffRoleSchema,
 } from "@/server/staff/schemas";
 import {
   changeStaffMemberRole,
+  createRole,
+  deleteRole,
   inviteStaffMember,
+  setRolePermissions,
   setStaffMemberActive,
+  updateRole,
+  updateStaffProfile,
+  uploadStaffPhoto,
 } from "@/server/staff/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -41,7 +52,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function inviteStaffMemberAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("staff.manage");
+    const actor = await requireStaff("staff.create");
     const parsed = InviteStaffMemberSchema.parse(input);
     await inviteStaffMember(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/staff");
@@ -50,7 +61,7 @@ export async function inviteStaffMemberAction(input: unknown): Promise<ActionRes
 
 export async function setStaffActiveAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("staff.manage");
+    const actor = await requireStaff("staff.delete");
     const parsed = SetStaffActiveSchema.parse(input);
     await setStaffMemberActive(actor, parsed.staffId, parsed.active, requestMeta(await headers()));
     revalidatePath("/admin/staff");
@@ -59,7 +70,7 @@ export async function setStaffActiveAction(input: unknown): Promise<ActionResult
 
 export async function updateStaffRoleAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("staff.manage");
+    const actor = await requireStaff("staff.edit");
     const parsed = UpdateStaffRoleSchema.parse(input);
     await changeStaffMemberRole(
       actor,
@@ -68,5 +79,74 @@ export async function updateStaffRoleAction(input: unknown): Promise<ActionResul
       requestMeta(await headers()),
     );
     revalidatePath("/admin/staff");
+  });
+}
+
+// Self-or-staff.edit authorization lives in the service layer (see
+// src/server/staff/service.ts's updateStaffProfile/uploadStaffPhoto) - the
+// actor here is just "the signed-in staff member," not permission-checked
+// at this layer, since a staff member editing their OWN profile never
+// needs staff.edit at all.
+export async function updateStaffProfileAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await getStaffMember();
+    if (!actor) throw new AppError("UNAUTHENTICATED", "Staff sign-in required");
+    const parsed = UpdateStaffProfileSchema.parse(input);
+    await updateStaffProfile(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/staff");
+  });
+}
+
+export async function uploadStaffPhotoAction(formData: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await getStaffMember();
+    if (!actor) throw new AppError("UNAUTHENTICATED", "Staff sign-in required");
+    const staffId = String(formData.get("staffId") ?? "");
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      throw new AppError("VALIDATION_FAILED", "No file provided");
+    }
+    const body = Buffer.from(await file.arrayBuffer());
+    await uploadStaffPhoto(actor, staffId, { body }, requestMeta(await headers()));
+    revalidatePath("/admin/staff");
+  });
+}
+
+export async function createRoleAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("roles.create");
+    const parsed = CreateRoleSchema.parse(input);
+    await createRole(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/staff");
+    revalidatePath("/admin/roles");
+  });
+}
+
+export async function updateRoleAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("roles.edit");
+    const parsed = UpdateRoleSchema.parse(input);
+    await updateRole(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/staff");
+    revalidatePath("/admin/roles");
+  });
+}
+
+export async function deleteRoleAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("roles.delete");
+    const parsed = DeleteRoleSchema.parse(input);
+    await deleteRole(actor, parsed.roleId, requestMeta(await headers()));
+    revalidatePath("/admin/staff");
+    revalidatePath("/admin/roles");
+  });
+}
+
+export async function setRolePermissionsAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("roles.edit");
+    const parsed = SetRolePermissionsSchema.parse(input);
+    await setRolePermissions(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/roles");
   });
 }

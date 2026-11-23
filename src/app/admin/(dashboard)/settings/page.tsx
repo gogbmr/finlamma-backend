@@ -26,20 +26,20 @@ import { TopicsEditor } from "./topics-editor";
 export default async function SettingsPage() {
   let staff;
   try {
-    staff = await requireStaff("settings.manage");
+    staff = await requireStaff("settings.view");
   } catch {
-    return <Forbidden message="You don't have permission to manage settings. Only super_admin does." />;
+    return <Forbidden message="You don't have permission to view settings. Only super_admin does." />;
   }
 
-  // The page itself only requires settings.manage, but the reward-rules and
-  // VM-multiplier editors below call actions gated on the stronger
-  // economy.manage (updateRewardRuleAction/updateVmIssuanceMultiplierAction,
+  // The page itself only requires settings.view, but the reward-rules and
+  // VM-multiplier editors below call actions gated on the separate
+  // economy.edit (updateRewardRuleAction/updateVmIssuanceMultiplierAction,
   // src/app/admin/(dashboard)/settings/actions.ts) - rendering them for a
   // viewer who lacks it would show live money controls that silently fail
   // on submit instead of being hidden. Both permissions are super_admin-only
   // today (scripts/seed-roles.ts), so this has no visible effect yet, but
   // it stops that from becoming a real gap if the two are ever split apart.
-  const canManageEconomy = await roleHasPermission(staff.roleId, "economy.manage");
+  const canManageEconomy = await roleHasPermission(staff.roleId, "economy.edit");
 
   const scoring = await getLessonFlowScoringSettings();
   const streaksSettings = await getStreaksSettings();

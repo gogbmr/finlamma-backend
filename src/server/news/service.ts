@@ -414,9 +414,9 @@ export async function getNewsQuizGeneratorSettings(): Promise<NewsQuizGeneratorS
   return parsed.success ? parsed.data : DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS;
 }
 
-// Gated on settings.manage (super_admin only), same trust bar as every
+// Gated on settings.edit (super_admin only), same trust bar as every
 // other "changes what every learner's session looks like/earns" constant
-// (lesson_flow_scoring, vm_issuance_multiplier) - not news.manage/publish,
+// (lesson_flow_scoring, vm_issuance_multiplier) - not news.edit/delete,
 // since this isn't about a specific story, it's a global Pulse Check knob.
 // App asks batch, section B: refuse to enable a format in Pulse Check's
 // daily pool that the app can't render interactively yet - the News

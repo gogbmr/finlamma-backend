@@ -47,7 +47,7 @@ export async function getPulseCheckScoring(): Promise<PulseCheckScoring> {
   return parsed.success ? parsed.data : DEFAULT_PULSE_CHECK_SCORING;
 }
 
-// settings.manage-gated (super_admin only) - same trust bar as every other
+// settings.edit-gated (super_admin only) - same trust bar as every other
 // economy-affecting constant (lesson_flow_scoring, vm_issuance_multiplier),
 // since dailyVmCap in particular bounds every learner's earnings.
 export async function updatePulseCheckScoring(

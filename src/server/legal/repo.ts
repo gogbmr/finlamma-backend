@@ -53,7 +53,7 @@ export async function getLegalDocumentById(id: string) {
 // 1 if never published), or updates the content of an existing draft in
 // place - there is at most one draft per type at a time.
 //
-// Two concurrent calls (a double-click, or two legal.manage staff saving at
+// Two concurrent calls (a double-click, or two legal.edit staff saving at
 // once) can both take the "no existing draft" branch and both insert the
 // same computed version - the unique index on (type, version) prevents
 // actual duplicate/corrupt data, but an audit found the loser used to

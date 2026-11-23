@@ -61,17 +61,17 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createCompetitionDraftAction requires economy.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: economy.manage"));
+  it("createCompetitionDraftAction requires competition.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: competition.create"));
 
     const result = await createCompetitionDraftAction(VALID_DRAFT_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: competition.create" });
     expect(mockCreateCompetitionDraft).not.toHaveBeenCalled();
   });
 
-  it("updateCompetitionSettingsAction requires economy.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: economy.manage"));
+  it("updateCompetitionSettingsAction requires competition.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: competition.edit"));
 
     const result = await updateCompetitionSettingsAction(VALID_SETTINGS_INPUT);
 

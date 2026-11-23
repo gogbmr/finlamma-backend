@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockDeleteQuestionRow = vi.fn();
 const mockGetQuestionById = vi.fn();
 const mockHotfixQuestionRow = vi.fn();
 const mockInsertDraftQuestion = vi.fn();
@@ -8,6 +9,7 @@ const mockPublishQuestionRow = vi.fn();
 const mockUnpublishQuestionRow = vi.fn();
 const mockUpdateDraftQuestion = vi.fn();
 vi.mock("./repo", () => ({
+  deleteQuestionRow: (id: unknown) => mockDeleteQuestionRow(id),
   getQuestionById: (id: unknown) => mockGetQuestionById(id),
   hotfixQuestionRow: (input: unknown) => mockHotfixQuestionRow(input),
   insertDraftQuestion: (input: unknown) => mockInsertDraftQuestion(input),
@@ -30,6 +32,7 @@ vi.mock("@/lib/activity-log", () => ({
 
 import {
   createQuestionDraft,
+  deleteQuestion,
   getQuestionEditorData,
   hotfixQuestion,
   publishQuestion,
@@ -394,6 +397,40 @@ describe("unpublishQuestion", () => {
     const result = await unpublishQuestion(ACTOR, "question_1", META);
 
     expect(result.status).toBe("draft");
+  });
+});
+
+// Draft-only delete - deliberately no "does any lesson reference this"
+// check (the founder's call - see deleteQuestionRow's comment in repo.ts).
+describe("deleteQuestion", () => {
+  it("deletes a draft question and logs it", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "draft" }));
+    mockDeleteQuestionRow.mockResolvedValueOnce(questionRow({ status: "draft" }));
+
+    const result = await deleteQuestion(ACTOR, "question_1", META);
+
+    expect(result.status).toBe("draft");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "question.deleted", actorId: "staff_1" }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown question", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(null);
+
+    await expect(deleteQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockDeleteQuestionRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the question is published - unpublish first", async () => {
+    mockGetQuestionById.mockResolvedValueOnce(questionRow({ status: "published" }));
+    mockDeleteQuestionRow.mockResolvedValueOnce(null);
+
+    await expect(deleteQuestion(ACTOR, "question_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/unpublish/i),
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 

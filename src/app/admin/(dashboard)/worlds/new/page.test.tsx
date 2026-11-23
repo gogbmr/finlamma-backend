@@ -38,12 +38,12 @@ describe("NewWorldPage", () => {
     expect((result as { props?: { message?: string } }).props?.message).toMatch(/sign-in/i);
   });
 
-  it("shows Forbidden without world.manage - world.publish alone isn't enough to create", async () => {
+  it("shows Forbidden without world.create - world.delete alone isn't enough to create", async () => {
     mockRoleHasPermission.mockResolvedValue(false);
 
     const result = await NewWorldPage();
 
-    expect(mockRoleHasPermission).toHaveBeenCalledWith("role_1", "world.manage");
+    expect(mockRoleHasPermission).toHaveBeenCalledWith("role_1", "world.create");
     expect(mockGetMentorEditorData).not.toHaveBeenCalled();
     expect((result as { props?: { message?: string } }).props?.message).toMatch(/permission/i);
   });

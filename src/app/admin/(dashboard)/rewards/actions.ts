@@ -23,7 +23,8 @@ import {
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Same runAction/permission-gate pattern as every other admin actions.ts -
-// gated on economy.manage.
+// gated on reward.create/reward.edit/reward.delete (D81,
+// docs/ARCHITECTURE.md) - reward.delete is a refund, not a row deletion.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
     await fn();
@@ -39,7 +40,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createRewardDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("reward.create");
     const parsed = CreateRewardDraftSchema.parse(input);
     await createRewardDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/rewards");
@@ -48,7 +49,7 @@ export async function createRewardDraftAction(input: unknown): Promise<ActionRes
 
 export async function updateRewardDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("reward.edit");
     const parsed = UpdateRewardDraftSchema.parse(input);
     await updateRewardDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/rewards");
@@ -57,7 +58,7 @@ export async function updateRewardDraftAction(input: unknown): Promise<ActionRes
 
 export async function publishRewardAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("reward.edit");
     const { id } = RewardIdSchema.parse(input);
     await publishReward(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/rewards");
@@ -66,7 +67,7 @@ export async function publishRewardAction(input: unknown): Promise<ActionResult>
 
 export async function unpublishRewardAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("reward.edit");
     const { id } = RewardIdSchema.parse(input);
     await unpublishReward(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/rewards");
@@ -75,7 +76,7 @@ export async function unpublishRewardAction(input: unknown): Promise<ActionResul
 
 export async function refundRewardClaimAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("reward.delete");
     const { claimId, reason } = RefundRewardClaimSchema.parse(input);
     await refundRewardClaim(actor, claimId, reason, requestMeta(await headers()));
     revalidatePath("/admin/rewards");

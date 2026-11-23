@@ -6,9 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockGetStaffMember = vi.fn();
 vi.mock("@/lib/auth", () => ({ getStaffMember: () => mockGetStaffMember() }));
 
-const mockRoleHasPermission = vi.fn();
+const mockGetPermissionKeysForRole = vi.fn();
 vi.mock("@/server/staff/repo", () => ({
-  roleHasPermission: (roleId: unknown, permission: unknown) => mockRoleHasPermission(roleId, permission),
+  getPermissionKeysForRole: (roleId: unknown) => mockGetPermissionKeysForRole(roleId),
 }));
 
 const mockGetMentorEditorData = vi.fn();
@@ -56,7 +56,9 @@ function world(overrides: Partial<Record<string, unknown>> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetStaffMember.mockResolvedValue(STAFF);
-  mockRoleHasPermission.mockResolvedValue(true);
+  mockGetPermissionKeysForRole.mockResolvedValue(
+    new Set(["world.view", "world.create", "world.edit", "world.delete"]),
+  );
   mockGetMentorEditorData.mockResolvedValue([]);
   mockGetLessonEditorData.mockResolvedValue([]);
   mockGetWorldEditorData.mockResolvedValue([world()]);
@@ -71,8 +73,8 @@ describe("EditWorldPage", () => {
     expect((result as { props?: { message?: string } }).props?.message).toMatch(/sign-in/i);
   });
 
-  it("shows Forbidden when the staff member has neither world.manage nor world.publish", async () => {
-    mockRoleHasPermission.mockResolvedValue(false);
+  it("shows Forbidden when the staff member has neither world.edit nor world.delete", async () => {
+    mockGetPermissionKeysForRole.mockResolvedValue(new Set());
 
     const result = await EditWorldPage({ params: Promise.resolve({ id: "world_1" }) });
 

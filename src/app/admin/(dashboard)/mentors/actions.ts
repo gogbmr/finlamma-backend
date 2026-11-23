@@ -14,6 +14,7 @@ import {
 } from "@/server/mentors/schemas";
 import {
   createMentorDraft,
+  deleteMentor,
   hotfixMentor,
   publishMentor,
   unpublishMentor,
@@ -26,7 +27,7 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 // Same runAction/permission-gate pattern as
 // src/app/admin/(dashboard)/legal/actions.ts and .../staff/actions.ts.
 // Every action independently re-checks the caller's permission here - the
-// page's canManage/canPublish props only control which buttons render, they
+// page's canEdit/canDelete props only control which buttons render, they
 // are never trusted as authorization.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
@@ -43,7 +44,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createMentorDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.manage");
+    const actor = await requireStaff("mentor.create");
     const parsed = CreateMentorDraftSchema.parse(input);
     await createMentorDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
@@ -52,7 +53,7 @@ export async function createMentorDraftAction(input: unknown): Promise<ActionRes
 
 export async function updateMentorDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.manage");
+    const actor = await requireStaff("mentor.edit");
     const parsed = UpdateMentorDraftSchema.parse(input);
     await updateMentorDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
@@ -61,7 +62,7 @@ export async function updateMentorDraftAction(input: unknown): Promise<ActionRes
 
 export async function publishMentorAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.publish");
+    const actor = await requireStaff("mentor.delete");
     const { id } = MentorIdSchema.parse(input);
     await publishMentor(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
@@ -70,7 +71,7 @@ export async function publishMentorAction(input: unknown): Promise<ActionResult>
 
 export async function unpublishMentorAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.publish");
+    const actor = await requireStaff("mentor.delete");
     const { id } = MentorIdSchema.parse(input);
     await unpublishMentor(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
@@ -79,9 +80,23 @@ export async function unpublishMentorAction(input: unknown): Promise<ActionResul
 
 export async function hotfixMentorAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("mentor.publish");
+    const actor = await requireStaff("mentor.delete");
     const parsed = HotfixMentorSchema.parse(input);
     await hotfixMentor(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/mentors");
+  });
+}
+
+// Gated on mentor.delete, not mentor.edit - same reasoning as
+// worlds/actions.ts's deleteWorldAction and lessons/actions.ts's
+// deleteLessonAction: deletion is permanent and irreversible. deleteMentor
+// itself only allows removing a draft mentor with no world still assigned
+// to it.
+export async function deleteMentorAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("mentor.delete");
+    const { id } = MentorIdSchema.parse(input);
+    await deleteMentor(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/mentors");
   });
 }
@@ -92,13 +107,13 @@ export async function hotfixMentorAction(input: unknown): Promise<ActionResult> 
 // uploadMentorArt's byte-level format sniff and size cap (src/lib/image.ts),
 // which this delegates to unconditionally.
 //
-// Gated on EITHER mentor.manage or mentor.publish here - a cheap early
+// Gated on EITHER mentor.edit or mentor.delete here - a cheap early
 // reject only. uploadMentorArt itself (which already loads the mentor)
 // re-checks the exact required permission for this mentor's actual status
-// (manage for a draft, publish for a published one) - see its own comment.
+// (edit for a draft, delete for a published one) - see its own comment.
 export async function uploadMentorArtAction(formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaffAny(["mentor.manage", "mentor.publish"]);
+    const actor = await requireStaffAny(["mentor.edit", "mentor.delete"]);
     const id = MentorIdSchema.parse({ id: formData.get("id") }).id;
     const file = formData.get("file");
     if (!(file instanceof File)) {

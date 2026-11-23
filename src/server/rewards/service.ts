@@ -181,7 +181,7 @@ export async function claimReward(user: { id: string }, rewardId: string, meta: 
   };
 }
 
-// Admin-only (economy.manage), same trust bar as every other VM-moving admin
+// Admin-only (reward.delete), same trust bar as every other VM-moving admin
 // action. Credits the exact amount originally paid, at multiplier 1 - a
 // refund is an exact reversal of a specific past debit, never scaled by
 // whatever the VM issuance multiplier happens to be today (that multiplier

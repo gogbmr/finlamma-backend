@@ -12,8 +12,8 @@ export default async function NewWorldPage() {
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const canManage = await roleHasPermission(staff.roleId, "world.manage");
-  if (!canManage) {
+  const canCreate = await roleHasPermission(staff.roleId, "world.create");
+  if (!canCreate) {
     return <Forbidden message="You don't have permission to create worlds." />;
   }
 

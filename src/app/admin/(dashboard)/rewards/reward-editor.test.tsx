@@ -37,7 +37,8 @@ function renderEditor() {
   return render(
     <RewardEditor
       rewards={[REWARD]}
-      canManage
+      canCreate
+      canEdit
       total={1}
       page={1}
       pageCount={1}

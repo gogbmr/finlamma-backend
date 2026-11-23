@@ -146,8 +146,9 @@ function StoredJsonPanel({ data }: { data: unknown }) {
 
 export function CoachNoteEditor({
   templates,
-  canManage,
-  canPublish,
+  canCreate,
+  canEdit,
+  canDelete,
   total,
   page,
   pageCount,
@@ -158,8 +159,9 @@ export function CoachNoteEditor({
   status,
 }: {
   templates: TemplateRow[];
-  canManage: boolean;
-  canPublish: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   total: number;
   page: number;
   pageCount: number;
@@ -218,12 +220,12 @@ export function CoachNoteEditor({
     return () => document.removeEventListener("click", handleClick, true);
   }, [isDirty]);
 
-  if (total === 0 && !canManage) {
+  if (total === 0 && !canCreate) {
     return (
       <EmptyState
         icon={MessageSquareText}
         title="No coach note templates yet"
-        description="A staff member with coach_note.manage can create the first one."
+        description="A staff member with coach_note.create can create the first one."
       />
     );
   }
@@ -237,7 +239,7 @@ export function CoachNoteEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Select a template below to edit it.</p>
-        {canManage && (
+        {canCreate && (
           <Button type="button" size="sm" onClick={() => trySelect("new")}>
             + New template
           </Button>
@@ -258,7 +260,7 @@ export function CoachNoteEditor({
         onSelect={trySelect}
       />
 
-      {effectiveId === "new" && canManage ? (
+      {effectiveId === "new" && canCreate ? (
         <NewTemplateForm onDirtyChange={setIsDirty} />
       ) : (
         (() => {
@@ -268,8 +270,8 @@ export function CoachNoteEditor({
             <TemplateForm
               key={template.id}
               template={template}
-              canManage={canManage}
-              canPublish={canPublish}
+              canEdit={canEdit}
+              canDelete={canDelete}
               onDirtyChange={setIsDirty}
             />
           );
@@ -356,13 +358,13 @@ type TemplateFormValues = { category: TemplateCategory; template: LocalizedText 
 
 function TemplateForm({
   template,
-  canManage,
-  canPublish,
+  canEdit,
+  canDelete,
   onDirtyChange,
 }: {
   template: TemplateRow;
-  canManage: boolean;
-  canPublish: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -370,12 +372,12 @@ function TemplateForm({
 
   // No separate hotfix tier exists for coach notes (no
   // HotfixCoachNoteTemplateSchema/action) - updateCoachNoteTemplateAction
-  // only requires coach_note.manage, and this editor keeps the existing
+  // only requires coach_note.edit, and this editor keeps the existing
   // behavior of only allowing edits while still a draft (editable), never
   // on a published template, matching the ORIGINAL editor's gating exactly
   // even though the server itself doesn't separately enforce that.
   const isDraft = template.status === "draft";
-  const editable = canManage && isDraft;
+  const editable = canEdit && isDraft;
 
   const methods = useForm<TemplateFormValues>({
     resolver: zodResolver(UpdateCoachNoteTemplateSchema.omit({ id: true })),
@@ -509,12 +511,12 @@ function TemplateForm({
           <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
             Cancel
           </Button>
-          {canPublish && isDraft && (
+          {canDelete && isDraft && (
             <Button type="button" onClick={publish} disabled={isPending}>
               Publish
             </Button>
           )}
-          {canPublish && !isDraft && (
+          {canDelete && !isDraft && (
             <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
               Unpublish
             </Button>

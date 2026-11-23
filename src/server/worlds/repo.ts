@@ -47,6 +47,18 @@ export async function listPublishedWorldsByMentorId(mentorId: string) {
     .where(and(eq(worlds.mentorId, mentorId), eq(worlds.status, "published")));
 }
 
+// Any status, not just published - used by mentors/service.ts's
+// deleteMentor. Unlike lessons<->questions (a soft jsonb reference),
+// worlds.mentorId is a real, mandatory FK (NOT NULL, onDelete: "restrict")
+// - a draft world can reference a draft mentor just as easily as a
+// published one, so deleting a mentor needs to check for ANY referencing
+// world, not only published ones, the same "block while it still has
+// children" shape worlds/service.ts's own deleteWorld already uses for
+// lessons.
+export async function listWorldsByMentorId(mentorId: string) {
+  return db.select().from(worlds).where(eq(worlds.mentorId, mentorId));
+}
+
 export async function insertDraftWorld(input: CreateWorldDraftInput) {
   const [row] = await db.insert(worlds).values(input).returning();
   return row;

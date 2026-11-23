@@ -42,7 +42,7 @@ import { TopicInputSchema } from "@/server/topics/schemas";
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Same runAction/permission-gate pattern as every other admin actions.ts -
-// gated on settings.manage, which scripts/seed-roles.ts grants to
+// gated on settings.edit/economy.edit, which scripts/seed-roles.ts grants to
 // super_admin only.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
@@ -59,7 +59,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createAboutMeChipAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = AboutMeChipInputSchema.parse(input);
     await createAboutMeChipForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -68,7 +68,7 @@ export async function createAboutMeChipAction(input: unknown): Promise<ActionRes
 
 export async function updateAboutMeChipAction(id: string, input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = AboutMeChipInputSchema.parse(input);
     await updateAboutMeChipForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -77,17 +77,17 @@ export async function updateAboutMeChipAction(id: string, input: unknown): Promi
 
 export async function deleteAboutMeChipAction(id: string): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     await deleteAboutMeChipForAdmin(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
 }
 
-// economy.manage, not settings.manage - this directly sets VM reward
+// economy.edit, not settings.edit - this directly sets VM reward
 // amounts, same trust bar as reward_rules/the VM multiplier (D55).
 export async function updateArenaLeagueSettingsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("economy.edit");
     const parsed = ArenaLeagueSettingsInputSchema.parse(input);
     await updateArenaLeagueSettingsForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -96,7 +96,7 @@ export async function updateArenaLeagueSettingsAction(input: unknown): Promise<A
 
 export async function updateLessonFlowScoringAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = LessonFlowScoringSchema.parse(input);
     await updateLessonFlowScoringSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -105,7 +105,7 @@ export async function updateLessonFlowScoringAction(input: unknown): Promise<Act
 
 export async function updateVmIssuanceMultiplierAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("economy.edit");
     const parsed = VmIssuanceMultiplierSchema.parse(input);
     await updateVmIssuanceMultiplier(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -117,7 +117,7 @@ export async function updateRewardRuleAction(
   input: unknown,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("economy.edit");
     const parsed = RewardRuleUpdateSchema.parse(input);
     await updateRewardRuleForAdmin(actor, activityKind, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -126,7 +126,7 @@ export async function updateRewardRuleAction(
 
 export async function updateStreaksSettingsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = StreaksSettingsSchema.parse(input);
     await updateStreaksSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -135,7 +135,7 @@ export async function updateStreaksSettingsAction(input: unknown): Promise<Actio
 
 export async function updateDailyGoalsSettingsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = DailyGoalsSettingsSchema.parse(input);
     await updateDailyGoalsSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -144,7 +144,7 @@ export async function updateDailyGoalsSettingsAction(input: unknown): Promise<Ac
 
 export async function updateLevelCurveSettingsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = LevelCurveSettingsSchema.parse(input);
     await updateLevelCurveSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -153,7 +153,7 @@ export async function updateLevelCurveSettingsAction(input: unknown): Promise<Ac
 
 export async function createRankTitleAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = RankTitleInputSchema.parse(input);
     await createRankTitleForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -162,7 +162,7 @@ export async function createRankTitleAction(input: unknown): Promise<ActionResul
 
 export async function updateRankTitleAction(id: string, input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = RankTitleInputSchema.parse(input);
     await updateRankTitleForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -171,7 +171,7 @@ export async function updateRankTitleAction(id: string, input: unknown): Promise
 
 export async function deleteRankTitleAction(id: string): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     await deleteRankTitleForAdmin(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
@@ -179,7 +179,7 @@ export async function deleteRankTitleAction(id: string): Promise<ActionResult> {
 
 export async function createPeerHandleAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = PeerHandleInputSchema.parse(input);
     await createPeerHandleForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -188,7 +188,7 @@ export async function createPeerHandleAction(input: unknown): Promise<ActionResu
 
 export async function updatePeerHandleAction(id: string, input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = PeerHandleUpdateInputSchema.parse(input);
     await updatePeerHandleForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -197,7 +197,7 @@ export async function updatePeerHandleAction(id: string, input: unknown): Promis
 
 export async function deletePeerHandleAction(id: string): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     await deletePeerHandleForAdmin(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/settings");
   });
@@ -205,7 +205,7 @@ export async function deletePeerHandleAction(id: string): Promise<ActionResult> 
 
 export async function createTopicAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = TopicInputSchema.parse(input);
     await createTopicForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");
@@ -214,7 +214,7 @@ export async function createTopicAction(input: unknown): Promise<ActionResult> {
 
 export async function updateTopicAction(id: string, input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = TopicInputSchema.parse(input);
     await updateTopicForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/settings");

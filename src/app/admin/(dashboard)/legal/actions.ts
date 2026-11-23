@@ -28,7 +28,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function saveLegalDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("legal.manage");
+    const actor = await requireStaff("legal.edit");
     const parsed = SaveLegalDraftSchema.parse(input);
     await upsertLegalDraft(actor, parsed.type, parsed.content, requestMeta(await headers()));
     revalidatePath("/admin/legal");
@@ -37,7 +37,7 @@ export async function saveLegalDraftAction(input: unknown): Promise<ActionResult
 
 export async function publishLegalDocumentAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("legal.manage");
+    const actor = await requireStaff("legal.edit");
     const parsed = PublishLegalDocumentSchema.parse(input);
     const meta = requestMeta(await headers());
     const published = await publishLegalDocument(actor, parsed.type, parsed.requiresParentReapproval, meta);

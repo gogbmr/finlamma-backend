@@ -6,7 +6,7 @@ import "@/lib/openapi";
 
 // docs/ARCHITECTURE.md D30: how many missed IST days per calendar month a
 // learner can have auto-covered without breaking their streak. Same
-// settings.manage/super_admin-only edit path as Lesson Flow's scoring
+// settings.edit/super_admin-only edit path as Lesson Flow's scoring
 // constants - a change here affects every learner's streak immediately.
 export const StreaksSettingsSchema = z.object({
   streakFreezesPerMonth: z.number().int().nonnegative(),

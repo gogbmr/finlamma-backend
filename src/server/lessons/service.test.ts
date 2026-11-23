@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockDeleteLessonRow = vi.fn();
 const mockGetLessonById = vi.fn();
 const mockGetPublishedLesson = vi.fn();
 const mockGetPublishedLessonAtPosition = vi.fn();
@@ -12,6 +13,7 @@ const mockPublishLessonRow = vi.fn();
 const mockUnpublishLessonRow = vi.fn();
 const mockUpdateDraftLesson = vi.fn();
 vi.mock("./repo", () => ({
+  deleteLessonRow: (id: unknown) => mockDeleteLessonRow(id),
   getLessonById: (id: unknown) => mockGetLessonById(id),
   getPublishedLesson: (id: unknown) => mockGetPublishedLesson(id),
   getPublishedLessonAtPosition: (worldId: unknown, chapter: unknown, step: unknown) =>
@@ -89,6 +91,7 @@ vi.mock("@/lib/activity-log", () => ({
 
 import {
   createLessonDraft,
+  deleteLesson,
   getCurrentLesson,
   getLessonEditorData,
   getLessonPreview,
@@ -1222,6 +1225,41 @@ describe("unpublishLesson", () => {
 
       expect(result.status).toBe("draft");
     }
+  });
+});
+
+// Draft-only delete - no child-reference check needed (unlike worlds'
+// deleteWorld) because a lesson that was never published can never have
+// real lesson_progress/quiz_attempts/doubt_zone rows attached.
+describe("deleteLesson", () => {
+  it("deletes a draft lesson and logs it", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "draft" }));
+    mockDeleteLessonRow.mockResolvedValueOnce(lessonRow({ status: "draft" }));
+
+    const result = await deleteLesson(ACTOR, "lesson_1", META);
+
+    expect(result.status).toBe("draft");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "lesson.deleted", actorId: "staff_1" }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown lesson", async () => {
+    mockGetLessonById.mockResolvedValueOnce(null);
+
+    await expect(deleteLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockDeleteLessonRow).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the lesson is published - unpublish first", async () => {
+    mockGetLessonById.mockResolvedValueOnce(lessonRow({ status: "published" }));
+    mockDeleteLessonRow.mockResolvedValueOnce(null);
+
+    await expect(deleteLesson(ACTOR, "lesson_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/unpublish/i),
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 });
 

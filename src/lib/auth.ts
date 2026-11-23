@@ -168,7 +168,7 @@ export async function getStaffMember() {
 // Authorizes a staff-only route: the caller must have an active staff Clerk
 // session (via clerkMiddleware()/auth() - see middleware.ts and
 // docs/ARCHITECTURE.md decision D2a) with a staff_members row whose role
-// grants the given permission key (e.g. "staff.manage"). Returns the
+// grants the given permission key (e.g. "staff.edit"). Returns the
 // staff_members row so callers can use its id as the activity log actorId.
 export async function requireStaff(permission: string) {
   const { userId: clerkUserId } = await auth();

@@ -116,9 +116,9 @@ describe("publishLegalDocumentAction - the Yes/No re-approval choice", () => {
     expect(mockInngestSend).not.toHaveBeenCalled();
   });
 
-  it("never calls publishLegalDocument at all if the caller isn't legal.manage staff", async () => {
+  it("never calls publishLegalDocument at all if the caller isn't legal.edit staff", async () => {
     const { AppError } = await import("@/lib/errors");
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: legal.manage"));
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: legal.edit"));
 
     const result = await publishLegalDocumentAction({ type: "terms", requiresParentReapproval: true });
 

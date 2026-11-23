@@ -9,7 +9,7 @@ import { createMarketHolidayAction, deleteMarketHolidayAction } from "./actions"
 
 type HolidayRow = { id: string; date: string; name: string };
 
-export function HolidayEditor({ holidays, canManage }: { holidays: HolidayRow[]; canManage: boolean }) {
+export function HolidayEditor({ holidays, canEdit }: { holidays: HolidayRow[]; canEdit: boolean }) {
   const [isPending, startTransition] = useTransition();
   const [date, setDate] = useState("");
   const [name, setName] = useState("");
@@ -50,7 +50,7 @@ export function HolidayEditor({ holidays, canManage }: { holidays: HolidayRow[];
                 <span className="font-mono text-foreground">{h.date}</span>{" "}
                 <span className="text-muted-foreground">{h.name}</span>
               </span>
-              {canManage && (
+              {canEdit && (
                 <Button type="button" variant="ghost" size="sm" disabled={isPending} onClick={() => remove(h.id)}>
                   Remove
                 </Button>
@@ -60,7 +60,7 @@ export function HolidayEditor({ holidays, canManage }: { holidays: HolidayRow[];
         </ul>
       )}
 
-      {canManage && (
+      {canEdit && (
         <div className="flex items-end gap-2 border-t border-border pt-3">
           <div className="space-y-1">
             <Label>Date</Label>

@@ -52,7 +52,7 @@ describe("AdminHomePage", () => {
 
   it("falls through to the first visible section in priority order when analytics isn't granted", async () => {
     mockGetStaffMember.mockResolvedValue(STAFF);
-    mockGetPermissionKeysForRole.mockResolvedValue(new Set(["mentor.publish"]));
+    mockGetPermissionKeysForRole.mockResolvedValue(new Set(["mentor.view"]));
 
     await expect(AdminHomePage()).rejects.toThrow();
 
@@ -61,7 +61,7 @@ describe("AdminHomePage", () => {
 
   // The actual question this round asked: a role with zero visible
   // sections must still land somewhere that renders Forbidden, not loop or
-  // crash - /admin/staff's own page.tsx shows Forbidden for staff.manage,
+  // crash - /admin/staff's own page.tsx shows Forbidden for staff.view,
   // which this role also lacks by construction (an empty permission set).
   it("falls back to /admin/staff when the role has no visible sections at all", async () => {
     mockGetStaffMember.mockResolvedValue(STAFF);

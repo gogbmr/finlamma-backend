@@ -13,6 +13,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  deleteMentorRow,
   getMentorById,
   hotfixMentorRow,
   insertDraftMentor,
@@ -155,6 +156,32 @@ describe("publishMentorRow / unpublishMentorRow", () => {
 
     const result = await unpublishMentorRow(created.id);
 
+    expect(result).toBeNull();
+  });
+});
+
+describe("deleteMentorRow", () => {
+  it("deletes a draft mentor", async () => {
+    const created = await insertDraftMentor(draftInput());
+
+    const deleted = await deleteMentorRow(created.id);
+
+    expect(deleted?.id).toBe(created.id);
+    expect(await getMentorById(created.id)).toBeNull();
+  });
+
+  it("returns null (does not delete) when the mentor is currently published", async () => {
+    const created = await insertDraftMentor(draftInput());
+    await publishMentorRow(created.id, staffId);
+
+    const result = await deleteMentorRow(created.id);
+
+    expect(result).toBeNull();
+    expect(await getMentorById(created.id)).not.toBeNull();
+  });
+
+  it("returns null for a nonexistent mentor", async () => {
+    const result = await deleteMentorRow(randomUUID());
     expect(result).toBeNull();
   });
 });

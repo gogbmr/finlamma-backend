@@ -231,7 +231,7 @@ async function rejectAgeBelowMinimum(userId: string, meta: RequestMeta): Promise
 
 // Set-once: a second call always fails, even with the same value - see
 // docs/PRODUCT_SPEC.md's Onboarding & parental consent section. Only staff
-// (consent.correct_dob, super_admin only - see correctDateOfBirthForAdmin
+// (consent.edit, super_admin only - see correctDateOfBirthForAdmin
 // below) can correct a mistake after this.
 export async function setDateOfBirth(user: MeUser, input: SetDateOfBirthInput, meta: RequestMeta) {
   if (user.dateOfBirth) {
@@ -854,7 +854,7 @@ export type CorrectDateOfBirthInput = {
 };
 
 // App asks batch, section C3: the staff DOB-correction tool. Caller
-// (the admin Server Action) must already have checked consent.correct_dob
+// (the admin Server Action) must already have checked consent.edit
 // (super_admin only at launch, per design review - not user_manager).
 //
 // If the corrected date results in an under-13 account, runs the EXACT

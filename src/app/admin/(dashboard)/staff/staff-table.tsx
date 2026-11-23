@@ -26,6 +26,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { cn } from "@/lib/cn";
 import { setStaffActiveAction, updateStaffRoleAction } from "./actions";
+import { StaffProfilePanel } from "./staff-profile-panel";
 
 export type StaffRow = {
   id: string;
@@ -33,6 +34,11 @@ export type StaffRow = {
   active: boolean;
   roleId: string;
   roleName: string;
+  email: string | null;
+  gender: "male" | "female" | "other" | "prefer_not_to_say" | null;
+  phone: string | null;
+  address: string | null;
+  photoUrl: string | null;
 };
 
 type ActiveFilter = "active" | "inactive" | null;
@@ -69,6 +75,9 @@ export function StaffTable({
   sort,
   dir,
   active,
+  viewerId,
+  canEdit,
+  canDelete,
 }: {
   staff: StaffRow[];
   roles: { id: string; name: string }[];
@@ -80,11 +89,15 @@ export function StaffTable({
   sort: string | null;
   dir: "asc" | "desc";
   active: ActiveFilter;
+  viewerId: string;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const pathname = usePathname();
   const state: AdminListUrlState = { q, sort, dir, pageSize };
   const [isPending, startTransition] = useTransition();
   const [confirmDeactivate, setConfirmDeactivate] = useState<StaffRow | null>(null);
+  const [editingProfile, setEditingProfile] = useState<StaffRow | null>(null);
 
   const changeRole = useCallback((staffId: string, roleId: string) => {
     startTransition(async () => {
@@ -114,28 +127,38 @@ export function StaffTable({
         ),
       },
       {
+        id: "email",
+        header: "Email",
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">{row.original.email ?? "—"}</span>
+        ),
+      },
+      {
         id: "roleName",
         header: () => (
           <DataTableSortHeader label="Role" field="roleName" pathname={pathname} state={state} />
         ),
-        cell: ({ row }) => (
-          <Select
-            value={row.original.roleId}
-            onValueChange={(roleId) => changeRole(row.original.id, roleId)}
-            disabled={isPending}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {roles.map((role) => (
-                <SelectItem key={role.id} value={role.id}>
-                  {role.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ),
+        cell: ({ row }) =>
+          canEdit ? (
+            <Select
+              value={row.original.roleId}
+              onValueChange={(roleId) => changeRole(row.original.id, roleId)}
+              disabled={isPending}
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {roles.map((role) => (
+                  <SelectItem key={role.id} value={role.id}>
+                    {role.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            row.original.roleName
+          ),
       },
       {
         header: "Status",
@@ -151,30 +174,46 @@ export function StaffTable({
         header: "",
         cell: ({ row }) => {
           const s = row.original;
-          return s.active ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isPending}
-              onClick={() => setConfirmDeactivate(s)}
-            >
-              Deactivate
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isPending}
-              onClick={() => setActive(s.id, true)}
-            >
-              Activate
-            </Button>
+          const isSelf = s.id === viewerId;
+          return (
+            <div className="flex items-center justify-end gap-2">
+              {(isSelf || canEdit) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => setEditingProfile(s)}
+                >
+                  Profile
+                </Button>
+              )}
+              {canDelete &&
+                (s.active ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => setConfirmDeactivate(s)}
+                  >
+                    Deactivate
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isPending}
+                    onClick={() => setActive(s.id, true)}
+                  >
+                    Activate
+                  </Button>
+                ))}
+            </div>
           );
         },
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isPending, roles, changeRole, setActive, pathname, q, sort, dir, pageSize],
+    [isPending, roles, changeRole, setActive, pathname, q, sort, dir, pageSize, canEdit, canDelete, viewerId],
   );
 
   return (
@@ -238,6 +277,13 @@ export function StaffTable({
           setConfirmDeactivate(null);
         }}
       />
+
+      {editingProfile && (
+        <StaffProfilePanel
+          staff={editingProfile}
+          onClose={() => setEditingProfile(null)}
+        />
+      )}
     </>
   );
 }

@@ -25,7 +25,7 @@ export async function getDoubtZoneSafetySettings(): Promise<DoubtZoneSafetySetti
   return parsed.success ? parsed.data : DEFAULT_DOUBT_ZONE_SAFETY_SETTINGS;
 }
 
-// Gated on settings.manage, same narrow super_admin-only trust bar as
+// Gated on settings.edit, same narrow super_admin-only trust bar as
 // lesson-flow scoring and every other founder-only constant - this one
 // controls crisis-redirect wording and safety-classifier sensitivity, so
 // it's at least as sensitive as a money constant.
@@ -41,7 +41,7 @@ export async function updateDoubtZoneSafetySettings(
     "Doubt Zone AI safety settings: crisis helpline redirect text, advice-language fallback, " +
       "thread disclosure copy, safety-classifier sensitivity, and daily message caps. See " +
       "docs/ARCHITECTURE.md's Phase 7 kickoff decisions. Editable only by super_admin " +
-      "(settings.manage), logged.",
+      "(settings.edit), logged.",
   );
 
   await logActivity({

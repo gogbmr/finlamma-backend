@@ -162,3 +162,19 @@ export async function unpublishLessonRow(id: string) {
     .returning();
   return row ?? null;
 }
+
+// Only deletes a lesson that's currently a draft - same opposite-status
+// guard shape as updateDraftLesson/publishLessonRow. A published lesson
+// can never have been deleted this way (unpublish first), which is also
+// why no "does anything reference this lesson" check is needed here: a
+// lesson that was never published can never have real lesson_progress,
+// quiz_attempts or doubt_zone rows pointing at it (those are only ever
+// created against a PUBLISHED lesson's id - see assertLessonUnlocked/
+// getPublicLesson), so there is nothing to orphan.
+export async function deleteLessonRow(id: string) {
+  const [row] = await db
+    .delete(lessons)
+    .where(and(eq(lessons.id, id), eq(lessons.status, "draft")))
+    .returning();
+  return row ?? null;
+}

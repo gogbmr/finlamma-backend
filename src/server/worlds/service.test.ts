@@ -496,40 +496,40 @@ describe("reorderWorld", () => {
   });
 
   // D25 (docs/ARCHITECTURE.md): reordering a published world can shift which
-  // world sits at the trading-unlock position, so it needs world.publish -
+  // world sits at the trading-unlock position, so it needs world.delete -
   // the same trust bar as publish/unpublish/delete - while a draft reorder
-  // only needs world.manage.
+  // only needs world.edit.
   describe("permission tier depends on the mover's status", () => {
-    it("allows a draft reorder for an actor with only world.manage", async () => {
+    it("allows a draft reorder for an actor with only world.edit", async () => {
       mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
       mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "world.manage"),
+        Promise.resolve(perm === "world.edit"),
       );
       mockMoveWorldToPosition.mockResolvedValueOnce(worldRow({ order: 2 }));
 
       await expect(reorderWorld(ACTOR, "world_1", 2, META)).resolves.toBeDefined();
     });
 
-    it("blocks a published reorder for an actor with only world.manage", async () => {
+    it("blocks a published reorder for an actor with only world.edit", async () => {
       mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "world.manage"),
+        Promise.resolve(perm === "world.edit"),
       );
 
       await expect(reorderWorld(ACTOR, "world_1", 2, META)).rejects.toMatchObject({
         code: "FORBIDDEN",
-        message: expect.stringMatching(/world\.publish/),
+        message: expect.stringMatching(/world\.delete/),
       });
       expect(mockMoveWorldToPosition).not.toHaveBeenCalled();
       expect(mockLogActivity).not.toHaveBeenCalled();
     });
 
-    it("allows a published reorder for an actor with world.publish", async () => {
+    it("allows a published reorder for an actor with world.delete", async () => {
       mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
       mockListAllWorlds.mockResolvedValueOnce([worldRow(), worldRow()]);
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "world.publish"),
+        Promise.resolve(perm === "world.delete"),
       );
       mockMoveWorldToPosition.mockResolvedValueOnce(worldRow({ order: 2, status: "published" }));
 
@@ -816,14 +816,14 @@ describe("uploadWorldArt", () => {
   });
 
   // D20/D25 (docs/ARCHITECTURE.md): a published world's art is live content
-  // - replacing it needs world.publish, the same trust bar as the
-  // title/tagline hotfix path, not just world.manage. A draft's art is
+  // - replacing it needs world.delete, the same trust bar as the
+  // title/tagline hotfix path, not just world.edit. A draft's art is
   // normal editing.
   describe("permission tier depends on the world's status", () => {
-    it("allows a draft upload for an actor with only world.manage", async () => {
+    it("allows a draft upload for an actor with only world.edit", async () => {
       mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "draft" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "world.manage"),
+        Promise.resolve(perm === "world.edit"),
       );
       mockSetWorldArtKey.mockResolvedValueOnce(worldRow());
 
@@ -832,23 +832,23 @@ describe("uploadWorldArt", () => {
       ).resolves.toBeDefined();
     });
 
-    it("blocks a published-world upload for an actor with only world.manage", async () => {
+    it("blocks a published-world upload for an actor with only world.edit", async () => {
       mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "world.manage"),
+        Promise.resolve(perm === "world.edit"),
       );
 
       await expect(
         uploadWorldArt(ACTOR, "world_1", { body: PNG_BYTES }, META),
-      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/world\.publish/) });
+      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/world\.delete/) });
       expect(mockUploadObject).not.toHaveBeenCalled();
       expect(mockLogActivity).not.toHaveBeenCalled();
     });
 
-    it("allows a published-world upload for an actor with world.publish", async () => {
+    it("allows a published-world upload for an actor with world.delete", async () => {
       mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "world.publish"),
+        Promise.resolve(perm === "world.delete"),
       );
       mockSetWorldArtKey.mockResolvedValueOnce(worldRow({ status: "published" }));
 

@@ -28,6 +28,7 @@ const mockUpdateLessonDraft = vi.fn();
 const mockHotfixLesson = vi.fn();
 const mockPublishLesson = vi.fn();
 const mockUnpublishLesson = vi.fn();
+const mockDeleteLesson = vi.fn();
 const mockGetLessonPreview = vi.fn();
 vi.mock("@/server/lessons/service", () => ({
   createLessonDraft: (actor: unknown, input: unknown, meta: unknown) =>
@@ -39,11 +40,13 @@ vi.mock("@/server/lessons/service", () => ({
   publishLesson: (actor: unknown, id: unknown, meta: unknown) => mockPublishLesson(actor, id, meta),
   unpublishLesson: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishLesson(actor, id, meta),
+  deleteLesson: (actor: unknown, id: unknown, meta: unknown) => mockDeleteLesson(actor, id, meta),
   getLessonPreview: (id: unknown) => mockGetLessonPreview(id),
 }));
 
 import {
   createLessonDraftAction,
+  deleteLessonAction,
   hotfixLessonAction,
   previewLessonAction,
   publishLessonAction,
@@ -69,18 +72,18 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createLessonDraftAction: requires lesson.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.manage"));
+  it("createLessonDraftAction: requires lesson.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.create"));
 
     const result = await createLessonDraftAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: lesson.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: lesson.create" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.create");
     expect(mockCreateLessonDraft).not.toHaveBeenCalled();
   });
 
-  it("updateLessonDraftAction: requires lesson.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.manage"));
+  it("updateLessonDraftAction: requires lesson.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.edit"));
 
     const result = await updateLessonDraftAction({ id: LESSON_ID, ...VALID_INPUT });
 
@@ -88,18 +91,18 @@ describe("wrong role is rejected", () => {
     expect(mockUpdateLessonDraft).not.toHaveBeenCalled();
   });
 
-  it("publishLessonAction: requires lesson.publish, not lesson.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.publish"));
+  it("publishLessonAction: requires lesson.delete, not lesson.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.delete"));
 
     const result = await publishLessonAction({ id: LESSON_ID });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.delete");
     expect(mockPublishLesson).not.toHaveBeenCalled();
   });
 
-  it("unpublishLessonAction: requires lesson.publish", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.publish"));
+  it("unpublishLessonAction: requires lesson.delete", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.delete"));
 
     const result = await unpublishLessonAction({ id: LESSON_ID });
 
@@ -107,8 +110,8 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishLesson).not.toHaveBeenCalled();
   });
 
-  it("hotfixLessonAction: requires lesson.publish, not lesson.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.publish"));
+  it("hotfixLessonAction: requires lesson.delete, not lesson.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.delete"));
 
     const result = await hotfixLessonAction({
       id: LESSON_ID,
@@ -118,8 +121,20 @@ describe("wrong role is rejected", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.delete");
     expect(mockHotfixLesson).not.toHaveBeenCalled();
+  });
+
+  // Gated on lesson.delete, not lesson.edit - deletion is permanent and
+  // irreversible, same trust bar as worlds/actions.ts's deleteWorldAction.
+  it("deleteLessonAction: requires lesson.delete, not lesson.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: lesson.delete"));
+
+    const result = await deleteLessonAction({ id: LESSON_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("lesson.delete");
+    expect(mockDeleteLesson).not.toHaveBeenCalled();
   });
 });
 
@@ -227,6 +242,29 @@ describe("happy paths", () => {
     expect(result).toEqual({ ok: false, error: "Cannot unpublish: this is a world's Boss Quiz" });
   });
 
+  it("deleteLessonAction deletes and revalidates", async () => {
+    mockDeleteLesson.mockResolvedValueOnce({ id: LESSON_ID });
+
+    const result = await deleteLessonAction({ id: LESSON_ID });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockDeleteLesson).toHaveBeenCalledWith(ACTOR, LESSON_ID, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/lessons");
+  });
+
+  it("deleteLessonAction surfaces the still-published block to the caller", async () => {
+    mockDeleteLesson.mockRejectedValueOnce(
+      new AppError("CONFLICT", "Lesson not found, or it's currently published - unpublish it first to delete"),
+    );
+
+    const result = await deleteLessonAction({ id: LESSON_ID });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Lesson not found, or it's currently published - unpublish it first to delete",
+    });
+  });
+
   it("hotfixLessonAction hotfixes and revalidates", async () => {
     mockHotfixLesson.mockResolvedValueOnce({ id: LESSON_ID, status: "published" });
 
@@ -249,7 +287,7 @@ describe("happy paths", () => {
 
 const STAFF = { id: "staff_1", roleId: "role_1" };
 
-describe("previewLessonAction - read-only, gated on EITHER lesson.manage or lesson.publish", () => {
+describe("previewLessonAction - read-only, gated on lesson.view", () => {
   beforeEach(() => {
     mockGetStaffMember.mockReset();
     mockRoleHasPermission.mockReset();
@@ -265,9 +303,9 @@ describe("previewLessonAction - read-only, gated on EITHER lesson.manage or less
     expect(mockGetLessonPreview).not.toHaveBeenCalled();
   });
 
-  it("rejects a staff member with neither lesson.manage nor lesson.publish", async () => {
+  it("rejects a staff member without lesson.view", async () => {
     mockGetStaffMember.mockResolvedValueOnce(STAFF);
-    mockRoleHasPermission.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+    mockRoleHasPermission.mockResolvedValueOnce(false);
 
     const result = await previewLessonAction({ id: LESSON_ID });
 
@@ -275,19 +313,9 @@ describe("previewLessonAction - read-only, gated on EITHER lesson.manage or less
     expect(mockGetLessonPreview).not.toHaveBeenCalled();
   });
 
-  it("allows a staff member with only lesson.manage (no lesson.publish)", async () => {
+  it("allows a staff member with lesson.view", async () => {
     mockGetStaffMember.mockResolvedValueOnce(STAFF);
-    mockRoleHasPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-    mockGetLessonPreview.mockResolvedValueOnce({ id: LESSON_ID, kind: "quiz" });
-
-    const result = await previewLessonAction({ id: LESSON_ID });
-
-    expect(result).toEqual({ ok: true, data: { id: LESSON_ID, kind: "quiz" } });
-  });
-
-  it("allows a staff member with only lesson.publish (no lesson.manage)", async () => {
-    mockGetStaffMember.mockResolvedValueOnce(STAFF);
-    mockRoleHasPermission.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    mockRoleHasPermission.mockResolvedValueOnce(true);
     mockGetLessonPreview.mockResolvedValueOnce({ id: LESSON_ID, kind: "quiz" });
 
     const result = await previewLessonAction({ id: LESSON_ID });
@@ -297,7 +325,7 @@ describe("previewLessonAction - read-only, gated on EITHER lesson.manage or less
 
   it("surfaces a NOT_FOUND from the service as a clean error", async () => {
     mockGetStaffMember.mockResolvedValueOnce(STAFF);
-    mockRoleHasPermission.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    mockRoleHasPermission.mockResolvedValueOnce(true);
     mockGetLessonPreview.mockRejectedValueOnce(new AppError("NOT_FOUND", "Lesson not found"));
 
     const result = await previewLessonAction({ id: LESSON_ID });

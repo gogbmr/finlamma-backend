@@ -66,8 +66,8 @@ export async function updateInstrumentRow(input: UpdateInstrumentInput) {
   return row ?? null;
 }
 
-// Ops console only (Checkpoint 9, trading.ops permission) - separate from
-// the catalog fields above (instrument.manage), since halting a symbol is a
+// Ops console only (Checkpoint 9, ops.edit permission) - separate from
+// the catalog fields above (instrument.edit), since halting a symbol is a
 // live trading-safety control, not catalog editing. Kept here now so the
 // column has a real write path the moment Checkpoint 9 needs it, even
 // though nothing calls it yet.
@@ -114,7 +114,7 @@ export async function getOrCreateMarketControls(txDb: DbOrTx = db) {
 }
 
 // Both write paths below are Checkpoint 9's dangerous Ops controls -
-// trading.ops only (never instrument.manage), always called from
+// ops.edit only (never instrument.edit), always called from
 // src/server/trading/service.ts's functions that require a free-text
 // reason and log the change, never called directly from a route/action.
 export async function setGlobalHalt(halt: boolean) {

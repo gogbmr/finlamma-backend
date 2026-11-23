@@ -52,21 +52,21 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createRewardDraftAction requires economy.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: economy.manage"));
+  it("createRewardDraftAction requires reward.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: reward.create"));
 
     const result = await createRewardDraftAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: reward.create" });
     expect(mockCreateRewardDraft).not.toHaveBeenCalled();
   });
 
-  it("refundRewardClaimAction requires economy.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: economy.manage"));
+  it("refundRewardClaimAction requires reward.delete", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: reward.delete"));
 
     const result = await refundRewardClaimAction({ claimId: CLAIM_ID, reason: "customer request" });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: reward.delete" });
     expect(mockRefundRewardClaim).not.toHaveBeenCalled();
   });
 });

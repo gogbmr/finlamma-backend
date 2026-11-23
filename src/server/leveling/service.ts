@@ -19,7 +19,7 @@ export async function getLevelCurveSettings(): Promise<LevelCurveSettings> {
   return parsed.success ? parsed.data : DEFAULT_LEVEL_CURVE_SETTINGS;
 }
 
-// Gated on settings.manage (super_admin only) - same narrow trust bar as
+// Gated on settings.edit (super_admin only) - same narrow trust bar as
 // every other learner-wide constant. Level is never stored (see
 // src/server/leveling/math.ts), so changing this re-derives every
 // learner's level the next time anything reads it - no backfill needed,

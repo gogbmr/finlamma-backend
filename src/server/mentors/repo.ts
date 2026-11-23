@@ -84,3 +84,18 @@ export async function unpublishMentorRow(id: string) {
     .returning();
   return row ?? null;
 }
+
+// Only deletes a mentor that's currently a draft - same opposite-status
+// guard shape as updateDraftMentor/publishMentorRow. The service layer
+// checks worlds/repo.ts's listWorldsByMentorId first (any status) before
+// ever calling this, since worlds.mentorId is a real, mandatory FK
+// (onDelete: "restrict") - this still relies on that same FK as a backstop
+// against a world being assigned to this mentor in the gap between the
+// check and the delete, same reasoning as worlds/service.ts's deleteWorld.
+export async function deleteMentorRow(id: string) {
+  const [row] = await db
+    .delete(mentors)
+    .where(and(eq(mentors.id, id), eq(mentors.status, "draft")))
+    .returning();
+  return row ?? null;
+}

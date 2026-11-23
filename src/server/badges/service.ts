@@ -134,8 +134,8 @@ export async function unpublishBadge(actor: { id: string }, id: string, meta: Re
 // App asks batch, item A10 - mirrors mentors/service.ts's uploadMentorArt
 // exactly (size cap, byte-sniffed format, unique key per upload so a bad
 // upload to live content can be reverted). Unlike mentor art, badges have
-// only one permission tier (economy.manage) regardless of draft/published
-// status, so there's no manage-vs-publish split to re-check here.
+// only one permission tier (badge.edit) regardless of draft/published
+// status, so there's no edit-vs-delete split to re-check here.
 export async function uploadBadgeIcon(
   actor: { id: string },
   id: string,

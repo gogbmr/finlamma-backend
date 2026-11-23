@@ -4,6 +4,7 @@ import type { requestMeta } from "@/lib/http";
 import { listPublishedLessonsReferencingQuestion } from "@/server/lessons/service";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
+  deleteQuestionRow,
   getQuestionById,
   hotfixQuestionRow,
   insertDraftQuestion,
@@ -177,7 +178,7 @@ export async function publishQuestion(actor: { id: string }, id: string, meta: R
 // already-PUBLISHED question directly, without the unpublish -> edit draft
 // -> republish cycle - which is impossible here anyway once any published
 // lesson references the question (unpublishQuestion above blocks it).
-// Requires question.publish (not just question.manage) - the same trust bar
+// Requires question.delete (not just question.edit) - the same trust bar
 // as publishing, since this changes what's live immediately with no draft
 // review step. Re-runs every check a normal edit+publish would: structural
 // shape, answer bounds, and translation completeness - a hotfix must never
@@ -246,4 +247,34 @@ export async function unpublishQuestion(actor: { id: string }, id: string, meta:
     userAgent: meta.userAgent,
   });
   return unpublished;
+}
+
+// Draft-only, permanent removal. A published question must be unpublished
+// first - same reasoning as lessons/service.ts's deleteLesson. Deliberately
+// no "does any lesson reference this" check (see deleteQuestionRow's
+// comment) - the founder's call, since a lesson's content holds question
+// ids as jsonb, not a real FK.
+export async function deleteQuestion(actor: { id: string }, id: string, meta: RequestMeta) {
+  const question = await getQuestionById(id);
+  if (!question) throw new AppError("NOT_FOUND", "Question not found");
+
+  const deleted = await deleteQuestionRow(id);
+  if (!deleted) {
+    throw new AppError(
+      "CONFLICT",
+      "Question not found, or it's currently published - unpublish it first to delete",
+    );
+  }
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "question.deleted",
+    targetType: "question",
+    targetId: id,
+    metadata: { format: question.format },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return deleted;
 }

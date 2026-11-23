@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getWorldEditorData } from "@/server/worlds/service";
 import { WorldsTable } from "./worlds-table";
@@ -48,12 +48,12 @@ export default async function WorldsPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "world.manage"),
-    roleHasPermission(staff.roleId, "world.publish"),
-  ]);
-  if (!canManage && !canPublish) {
-    return <Forbidden message="You don't have permission to manage worlds." />;
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("world.create");
+  const canEdit = grantedKeys.has("world.edit");
+  const canDelete = grantedKeys.has("world.delete");
+  if (!grantedKeys.has("world.view")) {
+    return <Forbidden message="You don't have permission to view worlds." />;
   }
 
   const [worlds, mentors] = await Promise.all([
@@ -90,7 +90,7 @@ export default async function WorldsPage({
         title="Worlds"
         description="Worlds a learner clears in sequential order - staff decide how many exist. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it. A world can only be deleted once it has no lessons."
         action={
-          canManage && (
+          canCreate && (
             <Button asChild size="sm">
               <Link href="/admin/worlds/new">+ New world</Link>
             </Button>
@@ -120,8 +120,8 @@ export default async function WorldsPage({
         sort={pageState.sort}
         dir={pageState.dir}
         status={statusFilter}
-        canManage={canManage}
-        canPublish={canPublish}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
     </div>
   );

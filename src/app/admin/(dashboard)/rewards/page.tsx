@@ -3,7 +3,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getRewardEditorData, listRecentClaimsForAdmin } from "@/server/rewards/service";
 import { RewardEditor } from "./reward-editor";
 import { RecentClaims } from "./recent-claims";
@@ -42,9 +42,11 @@ export default async function RewardsPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const canManage = await roleHasPermission(staff.roleId, "economy.manage");
-  if (!canManage) {
-    return <Forbidden message="You don't have permission to manage rewards. Only super_admin does." />;
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("reward.create");
+  const canEdit = grantedKeys.has("reward.edit");
+  if (!grantedKeys.has("reward.view")) {
+    return <Forbidden message="You don't have permission to view rewards. Only super_admin does." />;
   }
 
   const [rewards, recentClaims] = await Promise.all([getRewardEditorData(), listRecentClaimsForAdmin()]);
@@ -77,7 +79,8 @@ export default async function RewardsPage({
 
       <RewardEditor
         rewards={paged.rows}
-        canManage={canManage}
+        canCreate={canCreate}
+        canEdit={canEdit}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}

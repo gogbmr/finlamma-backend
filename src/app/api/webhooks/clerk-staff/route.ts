@@ -67,7 +67,16 @@ export const POST = withErrors(async (req: Request) => {
 
   if (evt.type === "user.created") {
     const publicMetadata = (evt.data.public_metadata ?? {}) as Record<string, unknown>;
-    await completeStaffInviteFromClerkEvent(evt.data.id, publicMetadata);
+    // Same "primary + verified" shape as src/server/users/service.ts's
+    // primaryVerifiedEmail - an unverified address here would mean the
+    // invite flow was somehow bypassed, so skip storing it rather than
+    // storing something that might not actually belong to this person.
+    const primaryEmail = evt.data.email_addresses?.find(
+      (e) => e.id === evt.data.primary_email_address_id,
+    );
+    const email =
+      primaryEmail?.verification?.status === "verified" ? primaryEmail.email_address : undefined;
+    await completeStaffInviteFromClerkEvent(evt.data.id, publicMetadata, email);
   } else if (evt.type === "user.deleted" && evt.data.id) {
     await deactivateStaffMemberFromClerkEvent(evt.data.id);
   }

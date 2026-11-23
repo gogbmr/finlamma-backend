@@ -125,46 +125,46 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("updateLessonFlowScoringAction: requires settings.manage", async () => {
+  it("updateLessonFlowScoringAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await updateLessonFlowScoringAction(DEFAULT_LESSON_FLOW_SCORING);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.edit");
     expect(mockUpdateLessonFlowScoringSettings).not.toHaveBeenCalled();
   });
 
-  it("updateDailyGoalsSettingsAction: requires settings.manage", async () => {
+  it("updateDailyGoalsSettingsAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await updateDailyGoalsSettingsAction([
       { type: "study_minutes", target: 20, active: true },
     ]);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockUpdateDailyGoalsSettings).not.toHaveBeenCalled();
   });
 
-  it("updateVmIssuanceMultiplierAction: requires economy.manage", async () => {
+  it("updateVmIssuanceMultiplierAction: requires economy.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: economy.manage"),
+      new AppError("FORBIDDEN", "Missing permission: economy.edit"),
     );
 
     const result = await updateVmIssuanceMultiplierAction(1.5);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: economy.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("economy.edit");
     expect(mockUpdateVmIssuanceMultiplier).not.toHaveBeenCalled();
   });
 
-  it("updateArenaLeagueSettingsAction: requires economy.manage", async () => {
+  it("updateArenaLeagueSettingsAction: requires economy.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: economy.manage"),
+      new AppError("FORBIDDEN", "Missing permission: economy.edit"),
     );
 
     const result = await updateArenaLeagueSettingsAction({
@@ -175,14 +175,14 @@ describe("wrong role is rejected", () => {
       crestBadgeId: null,
     });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: economy.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("economy.edit");
     expect(mockUpdateArenaLeagueSettingsForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateRewardRuleAction: requires economy.manage", async () => {
+  it("updateRewardRuleAction: requires economy.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: economy.manage"),
+      new AppError("FORBIDDEN", "Missing permission: economy.edit"),
     );
 
     const result = await updateRewardRuleAction("video", {
@@ -191,82 +191,82 @@ describe("wrong role is rejected", () => {
       active: true,
     });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("economy.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: economy.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("economy.edit");
     expect(mockUpdateRewardRuleForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateStreaksSettingsAction: requires settings.manage", async () => {
+  it("updateStreaksSettingsAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await updateStreaksSettingsAction({ streakFreezesPerMonth: 2 });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.edit");
     expect(mockUpdateStreaksSettings).not.toHaveBeenCalled();
   });
 
-  it("updateLevelCurveSettingsAction: requires settings.manage", async () => {
+  it("updateLevelCurveSettingsAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await updateLevelCurveSettingsAction({ baseXp: 300, stepXp: 100 });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.edit");
     expect(mockUpdateLevelCurveSettings).not.toHaveBeenCalled();
   });
 
-  it("createAboutMeChipAction: requires settings.manage", async () => {
+  it("createAboutMeChipAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await createAboutMeChipAction({ name: { en: "x", hi: "x", hx: "x" }, active: true });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockCreateAboutMeChipForAdmin).not.toHaveBeenCalled();
   });
 
-  it("createRankTitleAction: requires settings.manage", async () => {
+  it("createRankTitleAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await createRankTitleAction({ minLevel: 5, title: { en: "x", hi: "x", hx: "x" } });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockCreateRankTitleForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateRankTitleAction: requires settings.manage", async () => {
+  it("updateRankTitleAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await updateRankTitleAction("rt_1", { minLevel: 5, title: { en: "x", hi: "x", hx: "x" } });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockUpdateRankTitleForAdmin).not.toHaveBeenCalled();
   });
 
-  it("deleteRankTitleAction: requires settings.manage", async () => {
+  it("deleteRankTitleAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await deleteRankTitleAction("rt_1");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockDeleteRankTitleForAdmin).not.toHaveBeenCalled();
   });
 
-  it("createPeerHandleAction: requires settings.manage", async () => {
+  it("createPeerHandleAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await createPeerHandleAction({
@@ -275,24 +275,24 @@ describe("wrong role is rejected", () => {
       active: true,
     });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockCreatePeerHandleForAdmin).not.toHaveBeenCalled();
   });
 
-  it("createTopicAction: requires settings.manage", async () => {
+  it("createTopicAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await createTopicAction({ order: 1, name: { en: "x", hi: "x", hx: "x" }, active: true });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockCreateTopicForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateTopicAction: requires settings.manage", async () => {
+  it("updateTopicAction: requires settings.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: settings.manage"),
+      new AppError("FORBIDDEN", "Missing permission: settings.edit"),
     );
 
     const result = await updateTopicAction("topic_1", {
@@ -301,7 +301,7 @@ describe("wrong role is rejected", () => {
       active: true,
     });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
     expect(mockUpdateTopicForAdmin).not.toHaveBeenCalled();
   });
 });

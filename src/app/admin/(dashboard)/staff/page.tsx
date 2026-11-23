@@ -3,6 +3,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { requireStaff } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getStaffPageData } from "@/server/staff/service";
 import { AddStaffForm } from "./add-staff-form";
 import { StaffTable } from "./staff-table";
@@ -35,11 +36,17 @@ export default async function StaffPage({
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 } = {}) {
+  let viewer;
   try {
-    await requireStaff("staff.manage");
+    viewer = await requireStaff("staff.view");
   } catch {
-    return <Forbidden message="You don't have permission to manage staff." />;
+    return <Forbidden message="You don't have permission to view staff." />;
   }
+
+  const grantedKeys = await getPermissionKeysForRole(viewer.roleId);
+  const canCreate = grantedKeys.has("staff.create");
+  const canEdit = grantedKeys.has("staff.edit");
+  const canDelete = grantedKeys.has("staff.delete");
 
   const { staff, roles } = await getStaffPageData();
   const roleOptions = roles.map((r) => ({ id: r.id, name: r.name }));
@@ -70,7 +77,7 @@ export default async function StaffPage({
         description="Manage who has access to this admin dashboard. Inviting someone sends them a Clerk invite email - they appear here automatically once they accept and sign up."
       />
 
-      <AddStaffForm roles={roleOptions} />
+      {canCreate && <AddStaffForm roles={roleOptions} />}
 
       <StaffTable
         staff={paged.rows.map((s) => ({
@@ -79,6 +86,11 @@ export default async function StaffPage({
           active: s.active,
           roleId: s.roleId,
           roleName: s.roleName,
+          email: s.email,
+          gender: s.gender,
+          phone: s.phone,
+          address: s.address,
+          photoUrl: s.photoUrl,
         }))}
         roles={roleOptions}
         total={paged.total}
@@ -89,6 +101,9 @@ export default async function StaffPage({
         sort={pageState.sort}
         dir={pageState.dir}
         active={activeFilter}
+        viewerId={viewer.id}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
     </div>
   );

@@ -48,12 +48,12 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createBadgeDraftAction requires economy.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: economy.manage"));
+  it("createBadgeDraftAction requires badge.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: badge.create"));
 
     const result = await createBadgeDraftAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: economy.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: badge.create" });
     expect(mockCreateBadgeDraft).not.toHaveBeenCalled();
   });
 });

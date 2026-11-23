@@ -1,8 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Users } from "lucide-react";
+import { Images, Info, Link2, Type } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { ComponentType } from "react";
 import {
   FormProvider,
   useForm,
@@ -11,7 +13,6 @@ import {
   type Resolver,
 } from "react-hook-form";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,11 +28,10 @@ import {
   updateMentorDraftAction,
   uploadMentorArtAction,
 } from "./actions";
-import { MentorsTable } from "./mentors-table";
 
-type UsedByWorld = { id: string; title: LocalizedText; status: "draft" | "published" };
+export type UsedByWorld = { id: string; title: LocalizedText; status: "draft" | "published" };
 
-type MentorRow = {
+export type MentorRow = {
   id: string;
   key: string;
   order: number;
@@ -99,10 +99,25 @@ function parseMentorError(message: string): { fieldErrors: Warning[]; summary: s
 // Shared section building blocks
 // ---------------------------------------------------------------------------
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon?: ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{title}</h3>
+    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+      <h3 className="flex items-center gap-2 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+        {Icon && (
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+        )}
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -178,12 +193,14 @@ function ArtSection({
   isPending: boolean;
 }) {
   return (
-    <SectionCard title="Art">
+    <SectionCard title="Art" icon={Images}>
       {artUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
-        <img src={artUrl} alt="" className="h-20 w-20 rounded-full object-cover" />
+        <img src={artUrl} alt="" className="h-20 w-20 rounded-full border border-border object-cover shadow-sm" />
       ) : (
-        <p className="text-xs text-muted-foreground">No art uploaded yet.</p>
+        <div className="flex h-20 w-20 items-center justify-center rounded-full border border-dashed border-border bg-muted/30 text-xs text-muted-foreground">
+          No art
+        </div>
       )}
       {!disabled && (
         <div className="space-y-1">
@@ -199,7 +216,7 @@ function ArtSection({
           <p className="text-xs text-muted-foreground">PNG, JPEG or WebP, up to 2MB.</p>
           {publishedHint && (
             <p className="text-xs text-muted-foreground">
-              This mentor is published - replacing its art requires mentor.publish.
+              This mentor is published - replacing its art requires mentor.delete.
             </p>
           )}
         </div>
@@ -208,47 +225,13 @@ function ArtSection({
   );
 }
 
-export function MentorEditor({
-  mentors,
-  canManage,
-  canPublish,
-  total,
-  page,
-  pageCount,
-  pageSize,
-  q,
-  sort,
-  dir,
-  status,
-}: {
-  mentors: MentorRow[];
-  canManage: boolean;
-  canPublish: boolean;
-  total: number;
-  page: number;
-  pageCount: number;
-  pageSize: number;
-  q: string;
-  sort: string | null;
-  dir: "asc" | "desc";
-  status: "draft" | "published" | null;
-}) {
-  const [selectedId, setSelectedId] = useState<string | "new" | null>(mentors[0]?.id ?? "new");
-  const [isDirty, setIsDirty] = useState(false);
-
-  function trySelect(id: string | "new") {
-    if (
-      isDirty &&
-      typeof window !== "undefined" &&
-      !window.confirm("Discard unsaved changes to this mentor?")
-    ) {
-      return;
-    }
-    setIsDirty(false);
-    setSelectedId(id);
-  }
-
-  // Unsaved-changes guard, part 1: browser tab-close/reload/navigate-away.
+// Unsaved-changes guard for a mentor form living on its own page (create/
+// edit) - part 1: browser tab-close/reload/navigate-away, part 2:
+// intercepts a click on any same-page link while dirty. Same approach as
+// worlds/lessons/questions; previously lived once in the now-removed
+// MentorEditor wrapper (when create/edit were both inline on the list
+// page), now each standalone form owns its own guard directly.
+function useUnsavedChangesGuard(isDirty: boolean) {
   useEffect(() => {
     if (!isDirty) return;
     function handleBeforeUnload(e: BeforeUnloadEvent) {
@@ -259,10 +242,6 @@ export function MentorEditor({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
-  // Unsaved-changes guard, part 2: intercepts a click on any same-page link
-  // while dirty (search/sort/pager/status filters) - a capturing
-  // document-level listener, no change to data-table.tsx/mentors-table.tsx,
-  // no new package. Same approach as lessons/questions.
   useEffect(() => {
     if (!isDirty) return;
     function handleClick(e: MouseEvent) {
@@ -283,66 +262,6 @@ export function MentorEditor({
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
   }, [isDirty]);
-
-  if (total === 0 && !canManage) {
-    return (
-      <EmptyState
-        icon={Users}
-        title="No mentors yet"
-        description="A staff member with mentor.manage can create the first one."
-      />
-    );
-  }
-
-  const effectiveId: string | "new" =
-    selectedId === "new" || mentors.some((m) => m.id === selectedId)
-      ? (selectedId as string | "new")
-      : mentors[0]?.id ?? "new";
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Select a mentor below to edit it.</p>
-        {canManage && (
-          <Button type="button" size="sm" onClick={() => trySelect("new")}>
-            + New mentor
-          </Button>
-        )}
-      </div>
-
-      <MentorsTable
-        rows={mentors.map((m) => ({ id: m.id, key: m.key, order: m.order, name: m.name, status: m.status }))}
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        q={q}
-        sort={sort}
-        dir={dir}
-        status={status}
-        selectedId={effectiveId}
-        onSelect={trySelect}
-      />
-
-      {effectiveId === "new" && canManage ? (
-        <NewMentorForm onDirtyChange={setIsDirty} />
-      ) : (
-        (() => {
-          const mentor = mentors.find((m) => m.id === effectiveId);
-          if (!mentor) return null;
-          return (
-            <MentorForm
-              key={mentor.id}
-              mentor={mentor}
-              canManage={canManage}
-              canPublish={canPublish}
-              onDirtyChange={setIsDirty}
-            />
-          );
-        })()
-      )}
-    </div>
-  );
 }
 
 type NewMentorFormValues = {
@@ -353,17 +272,16 @@ type NewMentorFormValues = {
   bio: LocalizedText;
 };
 
-function NewMentorForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
+export function NewMentorForm() {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const methods = useForm<NewMentorFormValues>({
     resolver: zodResolver(CreateMentorDraftSchema),
     defaultValues: { key: "", order: 1, persona: "", name: EMPTY_LOCALIZED, bio: EMPTY_LOCALIZED },
   });
-  const { handleSubmit, watch, register, reset, formState } = methods;
+  const { handleSubmit, watch, register, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [name, bio] = watch(["name", "bio"]);
   const warnings = useMemo(() => computeMentorWarnings(name, bio), [name, bio]);
@@ -376,14 +294,14 @@ function NewMentorForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
         return;
       }
       toast.success("Mentor created as a draft");
-      reset({ key: "", order: 1, persona: "", name: EMPTY_LOCALIZED, bio: EMPTY_LOCALIZED });
+      router.push("/admin/mentors");
     });
   }
 
   return (
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pb-20">
-        <SectionCard title="Basics">
+        <SectionCard title="Basics" icon={Info}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Key (slug)</Label>
@@ -402,7 +320,7 @@ function NewMentorForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
           </div>
         </SectionCard>
 
-        <SectionCard title="Text">
+        <SectionCard title="Text" icon={Type}>
           <LocalizedFieldGroup label="Name" name="name" disabled={false} warnings={warnings} />
           <LocalizedFieldGroup label="Bio" name="bio" disabled={false} warnings={warnings} />
           <div className="space-y-1">
@@ -418,7 +336,16 @@ function NewMentorForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => v
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this mentor?")) {
+                router.push("/admin/mentors");
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
@@ -454,26 +381,25 @@ function useDynamicMentorResolver(modeRef: { current: "update" | "hotfix" }): Re
   }, []);
 }
 
-function MentorForm({
+export function MentorForm({
   mentor,
-  canManage,
-  canPublish,
-  onDirtyChange,
+  canEdit,
+  canDelete,
 }: {
   mentor: MentorRow;
-  canManage: boolean;
-  canPublish: boolean;
-  onDirtyChange: (dirty: boolean) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [errorSummary, setErrorSummary] = useState<string[]>([]);
 
   const isDraft = mentor.status === "draft";
-  const editable = canManage && isDraft;
+  const editable = canEdit && isDraft;
   // D20 (docs/ARCHITECTURE.md): a published mentor's name/bio can still be
-  // hotfixed directly - requires mentor.publish, the same trust bar as
+  // hotfixed directly - requires mentor.delete, the same trust bar as
   // publishing. `order`/`persona` stay draft-only.
-  const hotfixable = canPublish && !isDraft;
+  const hotfixable = canDelete && !isDraft;
   const nameBioEditable = editable || hotfixable;
 
   const modeRef = useRef<"update" | "hotfix">(editable ? "update" : "hotfix");
@@ -488,9 +414,7 @@ function MentorForm({
   const methods = useForm<MentorFormValues>({ resolver, defaultValues });
   const { handleSubmit, watch, register, reset, setError, clearErrors, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [name, bio] = watch(["name", "bio"]);
   const warnings = useMemo(() => computeMentorWarnings(name, bio), [name, bio]);
@@ -592,7 +516,7 @@ function MentorForm({
           </div>
         )}
 
-        <SectionCard title="Basics">
+        <SectionCard title="Basics" icon={Info}>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Key (fixed)</Label>
@@ -616,7 +540,7 @@ function MentorForm({
           </div>
         </SectionCard>
 
-        <SectionCard title="Text">
+        <SectionCard title="Text" icon={Type}>
           <LocalizedFieldGroup label="Name" name="name" disabled={!nameBioEditable} warnings={warnings} />
           <LocalizedFieldGroup label="Bio" name="bio" disabled={!nameBioEditable} warnings={warnings} />
           <div className="space-y-1">
@@ -627,13 +551,13 @@ function MentorForm({
 
         <ArtSection
           artUrl={mentor.artUrl}
-          disabled={!(canManage || canPublish)}
+          disabled={!(canEdit || canDelete)}
           publishedHint={!isDraft}
           onUpload={uploadArt}
           isPending={isPending}
         />
 
-        <SectionCard title="Relations">
+        <SectionCard title="Relations" icon={Link2}>
           <p className="text-sm font-medium text-foreground">Used by</p>
           {mentor.usedByWorlds.length === 0 ? (
             <p className="text-xs text-muted-foreground">No worlds reference this mentor yet.</p>
@@ -666,15 +590,25 @@ function MentorForm({
               {editable ? "Save draft" : "Save fix"}
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this mentor?")) {
+                reset();
+                router.push(`/admin/mentors/${mentor.id}`);
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
-          {canPublish && isDraft && (
+          {canDelete && isDraft && (
             <Button type="button" onClick={publish} disabled={isPending}>
               Publish
             </Button>
           )}
-          {canPublish && !isDraft && (
+          {canDelete && !isDraft && (
             <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
               Unpublish
             </Button>

@@ -303,7 +303,7 @@ export async function getOpsKpis(): Promise<OpsKpis> {
   });
 }
 
-// The User Trading Ledger (TR-51) - trading.ops gated (checked by the
+// The User Trading Ledger (TR-51) - ops.view gated (checked by the
 // caller), every view logged (founder's requirement, same treatment as a
 // consent PII reveal) with exactly which learners' rows were shown. Cursor
 // is the last userId on the previous page (ids are sorted ascending, so

@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getLessonEditorData } from "@/server/lessons/service";
 import { getWorldEditorData } from "@/server/worlds/service";
@@ -15,11 +15,10 @@ export default async function EditWorldPage({ params }: { params: Promise<{ id: 
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "world.manage"),
-    roleHasPermission(staff.roleId, "world.publish"),
-  ]);
-  if (!canManage && !canPublish) {
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canEdit = grantedKeys.has("world.edit");
+  const canDelete = grantedKeys.has("world.delete");
+  if (!canEdit && !canDelete) {
     return <Forbidden message="You don't have permission to edit worlds." />;
   }
 
@@ -73,8 +72,8 @@ export default async function EditWorldPage({ params }: { params: Promise<{ id: 
         }}
         mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
         doubtZoneLessons={doubtZoneLessons}
-        canManage={canManage}
-        canPublish={canPublish}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
     </div>
   );

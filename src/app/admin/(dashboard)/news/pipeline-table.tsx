@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useState, useTransition } from "react";
+import { useTransition } from "react";
+import { Eye, Newspaper } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -11,9 +12,8 @@ import {
   type AdminListUrlState,
 } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/admin/empty-state";
-import { StatusBadge } from "@/components/admin/status-badge";
-import { Newspaper } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/cn";
@@ -101,11 +101,11 @@ const NO_OVERRIDE = "__auto__";
 function StatusSelect({
   storyId,
   status,
-  canPublish,
+  canDelete,
 }: {
   storyId: string;
   status: PipelineStoryRow["status"];
-  canPublish: boolean;
+  canDelete: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -121,7 +121,7 @@ function StatusSelect({
   }
 
   return (
-    <Select value={status} onValueChange={change} disabled={isPending || !canPublish}>
+    <Select value={status} onValueChange={change} disabled={isPending || !canDelete}>
       <SelectTrigger className="w-32">
         <SelectValue />
       </SelectTrigger>
@@ -140,12 +140,12 @@ function QualityOverrideSelect({
   storyId,
   qualityGrade,
   qualityGradeOverride,
-  canManage,
+  canEdit,
 }: {
   storyId: string;
   qualityGrade: "A" | "B" | "C";
   qualityGradeOverride: "A" | "B" | "C" | null;
-  canManage: boolean;
+  canEdit: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -163,7 +163,7 @@ function QualityOverrideSelect({
   return (
     <div className="flex items-center gap-1.5">
       <Badge variant="secondary">{qualityGrade}</Badge>
-      <Select value={qualityGradeOverride ?? NO_OVERRIDE} onValueChange={change} disabled={isPending || !canManage}>
+      <Select value={qualityGradeOverride ?? NO_OVERRIDE} onValueChange={change} disabled={isPending || !canEdit}>
         <SelectTrigger className="w-24">
           <SelectValue />
         </SelectTrigger>
@@ -182,12 +182,12 @@ function TopicSelect({
   storyId,
   topicId,
   topics,
-  canManage,
+  canEdit,
 }: {
   storyId: string;
   topicId: string | null;
   topics: { id: string; name: LocalizedText }[];
-  canManage: boolean;
+  canEdit: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
 
@@ -203,7 +203,7 @@ function TopicSelect({
   }
 
   return (
-    <Select value={topicId ?? NO_TOPIC} onValueChange={change} disabled={isPending || !canManage}>
+    <Select value={topicId ?? NO_TOPIC} onValueChange={change} disabled={isPending || !canEdit}>
       <SelectTrigger className="w-40">
         <SelectValue />
       </SelectTrigger>
@@ -222,8 +222,8 @@ function TopicSelect({
 export function PipelineTable({
   stories,
   topics,
-  canManage,
-  canPublish,
+  canEdit,
+  canDelete,
   total,
   page,
   pageCount,
@@ -237,8 +237,8 @@ export function PipelineTable({
 }: {
   stories: PipelineStoryRow[];
   topics: { id: string; name: LocalizedText }[];
-  canManage: boolean;
-  canPublish: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   total: number;
   page: number;
   pageCount: number;
@@ -250,7 +250,6 @@ export function PipelineTable({
   category: NewsCategory | null;
   topicId: string | null;
 }) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const pathname = usePathname();
   const router = useRouter();
   const state: AdminListUrlState = { q, sort, dir, pageSize };
@@ -345,56 +344,49 @@ export function PipelineTable({
                 <TableHead>
                   <DataTableSortHeader label="Status" field="status" pathname={pathname} state={state} />
                 </TableHead>
+                <TableHead className="sr-only">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {stories.map((story) => (
-                <Fragment key={story.id}>
-                  <TableRow>
-                    <TableCell className="max-w-72">
-                      <button
-                        type="button"
-                        className="text-left text-sm font-medium text-foreground hover:underline"
-                        onClick={() => setExpandedId(expandedId === story.id ? null : story.id)}
+                <TableRow key={story.id}>
+                  <TableCell className="max-w-72">
+                    <span className="text-sm font-medium text-foreground">
+                      {story.headline.en || "(untitled)"}
+                    </span>
+                    {story.adviceLikeWarnings && story.adviceLikeWarnings.length > 0 && (
+                      <p className="mt-1 text-xs text-destructive">
+                        Advice-like phrasing: {story.adviceLikeWarnings.join(", ")}
+                      </p>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{story.outlet}</TableCell>
+                  <TableCell className="text-sm text-muted-foreground">{story.category}</TableCell>
+                  <TableCell>
+                    <QualityOverrideSelect
+                      storyId={story.id}
+                      qualityGrade={story.qualityGrade}
+                      qualityGradeOverride={story.qualityGradeOverride}
+                      canEdit={canEdit}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <TopicSelect storyId={story.id} topicId={story.topicId} topics={topics} canEdit={canEdit} />
+                  </TableCell>
+                  <TableCell>
+                    <StatusSelect storyId={story.id} status={story.status} canDelete={canDelete} />
+                  </TableCell>
+                  <TableCell>
+                    <Button variant="ghost" size="icon" title="View" asChild>
+                      <Link
+                        href={`/admin/news/${story.id}`}
+                        aria-label={`View ${story.headline.en || story.id}`}
                       >
-                        {story.headline.en || "(untitled)"}
-                      </button>
-                      {story.adviceLikeWarnings && story.adviceLikeWarnings.length > 0 && (
-                        <p className="mt-1 text-xs text-destructive">
-                          Advice-like phrasing: {story.adviceLikeWarnings.join(", ")}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{story.outlet}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{story.category}</TableCell>
-                    <TableCell>
-                      <QualityOverrideSelect
-                        storyId={story.id}
-                        qualityGrade={story.qualityGrade}
-                        qualityGradeOverride={story.qualityGradeOverride}
-                        canManage={canManage}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <TopicSelect storyId={story.id} topicId={story.topicId} topics={topics} canManage={canManage} />
-                    </TableCell>
-                    <TableCell>
-                      <StatusSelect storyId={story.id} status={story.status} canPublish={canPublish} />
-                    </TableCell>
-                  </TableRow>
-                  {expandedId === story.id && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="bg-muted/30">
-                        <StatusBadge status={story.status}>{STATUS_LABEL[story.status]}</StatusBadge>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          Full content is edited via the drafting pipeline output directly in the
-                          database today - a rich content editor for this table is a follow-up, not
-                          built in Checkpoint 2.
-                        </p>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </Fragment>
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
             </TableBody>
           </Table>

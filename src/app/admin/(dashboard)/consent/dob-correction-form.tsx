@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { correctDateOfBirthAction } from "./actions";
 
-// App asks batch, section C3 - consent.correct_dob (super_admin only).
+// App asks batch, section C3 - consent.edit (super_admin only).
 // Standalone, not per-row in the table below: that table only ever lists
 // minors with an active consent record, but a DOB correction can apply to
 // any account, adult or minor. Staff paste in the account id directly.

@@ -15,6 +15,7 @@ import {
 } from "@/server/lessons/schemas";
 import {
   createLessonDraft,
+  deleteLesson,
   getLessonPreview,
   hotfixLesson,
   publishLesson,
@@ -29,7 +30,7 @@ type PreviewResult =
 
 // Same runAction/permission-gate pattern as
 // src/app/admin/(dashboard)/worlds/actions.ts. Every action independently
-// re-checks the caller's permission here - the page's canManage/canPublish
+// re-checks the caller's permission here - the page's canEdit/canDelete
 // props only control which buttons render, they are never trusted as
 // authorization.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
@@ -47,7 +48,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createLessonDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("lesson.manage");
+    const actor = await requireStaff("lesson.create");
     const parsed = CreateLessonDraftSchema.parse(input);
     await createLessonDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/lessons");
@@ -56,7 +57,7 @@ export async function createLessonDraftAction(input: unknown): Promise<ActionRes
 
 export async function updateLessonDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("lesson.manage");
+    const actor = await requireStaff("lesson.edit");
     const parsed = UpdateLessonDraftSchema.parse(input);
     await updateLessonDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/lessons");
@@ -65,7 +66,7 @@ export async function updateLessonDraftAction(input: unknown): Promise<ActionRes
 
 export async function publishLessonAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("lesson.publish");
+    const actor = await requireStaff("lesson.delete");
     const { id } = LessonIdSchema.parse(input);
     await publishLesson(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/lessons");
@@ -74,7 +75,7 @@ export async function publishLessonAction(input: unknown): Promise<ActionResult>
 
 export async function unpublishLessonAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("lesson.publish");
+    const actor = await requireStaff("lesson.delete");
     const { id } = LessonIdSchema.parse(input);
     await unpublishLesson(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/lessons");
@@ -83,27 +84,35 @@ export async function unpublishLessonAction(input: unknown): Promise<ActionResul
 
 export async function hotfixLessonAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("lesson.publish");
+    const actor = await requireStaff("lesson.delete");
     const parsed = HotfixLessonSchema.parse(input);
     await hotfixLesson(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/lessons");
   });
 }
 
-// Read-only, so it's gated on *either* lesson.manage or lesson.publish - a
-// content_publisher with only lesson.publish still needs to preview a
-// draft before deciding whether to publish it. requireStaff() only checks
-// one permission at a time, so this does the two-permission check directly
-// rather than trying to express "either" through it.
+// Gated on lesson.delete, not lesson.edit - same reasoning as
+// worlds/actions.ts's deleteWorldAction: deletion is permanent and
+// irreversible, so it should never be reachable by a role that isn't even
+// trusted to publish/unpublish. deleteLesson itself only allows removing a
+// draft lesson (a published one must be unpublished first).
+export async function deleteLessonAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("lesson.delete");
+    const { id } = LessonIdSchema.parse(input);
+    await deleteLesson(actor, id, requestMeta(await headers()));
+    revalidatePath("/admin/lessons");
+  });
+}
+
+// Read-only - gated on the single lesson.view permission now (previously
+// *either* lesson.manage or lesson.publish, back when view access was only
+// ever implicit - see docs/ARCHITECTURE.md D81).
 async function requireLessonReadAccess() {
   const staff = await getStaffMember();
   if (!staff) throw new AppError("UNAUTHENTICATED", "Staff sign-in required");
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "lesson.manage"),
-    roleHasPermission(staff.roleId, "lesson.publish"),
-  ]);
-  if (!canManage && !canPublish) {
-    throw new AppError("FORBIDDEN", "Missing permission: lesson.manage or lesson.publish");
+  if (!(await roleHasPermission(staff.roleId, "lesson.view"))) {
+    throw new AppError("FORBIDDEN", "Missing permission: lesson.view");
   }
   return staff;
 }

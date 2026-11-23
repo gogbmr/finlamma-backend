@@ -29,7 +29,7 @@ export async function getStreaksSettings(): Promise<StreaksSettings> {
   return parsed.success ? parsed.data : DEFAULT_STREAKS_SETTINGS;
 }
 
-// Gated on settings.manage (super_admin only) - same narrow trust bar as
+// Gated on settings.edit (super_admin only) - same narrow trust bar as
 // Lesson Flow's scoring constants, for the same reason: changes what every
 // learner's streak does immediately.
 export async function updateStreaksSettings(

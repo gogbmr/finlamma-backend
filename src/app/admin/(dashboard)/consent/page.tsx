@@ -13,7 +13,7 @@ import { DobCorrectionForm } from "./dob-correction-form";
 // admin-queries.ts) is a NEW file - the existing listConsentRecordsForReview
 // is untouched, and nothing here imports requireFullAccess or any other
 // part of the app-facing consent gate. Fields, the consent.view/
-// consent.correct_dob checks below, and every action this page links to
+// consent.edit checks below, and every action this page links to
 // are unchanged.
 const PAGE_SIZE = 20;
 
@@ -48,10 +48,10 @@ export default async function ConsentReviewPage({
   const { from, to } = readDateRangeFilter(params);
   const page = parsePage(params.page);
 
-  // consent.correct_dob is super_admin only (app asks batch, section C3) -
+  // consent.edit is super_admin only (app asks batch, section C3) -
   // hidden here for everyone else, but the server action re-checks it
   // itself regardless (admin-page skill rule 2: never rely on hiding alone).
-  const canCorrectDob = await roleHasPermission(staff.roleId, "consent.correct_dob");
+  const canCorrectDob = await roleHasPermission(staff.roleId, "consent.edit");
 
   const paged = await listConsentRecordsForAdmin({
     page,

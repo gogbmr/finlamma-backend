@@ -1,11 +1,13 @@
 import { Users } from "lucide-react";
+import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
-import { MentorEditor } from "./mentor-editor";
+import { MentorsTable } from "./mentors-table";
 
 type MentorRow = Awaited<ReturnType<typeof getMentorEditorData>>[number];
 
@@ -40,12 +42,12 @@ export default async function MentorsPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "mentor.manage"),
-    roleHasPermission(staff.roleId, "mentor.publish"),
-  ]);
-  if (!canManage && !canPublish) {
-    return <Forbidden message="You don't have permission to manage mentors." />;
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("mentor.create");
+  const canEdit = grantedKeys.has("mentor.edit");
+  const canDelete = grantedKeys.has("mentor.delete");
+  if (!grantedKeys.has("mentor.view")) {
+    return <Forbidden message="You don't have permission to view mentors." />;
   }
 
   const mentors = await getMentorEditorData();
@@ -75,22 +77,17 @@ export default async function MentorsPage({
         icon={Users}
         title="Mentors"
         description="Any number of Lamma mentors, assigned to worlds from the World editor (mentorId) - one mentor can cover many worlds. Publish is blocked until every en/hi/hx field is filled."
+        action={
+          canCreate && (
+            <Button asChild size="sm">
+              <Link href="/admin/mentors/new">+ New mentor</Link>
+            </Button>
+          )
+        }
       />
 
-      <MentorEditor
-        mentors={paged.rows.map((m) => ({
-          id: m.id,
-          key: m.key,
-          order: m.order,
-          name: m.name,
-          bio: m.bio,
-          persona: m.persona,
-          status: m.status,
-          artUrl: m.artUrl,
-          usedByWorlds: m.usedByWorlds,
-        }))}
-        canManage={canManage}
-        canPublish={canPublish}
+      <MentorsTable
+        rows={paged.rows.map((m) => ({ id: m.id, key: m.key, order: m.order, name: m.name, status: m.status }))}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}
@@ -99,6 +96,8 @@ export default async function MentorsPage({
         sort={pageState.sort}
         dir={pageState.dir}
         status={statusFilter}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
     </div>
   );

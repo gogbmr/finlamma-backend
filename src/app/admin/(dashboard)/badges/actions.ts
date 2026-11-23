@@ -18,9 +18,9 @@ import {
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Same runAction/permission-gate pattern as every other admin actions.ts -
-// gated on economy.manage (per the decided design: badges/rewards live
-// under the same trust bar as reward_rules/the VM multiplier, not a new
-// permission).
+// gated on badge.create/badge.edit (D81, docs/ARCHITECTURE.md): badges have
+// no separate publish tier or delete (publish/unpublish are badge.edit),
+// unlike the six two-tier content domains.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
     await fn();
@@ -36,7 +36,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createBadgeDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("badge.create");
     const parsed = CreateBadgeDraftSchema.parse(input);
     await createBadgeDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/badges");
@@ -45,7 +45,7 @@ export async function createBadgeDraftAction(input: unknown): Promise<ActionResu
 
 export async function updateBadgeDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("badge.edit");
     const parsed = UpdateBadgeDraftSchema.parse(input);
     await updateBadgeDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/badges");
@@ -54,7 +54,7 @@ export async function updateBadgeDraftAction(input: unknown): Promise<ActionResu
 
 export async function publishBadgeAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("badge.edit");
     const { id } = BadgeIdSchema.parse(input);
     await publishBadge(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/badges");
@@ -63,7 +63,7 @@ export async function publishBadgeAction(input: unknown): Promise<ActionResult> 
 
 export async function unpublishBadgeAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("badge.edit");
     const { id } = BadgeIdSchema.parse(input);
     await unpublishBadge(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/badges");
@@ -76,7 +76,7 @@ export async function unpublishBadgeAction(input: unknown): Promise<ActionResult
 // uploadMentorArtAction.
 export async function uploadBadgeIconAction(formData: FormData): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("badge.edit");
     const id = BadgeIdSchema.parse({ id: formData.get("id") }).id;
     const file = formData.get("file");
     if (!(file instanceof File)) {

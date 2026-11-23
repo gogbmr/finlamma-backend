@@ -28,7 +28,7 @@ export async function updateNotificationsSettings(
     input,
     "Notification defaults: quiet hours window (kid-safe - no push overnight unless a learner " +
       "overrides it) and feed retention days (WH-20). Editable only by super_admin " +
-      "(settings.manage), logged.",
+      "(settings.edit), logged.",
   );
 
   await logActivity({

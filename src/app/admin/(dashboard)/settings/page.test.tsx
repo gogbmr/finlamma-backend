@@ -94,17 +94,17 @@ function containsComponentNamed(node: unknown, name: string): boolean {
   return containsComponentNamed(el.props?.children, name);
 }
 
-describe("SettingsPage - economy.manage gates the reward-rules/VM-multiplier editors", () => {
-  it("shows the economy editors for a viewer who holds economy.manage", async () => {
+describe("SettingsPage - economy.edit gates the reward-rules/VM-multiplier editors", () => {
+  it("shows the economy editors for a viewer who holds economy.edit", async () => {
     mockRoleHasPermission.mockResolvedValueOnce(true);
 
     const tree = await SettingsPage();
 
     expect(containsComponentNamed(tree, "EconomyManagedSettings")).toBe(true);
-    expect(mockRoleHasPermission).toHaveBeenCalledWith("role_1", "economy.manage");
+    expect(mockRoleHasPermission).toHaveBeenCalledWith("role_1", "economy.edit");
   });
 
-  it("hides the economy editors for a settings.manage-only viewer without economy.manage", async () => {
+  it("hides the economy editors for a settings.edit-only viewer without economy.edit", async () => {
     mockRoleHasPermission.mockResolvedValueOnce(false);
 
     const tree = await SettingsPage();
@@ -112,7 +112,7 @@ describe("SettingsPage - economy.manage gates the reward-rules/VM-multiplier edi
     expect(containsComponentNamed(tree, "EconomyManagedSettings")).toBe(false);
   });
 
-  it("still shows the other editors (scoring/streaks/level-curve/rank-titles) regardless of economy.manage", async () => {
+  it("still shows the other editors (scoring/streaks/level-curve/rank-titles) regardless of economy.edit", async () => {
     mockRoleHasPermission.mockResolvedValueOnce(false);
 
     const tree = await SettingsPage();

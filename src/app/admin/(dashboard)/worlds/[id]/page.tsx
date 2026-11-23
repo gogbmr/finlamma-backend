@@ -5,7 +5,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getWorldEditorData } from "@/server/worlds/service";
 import { WorldView } from "../world-view";
@@ -16,13 +16,12 @@ export default async function WorldViewPage({ params }: { params: Promise<{ id: 
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "world.manage"),
-    roleHasPermission(staff.roleId, "world.publish"),
-  ]);
-  if (!canManage && !canPublish) {
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  if (!grantedKeys.has("world.view")) {
     return <Forbidden message="You don't have permission to view worlds." />;
   }
+  const canEdit = grantedKeys.has("world.edit");
+  const canDelete = grantedKeys.has("world.delete");
 
   const { id } = await params;
   const [worlds, mentors] = await Promise.all([getWorldEditorData(), getMentorEditorData()]);
@@ -43,7 +42,7 @@ export default async function WorldViewPage({ params }: { params: Promise<{ id: 
         title={world.title.en || "(untitled)"}
         description="Read-only view. Use Edit to change this world."
         action={
-          (canManage || canPublish) && (
+          (canEdit || canDelete) && (
             <Button asChild size="sm">
               <Link href={`/admin/worlds/${world.id}/edit`}>
                 <Pencil className="h-4 w-4" /> Edit

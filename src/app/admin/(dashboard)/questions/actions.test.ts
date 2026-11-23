@@ -2,10 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
 
 const mockRequireStaff = vi.fn();
-const mockRequireStaffAny = vi.fn();
 vi.mock("@/lib/auth", () => ({
   requireStaff: (permission: unknown) => mockRequireStaff(permission),
-  requireStaffAny: (permissions: unknown) => mockRequireStaffAny(permissions),
 }));
 
 vi.mock("next/headers", () => ({
@@ -22,6 +20,7 @@ const mockUpdateQuestionDraft = vi.fn();
 const mockHotfixQuestion = vi.fn();
 const mockPublishQuestion = vi.fn();
 const mockUnpublishQuestion = vi.fn();
+const mockDeleteQuestion = vi.fn();
 vi.mock("@/server/questions/service", () => ({
   createQuestionDraft: (actor: unknown, input: unknown, meta: unknown) =>
     mockCreateQuestionDraft(actor, input, meta),
@@ -33,6 +32,7 @@ vi.mock("@/server/questions/service", () => ({
     mockPublishQuestion(actor, id, meta),
   unpublishQuestion: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishQuestion(actor, id, meta),
+  deleteQuestion: (actor: unknown, id: unknown, meta: unknown) => mockDeleteQuestion(actor, id, meta),
 }));
 
 // admin-queries.ts imports @/db/client directly (it's a real-DB-querying
@@ -49,6 +49,7 @@ vi.mock("@/server/questions/admin-queries", () => ({
 
 import {
   createQuestionDraftAction,
+  deleteQuestionAction,
   hotfixQuestionAction,
   loadQuestionDetailForAdminAction,
   publishQuestionAction,
@@ -72,18 +73,18 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createQuestionDraftAction: requires question.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: question.manage"));
+  it("createQuestionDraftAction: requires question.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: question.create"));
 
     const result = await createQuestionDraftAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: question.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("question.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: question.create" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("question.create");
     expect(mockCreateQuestionDraft).not.toHaveBeenCalled();
   });
 
-  it("updateQuestionDraftAction: requires question.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: question.manage"));
+  it("updateQuestionDraftAction: requires question.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: question.edit"));
 
     const result = await updateQuestionDraftAction({ id: QUESTION_ID, ...VALID_INPUT });
 
@@ -91,21 +92,21 @@ describe("wrong role is rejected", () => {
     expect(mockUpdateQuestionDraft).not.toHaveBeenCalled();
   });
 
-  it("publishQuestionAction: requires question.publish, not question.manage", async () => {
+  it("publishQuestionAction: requires question.delete, not question.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: question.publish"),
+      new AppError("FORBIDDEN", "Missing permission: question.delete"),
     );
 
     const result = await publishQuestionAction({ id: QUESTION_ID });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("question.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("question.delete");
     expect(mockPublishQuestion).not.toHaveBeenCalled();
   });
 
-  it("unpublishQuestionAction: requires question.publish", async () => {
+  it("unpublishQuestionAction: requires question.delete", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: question.publish"),
+      new AppError("FORBIDDEN", "Missing permission: question.delete"),
     );
 
     const result = await unpublishQuestionAction({ id: QUESTION_ID });
@@ -114,9 +115,9 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishQuestion).not.toHaveBeenCalled();
   });
 
-  it("hotfixQuestionAction: requires question.publish, not question.manage", async () => {
+  it("hotfixQuestionAction: requires question.delete, not question.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: question.publish"),
+      new AppError("FORBIDDEN", "Missing permission: question.delete"),
     );
 
     const result = await hotfixQuestionAction({
@@ -128,8 +129,20 @@ describe("wrong role is rejected", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("question.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("question.delete");
     expect(mockHotfixQuestion).not.toHaveBeenCalled();
+  });
+
+  it("deleteQuestionAction: requires question.delete, not question.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: question.delete"),
+    );
+
+    const result = await deleteQuestionAction({ id: QUESTION_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("question.delete");
+    expect(mockDeleteQuestion).not.toHaveBeenCalled();
   });
 });
 
@@ -201,6 +214,29 @@ describe("happy paths", () => {
     expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/questions");
   });
 
+  it("deleteQuestionAction deletes and revalidates", async () => {
+    mockDeleteQuestion.mockResolvedValueOnce({ id: QUESTION_ID });
+
+    const result = await deleteQuestionAction({ id: QUESTION_ID });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockDeleteQuestion).toHaveBeenCalledWith(ACTOR, QUESTION_ID, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/questions");
+  });
+
+  it("deleteQuestionAction surfaces the still-published block to the caller", async () => {
+    mockDeleteQuestion.mockRejectedValueOnce(
+      new AppError("CONFLICT", "Question not found, or it's currently published - unpublish it first to delete"),
+    );
+
+    const result = await deleteQuestionAction({ id: QUESTION_ID });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Question not found, or it's currently published - unpublish it first to delete",
+    });
+  });
+
   it("hotfixQuestionAction hotfixes and revalidates", async () => {
     mockHotfixQuestion.mockResolvedValueOnce({ id: QUESTION_ID, status: "published" });
 
@@ -268,20 +304,20 @@ describe("loadQuestionDetailForAdminAction", () => {
     status: "draft" as const,
   };
 
-  it("requires question.manage or question.publish", async () => {
-    mockRequireStaffAny.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: one of question.manage, question.publish"),
+  it("requires question.view", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: question.view"),
     );
 
     const result = await loadQuestionDetailForAdminAction({ id: QUESTION_ID });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaffAny).toHaveBeenCalledWith(["question.manage", "question.publish"]);
+    expect(mockRequireStaff).toHaveBeenCalledWith("question.view");
     expect(mockGetQuestionDetailForAdmin).not.toHaveBeenCalled();
   });
 
   it("returns the full record for a valid id", async () => {
-    mockRequireStaffAny.mockResolvedValueOnce(ACTOR);
+    mockRequireStaff.mockResolvedValueOnce(ACTOR);
     mockGetQuestionDetailForAdmin.mockResolvedValueOnce(FULL_QUESTION);
 
     const result = await loadQuestionDetailForAdminAction({ id: QUESTION_ID });
@@ -291,7 +327,7 @@ describe("loadQuestionDetailForAdminAction", () => {
   });
 
   it("returns a not-found error without throwing when the question doesn't exist", async () => {
-    mockRequireStaffAny.mockResolvedValueOnce(ACTOR);
+    mockRequireStaff.mockResolvedValueOnce(ACTOR);
     mockGetQuestionDetailForAdmin.mockResolvedValueOnce(null);
 
     const result = await loadQuestionDetailForAdminAction({ id: QUESTION_ID });
@@ -300,7 +336,7 @@ describe("loadQuestionDetailForAdminAction", () => {
   });
 
   it("rejects a malformed id without calling getQuestionDetailForAdmin", async () => {
-    mockRequireStaffAny.mockResolvedValueOnce(ACTOR);
+    mockRequireStaff.mockResolvedValueOnce(ACTOR);
 
     const result = await loadQuestionDetailForAdminAction({ id: "not-a-uuid" });
 

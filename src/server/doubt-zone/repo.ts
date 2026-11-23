@@ -116,7 +116,7 @@ export async function getMessageById(id: string) {
   return row ?? null;
 }
 
-// --- Staff (admin, doubt_zone.moderate) ---
+// --- Staff (admin, doubt_zone.view) ---
 
 // Metadata only - deliberately never selects `content` OR `flaggedReason`
 // (/phase-audit 7 finding: flaggedReason can be a classifier-written

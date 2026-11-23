@@ -325,5 +325,17 @@ delete account.
 - Razorpay is out of scope for v1.
 
 ## Staff roles (admin dashboard)
-Super admin, user manager, content uploader, content publisher, quiz maker (extensible).
-Every staff and user action is written to the activity log.
+Super admin, user manager, content uploader, content publisher, quiz maker (extensible) -
+managed on the `/admin/roles` page, which also assigns each role's permissions. Every staff
+and user action is written to the activity log.
+
+Permissions are `resource.op` keys (`view`/`create`/`edit`/`delete`) across every admin
+section - e.g. `world.view`, `world.create`, `world.edit`, `world.delete` - assignable per
+role on the Roles page's permission matrix (D81, `docs/ARCHITECTURE.md`). `view` is always
+required just to see that section at all; the other three gate the matching action. A new
+role can be created with any combination, including a view-only role for a section that has
+no edit/delete op defined for it (e.g. `analytics.view`, `activity_log.view`).
+
+Each staff member also has an HR record - gender, phone, address, a photo, and the email
+their invite was sent to - visible and editable on the Staff page. A staff member can always
+edit their own gender/phone/address/photo; editing someone else's requires `staff.edit`.

@@ -10,15 +10,15 @@ type RevealResult =
   | { ok: true; content: string; role: "learner" | "assistant"; flaggedReason: string | null }
   | { ok: false; error: string };
 
-// doubt_zone.moderate is otherwise read-only (see the queue's own
-// metadata-only list query) - this is the one action that reveals a
-// flagged message's actual content, and every call is logged (inside
+// doubt_zone.view - read-only, like the queue's own metadata-only list
+// query, even though this is the one action that reveals a flagged
+// message's actual content. Every call is logged (inside
 // revealFlaggedMessageContent) with the staff member as actor and the
 // message as target, same pattern as the Consent page's parent-contact
-// reveal.
+// reveal (also view-tier, also logged).
 export async function revealFlaggedMessageAction(messageId: string): Promise<RevealResult> {
   try {
-    const actor = await requireStaff("doubt_zone.moderate");
+    const actor = await requireStaff("doubt_zone.view");
     const result = await revealFlaggedMessageContent(actor, messageId, requestMeta(await headers()));
     return { ok: true, ...result };
   } catch (err) {
@@ -33,7 +33,7 @@ type ReviewResult = { ok: true } | { ok: false; error: string };
 // flaggedReason stay as the permanent record of what tripped.
 export async function markReviewedAction(messageId: string): Promise<ReviewResult> {
   try {
-    const actor = await requireStaff("doubt_zone.moderate");
+    const actor = await requireStaff("doubt_zone.edit");
     await markFlaggedMessageReviewed(actor, messageId, requestMeta(await headers()));
     return { ok: true };
   } catch (err) {
