@@ -46,8 +46,8 @@ function renderTable(overrides: Partial<React.ComponentProps<typeof WorldsTable>
       sort={null}
       dir="asc"
       status={null}
-      canManage
-      canPublish
+      canEdit
+      canDelete
       {...overrides}
     />,
   );
@@ -67,8 +67,8 @@ describe("WorldsTable - Actions column", () => {
     );
   });
 
-  it("hides the Delete icon without canPublish", () => {
-    renderTable({ canPublish: false });
+  it("hides the Delete icon without canDelete", () => {
+    renderTable({ canDelete: false });
 
     expect(screen.queryByRole("button", { name: /delete money world/i })).not.toBeInTheDocument();
   });

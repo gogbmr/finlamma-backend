@@ -3,7 +3,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getBadgeEditorData } from "@/server/badges/service";
 import { BadgeEditor } from "./badge-editor";
 
@@ -39,9 +39,11 @@ export default async function BadgesPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const canManage = await roleHasPermission(staff.roleId, "economy.manage");
-  if (!canManage) {
-    return <Forbidden message="You don't have permission to manage badges. Only super_admin does." />;
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("badge.create");
+  const canEdit = grantedKeys.has("badge.edit");
+  if (!grantedKeys.has("badge.view")) {
+    return <Forbidden message="You don't have permission to view badges. Only super_admin does." />;
   }
 
   const badges = await getBadgeEditorData();
@@ -74,7 +76,8 @@ export default async function BadgesPage({
 
       <BadgeEditor
         badges={paged.rows}
-        canManage={canManage}
+        canCreate={canCreate}
+        canEdit={canEdit}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}

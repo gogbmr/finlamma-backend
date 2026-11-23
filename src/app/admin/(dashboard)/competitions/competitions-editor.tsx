@@ -405,7 +405,7 @@ export function CompetitionsEditor({
 }) {
   const [selectedId, setSelectedId] = useState<string | "new">(competitions[0]?.id ?? "new");
   const selected = competitions.find((c) => c.id === selectedId) ?? null;
-  // Few-line confirm() guard, same pattern as the other economy.manage
+  // Few-line confirm() guard, same pattern as the other competition.edit
   // pages - doesn't cover Prev/Next/search/sort/status, deferred to Task 4.
   const [isDirty, setIsDirty] = useState(false);
 

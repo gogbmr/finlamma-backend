@@ -218,7 +218,7 @@ export async function prepareMessage(
     await touchThreadLastMessageAt(threadId);
     // Never logs message content - only that a flag happened and which
     // category, matching the flagged-only staff-visibility design (full
-    // content stays gated behind doubt_zone.moderate + doubt_messages,
+    // content stays gated behind doubt_zone.view + doubt_messages,
     // never activity_logs).
     await logActivity({
       actorType: "user",
@@ -379,7 +379,7 @@ export async function reportMessage(
   });
 }
 
-// --- Staff moderation queue (doubt_zone.moderate) ---
+// --- Staff moderation queue (doubt_zone.view) ---
 
 // Metadata only (see repo's own doc comment) - never includes message
 // content. The queue defaults to pending-only (includeReviewed: false);

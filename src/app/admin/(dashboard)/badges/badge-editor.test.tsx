@@ -40,7 +40,8 @@ function renderEditor() {
   return render(
     <BadgeEditor
       badges={[BADGE]}
-      canManage
+      canCreate
+      canEdit
       total={1}
       page={1}
       pageCount={1}

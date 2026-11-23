@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const mockDeleteMentorRow = vi.fn();
 const mockGetMentorById = vi.fn();
 const mockGetPublishedMentorByKey = vi.fn();
 const mockHotfixMentorRow = vi.fn();
@@ -11,6 +12,7 @@ const mockSetMentorArtKey = vi.fn();
 const mockUnpublishMentorRow = vi.fn();
 const mockUpdateDraftMentor = vi.fn();
 vi.mock("./repo", () => ({
+  deleteMentorRow: (id: unknown) => mockDeleteMentorRow(id),
   getMentorById: (id: unknown) => mockGetMentorById(id),
   getPublishedMentorByKey: (key: unknown) => mockGetPublishedMentorByKey(key),
   hotfixMentorRow: (input: unknown) => mockHotfixMentorRow(input),
@@ -29,9 +31,11 @@ vi.mock("@/lib/activity-log", () => ({
 }));
 
 const mockListPublishedWorldsByMentorId = vi.fn();
+const mockListWorldsByMentorId = vi.fn();
 const mockListAllWorlds = vi.fn();
 vi.mock("@/server/worlds/repo", () => ({
   listPublishedWorldsByMentorId: (mentorId: unknown) => mockListPublishedWorldsByMentorId(mentorId),
+  listWorldsByMentorId: (mentorId: unknown) => mockListWorldsByMentorId(mentorId),
   listAllWorlds: () => mockListAllWorlds(),
 }));
 
@@ -51,6 +55,7 @@ vi.mock("@/server/staff/repo", () => ({
 
 import {
   createMentorDraft,
+  deleteMentor,
   getMentorEditorData,
   getPublicMentorByKey,
   getPublicMentors,
@@ -87,6 +92,7 @@ beforeEach(() => {
   // No published worlds reference this mentor by default - existing tests
   // below don't need to know about the world-reference block at all.
   mockListPublishedWorldsByMentorId.mockResolvedValue([]);
+  mockListWorldsByMentorId.mockResolvedValue([]);
   mockListAllWorlds.mockResolvedValue([]);
   // Actor has every permission by default - existing tests below don't
   // need to know about the art-upload permission-tier check at all.
@@ -340,6 +346,62 @@ describe("unpublishMentor", () => {
   });
 });
 
+// Draft-only delete, but DOES need a child-reference check first (unlike
+// lessons/questions) - worlds.mentorId is a real, mandatory FK, so a world
+// can reference a draft mentor just as easily as a published one.
+describe("deleteMentor", () => {
+  it("deletes a draft mentor with no referencing world and logs it", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "draft" }));
+    mockListWorldsByMentorId.mockResolvedValueOnce([]);
+    mockDeleteMentorRow.mockResolvedValueOnce(mentorRow({ status: "draft" }));
+
+    const result = await deleteMentor(ACTOR, "mentor_1", META);
+
+    expect(result.status).toBe("draft");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "mentor.deleted", actorId: "staff_1" }),
+    );
+  });
+
+  it("throws NOT_FOUND for an unknown mentor", async () => {
+    mockGetMentorById.mockResolvedValueOnce(null);
+
+    await expect(deleteMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockDeleteMentorRow).not.toHaveBeenCalled();
+  });
+
+  // The rule this checkpoint added: blocked while ANY world (draft or
+  // published) still references this mentor - not just published ones,
+  // unlike unpublishMentor's own check above.
+  it("blocks delete and names every referencing world, draft or published, without touching the row", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "draft" }));
+    mockListWorldsByMentorId.mockResolvedValueOnce([
+      { id: "world_1", title: { en: "Money World", hi: "x", hx: "x" } },
+      { id: "world_2", title: { en: "Savings Valley", hi: "x", hx: "x" } },
+    ]);
+
+    await expect(deleteMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/Money World[\s\S]*Savings Valley/),
+      details: { worldIds: ["world_1", "world_2"] },
+    });
+    expect(mockDeleteMentorRow).not.toHaveBeenCalled();
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it("throws CONFLICT when the mentor is published - unpublish first", async () => {
+    mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
+    mockListWorldsByMentorId.mockResolvedValueOnce([]);
+    mockDeleteMentorRow.mockResolvedValueOnce(null);
+
+    await expect(deleteMentor(ACTOR, "mentor_1", META)).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringMatching(/unpublish/i),
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+});
+
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const WEBP_BYTES = Buffer.concat([
   Buffer.from("RIFF", "ascii"),
@@ -429,13 +491,13 @@ describe("uploadMentorArt", () => {
   });
 
   // D20/D25 (docs/ARCHITECTURE.md): a published mentor's art is live content
-  // - replacing it needs mentor.publish, the same trust bar as the name/bio
-  // hotfix path, not just mentor.manage. A draft's art is normal editing.
+  // - replacing it needs mentor.delete, the same trust bar as the name/bio
+  // hotfix path, not just mentor.edit. A draft's art is normal editing.
   describe("permission tier depends on the mentor's status", () => {
-    it("allows a draft upload for an actor with only mentor.manage", async () => {
+    it("allows a draft upload for an actor with only mentor.edit", async () => {
       mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "draft" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "mentor.manage"),
+        Promise.resolve(perm === "mentor.edit"),
       );
       mockSetMentorArtKey.mockResolvedValueOnce(mentorRow());
 
@@ -444,23 +506,23 @@ describe("uploadMentorArt", () => {
       ).resolves.toBeDefined();
     });
 
-    it("blocks a published-mentor upload for an actor with only mentor.manage", async () => {
+    it("blocks a published-mentor upload for an actor with only mentor.edit", async () => {
       mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "mentor.manage"),
+        Promise.resolve(perm === "mentor.edit"),
       );
 
       await expect(
         uploadMentorArt(ACTOR, "mentor_1", { body: PNG_BYTES }, META),
-      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/mentor\.publish/) });
+      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/mentor\.delete/) });
       expect(mockUploadObject).not.toHaveBeenCalled();
       expect(mockLogActivity).not.toHaveBeenCalled();
     });
 
-    it("allows a published-mentor upload for an actor with mentor.publish", async () => {
+    it("allows a published-mentor upload for an actor with mentor.delete", async () => {
       mockGetMentorById.mockResolvedValueOnce(mentorRow({ status: "published" }));
       mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
-        Promise.resolve(perm === "mentor.publish"),
+        Promise.resolve(perm === "mentor.delete"),
       );
       mockSetMentorArtKey.mockResolvedValueOnce(mentorRow({ status: "published" }));
 

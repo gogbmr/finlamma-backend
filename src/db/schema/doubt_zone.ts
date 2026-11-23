@@ -50,7 +50,7 @@ export type DoubtMessageFlagCategory = (typeof doubtMessageFlagCategoryEnum.enum
 
 // flagged/flaggedCategory/flaggedReason implement the phase-7-kickoff
 // "flagged-only" staff visibility decision: full transcripts stay private
-// by default (no doubt_zone.moderate-gated browsing of unflagged threads);
+// by default (no doubt_zone.view-gated browsing of unflagged threads);
 // a message is staff-visible ONLY when the safety classifier trips (or
 // fails to run at all) on a learner message, the output-filter circuit
 // breaker cuts a reply, or the learner taps "report this reply" on an
@@ -73,7 +73,7 @@ export const doubtMessages = pgTable(
     // selected by the moderation list query, only by the logged reveal
     // action alongside `content`.
     flaggedReason: text("flagged_reason"),
-    // Checkpoint 5's moderation queue (doubt_zone.moderate): a flagged
+    // Checkpoint 5's moderation queue (doubt_zone.view): a flagged
     // message stays in the pending queue until a staff member reviews it.
     // Reviewing never un-flags it (flagged/flaggedCategory/flaggedReason
     // stay as the permanent record of what tripped) - reviewedAt/reviewedBy

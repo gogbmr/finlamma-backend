@@ -52,9 +52,9 @@ export default async function CompetitionsPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const canManage = await roleHasPermission(staff.roleId, "economy.manage");
-  if (!canManage) {
-    return <Forbidden message="You don't have permission to manage the Monthly Competition. Only super_admin does." />;
+  const canView = await roleHasPermission(staff.roleId, "competition.view");
+  if (!canView) {
+    return <Forbidden message="You don't have permission to view the Monthly Competition. Only super_admin does." />;
   }
 
   const [competitions, instruments, badges, settings] = await Promise.all([

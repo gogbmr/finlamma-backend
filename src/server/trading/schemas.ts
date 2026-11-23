@@ -58,7 +58,7 @@ export type CreateMarketHolidayInput = z.infer<typeof CreateMarketHolidaySchema>
 export const MarketHolidayIdSchema = z.object({ id: z.string().uuid() });
 export type MarketHolidayIdInput = z.infer<typeof MarketHolidayIdSchema>;
 
-// --- Ops console (Checkpoint 9, trading.ops - docs/ARCHITECTURE.md D47) ---
+// --- Ops console (Checkpoint 9, ops.edit - docs/ARCHITECTURE.md D47) ---
 
 export const FeedModeSchema = z.enum(["live", "delayed_15m", "paused"]);
 export type FeedModeInput = z.infer<typeof FeedModeSchema>;

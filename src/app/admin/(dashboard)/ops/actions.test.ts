@@ -40,52 +40,54 @@ import {
 } from "./actions";
 
 const ACTOR = { id: "staff_1" };
-const WRONG_ROLE_ERROR = new AppError("FORBIDDEN", "Missing permission: trading.ops");
+const WRONG_ROLE_ERROR = new AppError("FORBIDDEN", "Missing permission: ops.edit");
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("wrong role is rejected - every dangerous control requires trading.ops, not instrument.manage or settings.manage", () => {
-  it("setGlobalHaltAction requires trading.ops", async () => {
+describe("wrong role is rejected - every dangerous control requires ops.edit, not instrument.edit or settings.edit", () => {
+  it("setGlobalHaltAction requires ops.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(WRONG_ROLE_ERROR);
 
     const result = await setGlobalHaltAction(true, "Suspicious activity");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: trading.ops" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("trading.ops");
+    expect(result).toEqual({ ok: false, error: "Missing permission: ops.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("ops.edit");
     expect(mockUpdateGlobalHalt).not.toHaveBeenCalled();
   });
 
-  it("setFeedModeAction requires trading.ops", async () => {
+  it("setFeedModeAction requires ops.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(WRONG_ROLE_ERROR);
 
     const result = await setFeedModeAction("paused");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: trading.ops" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: ops.edit" });
     expect(mockUpdateFeedMode).not.toHaveBeenCalled();
   });
 
-  it("setSymbolHaltedAction requires trading.ops", async () => {
+  it("setSymbolHaltedAction requires ops.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(WRONG_ROLE_ERROR);
 
     const result = await setSymbolHaltedAction("inst_1", true, "Unusual order flow");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: trading.ops" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: ops.edit" });
     expect(mockUpdateInstrumentHalted).not.toHaveBeenCalled();
   });
 
-  it("updateRiskThresholdsAction requires trading.ops", async () => {
+  it("updateRiskThresholdsAction requires ops.edit", async () => {
     mockRequireStaff.mockRejectedValueOnce(WRONG_ROLE_ERROR);
 
     const result = await updateRiskThresholdsAction({ newAccountDays: 7, concentrationPct: 50, dailyOrderCount: 10 });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: trading.ops" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: ops.edit" });
     expect(mockUpdateRiskThresholds).not.toHaveBeenCalled();
   });
 
-  it("loadLedgerPageAction requires trading.ops", async () => {
-    mockRequireStaff.mockRejectedValueOnce(WRONG_ROLE_ERROR);
+  it("loadLedgerPageAction requires ops.view", async () => {
+    mockRequireStaff.mockRejectedValueOnce(
+      new AppError("FORBIDDEN", "Missing permission: ops.view"),
+    );
 
     await expect(loadLedgerPageAction(null)).rejects.toThrow(AppError);
     expect(mockGetUserTradingLedgerPage).not.toHaveBeenCalled();

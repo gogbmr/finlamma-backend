@@ -133,7 +133,7 @@ export default async function DashboardLayout({
   // 2: "make it obvious in the UI when a halt is active"). Shown on EVERY
   // admin page, not just the Ops console itself, and to every staff member
   // who can see the admin shell at all - a halt affects every learner, so
-  // hiding it from staff without trading.ops would be exactly the kind of
+  // hiding it from staff without ops.view would be exactly the kind of
   // "silent" halt the founder asked to rule out. Fails safe (banner just
   // doesn't render) rather than breaking the ENTIRE admin shell if this one
   // read has a transient problem - every other admin page has nothing to do

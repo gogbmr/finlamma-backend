@@ -4,6 +4,32 @@
 // existing role, permission or grant, and never touches staff_members or
 // users - it only adds/updates rows in roles, permissions and
 // role_permissions. Run via `pnpm db:seed`.
+//
+// 2026-11-20: migrated from 28 coarse per-domain keys (worldN.manage/
+// world.publish, etc.) to a uniform view/create/edit/delete scheme per
+// admin resource (docs/ARCHITECTURE.md decision D81). The OLD keys are
+// deliberately no longer listed here (so re-running this script stops
+// re-touching them), but their rows and grants are NOT deleted from the
+// live database by this change - every requireStaff()/roleHasPermission()
+// call site across the codebase was swapped to the NEW keys in the same
+// change, so the old rows simply become unused, harmless clutter rather
+// than something still load-bearing. A follow-up migration to actually
+// delete the old permission/role_permission rows is tracked in
+// docs/ROADMAP.md, to run only once this branch is confirmed live on main
+// (CLAUDE.md rule 8 - never remove something code elsewhere might still
+// depend on before the code that stops depending on it is actually
+// deployed).
+//
+// IMPORTANT naming note for world/lesson/question/mentor/news/coach_note
+// (the six domains that used to have a separate draft-tier "X.manage" and
+// a higher-trust "X.publish" permission): `delete` for these six is
+// deliberately the FULL old "X.publish" bundle (publish, unpublish, the
+// D20-style hotfix-while-published path, and the literal delete action
+// where one exists) - not just "removes the row". This is what makes the
+// migration below exactly preserve every role's existing access with zero
+// widening: a role that could draft-edit but never publish still can't
+// (gets `edit`, not `delete`); a role that could publish/unpublish/delete
+// still can (gets `delete`, not `edit`) - same trust boundary, new names.
 import "../envConfig";
 import { logActivity } from "../src/lib/activity-log";
 import { db } from "../src/db/client";
@@ -37,152 +63,128 @@ const ROLES = [
   },
 ] as const;
 
+// Resource.op - every key below follows this shape. "view" is always
+// required just to see the admin page at all (replaces the old implicit
+// "either manage or publish grants view" rule with an explicit grant).
 const PERMISSIONS = [
+  // --- staff & roles (this feature itself) ---
+  { key: "staff.view", description: "View the Staff admin page (list of staff members)." },
+  { key: "staff.create", description: "Invite a new staff member." },
+  { key: "staff.edit", description: "Edit a staff member's role or profile fields." },
+  { key: "staff.delete", description: "Deactivate a staff member (never a hard delete)." },
+  { key: "roles.view", description: "View the Roles admin page." },
+  { key: "roles.create", description: "Create a new role." },
+  { key: "roles.edit", description: "Rename/describe a role and assign its permissions." },
+  { key: "roles.delete", description: "Delete a role, only while no staff member holds it." },
+
+  // --- content domains with a draft/publish lifecycle: `delete` is the
+  // old "X.publish" bundle (publish/unpublish/hotfix/delete), not just row
+  // removal - see the file header comment. ---
+  { key: "world.view", description: "View the Worlds admin page." },
+  { key: "world.create", description: "Create a new world draft." },
+  { key: "world.edit", description: "Edit a draft world's fields." },
+  { key: "world.delete", description: "Publish, unpublish, hotfix or permanently delete a world." },
+
+  { key: "lesson.view", description: "View the Lessons admin page." },
+  { key: "lesson.create", description: "Create a new lesson draft." },
+  { key: "lesson.edit", description: "Edit a draft lesson's fields." },
+  { key: "lesson.delete", description: "Publish, unpublish, hotfix or permanently delete a lesson." },
+
+  { key: "question.view", description: "View the Questions admin page." },
+  { key: "question.create", description: "Create a new question draft." },
+  { key: "question.edit", description: "Edit a draft question's fields." },
+  { key: "question.delete", description: "Publish, unpublish, hotfix or permanently delete a question." },
+
+  { key: "mentor.view", description: "View the Mentors admin page." },
+  { key: "mentor.create", description: "Create a new mentor draft." },
+  { key: "mentor.edit", description: "Edit a draft mentor's fields." },
+  { key: "mentor.delete", description: "Publish, unpublish, hotfix or permanently delete a mentor." },
+
+  { key: "news.view", description: "View the News Desk admin page." },
+  { key: "news.create", description: "Draft a news story from an ingested raw item." },
+  { key: "news.edit", description: "Edit a news story's draft fields, quality override or topic." },
+  { key: "news.delete", description: "Toggle a news story's status (draft/published/hidden)." },
+
+  { key: "coach_note.view", description: "View the Coach Notes admin page." },
+  { key: "coach_note.create", description: "Create a new coach-note template draft." },
+  { key: "coach_note.edit", description: "Edit a draft coach-note template." },
+  { key: "coach_note.delete", description: "Publish or unpublish a coach-note template." },
+
+  // --- single-tier content domains: one trust level, no separate
+  // publish tier existed before, so `delete` is only defined where a real
+  // destructive action already exists. ---
+  { key: "badge.view", description: "View the Badges admin page." },
+  { key: "badge.create", description: "Create a new badge draft." },
+  { key: "badge.edit", description: "Edit, publish or unpublish a badge." },
+
+  { key: "reward.view", description: "View the Rewards admin page." },
+  { key: "reward.create", description: "Create a new reward draft." },
+  { key: "reward.edit", description: "Edit, publish or unpublish a reward." },
+  { key: "reward.delete", description: "Refund a learner's reward claim." },
+
+  { key: "competition.view", description: "View the Competitions admin page." },
+  { key: "competition.create", description: "Create a new competition draft." },
+  { key: "competition.edit", description: "Edit or publish a competition, or its global settings." },
+
+  { key: "instrument.view", description: "View the Instruments admin page." },
+  { key: "instrument.create", description: "Add a new instrument to the catalog." },
+  { key: "instrument.edit", description: "Edit the instrument catalog or market holiday calendar." },
+
+  { key: "legal.view", description: "View the Legal documents admin page." },
+  { key: "legal.create", description: "Draft a new version of a legal document." },
+  { key: "legal.edit", description: "Edit or publish a draft legal document version." },
+
+  // --- singleton/tunable domains: no create/delete concept. ---
+  { key: "economy.view", description: "View the Settings page's economy section (V Money tuning)." },
   {
-    key: "staff.manage",
-    description: "Create, deactivate and assign roles to staff members.",
+    key: "economy.edit",
+    description: "Edit reward_rules defaults and the global V Money issuance multiplier.",
   },
+  { key: "settings.view", description: "View the admin Settings page." },
   {
-    key: "activity_log.view",
-    description: "View the staff/user activity log.",
+    key: "settings.edit",
+    description: "Edit admin-tunable settings_kv values (lesson flow scoring, level curve, streaks, ...).",
   },
-  {
-    key: "legal.manage",
-    description: "Draft and publish versioned Terms/Privacy/Risk-disclosure documents.",
-  },
+
+  // --- read-only domains. ---
+  { key: "analytics.view", description: "View the admin analytics dashboards." },
+  { key: "activity_log.view", description: "View the staff/user activity log." },
+
+  // --- narrow, system-generated-record domains: no create/delete. ---
   {
     key: "consent.view",
     description:
-      "View parental-consent and legal-acceptance status for user accounts, read-only. " +
-      "Every view of a parent's contact details is logged.",
+      "View parental-consent and legal-acceptance status for user accounts, read-only. Every view " +
+      "of a parent's contact details is logged.",
   },
   {
-    key: "consent.correct_dob",
+    key: "consent.edit",
     description:
-      "Correct a learner's already-set date of birth (app asks batch, section C3) - super_admin " +
-      "only at launch. A correction that crosses the minor/adult boundary re-evaluates the " +
-      "parental-consent gate live; one that results in an under-13 account runs the same " +
-      "AGE_BELOW_MINIMUM rejection and account-deletion path as setting the date for the first " +
-      "time. Every correction is logged with old/new value and a required reason.",
+      "Correct a learner's already-set date of birth. A correction that crosses the minor/adult " +
+      "boundary re-evaluates the parental-consent gate live. Every correction is logged with " +
+      "old/new value and a required reason.",
   },
   {
-    key: "doubt_zone.moderate",
+    key: "doubt_zone.view",
     description:
-      "View and act on flagged Doubt Zone AI messages only - a message the safety classifier " +
-      "flagged, or one a learner reported. Full, unflagged conversation transcripts are never " +
-      "browsable by staff (Phase 7 kickoff decision, docs/ARCHITECTURE.md). Every view is logged.",
+      "View flagged Doubt Zone AI messages - a message the safety classifier flagged, or one a " +
+      "learner reported. Full, unflagged conversation transcripts are never browsable by staff.",
   },
   {
-    key: "mentor.manage",
+    key: "doubt_zone.edit",
+    description: "Act on a flagged Doubt Zone message (resolve/escalate). Every view/action is logged.",
+  },
+
+  // --- controls, not records. ---
+  {
+    key: "ops.view",
+    description: "View the Ops console, including the User Trading Ledger (every view is logged).",
+  },
+  {
+    key: "ops.edit",
     description:
-      "Create mentors and edit a mentor's draft fields (name, bio, persona, art). " +
-      "Cannot edit a mentor that's currently published - unpublish it first.",
-  },
-  {
-    key: "mentor.publish",
-    description: "Publish or unpublish a mentor, making it visible to (or hidden from) the app.",
-  },
-  {
-    key: "world.manage",
-    description:
-      "Create worlds and edit a world's draft fields (title, tagline, theme, mentor, order, " +
-      "art). Cannot edit a world that's currently published - unpublish it first.",
-  },
-  {
-    key: "world.publish",
-    description:
-      "Publish or unpublish a world, making it visible to (or hidden from) the app, and " +
-      "permanently delete a world once it has no lessons. Publishing requires the world's " +
-      "mentor to already be published.",
-  },
-  {
-    key: "lesson.manage",
-    description:
-      "Create lessons and edit a lesson's draft fields (title, blurb, content). Cannot edit a " +
-      "lesson that's currently published - unpublish it first.",
-  },
-  {
-    key: "lesson.publish",
-    description:
-      "Publish or unpublish a lesson, making it visible to (or hidden from) the app. Publishing " +
-      "requires the lesson's world to already be published.",
-  },
-  {
-    key: "question.manage",
-    description:
-      "Create questions and edit a question's draft fields (prompt, explanation, payload, " +
-      "answer). Cannot edit a question that's currently published - unpublish it first.",
-  },
-  {
-    key: "question.publish",
-    description:
-      "Publish or unpublish a question. A lesson can't be published while it references a " +
-      "missing or unpublished question (docs/ARCHITECTURE.md D18).",
-  },
-  {
-    key: "settings.manage",
-    description:
-      "Edit admin-tunable settings_kv values that affect every learner immediately (e.g. Lesson " +
-      "Flow scoring constants). Narrower than content permissions - granted to super_admin only.",
-  },
-  {
-    key: "economy.manage",
-    description:
-      "Edit reward_rules (default XP/VM per activity kind) and the global VM issuance " +
-      "multiplier - changes what every learner earns immediately. Same narrow trust bar as " +
-      "settings.manage - granted to super_admin only.",
-  },
-  {
-    key: "coach_note.manage",
-    description:
-      "Create coach-note templates and edit a template's draft fields (category, wording). " +
-      "Cannot edit a template that's currently published - unpublish it first. Every template " +
-      "must follow the tone rule (encouraging, never comparative - docs/ARCHITECTURE.md D34).",
-  },
-  {
-    key: "coach_note.publish",
-    description:
-      "Publish or unpublish a coach-note template, making it eligible for (or removed from) the " +
-      "weekly report card's random per-category pick. Same narrow trust bar as settings.manage - " +
-      "granted to super_admin only, since this reaches minors directly.",
-  },
-  {
-    key: "instrument.manage",
-    description:
-      "Create and edit the NSE instrument catalog (symbol, name, sector, about/tip copy, tags, " +
-      "mcap, pe, lot size, active) and the market holiday calendar. No draft/publish split - " +
-      "edits apply immediately, same trust tier as a content hotfix. Does not include halting a " +
-      "symbol or the Ops console's feed-mode/global-halt controls (trading.ops, Phase 4 Checkpoint 9).",
-  },
-  {
-    key: "news.manage",
-    description:
-      "Create news stories from an AI draft and edit a story's draft fields (content, jargon, " +
-      "category, impact, topic), plus create/edit News Desk picks (Desk Pick/Exam Alert/Scam " +
-      "Watch). Cannot toggle a story's publish status - that's news.publish.",
-  },
-  {
-    key: "news.publish",
-    description:
-      "Toggle a news story between draft/published/hidden - the only mechanism that makes a " +
-      "story visible to (or pulls it from) the learner-facing feed.",
-  },
-  {
-    key: "trading.ops",
-    description:
-      "Ops console dangerous controls: global trading halt, per-symbol halt, feed-mode changes " +
-      "(LIVE/DELAYED_15M/PAUSED), the User Trading Ledger (a learner's financial activity - " +
-      "every view is logged), and the risk-flag thresholds. Every halt/unhalt requires a " +
-      "free-text reason. Same narrow trust bar as settings.manage/economy.manage - granted to " +
-      "super_admin only, since a global halt affects every learner immediately.",
-  },
-  {
-    key: "analytics.view",
-    description:
-      "View the admin analytics dashboards (users, retention, lessons, trading, news, " +
-      "revenue) - aggregate business-reporting queries against our own Postgres tables, never " +
-      "a single learner's individual activity. Same narrow trust bar as settings.manage - " +
-      "granted to super_admin only (docs/ARCHITECTURE.md D69).",
+      "Ops console controls: global trading halt, per-symbol halt, feed-mode changes, risk-flag " +
+      "thresholds. Every halt/unhalt requires a free-text reason.",
   },
 ] as const;
 
@@ -190,43 +192,42 @@ const PERMISSIONS = [
 // permission that exists, explicitly listed (not an implicit wildcard) so
 // role_permissions stays a readable audit trail of exactly what's granted.
 // Other roles get permissions as their domain (quizzes, content, ...) is
-// actually built in later phases.
+// actually built in later phases. This mapping is the exact equivalent of
+// what each role held under the old scheme (see the file header comment) -
+// not a re-design of who can do what, only a rename/regranularization.
 const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
-  super_admin: [
-    "staff.manage",
-    "activity_log.view",
-    "legal.manage",
-    "mentor.manage",
-    "mentor.publish",
-    "world.manage",
-    "world.publish",
-    "lesson.manage",
-    "lesson.publish",
-    "question.manage",
-    "question.publish",
-    "settings.manage",
-    "economy.manage",
-    "coach_note.manage",
-    "coach_note.publish",
-    "instrument.manage",
-    "trading.ops",
-    "news.manage",
-    "news.publish",
-    "doubt_zone.moderate",
-    "analytics.view",
-    "consent.correct_dob",
+  super_admin: PERMISSIONS.map((p) => p.key),
+  user_manager: ["consent.view", "doubt_zone.view", "doubt_zone.edit"],
+  content_uploader: [
+    "mentor.view",
+    "mentor.create",
+    "mentor.edit",
+    "world.view",
+    "world.create",
+    "world.edit",
+    "lesson.view",
+    "lesson.create",
+    "lesson.edit",
+    "news.view",
+    "news.create",
+    "news.edit",
   ],
-  user_manager: ["consent.view", "doubt_zone.moderate"],
-  content_uploader: ["mentor.manage", "world.manage", "lesson.manage", "news.manage"],
   content_publisher: [
-    "mentor.publish",
-    "world.publish",
-    "lesson.publish",
-    "question.publish",
-    "instrument.manage",
-    "news.publish",
+    "mentor.view",
+    "mentor.delete",
+    "world.view",
+    "world.delete",
+    "lesson.view",
+    "lesson.delete",
+    "question.view",
+    "question.delete",
+    "instrument.view",
+    "instrument.create",
+    "instrument.edit",
+    "news.view",
+    "news.delete",
   ],
-  quiz_maker: ["question.manage"],
+  quiz_maker: ["question.view", "question.create", "question.edit"],
 };
 
 async function seed() {

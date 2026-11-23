@@ -14,6 +14,7 @@ vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
   countPublishedLessonsByWorldId,
+  deleteLessonRow,
   getLessonById,
   getPublishedLesson,
   getPublishedLessonAtPosition,
@@ -203,6 +204,32 @@ describe("publishLessonRow / unpublishLessonRow", () => {
     expect(unpublished?.status).toBe("draft");
     expect(unpublished?.publishedAt).toBeNull();
     expect(unpublished?.publishedBy).toBeNull();
+  });
+});
+
+describe("deleteLessonRow", () => {
+  it("deletes a draft lesson", async () => {
+    const created = await insertDraftLesson(await draftInput());
+
+    const deleted = await deleteLessonRow(created.id);
+
+    expect(deleted?.id).toBe(created.id);
+    expect(await getLessonById(created.id)).toBeNull();
+  });
+
+  it("returns null (does not delete) when the lesson is currently published", async () => {
+    const created = await insertDraftLesson(await draftInput());
+    await publishLessonRow(created.id, staffId);
+
+    const result = await deleteLessonRow(created.id);
+
+    expect(result).toBeNull();
+    expect(await getLessonById(created.id)).not.toBeNull();
+  });
+
+  it("returns null for a nonexistent lesson", async () => {
+    const result = await deleteLessonRow(randomUUID());
+    expect(result).toBeNull();
   });
 });
 

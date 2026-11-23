@@ -13,7 +13,7 @@ import { DoubtZoneModerationTable } from "./doubt-zone-moderation-table";
 // 100-row hard cap. listFlaggedMessagesForAdmin (src/server/doubt-zone/
 // admin-queries.ts) is a NEW file - the existing listFlaggedMessagesForReview
 // is untouched, and nothing here imports requireFullAccess or any other
-// part of the app-facing access gate. Fields, the doubt_zone.moderate
+// part of the app-facing access gate. Fields, the doubt_zone.view
 // check below, and every action this page links to are unchanged.
 const PAGE_SIZE = 20;
 
@@ -45,7 +45,7 @@ export default async function DoubtZoneModerationPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   try {
-    await requireStaff("doubt_zone.moderate");
+    await requireStaff("doubt_zone.view");
   } catch {
     return <Forbidden message="You don't have permission to view flagged Doubt Zone messages." />;
   }

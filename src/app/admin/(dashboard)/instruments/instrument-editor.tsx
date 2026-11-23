@@ -81,7 +81,8 @@ function LocalizedFields({
 
 export function InstrumentEditor({
   instruments,
-  canManage,
+  canCreate,
+  canEdit,
   total,
   page,
   pageCount,
@@ -92,7 +93,8 @@ export function InstrumentEditor({
   active,
 }: {
   instruments: InstrumentRow[];
-  canManage: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
   total: number;
   page: number;
   pageCount: number;
@@ -119,12 +121,12 @@ export function InstrumentEditor({
     setSelectedId(id);
   }
 
-  if (total === 0 && !canManage) {
+  if (total === 0 && !canCreate) {
     return (
       <EmptyState
         icon={TrendingUp}
         title="No instruments yet"
-        description="A staff member with instrument.manage can add the first one."
+        description="A staff member with instrument.create can add the first one."
       />
     );
   }
@@ -138,7 +140,7 @@ export function InstrumentEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Select an instrument below to edit it.</p>
-        {canManage && (
+        {canCreate && (
           <Button type="button" size="sm" onClick={() => trySelect("new")}>
             + New instrument
           </Button>
@@ -166,7 +168,7 @@ export function InstrumentEditor({
         onSelect={trySelect}
       />
 
-      {effectiveId === "new" && canManage ? (
+      {effectiveId === "new" && canCreate ? (
         <NewInstrumentForm onDirtyChange={setIsDirty} />
       ) : (
         (() => {
@@ -176,7 +178,7 @@ export function InstrumentEditor({
             <InstrumentForm
               key={instrument.id}
               instrument={instrument}
-              canManage={canManage}
+              canManage={canEdit}
               onDirtyChange={setIsDirty}
             />
           );

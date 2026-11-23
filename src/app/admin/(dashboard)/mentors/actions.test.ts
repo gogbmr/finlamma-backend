@@ -22,6 +22,7 @@ const mockUpdateMentorDraft = vi.fn();
 const mockHotfixMentor = vi.fn();
 const mockPublishMentor = vi.fn();
 const mockUnpublishMentor = vi.fn();
+const mockDeleteMentor = vi.fn();
 const mockUploadMentorArt = vi.fn();
 vi.mock("@/server/mentors/service", () => ({
   createMentorDraft: (actor: unknown, input: unknown, meta: unknown) =>
@@ -33,12 +34,14 @@ vi.mock("@/server/mentors/service", () => ({
   publishMentor: (actor: unknown, id: unknown, meta: unknown) => mockPublishMentor(actor, id, meta),
   unpublishMentor: (actor: unknown, id: unknown, meta: unknown) =>
     mockUnpublishMentor(actor, id, meta),
+  deleteMentor: (actor: unknown, id: unknown, meta: unknown) => mockDeleteMentor(actor, id, meta),
   uploadMentorArt: (actor: unknown, id: unknown, file: unknown, meta: unknown) =>
     mockUploadMentorArt(actor, id, file, meta),
 }));
 
 import {
   createMentorDraftAction,
+  deleteMentorAction,
   hotfixMentorAction,
   publishMentorAction,
   unpublishMentorAction,
@@ -61,18 +64,18 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createMentorDraftAction: requires mentor.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.manage"));
+  it("createMentorDraftAction: requires mentor.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.create"));
 
     const result = await createMentorDraftAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: mentor.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: mentor.create" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.create");
     expect(mockCreateMentorDraft).not.toHaveBeenCalled();
   });
 
-  it("updateMentorDraftAction: requires mentor.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.manage"));
+  it("updateMentorDraftAction: requires mentor.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.edit"));
 
     const result = await updateMentorDraftAction({ id: "m1", ...VALID_INPUT });
 
@@ -80,18 +83,18 @@ describe("wrong role is rejected", () => {
     expect(mockUpdateMentorDraft).not.toHaveBeenCalled();
   });
 
-  it("publishMentorAction: requires mentor.publish, not mentor.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.publish"));
+  it("publishMentorAction: requires mentor.delete, not mentor.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.delete"));
 
     const result = await publishMentorAction({ id: MENTOR_ID });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.delete");
     expect(mockPublishMentor).not.toHaveBeenCalled();
   });
 
-  it("unpublishMentorAction: requires mentor.publish", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.publish"));
+  it("unpublishMentorAction: requires mentor.delete", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.delete"));
 
     const result = await unpublishMentorAction({ id: MENTOR_ID });
 
@@ -99,9 +102,9 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishMentor).not.toHaveBeenCalled();
   });
 
-  it("uploadMentorArtAction: requires mentor.manage or mentor.publish", async () => {
+  it("uploadMentorArtAction: requires mentor.edit or mentor.delete", async () => {
     mockRequireStaffAny.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: one of mentor.manage, mentor.publish"),
+      new AppError("FORBIDDEN", "Missing permission: one of mentor.edit, mentor.delete"),
     );
     const formData = new FormData();
     formData.set("id", MENTOR_ID);
@@ -110,12 +113,12 @@ describe("wrong role is rejected", () => {
     const result = await uploadMentorArtAction(formData);
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaffAny).toHaveBeenCalledWith(["mentor.manage", "mentor.publish"]);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["mentor.edit", "mentor.delete"]);
     expect(mockUploadMentorArt).not.toHaveBeenCalled();
   });
 
-  it("hotfixMentorAction: requires mentor.publish, not mentor.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.publish"));
+  it("hotfixMentorAction: requires mentor.delete, not mentor.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.delete"));
 
     const result = await hotfixMentorAction({
       id: MENTOR_ID,
@@ -124,8 +127,18 @@ describe("wrong role is rejected", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.delete");
     expect(mockHotfixMentor).not.toHaveBeenCalled();
+  });
+
+  it("deleteMentorAction: requires mentor.delete, not mentor.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: mentor.delete"));
+
+    const result = await deleteMentorAction({ id: MENTOR_ID });
+
+    expect(result.ok).toBe(false);
+    expect(mockRequireStaff).toHaveBeenCalledWith("mentor.delete");
+    expect(mockDeleteMentor).not.toHaveBeenCalled();
   });
 });
 
@@ -174,6 +187,29 @@ describe("happy paths", () => {
     expect(result).toEqual({
       ok: false,
       error: "Cannot publish: missing translations for bio.hi",
+    });
+  });
+
+  it("deleteMentorAction deletes and revalidates", async () => {
+    mockDeleteMentor.mockResolvedValueOnce({ id: MENTOR_ID });
+
+    const result = await deleteMentorAction({ id: MENTOR_ID });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockDeleteMentor).toHaveBeenCalledWith(ACTOR, MENTOR_ID, expect.any(Object));
+    expect(mockRevalidatePath).toHaveBeenCalledWith("/admin/mentors");
+  });
+
+  it("deleteMentorAction surfaces the still-assigned-to-a-world block to the caller", async () => {
+    mockDeleteMentor.mockRejectedValueOnce(
+      new AppError("CONFLICT", "Cannot delete: still assigned to world(s): Money World - reassign them first"),
+    );
+
+    const result = await deleteMentorAction({ id: MENTOR_ID });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Cannot delete: still assigned to world(s): Money World - reassign them first",
     });
   });
 

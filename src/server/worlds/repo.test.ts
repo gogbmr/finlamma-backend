@@ -21,6 +21,7 @@ const {
   hotfixWorldRow,
   insertDraftWorld,
   listPublishedWorldsByMentorId,
+  listWorldsByMentorId,
   moveWorldToPosition,
   publishWorldRow,
   unpublishWorldRow,
@@ -332,6 +333,32 @@ describe("listPublishedWorldsByMentorId", () => {
     const mentor = await makeMentor();
 
     const result = await listPublishedWorldsByMentorId(mentor.id);
+
+    expect(result).toEqual([]);
+  });
+});
+
+// Used by mentors/service.ts's deleteMentor - any status, unlike
+// listPublishedWorldsByMentorId above, since worlds.mentorId is a real,
+// mandatory FK regardless of either row's status.
+describe("listWorldsByMentorId", () => {
+  it("returns every world referencing the mentor, draft or published", async () => {
+    const mentor = await makeMentor();
+    const draftWorld = await insertDraftWorld(await draftInput({ mentorId: mentor.id }));
+    const publishedWorld = await insertDraftWorld(await draftInput({ mentorId: mentor.id }));
+    await publishWorldRow(publishedWorld.id, staffId);
+    const otherMentorWorld = await insertDraftWorld(await draftInput());
+
+    const result = await listWorldsByMentorId(mentor.id);
+
+    expect(result.map((w) => w.id).sort()).toEqual([draftWorld.id, publishedWorld.id].sort());
+    expect(result.map((w) => w.id)).not.toContain(otherMentorWorld.id);
+  });
+
+  it("returns an empty array when no world references the mentor", async () => {
+    const mentor = await makeMentor();
+
+    const result = await listWorldsByMentorId(mentor.id);
 
     expect(result).toEqual([]);
   });

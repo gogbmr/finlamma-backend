@@ -36,7 +36,7 @@ export async function getLessonDefaultDurationSettings(): Promise<LessonDefaultD
   return parsed.success ? parsed.data : DEFAULT_LESSON_DEFAULT_DURATION_SECONDS;
 }
 
-// Gated on settings.manage, seeded (scripts/seed-roles.ts) ONLY to
+// Gated on settings.edit, seeded (scripts/seed-roles.ts) ONLY to
 // super_admin - no other role gets it, unlike every content permission
 // which content_publisher/quiz_maker/etc. also hold. Changing a scoring
 // constant changes XP for every learner immediately, so this is

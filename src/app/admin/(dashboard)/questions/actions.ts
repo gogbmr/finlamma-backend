@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { ZodError } from "zod";
-import { requireStaff, requireStaffAny } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
 import { AppError } from "@/lib/errors";
 import { requestMeta } from "@/lib/http";
 import { getQuestionDetailForAdmin } from "@/server/questions/admin-queries";
@@ -16,6 +16,7 @@ import {
 } from "@/server/questions/schemas";
 import {
   createQuestionDraft,
+  deleteQuestion,
   hotfixQuestion,
   publishQuestion,
   unpublishQuestion,
@@ -27,7 +28,7 @@ type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Same runAction/permission-gate pattern as
 // src/app/admin/(dashboard)/lessons/actions.ts. Every action independently
-// re-checks the caller's permission here - the page's canManage/canPublish
+// re-checks the caller's permission here - the page's canEdit/canDelete
 // props only control which buttons render, they are never trusted as
 // authorization.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
@@ -45,7 +46,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createQuestionDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("question.manage");
+    const actor = await requireStaff("question.create");
     const parsed = CreateQuestionDraftSchema.parse(input);
     await createQuestionDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/questions");
@@ -54,7 +55,7 @@ export async function createQuestionDraftAction(input: unknown): Promise<ActionR
 
 export async function updateQuestionDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("question.manage");
+    const actor = await requireStaff("question.edit");
     const parsed = UpdateQuestionDraftSchema.parse(input);
     await updateQuestionDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/questions");
@@ -63,7 +64,7 @@ export async function updateQuestionDraftAction(input: unknown): Promise<ActionR
 
 export async function publishQuestionAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("question.publish");
+    const actor = await requireStaff("question.delete");
     const { id } = QuestionIdSchema.parse(input);
     await publishQuestion(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/questions");
@@ -72,7 +73,7 @@ export async function publishQuestionAction(input: unknown): Promise<ActionResul
 
 export async function unpublishQuestionAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("question.publish");
+    const actor = await requireStaff("question.delete");
     const { id } = QuestionIdSchema.parse(input);
     await unpublishQuestion(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/questions");
@@ -81,9 +82,23 @@ export async function unpublishQuestionAction(input: unknown): Promise<ActionRes
 
 export async function hotfixQuestionAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("question.publish");
+    const actor = await requireStaff("question.delete");
     const parsed = HotfixQuestionSchema.parse(input);
     await hotfixQuestion(actor, parsed, requestMeta(await headers()));
+    revalidatePath("/admin/questions");
+  });
+}
+
+// Gated on question.delete, not question.edit - same reasoning as
+// worlds/actions.ts's deleteWorldAction and lessons/actions.ts's
+// deleteLessonAction: deletion is permanent and irreversible. deleteQuestion
+// itself only allows removing a draft question (a published one must be
+// unpublished first).
+export async function deleteQuestionAction(input: unknown): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaff("question.delete");
+    const { id } = QuestionIdSchema.parse(input);
+    await deleteQuestion(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/questions");
   });
 }
@@ -103,14 +118,13 @@ type QuestionDetailResult = { ok: true; data: QuestionDetail } | { ok: false; er
 // Read-only. The Questions admin list is now real-DB-paginated (Task 3b,
 // src/server/questions/admin-queries.ts), so the full record for a
 // selected question is no longer already sitting in memory from a
-// full-table fetch - this loads it on demand. Gated on EITHER
-// question.manage or question.publish, same reasoning as lessons'
-// previewLessonAction (src/app/admin/(dashboard)/lessons/actions.ts): a
-// content_publisher with only question.publish still needs to open a
-// draft to review it before publishing.
+// full-table fetch - this loads it on demand. Gated on the single
+// question.view permission now (previously EITHER question.manage or
+// question.publish, back when view access was only ever implicit - see
+// docs/ARCHITECTURE.md D81).
 export async function loadQuestionDetailForAdminAction(input: unknown): Promise<QuestionDetailResult> {
   try {
-    await requireStaffAny(["question.manage", "question.publish"]);
+    await requireStaff("question.view");
     const { id } = QuestionIdSchema.parse(input);
     const row = await getQuestionDetailForAdmin(id);
     if (!row) return { ok: false, error: "Question not found" };

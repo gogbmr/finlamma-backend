@@ -77,8 +77,8 @@ export function WorldsTable({
   sort,
   dir,
   status,
-  canManage,
-  canPublish,
+  canEdit,
+  canDelete,
 }: {
   rows: WorldTableRow[];
   mentors: MentorOption[];
@@ -90,8 +90,8 @@ export function WorldsTable({
   sort: string | null;
   dir: "asc" | "desc";
   status: StatusFilter;
-  canManage: boolean;
-  canPublish: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const pathname = usePathname();
   const state: AdminListUrlState = { q, sort, dir, pageSize };
@@ -168,7 +168,7 @@ export function WorldsTable({
                 <Eye className="h-4 w-4" />
               </Link>
             </Button>
-            {(canManage || canPublish) && (
+            {(canEdit || canDelete) && (
               <Button variant="ghost" size="icon" title="Edit" asChild>
                 <Link
                   href={`/admin/worlds/${row.original.id}/edit`}
@@ -178,7 +178,7 @@ export function WorldsTable({
                 </Link>
               </Button>
             )}
-            {canPublish && (
+            {canDelete && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -200,7 +200,7 @@ export function WorldsTable({
     // listing them (rather than `state` itself) avoids recomputing columns
     // on every unrelated re-render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pathname, q, sort, dir, pageSize, mentorName, canManage, canPublish],
+    [pathname, q, sort, dir, pageSize, mentorName, canEdit, canDelete],
   );
 
   return (
@@ -231,7 +231,7 @@ export function WorldsTable({
           description={
             q
               ? `Nothing matched "${q}" - try a different title or code.`
-              : "A staff member with world.manage can create the first one."
+              : "A staff member with world.create or world.edit can create the first one."
           }
         />
       ) : (

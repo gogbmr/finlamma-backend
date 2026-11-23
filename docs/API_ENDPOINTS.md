@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.9.0) on 2026-11-17.
+> Generated from `openapi/openapi.json` (version 2.9.0) on 2026-11-23.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -7045,7 +7045,7 @@ The caller's own thread only, newest first, cursor-paginated.
 
 **Send a message to the Doubt Zone AI mentor and stream its reply**
 
-The response body is always newline-delimited JSON (`application/x-ndjson`, one compact JSON object per line matching DoubtZoneStreamLine), never a single JSON object - even when the safety classifier or the advice-language output filter replaces the reply, since that still arrives as a single 'done' line on the same stream, not a different response shape. Every message runs through a safety classifier BEFORE the AI ever sees it, biased heavily toward flagging when uncertain (docs/ARCHITECTURE.md's Phase 7 kickoff decisions) - a flagged message gets a fixed, settings_kv-driven safety redirect instead of a normal reply, and is queued for staff review (doubt_zone.moderate). The AI never receives the learner's name, age, email, phone, state, school or any other identifying detail - only language, the mentor's persona, and (when opened from a lesson) that lesson's own public topic.
+The response body is always newline-delimited JSON (`application/x-ndjson`, one compact JSON object per line matching DoubtZoneStreamLine), never a single JSON object - even when the safety classifier or the advice-language output filter replaces the reply, since that still arrives as a single 'done' line on the same stream, not a different response shape. Every message runs through a safety classifier BEFORE the AI ever sees it, biased heavily toward flagging when uncertain (docs/ARCHITECTURE.md's Phase 7 kickoff decisions) - a flagged message gets a fixed, settings_kv-driven safety redirect instead of a normal reply, and is queued for staff review (doubt_zone.view). The AI never receives the learner's name, age, email, phone, state, school or any other identifying detail - only language, the mentor's persona, and (when opened from a lesson) that lesson's own public topic.
 
 **Auth:** bearerAuth
 
@@ -7151,7 +7151,7 @@ The response body is always newline-delimited JSON (`application/x-ndjson`, one 
 
 **Report a Doubt Zone AI reply**
 
-Flags an assistant message for staff review (doubt_zone.moderate) - same flagged-only visibility as a safety-classifier flag (docs/ARCHITECTURE.md's Phase 7 kickoff decisions). Idempotent: reporting an already-flagged message logs the report again but doesn't change anything else. Only the caller's own thread, and only an assistant-role message, can be reported.
+Flags an assistant message for staff review (doubt_zone.view) - same flagged-only visibility as a safety-classifier flag (docs/ARCHITECTURE.md's Phase 7 kickoff decisions). Idempotent: reporting an already-flagged message logs the report again but doesn't change anything else. Only the caller's own thread, and only an assistant-role message, can be reported.
 
 **Auth:** bearerAuth
 

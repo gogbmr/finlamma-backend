@@ -11,6 +11,7 @@ import {
   Gift,
   Globe2,
   HelpCircle,
+  KeyRound,
   MessageSquareText,
   Newspaper,
   ScrollText,
@@ -41,6 +42,7 @@ export type AdminNavVisibility = {
   consent: boolean;
   doubtZoneModeration: boolean;
   staff: boolean;
+  roles: boolean;
   activityLog: boolean;
   legal: boolean;
   settings: boolean;
@@ -84,6 +86,7 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
           visible: v.doubtZoneModeration,
         },
         { href: "/admin/staff", label: "Staff", icon: Users, visible: v.staff },
+        { href: "/admin/roles", label: "Roles", icon: KeyRound, visible: v.roles },
         { href: "/admin/activity-log", label: "Activity Log", icon: ScrollText, visible: v.activityLog },
       ],
     },
@@ -150,6 +153,7 @@ export const ADMIN_LANDING_PRIORITY: {
   { key: "consent", href: "/admin/consent" },
   { key: "doubtZoneModeration", href: "/admin/doubt-zone" },
   { key: "staff", href: "/admin/staff" },
+  { key: "roles", href: "/admin/roles" },
   { key: "activityLog", href: "/admin/activity-log" },
   { key: "legal", href: "/admin/legal" },
   { key: "badges", href: "/admin/badges" },

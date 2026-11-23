@@ -41,7 +41,7 @@ function formatRupees(paise: number): string {
 export default async function OpsConsolePage() {
   let actor;
   try {
-    actor = await requireStaff("trading.ops");
+    actor = await requireStaff("ops.view");
   } catch {
     return (
       <Forbidden message="You don't have permission to use the Ops console." />
@@ -72,7 +72,7 @@ export default async function OpsConsolePage() {
         ]}
         icon={Siren}
         title="Exchange Ops Console"
-        description="Feed control, halts, risk monitoring and the audit trail for paper trading. Every control here is trading.ops-gated and every change is logged with who, when and why."
+        description="Feed control, halts, risk monitoring and the audit trail for paper trading. Every control here is ops.edit-gated and every change is logged with who, when and why."
       />
 
       <KpiTileGrid

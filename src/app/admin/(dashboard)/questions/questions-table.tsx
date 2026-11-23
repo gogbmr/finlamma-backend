@@ -1,10 +1,11 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { HelpCircle } from "lucide-react";
+import { Eye, HelpCircle, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   DataTable,
   DataTablePagination,
@@ -12,8 +13,10 @@ import {
   DataTableSortHeader,
   type AdminListUrlState,
 } from "@/components/admin/data-table";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -21,13 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 import type { QuestionFormat } from "@/server/questions/schemas";
 import type { QuestionListRow } from "./question-editor";
+import { deleteQuestionAction } from "./actions";
 
 const ALL_FORMATS = "__all__";
 const ALL_TOPICS = "__all__";
+const ALL_STATUSES = "__all__";
 
 // Mirrors question-editor.tsx's own FORMAT_LABELS - kept as a separate
 // local copy rather than importing it back from there, which would create
@@ -54,7 +58,7 @@ const FORMAT_OPTIONS: { value: QuestionFormat | null; label: string }[] = [
 type StatusFilter = "draft" | "published" | null;
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: null, label: "All" },
+  { value: null, label: "All statuses" },
   { value: "draft", label: "Draft" },
   { value: "published", label: "Published" },
 ];
@@ -62,9 +66,9 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
 type TopicOption = { id: string; name: LocalizedText };
 
 // Every link carries format/status/topicId too, alongside q/sort/dir/page -
-// same idea as Lessons' extraParams (worldId), just three params instead
-// of one, so it's simplest as its own small local builder rather than
-// threading three separate extraParams calls.
+// same idea as Lessons' extraParams, just three params instead of one, so
+// it's simplest as its own small local builder rather than threading three
+// separate extraParams calls.
 function questionsFilterHref(
   pathname: string,
   state: AdminListUrlState,
@@ -85,10 +89,12 @@ function questionsFilterHref(
 }
 
 // Questions' master list (Task 3b) - real-DB-paginated via
-// src/server/questions/admin-queries.ts, unlike Task 3a's small catalogs.
-// Rows are intentionally lightweight (id/format/topicId/promptEn/status) -
-// the full record for the selected question is fetched separately, on
-// demand, by question-editor.tsx's QuestionDetailLoader.
+// src/server/questions/admin-queries.ts, unlike the small catalogs. View/
+// Edit navigate to their own pages (fetching the full record directly via
+// getQuestionDetailForAdmin - no more on-demand client-side loader); Delete
+// opens a confirm dialog right here and calls the same deleteQuestionAction
+// the old inline form used. Format/Status/Topic are all dropdown selects
+// now (Status used to be a link-chip row).
 export function QuestionsTable({
   rows,
   topics,
@@ -102,8 +108,8 @@ export function QuestionsTable({
   format,
   status,
   topicId,
-  selectedId,
-  onSelect,
+  canEdit,
+  canDelete,
 }: {
   rows: QuestionListRow[];
   topics: TopicOption[];
@@ -117,8 +123,8 @@ export function QuestionsTable({
   format: QuestionFormat | null;
   status: StatusFilter;
   topicId: string | null;
-  selectedId: string | "new" | null;
-  onSelect: (id: string) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -128,6 +134,23 @@ export function QuestionsTable({
     const byId = new Map(topics.map((t) => [t.id, t.name.en]));
     return (id: string | null) => (id ? byId.get(id) ?? "—" : "—");
   }, [topics]);
+
+  const [isPending, startTransition] = useTransition();
+  const [pendingDelete, setPendingDelete] = useState<QuestionListRow | null>(null);
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    const { id, promptEn } = pendingDelete;
+    startTransition(async () => {
+      const result = await deleteQuestionAction({ id });
+      setPendingDelete(null);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`"${promptEn || id}" deleted`);
+    });
+  }
 
   const columns = useMemo<ColumnDef<QuestionListRow, unknown>[]>(
     () => [
@@ -161,30 +184,73 @@ export function QuestionsTable({
           <StatusBadge status={row.original.status}>{row.original.status}</StatusBadge>
         ),
       },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="icon" title="View" asChild>
+              <Link
+                href={`/admin/questions/${row.original.id}`}
+                aria-label={`View ${row.original.promptEn || row.original.id}`}
+              >
+                <Eye className="h-4 w-4" />
+              </Link>
+            </Button>
+            {(canEdit || canDelete) && (
+              <Button variant="ghost" size="icon" title="Edit" asChild>
+                <Link
+                  href={`/admin/questions/${row.original.id}/edit`}
+                  aria-label={`Edit ${row.original.promptEn || row.original.id}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Delete"
+                aria-label={`Delete ${row.original.promptEn || row.original.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDelete(row.original);
+                }}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pathname, q, sort, dir, pageSize, topicName],
+    [pathname, q, sort, dir, pageSize, topicName, canEdit, canDelete],
   );
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <div className="flex gap-3">
-            {STATUS_OPTIONS.map((opt) => (
-              <Link
-                key={opt.label}
-                href={questionsFilterHref(pathname, state, format, opt.value, topicId)}
-                className={cn(
-                  status === opt.value
-                    ? "font-semibold text-foreground underline"
-                    : "text-muted-foreground hover:underline",
-                )}
-              >
-                {opt.label}
-              </Link>
-            ))}
-          </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <Select
+            value={status ?? ALL_STATUSES}
+            onValueChange={(value) => {
+              const nextStatus = value === ALL_STATUSES ? null : (value as "draft" | "published");
+              router.push(questionsFilterHref(pathname, state, format, nextStatus, topicId));
+            }}
+          >
+            <SelectTrigger className="h-8 w-36 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_OPTIONS.map((opt) => (
+                <SelectItem key={opt.label} value={opt.value ?? ALL_STATUSES}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select
             value={format ?? ALL_FORMATS}
             onValueChange={(value) => {
@@ -233,18 +299,12 @@ export function QuestionsTable({
           description={
             q
               ? `Nothing matched "${q}" - try a different prompt.`
-              : "A staff member with question.manage can create the first one."
+              : "A staff member with question.create can create the first one."
           }
         />
       ) : (
         <>
-          <DataTable
-            columns={columns}
-            data={rows}
-            getRowId={(r) => r.id}
-            selectedRowId={selectedId === "new" ? null : selectedId}
-            onRowClick={(r) => onSelect(r.id)}
-          />
+          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
           <DataTablePagination
             pathname={pathname}
             state={state}
@@ -255,6 +315,21 @@ export function QuestionsTable({
           />
         </>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this question?"
+        description={
+          <>
+            This permanently removes &quot;{pendingDelete?.promptEn || pendingDelete?.id}&quot;.
+            Only possible while it&apos;s a draft - a published question must be unpublished
+            first. This cannot be undone.
+          </>
+        }
+        confirmLabel={isPending ? "Deleting…" : "Delete"}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

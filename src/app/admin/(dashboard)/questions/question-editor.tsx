@@ -1,8 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { HelpCircle, Plus, Trash2 } from "lucide-react";
+import { Info, MessageSquareText, Plus, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { ComponentType } from "react";
 import {
   FormProvider,
   useFieldArray,
@@ -13,7 +15,6 @@ import {
   type Resolver,
 } from "react-hook-form";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,6 @@ import {
 import {
   createQuestionDraftAction,
   hotfixQuestionAction,
-  loadQuestionDetailForAdminAction,
   publishQuestionAction,
   unpublishQuestionAction,
   updateQuestionDraftAction,
@@ -51,7 +51,6 @@ import {
   removeParallelEntry,
   renumberOrderAfterRemoval,
 } from "./question-content";
-import { QuestionsTable } from "./questions-table";
 
 export const FORMAT_LABELS: Record<QuestionFormat, string> = {
   single_select: "Single select",
@@ -63,11 +62,11 @@ export const FORMAT_LABELS: Record<QuestionFormat, string> = {
   number_guess: "Number guess (slider)",
 };
 
-// The full record, as QuestionForm needs it - loaded on demand per
-// selection (see QuestionDetailLoader below), never all at once: the
+// The full record, as QuestionForm needs it - fetched directly by the
+// view/edit pages (getQuestionDetailForAdmin), never all at once: the
 // Questions list is real-DB-paginated (Task 3b), so unlike the small
 // catalogs the full table is never sitting in memory.
-type QuestionRow = {
+export type QuestionRow = {
   id: string;
   format: QuestionFormat;
   topicId: string | null;
@@ -237,53 +236,15 @@ function findWarning(warnings: Warning[], path: string): string | undefined {
   return warnings.find((w) => w.path === path)?.message;
 }
 
-export function QuestionEditor({
-  questions,
-  topics,
-  canManage,
-  canPublish,
-  total,
-  page,
-  pageCount,
-  pageSize,
-  q,
-  sort,
-  dir,
-  format,
-  status,
-  topicId,
-}: {
-  questions: QuestionListRow[];
-  topics: TopicOption[];
-  canManage: boolean;
-  canPublish: boolean;
-  total: number;
-  page: number;
-  pageCount: number;
-  pageSize: number;
-  q: string;
-  sort: string;
-  dir: "asc" | "desc";
-  format: QuestionFormat | null;
-  status: "draft" | "published" | null;
-  topicId: string | null;
-}) {
-  const [selectedId, setSelectedId] = useState<string | "new" | null>(questions[0]?.id ?? "new");
-  const [isDirty, setIsDirty] = useState(false);
-
-  function trySelect(id: string | "new") {
-    if (
-      isDirty &&
-      typeof window !== "undefined" &&
-      !window.confirm("Discard unsaved changes to this question?")
-    ) {
-      return;
-    }
-    setIsDirty(false);
-    setSelectedId(id);
-  }
-
-  // Unsaved-changes guard, part 1: browser tab-close/reload/navigate-away.
+// Unsaved-changes guard for a question form living on its own page (create/
+// edit) - part 1: browser tab-close/reload/navigate-away, part 2:
+// intercepts a click on any same-page link while dirty. Same approach as
+// worlds/lessons; previously lived once in the now-removed QuestionEditor
+// wrapper (when create/edit were both inline on the list page, and edit
+// loaded its full record on demand via QuestionDetailLoader - also removed,
+// since the dedicated view/edit pages fetch it directly server-side
+// instead), now each standalone form owns its own guard directly.
+function useUnsavedChangesGuard(isDirty: boolean) {
   useEffect(() => {
     if (!isDirty) return;
     function handleBeforeUnload(e: BeforeUnloadEvent) {
@@ -294,11 +255,6 @@ export function QuestionEditor({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
-  // Unsaved-changes guard, part 2: intercepts a click on any same-page link
-  // while dirty (search/sort/pager/format/status/topic filters, all plain
-  // <a> tags pointing at this same pathname with different query params) -
-  // a capturing document-level listener, no change to data-table.tsx/
-  // questions-table.tsx, no new package. Same approach as lessons.
   useEffect(() => {
     if (!isDirty) return;
     function handleClick(e: MouseEvent) {
@@ -319,139 +275,31 @@ export function QuestionEditor({
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
   }, [isDirty]);
-
-  if (total === 0 && !canManage) {
-    return (
-      <EmptyState
-        icon={HelpCircle}
-        title="No questions yet"
-        description="A staff member with question.manage can create the first one."
-      />
-    );
-  }
-
-  const effectiveId: string | "new" =
-    selectedId === "new" || questions.some((qu) => qu.id === selectedId)
-      ? (selectedId as string | "new")
-      : questions[0]?.id ?? "new";
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Select a question below to edit it.</p>
-        {canManage && (
-          <Button type="button" size="sm" onClick={() => trySelect("new")}>
-            + New question
-          </Button>
-        )}
-      </div>
-
-      <QuestionsTable
-        rows={questions}
-        topics={topics}
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        q={q}
-        sort={sort}
-        dir={dir}
-        format={format}
-        status={status}
-        topicId={topicId}
-        selectedId={effectiveId}
-        onSelect={trySelect}
-      />
-
-      {effectiveId === "new" && canManage ? (
-        <NewQuestionForm topics={topics} onDirtyChange={setIsDirty} />
-      ) : (
-        questions.some((qu) => qu.id === effectiveId) && (
-          <QuestionDetailLoader
-            key={effectiveId}
-            id={effectiveId}
-            topics={topics}
-            canManage={canManage}
-            canPublish={canPublish}
-            onDirtyChange={setIsDirty}
-          />
-        )
-      )}
-    </div>
-  );
-}
-
-// Fetches a question's full record on demand once it's selected - unchanged
-// from before Task 5a (the admin list is real-DB-paginated, so the full
-// record is never already in memory). Keyed by id in the parent so
-// switching questions always starts a fresh fetch.
-function QuestionDetailLoader({
-  id,
-  topics,
-  canManage,
-  canPublish,
-  onDirtyChange,
-}: {
-  id: string;
-  topics: TopicOption[];
-  canManage: boolean;
-  canPublish: boolean;
-  onDirtyChange: (dirty: boolean) => void;
-}) {
-  const [state, setState] = useState<
-    | { status: "loading" }
-    | { status: "error"; error: string }
-    | { status: "ready"; question: QuestionRow }
-  >({ status: "loading" });
-
-  useEffect(() => {
-    let cancelled = false;
-    loadQuestionDetailForAdminAction({ id }).then((result) => {
-      if (cancelled) return;
-      if (!result.ok) {
-        setState({ status: "error", error: result.error });
-        return;
-      }
-      setState({ status: "ready", question: result.data });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
-
-  if (state.status === "loading") {
-    return (
-      <div className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-        Loading question…
-      </div>
-    );
-  }
-  if (state.status === "error") {
-    return (
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-        {state.error}
-      </div>
-    );
-  }
-  return (
-    <QuestionForm
-      question={state.question}
-      topics={topics}
-      canManage={canManage}
-      canPublish={canPublish}
-      onDirtyChange={onDirtyChange}
-    />
-  );
 }
 
 // ---------------------------------------------------------------------------
 // Shared section building blocks
 // ---------------------------------------------------------------------------
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon?: ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{title}</h3>
+    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+      <h3 className="flex items-center gap-2 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+        {Icon && (
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+        )}
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -538,7 +386,7 @@ function BasicsSection({
   status: "draft" | "published" | null;
 }) {
   return (
-    <SectionCard title="Basics">
+    <SectionCard title="Basics" icon={Info}>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Format</Label>
@@ -1180,13 +1028,8 @@ function ContentSections({ format, disabled, warnings }: { format: QuestionForma
 // New question form
 // ---------------------------------------------------------------------------
 
-function NewQuestionForm({
-  topics,
-  onDirtyChange,
-}: {
-  topics: TopicOption[];
-  onDirtyChange: (dirty: boolean) => void;
-}) {
+export function NewQuestionForm({ topics }: { topics: TopicOption[] }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [format, setFormat] = useState<QuestionFormat>("single_select");
   const formatRef = useRef<QuestionFormat>(format);
@@ -1205,9 +1048,7 @@ function NewQuestionForm({
   });
   const { handleSubmit, watch, setValue, reset, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [topicId, prompt, explanation, payload, answer] = watch(["topicId", "prompt", "explanation", "payload", "answer"]);
   const warnings = useMemo(
@@ -1242,13 +1083,7 @@ function NewQuestionForm({
         return;
       }
       toast.success("Question created as a draft");
-      reset({
-        topicId: null,
-        prompt: EMPTY_LOCALIZED,
-        explanation: EMPTY_LOCALIZED,
-        payload: QUESTION_PAYLOAD_TEMPLATES[format] as Record<string, unknown>,
-        answer: QUESTION_ANSWER_TEMPLATES[format] as Record<string, unknown>,
-      });
+      router.push("/admin/questions");
     });
   }
 
@@ -1265,11 +1100,11 @@ function NewQuestionForm({
           topicEditable
           status={null}
         />
-        <SectionCard title="Prompt">
+        <SectionCard title="Prompt" icon={MessageSquareText}>
           <LocalizedFieldGroup label="Prompt" name="prompt" disabled={false} warnings={warnings} />
         </SectionCard>
         <ContentSections format={format} disabled={false} warnings={warnings} />
-        <SectionCard title="Explanation">
+        <SectionCard title="Explanation" icon={Info}>
           <LocalizedFieldGroup label="Explanation" name="explanation" disabled={false} warnings={warnings} />
         </SectionCard>
 
@@ -1277,7 +1112,16 @@ function NewQuestionForm({
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this question?")) {
+                router.push("/admin/questions");
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
@@ -1291,19 +1135,18 @@ function NewQuestionForm({
 // Existing question form
 // ---------------------------------------------------------------------------
 
-function QuestionForm({
+export function QuestionForm({
   question,
   topics,
-  canManage,
-  canPublish,
-  onDirtyChange,
+  canEdit,
+  canDelete,
 }: {
   question: QuestionRow;
   topics: TopicOption[];
-  canManage: boolean;
-  canPublish: boolean;
-  onDirtyChange: (dirty: boolean) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [errorSummary, setErrorSummary] = useState<string[]>([]);
 
@@ -1331,9 +1174,7 @@ function QuestionForm({
   const methods = useForm<QuestionFormValues>({ resolver, defaultValues });
   const { handleSubmit, watch, setValue, reset, setError, clearErrors, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [topicId, prompt, explanation, payload, answer] = watch(["topicId", "prompt", "explanation", "payload", "answer"]);
   const warnings = useMemo(
@@ -1342,12 +1183,12 @@ function QuestionForm({
   );
 
   const isDraft = question.status === "draft";
-  const editable = canManage && isDraft;
+  const editable = canEdit && isDraft;
   // D20 (docs/ARCHITECTURE.md): a published question's prompt/explanation/
   // payload/answer can still be hotfixed directly - requires
-  // question.publish, the same trust bar as publishing. Topic stays
+  // question.delete, the same trust bar as publishing. Topic stays
   // draft-only.
-  const hotfixable = canPublish && !isDraft;
+  const hotfixable = canDelete && !isDraft;
   const contentEditable = editable || hotfixable;
 
   function applyServerError(message: string) {
@@ -1455,11 +1296,11 @@ function QuestionForm({
           topicEditable={editable}
           status={question.status}
         />
-        <SectionCard title="Prompt">
+        <SectionCard title="Prompt" icon={MessageSquareText}>
           <LocalizedFieldGroup label="Prompt" name="prompt" disabled={!contentEditable} warnings={warnings} />
         </SectionCard>
         <ContentSections format={format} disabled={!contentEditable} warnings={warnings} />
-        <SectionCard title="Explanation">
+        <SectionCard title="Explanation" icon={Info}>
           <LocalizedFieldGroup label="Explanation" name="explanation" disabled={!contentEditable} warnings={warnings} />
         </SectionCard>
 
@@ -1482,15 +1323,25 @@ function QuestionForm({
               {editable ? "Save draft" : "Save fix"}
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this question?")) {
+                reset();
+                router.push(`/admin/questions/${question.id}`);
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
-          {canPublish && isDraft && (
+          {canDelete && isDraft && (
             <Button type="button" onClick={publish} disabled={isPending}>
               Publish
             </Button>
           )}
-          {canPublish && !isDraft && (
+          {canDelete && !isDraft && (
             <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
               Unpublish
             </Button>

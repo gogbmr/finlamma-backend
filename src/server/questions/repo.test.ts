@@ -13,6 +13,7 @@ import { uniqueClerkUserId } from "@/test/fixtures";
 vi.mock("@/db/client", async () => ({ db: await createTestDb() }));
 
 const {
+  deleteQuestionRow,
   getQuestionById,
   getQuestionRevision,
   getQuestionsByIds,
@@ -140,6 +141,32 @@ describe("publishQuestionRow / unpublishQuestionRow", () => {
     expect(unpublished?.status).toBe("draft");
     expect(unpublished?.publishedAt).toBeNull();
     expect(unpublished?.publishedBy).toBeNull();
+  });
+});
+
+describe("deleteQuestionRow", () => {
+  it("deletes a draft question", async () => {
+    const created = await insertDraftQuestion(draftInput());
+
+    const deleted = await deleteQuestionRow(created.id);
+
+    expect(deleted?.id).toBe(created.id);
+    expect(await getQuestionById(created.id)).toBeNull();
+  });
+
+  it("returns null (does not delete) when the question is currently published", async () => {
+    const created = await insertDraftQuestion(draftInput());
+    await publishQuestionRow(created.id, staffId);
+
+    const result = await deleteQuestionRow(created.id);
+
+    expect(result).toBeNull();
+    expect(await getQuestionById(created.id)).not.toBeNull();
+  });
+
+  it("returns null for a nonexistent question", async () => {
+    const result = await deleteQuestionRow(randomUUID());
+    expect(result).toBeNull();
   });
 });
 

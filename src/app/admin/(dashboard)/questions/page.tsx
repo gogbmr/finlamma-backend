@@ -1,13 +1,15 @@
 import { HelpCircle } from "lucide-react";
+import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { QUESTION_ADMIN_SORT_COLUMNS, listQuestionsForAdmin } from "@/server/questions/admin-queries";
 import { QuestionFormatSchema } from "@/server/questions/schemas";
 import { listActiveTopicsForPicker } from "@/server/topics/service";
-import { QuestionEditor } from "./question-editor";
+import { QuestionsTable } from "./questions-table";
 
 // Task 3b: real DB pagination (questions is a growing table, unlike Task
 // 3a's small catalogs) via src/server/questions/admin-queries.ts - a new,
@@ -40,12 +42,12 @@ export default async function QuestionsPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const [canManage, canPublish] = await Promise.all([
-    roleHasPermission(staff.roleId, "question.manage"),
-    roleHasPermission(staff.roleId, "question.publish"),
-  ]);
-  if (!canManage && !canPublish) {
-    return <Forbidden message="You don't have permission to manage questions." />;
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("question.create");
+  const canEdit = grantedKeys.has("question.edit");
+  const canDelete = grantedKeys.has("question.delete");
+  if (!grantedKeys.has("question.view")) {
+    return <Forbidden message="You don't have permission to view questions." />;
   }
 
   const topics = await listActiveTopicsForPicker();
@@ -77,13 +79,18 @@ export default async function QuestionsPage({
         icon={HelpCircle}
         title="Questions"
         description="Every question a lesson can reference (video pop-quiz cues, quiz/boss_quiz/role_play question lists) - single source of truth, never duplicated into lesson content. Publish is blocked until every en/hi/hx field is filled. A lesson can't be published while it references a missing or unpublished question."
+        action={
+          canCreate && (
+            <Button asChild size="sm">
+              <Link href="/admin/questions/new">+ New question</Link>
+            </Button>
+          )
+        }
       />
 
-      <QuestionEditor
-        questions={paged.rows}
+      <QuestionsTable
+        rows={paged.rows}
         topics={topics.map((t) => ({ id: t.id, name: t.name }))}
-        canManage={canManage}
-        canPublish={canPublish}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}
@@ -94,6 +101,8 @@ export default async function QuestionsPage({
         format={formatFilter}
         status={statusFilter}
         topicId={topicIdFilter}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
     </div>
   );

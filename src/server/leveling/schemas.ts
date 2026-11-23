@@ -9,7 +9,7 @@ import { LocalizedTextSchema } from "@/server/shared/schemas";
 // stepXp*(L-1) (src/server/leveling/math.ts). Level itself is never stored
 // (CLAUDE.md/docs/ARCHITECTURE.md) - only these two constants are, so
 // changing them re-derives every learner's level on their next read with
-// no backfill needed. Same settings.manage/super_admin-only edit path as
+// no backfill needed. Same settings.edit/super_admin-only edit path as
 // every other learner-wide constant (Lesson Flow scoring, streak freezes).
 export const LevelCurveSettingsSchema = z.object({
   baseXp: z.number().int().positive(),

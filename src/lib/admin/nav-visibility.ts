@@ -14,28 +14,24 @@ export async function computeAdminNavVisibility(
   const grantedKeys = await getPermissionKeysForRole(roleId);
 
   return {
-    worlds: grantedKeys.has("world.manage") || grantedKeys.has("world.publish"),
-    lessons:
-      grantedKeys.has("lesson.manage") || grantedKeys.has("lesson.publish"),
-    questions:
-      grantedKeys.has("question.manage") || grantedKeys.has("question.publish"),
-    mentors:
-      grantedKeys.has("mentor.manage") || grantedKeys.has("mentor.publish"),
+    worlds: grantedKeys.has("world.view"),
+    lessons: grantedKeys.has("lesson.view"),
+    questions: grantedKeys.has("question.view"),
+    mentors: grantedKeys.has("mentor.view"),
     consent: grantedKeys.has("consent.view"),
-    doubtZoneModeration: grantedKeys.has("doubt_zone.moderate"),
-    staff: grantedKeys.has("staff.manage"),
+    doubtZoneModeration: grantedKeys.has("doubt_zone.view"),
+    staff: grantedKeys.has("staff.view"),
+    roles: grantedKeys.has("roles.view"),
     activityLog: grantedKeys.has("activity_log.view"),
-    legal: grantedKeys.has("legal.manage"),
-    settings: grantedKeys.has("settings.manage"),
-    badges: grantedKeys.has("economy.manage"),
-    rewards: grantedKeys.has("economy.manage"),
-    competitions: grantedKeys.has("economy.manage"),
-    coachNotes:
-      grantedKeys.has("coach_note.manage") ||
-      grantedKeys.has("coach_note.publish"),
-    instruments: grantedKeys.has("instrument.manage"),
-    opsConsole: grantedKeys.has("trading.ops"),
-    newsDesk: grantedKeys.has("news.manage") || grantedKeys.has("news.publish"),
+    legal: grantedKeys.has("legal.view"),
+    settings: grantedKeys.has("settings.view"),
+    badges: grantedKeys.has("badge.view"),
+    rewards: grantedKeys.has("reward.view"),
+    competitions: grantedKeys.has("competition.view"),
+    coachNotes: grantedKeys.has("coach_note.view"),
+    instruments: grantedKeys.has("instrument.view"),
+    opsConsole: grantedKeys.has("ops.view"),
+    newsDesk: grantedKeys.has("news.view"),
     analytics: grantedKeys.has("analytics.view"),
   };
 }

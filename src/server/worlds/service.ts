@@ -245,8 +245,8 @@ export async function updateWorldDraft(
 // structural sequencing property, not reviewed content, so staff can
 // reorder published worlds too, e.g. re-prioritizing after launch, without
 // an unpublish/republish cycle) - but the REQUIRED PERMISSION still depends
-// on the mover's status: reordering a draft world only needs world.manage,
-// while reordering a published one needs world.publish, the same trust bar
+// on the mover's status: reordering a draft world only needs world.edit,
+// while reordering a published one needs world.delete, the same trust bar
 // as publish/unpublish/delete. This matters because a published world's
 // order drives D25's position-based trading-unlock gate (`isTradingUnlocked`)
 // - moving worlds around can change which one sits at that position, so a
@@ -262,13 +262,13 @@ export async function reorderWorld(
   if (!mover) throw new AppError("NOT_FOUND", "World not found");
 
   const requiredPermission =
-    mover.status === "published" ? "world.publish" : "world.manage";
+    mover.status === "published" ? "world.delete" : "world.edit";
   if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
     throw new AppError(
       "FORBIDDEN",
       mover.status === "published"
-        ? "Reordering a published world requires world.publish"
-        : "Missing permission: world.manage",
+        ? "Reordering a published world requires world.delete"
+        : "Missing permission: world.edit",
     );
   }
 
@@ -317,8 +317,8 @@ export async function reorderWorld(
 
 // Same live-content trust tier as D20's hotfix mechanism, mirroring
 // src/server/mentors/service.ts's uploadMentorArt exactly: a DRAFT world's
-// art only needs world.manage, but a PUBLISHED world's art - instantly
-// visible to every learner, no review step - needs world.publish, same as
+// art only needs world.edit, but a PUBLISHED world's art - instantly
+// visible to every learner, no review step - needs world.delete, same as
 // the title/tagline hotfix path. Authoritative here, not just at the
 // action layer.
 export async function uploadWorldArt(
@@ -331,13 +331,13 @@ export async function uploadWorldArt(
   if (!world) throw new AppError("NOT_FOUND", "World not found");
 
   const requiredPermission =
-    world.status === "published" ? "world.publish" : "world.manage";
+    world.status === "published" ? "world.delete" : "world.edit";
   if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
     throw new AppError(
       "FORBIDDEN",
       world.status === "published"
-        ? "Uploading art for a published world requires world.publish"
-        : "Missing permission: world.manage",
+        ? "Uploading art for a published world requires world.delete"
+        : "Missing permission: world.edit",
     );
   }
 
@@ -440,8 +440,8 @@ export async function publishWorld(
 // D20 (docs/ARCHITECTURE.md): fixes a typo on an already-PUBLISHED world's
 // title/tagline directly, without the unpublish -> edit draft -> republish
 // cycle - which is impossible here anyway once any published lesson belongs
-// to the world (unpublishWorld above blocks it). Requires world.publish
-// (not just world.manage), same trust bar as publishing. Re-runs the same
+// to the world (unpublishWorld above blocks it). Requires world.delete
+// (not just world.edit), same trust bar as publishing. Re-runs the same
 // translation-completeness gate publish itself uses.
 export async function hotfixWorld(
   actor: { id: string },
@@ -525,7 +525,7 @@ export async function unpublishWorld(
 // published world with no lessons is empty, not "live" in any meaningful
 // sense) - deleteWorldRow itself closes the resulting gap in `order` so
 // sequencing stays contiguous for the sequential-unlock rule. Gated on
-// world.publish (not world.manage) in the action layer, the same trust bar
+// world.delete (not world.edit) in the action layer, the same trust bar
 // as unpublishing - deletion is a stronger, irreversible action, so it
 // shouldn't be reachable by a role that isn't even trusted to unpublish.
 export async function deleteWorld(

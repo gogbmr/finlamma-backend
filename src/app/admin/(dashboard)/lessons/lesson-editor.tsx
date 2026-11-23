@@ -1,8 +1,10 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { BookOpen, Film, HelpCircle, Info, MessageSquareText, Plus, Trash2, Type } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { ComponentType } from "react";
 import {
   FormProvider,
   useFieldArray,
@@ -13,7 +15,6 @@ import {
 } from "react-hook-form";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
-import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,7 +47,6 @@ import {
   type CreatableKind,
 } from "./lesson-content";
 import { LessonPreview } from "./lesson-preview";
-import { LessonsTable } from "./lessons-table";
 
 type PreviewData = Extract<Awaited<ReturnType<typeof previewLessonAction>>, { ok: true }>["data"];
 
@@ -59,8 +59,9 @@ const KIND_LABELS: Record<string, string> = {
   doubt_zone: "Doubt Zone",
 };
 
-type LessonRow = {
+export type LessonRow = {
   id: string;
+  worldId: string;
   chapter: number;
   step: number;
   kind: string;
@@ -285,57 +286,13 @@ function parsePublishError(message: string): { fieldErrors: Warning[]; summary: 
   return { fieldErrors, summary };
 }
 
-export function LessonEditor({
-  worldId,
-  worldTitle,
-  worldMentorKey,
-  lessons,
-  canManage,
-  canPublish,
-  total,
-  page,
-  pageCount,
-  pageSize,
-  q,
-  sort,
-  dir,
-  kind,
-  status,
-}: {
-  worldId: string;
-  worldTitle: LocalizedText;
-  worldMentorKey: string | null;
-  lessons: LessonRow[];
-  canManage: boolean;
-  canPublish: boolean;
-  total: number;
-  page: number;
-  pageCount: number;
-  pageSize: number;
-  q: string;
-  sort: string | null;
-  dir: "asc" | "desc";
-  kind: string | null;
-  status: "draft" | "published" | null;
-}) {
-  const [selectedId, setSelectedId] = useState<string | "new" | null>(lessons[0]?.id ?? "new");
-  // Few-line confirm() guard, same pattern as every other entity table.
-  const [isDirty, setIsDirty] = useState(false);
-
-  function trySelect(id: string | "new") {
-    if (
-      isDirty &&
-      typeof window !== "undefined" &&
-      !window.confirm("Discard unsaved changes to this lesson?")
-    ) {
-      return;
-    }
-    setIsDirty(false);
-    setSelectedId(id);
-  }
-
-  // Task 4's unsaved-changes guard, part 1: the real browser tab-close/
-  // reload/navigate-away prompt. Native API, no package.
+// Unsaved-changes guard for a lesson form living on its own page (create/
+// edit) - part 1: browser tab-close/reload/navigate-away, part 2:
+// intercepts a click on any same-page link while dirty. Same approach as
+// worlds/mentors/questions; previously lived once in the now-removed
+// LessonEditor wrapper (when create/edit were both inline on the list
+// page), now each standalone form owns its own guard directly.
+function useUnsavedChangesGuard(isDirty: boolean) {
   useEffect(() => {
     if (!isDirty) return;
     function handleBeforeUnload(e: BeforeUnloadEvent) {
@@ -346,13 +303,6 @@ export function LessonEditor({
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [isDirty]);
 
-  // Task 4's unsaved-changes guard, part 2: intercepts a click on any
-  // same-page link while dirty - the world-chips above (page.tsx) and the
-  // search/sort/pager/kind/status links inside LessonsTable below, all of
-  // which render as plain <a> tags pointing at this same pathname with
-  // different query params. A capturing document-level listener, not a
-  // change to data-table.tsx/lessons-table.tsx (neither is touched) or any
-  // new package - just the DOM's own click/beforeunload APIs.
   useEffect(() => {
     if (!isDirty) return;
     function handleClick(e: MouseEvent) {
@@ -364,7 +314,7 @@ export function LessonEditor({
       } catch {
         return;
       }
-      if (url.pathname !== window.location.pathname) return; // only guard in-page nav
+      if (url.pathname !== window.location.pathname) return;
       if (!window.confirm("Discard unsaved changes to this lesson?")) {
         e.preventDefault();
         e.stopPropagation();
@@ -373,90 +323,31 @@ export function LessonEditor({
     document.addEventListener("click", handleClick, true);
     return () => document.removeEventListener("click", handleClick, true);
   }, [isDirty]);
-
-  if (total === 0 && !canManage) {
-    return (
-      <EmptyState
-        icon={BookOpen}
-        title="No lessons in this world yet"
-        description="A staff member with lesson.manage can create the first one."
-      />
-    );
-  }
-
-  // `lessons` is only the current page - a selection made on a page that's
-  // since changed under it falls back to this page's first row.
-  const effectiveId: string | "new" =
-    selectedId === "new" || lessons.some((l) => l.id === selectedId)
-      ? (selectedId as string | "new")
-      : lessons[0]?.id ?? "new";
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">Select a lesson below to edit it.</p>
-        {canManage && (
-          <Button type="button" size="sm" onClick={() => trySelect("new")}>
-            + New lesson
-          </Button>
-        )}
-      </div>
-
-      <LessonsTable
-        worldId={worldId}
-        rows={lessons.map((l) => ({
-          id: l.id,
-          chapter: l.chapter,
-          step: l.step,
-          kind: l.kind,
-          title: l.title,
-          status: l.status,
-        }))}
-        total={total}
-        page={page}
-        pageCount={pageCount}
-        pageSize={pageSize}
-        q={q}
-        sort={sort}
-        dir={dir}
-        kind={kind}
-        status={status}
-        selectedId={effectiveId}
-        onSelect={trySelect}
-      />
-
-      {effectiveId === "new" && canManage ? (
-        <NewLessonForm worldId={worldId} worldTitle={worldTitle} onDirtyChange={setIsDirty} />
-      ) : (
-        (() => {
-          const lesson = lessons.find((l) => l.id === effectiveId);
-          if (!lesson) return null;
-          return (
-            <LessonForm
-              key={lesson.id}
-              worldId={worldId}
-              worldTitle={worldTitle}
-              worldMentorKey={worldMentorKey}
-              lesson={lesson}
-              canManage={canManage}
-              canPublish={canPublish}
-              onDirtyChange={setIsDirty}
-            />
-          );
-        })()
-      )}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
 // Shared section building blocks
 // ---------------------------------------------------------------------------
 
-function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+function SectionCard({
+  title,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  icon?: ComponentType<{ className?: string }>;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{title}</h3>
+    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+      <h3 className="flex items-center gap-2 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
+        {Icon && (
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+        )}
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -544,7 +435,7 @@ function BasicsSection({
 }) {
   const { register } = useFormContext<LessonFormValues>();
   return (
-    <SectionCard title="Basics">
+    <SectionCard title="Basics" icon={Info}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="space-y-1">
           <Label>World</Label>
@@ -594,7 +485,7 @@ function BasicsSection({
 
 function TextSection({ disabled, warnings }: { disabled: boolean; warnings: Warning[] }) {
   return (
-    <SectionCard title="Text">
+    <SectionCard title="Text" icon={Type}>
       <LocalizedFieldGroup label="Title" name="title" disabled={disabled} warnings={warnings} />
       <LocalizedFieldGroup label="Blurb" name="blurb" disabled={disabled} warnings={warnings} />
     </SectionCard>
@@ -704,7 +595,7 @@ function VideoContentSection({ disabled, warnings }: { disabled: boolean; warnin
   const scenesWarning = findWarning(warnings, "content.scenes");
 
   return (
-    <SectionCard title="Content - Video">
+    <SectionCard title="Content - Video" icon={Film}>
       <div className="space-y-1">
         <Label>Length (seconds)</Label>
         <Input
@@ -777,7 +668,7 @@ function StoryContentSection({ disabled, warnings }: { disabled: boolean; warnin
   const pages = useFieldArray({ control, name: "content.pages" });
 
   return (
-    <SectionCard title="Content - Story">
+    <SectionCard title="Content - Story" icon={BookOpen}>
       <div className="space-y-1">
         <Label>Length (seconds)</Label>
         <Input
@@ -862,7 +753,7 @@ function QuizLikeContentSection({
   warnings: Warning[];
 }) {
   return (
-    <SectionCard title={`Content - ${kindLabel}`}>
+    <SectionCard title={`Content - ${kindLabel}`} icon={HelpCircle}>
       <QuestionIdListField disabled={disabled} />
       {/* Framing is Role Play's own dialogue/receipt-graphic text (see
           QuizLikeContentSchema's comment in schemas.ts) - the schema shares
@@ -884,7 +775,7 @@ function DoubtZoneContentSection({ disabled, warnings }: { disabled: boolean; wa
   const chips = useFieldArray({ control, name: "content.chips" });
 
   return (
-    <SectionCard title="Content - Doubt Zone">
+    <SectionCard title="Content - Doubt Zone" icon={MessageSquareText}>
       <div className="space-y-1">
         <Label>Mentor key</Label>
         <Input disabled={disabled} className="w-48" {...register("content.mentorKey")} />
@@ -955,15 +846,14 @@ function ContentSection({ kind, disabled, warnings }: { kind: string; disabled: 
 // New lesson form
 // ---------------------------------------------------------------------------
 
-function NewLessonForm({
+export function NewLessonForm({
   worldId,
   worldTitle,
-  onDirtyChange,
 }: {
   worldId: string;
   worldTitle: LocalizedText;
-  onDirtyChange: (dirty: boolean) => void;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [kind, setKind] = useState<CreatableKind>("video");
   const kindRef = useRef<CreatableKind>(kind);
@@ -982,9 +872,7 @@ function NewLessonForm({
   });
   const { handleSubmit, watch, reset, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [title, blurb, content] = watch(["title", "blurb", "content"]);
   const warnings = useMemo(() => computeLessonWarnings(kind, title, blurb, content), [kind, title, blurb, content]);
@@ -1016,13 +904,7 @@ function NewLessonForm({
         return;
       }
       toast.success("Lesson created as a draft");
-      reset({
-        chapter: 1,
-        step: 1,
-        title: EMPTY_LOCALIZED,
-        blurb: EMPTY_LOCALIZED,
-        content: contentToFormValues(kind, LESSON_CONTENT_TEMPLATES[kind]),
-      });
+      router.push(`/admin/lessons?worldId=${worldId}`);
     });
   }
 
@@ -1044,7 +926,16 @@ function NewLessonForm({
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this lesson?")) {
+                router.push(`/admin/lessons?worldId=${worldId}`);
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
           {formState.isDirty && <span className="text-xs text-muted-foreground">Unsaved changes</span>}
@@ -1058,23 +949,20 @@ function NewLessonForm({
 // Existing lesson form
 // ---------------------------------------------------------------------------
 
-function LessonForm({
-  worldId,
+export function LessonForm({
   worldTitle,
   worldMentorKey,
   lesson,
-  canManage,
-  canPublish,
-  onDirtyChange,
+  canEdit,
+  canDelete,
 }: {
-  worldId: string;
   worldTitle: LocalizedText;
   worldMentorKey: string | null;
   lesson: LessonRow;
-  canManage: boolean;
-  canPublish: boolean;
-  onDirtyChange: (dirty: boolean) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [confirmUnpublish, setConfirmUnpublish] = useState(false);
@@ -1106,20 +994,18 @@ function LessonForm({
   const methods = useForm<LessonFormValues>({ resolver, defaultValues });
   const { handleSubmit, watch, reset, setError, clearErrors, formState } = methods;
 
-  useEffect(() => {
-    onDirtyChange(formState.isDirty);
-  }, [formState.isDirty, onDirtyChange]);
+  useUnsavedChangesGuard(formState.isDirty);
 
   const [title, blurb, content] = watch(["title", "blurb", "content"]);
   const warnings = useMemo(() => computeLessonWarnings(kind, title, blurb, content), [kind, title, blurb, content]);
 
   const isDraft = lesson.status === "draft";
-  const editable = canManage && isDraft;
+  const editable = canEdit && isDraft;
   // D20/D23 (docs/ARCHITECTURE.md): a published lesson's title/blurb/content
-  // can still be hotfixed directly - requires lesson.publish, the same
+  // can still be hotfixed directly - requires lesson.delete, the same
   // trust bar as publishing. The ONLY fix path for a boss_quiz lesson,
   // since unpublishing one is hard-blocked below.
-  const hotfixable = canPublish && !isDraft;
+  const hotfixable = canDelete && !isDraft;
   const contentEditable = editable || hotfixable;
   const isBossQuiz = lesson.kind === "boss_quiz";
   // Chapter/step stay draft-only even when a hotfix is otherwise allowed -
@@ -1143,7 +1029,7 @@ function LessonForm({
     startTransition(async () => {
       const result = await updateLessonDraftAction({
         id: lesson.id,
-        worldId,
+        worldId: lesson.worldId,
         chapter: values.chapter,
         step: values.step,
         title: values.title,
@@ -1303,15 +1189,25 @@ function LessonForm({
               {editable ? "Save draft" : "Save fix"}
             </Button>
           )}
-          <Button type="button" variant="outline" onClick={() => reset()} disabled={isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (!formState.isDirty || window.confirm("Discard unsaved changes to this lesson?")) {
+                reset();
+                router.push(`/admin/lessons/${lesson.id}`);
+              }
+            }}
+            disabled={isPending}
+          >
             Cancel
           </Button>
-          {canPublish && isDraft && (
+          {canDelete && isDraft && (
             <Button type="button" onClick={publish} disabled={isPending}>
               Publish
             </Button>
           )}
-          {canPublish && !isDraft && !isBossQuiz && (
+          {canDelete && !isDraft && !isBossQuiz && (
             <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
               Unpublish
             </Button>

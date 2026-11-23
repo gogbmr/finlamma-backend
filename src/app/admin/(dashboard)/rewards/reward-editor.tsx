@@ -64,7 +64,8 @@ function LocalizedFields({
 
 export function RewardEditor({
   rewards,
-  canManage,
+  canCreate,
+  canEdit,
   total,
   page,
   pageCount,
@@ -75,7 +76,8 @@ export function RewardEditor({
   status,
 }: {
   rewards: RewardRow[];
-  canManage: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
   total: number;
   page: number;
   pageCount: number;
@@ -102,8 +104,8 @@ export function RewardEditor({
     setSelectedId(id);
   }
 
-  if (total === 0 && !canManage) {
-    return <EmptyState icon={Gift} title="No rewards yet" description="A staff member with economy.manage can create the first one." />;
+  if (total === 0 && !canCreate) {
+    return <EmptyState icon={Gift} title="No rewards yet" description="A staff member with reward.create can create the first one." />;
   }
 
   const effectiveId: string | "new" =
@@ -115,7 +117,7 @@ export function RewardEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Select a reward below to edit it.</p>
-        {canManage && (
+        {canCreate && (
           <Button type="button" size="sm" onClick={() => trySelect("new")}>
             + New reward
           </Button>
@@ -136,14 +138,14 @@ export function RewardEditor({
         onSelect={trySelect}
       />
 
-      {effectiveId === "new" && canManage ? (
-        <RewardForm canManage={canManage} onDirtyChange={setIsDirty} />
+      {effectiveId === "new" && canCreate ? (
+        <RewardForm canManage={canCreate} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
           const reward = rewards.find((r) => r.id === effectiveId);
           if (!reward) return null;
           return (
-            <RewardForm key={reward.id} reward={reward} canManage={canManage} onDirtyChange={setIsDirty} />
+            <RewardForm key={reward.id} reward={reward} canManage={canEdit} onDirtyChange={setIsDirty} />
           );
         })()
       )}

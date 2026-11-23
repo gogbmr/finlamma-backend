@@ -16,8 +16,10 @@ import { CompetitionDraftInputSchema, CompetitionSettingsInputSchema } from "@/s
 
 type ActionResult = { ok: true } | { ok: false; error: string };
 
-// economy.manage - competitions set real VM prize amounts directly, same
-// trust bar as reward_rules/the VM multiplier/Arena's league settings.
+// competition.create/competition.edit (D81, docs/ARCHITECTURE.md) -
+// competitions set real VM prize amounts directly, same trust bar as
+// reward_rules/the VM multiplier/Arena's league settings. No separate
+// delete permission - competitions have no publish-tier/delete action.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
     await fn();
@@ -33,7 +35,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createCompetitionDraftAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("competition.create");
     const parsed = CompetitionDraftInputSchema.parse(input);
     await createCompetitionDraft(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/competitions");
@@ -42,7 +44,7 @@ export async function createCompetitionDraftAction(input: unknown): Promise<Acti
 
 export async function updateCompetitionDraftAction(id: string, input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("competition.edit");
     const parsed = CompetitionDraftInputSchema.parse(input);
     await updateCompetitionDraft(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/competitions");
@@ -51,7 +53,7 @@ export async function updateCompetitionDraftAction(id: string, input: unknown): 
 
 export async function publishCompetitionAction(id: string): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("competition.edit");
     await publishCompetition(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/competitions");
   });
@@ -59,7 +61,7 @@ export async function publishCompetitionAction(id: string): Promise<ActionResult
 
 export async function updateCompetitionSettingsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("economy.manage");
+    const actor = await requireStaff("competition.edit");
     const parsed = CompetitionSettingsInputSchema.parse(input);
     await updateCompetitionSettingsForAdmin(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/competitions");

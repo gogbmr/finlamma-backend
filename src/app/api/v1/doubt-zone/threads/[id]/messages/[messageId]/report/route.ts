@@ -11,7 +11,7 @@ registry.registerPath({
   path: "/api/v1/doubt-zone/threads/{id}/messages/{messageId}/report",
   summary: "Report a Doubt Zone AI reply",
   description:
-    "Flags an assistant message for staff review (doubt_zone.moderate) - same flagged-only " +
+    "Flags an assistant message for staff review (doubt_zone.view) - same flagged-only " +
     "visibility as a safety-classifier flag (docs/ARCHITECTURE.md's Phase 7 kickoff decisions). " +
     "Idempotent: reporting an already-flagged message logs the report again but doesn't change " +
     "anything else. Only the caller's own thread, and only an assistant-role message, can be " +

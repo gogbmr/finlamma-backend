@@ -3,6 +3,7 @@ import { db } from "@/db/client";
 import { newsCategoryEnum, newsStories } from "@/db/schema";
 import { buildContainsPattern } from "@/lib/admin/sql-search";
 import type { LocalizedText } from "@/server/shared/schemas";
+import { getStoryById } from "./repo";
 
 export type NewsCategory = (typeof newsCategoryEnum.enumValues)[number];
 
@@ -10,14 +11,21 @@ export type NewsCategory = (typeof newsCategoryEnum.enumValues)[number];
 // (Task 3b) - deliberately separate from repo.ts/service.ts, never editing
 // either: news_stories is a growing table (unlike Task 3a's small
 // catalogs), so the pipeline list can't load every row into memory the
-// way listAllStories() does for getNewsPipelineForAdmin(). Unlike
-// Questions, there's no separate "full record" fetch needed here - every
-// field this file selects is exactly what PipelineTable already shows and
-// edits inline (status/topic/quality-grade Selects); there's no rich
-// content editor for a story's body (see pipeline-table.tsx's own comment
-// on that).
+// way listAllStories() does for getNewsPipelineForAdmin(). The pipeline
+// list row is still deliberately lightweight (status/topic/quality-grade
+// stay inline Selects, edited directly in the row, never a separate form -
+// see pipeline-table.tsx's own comment); getStoryDetailForAdmin below is
+// only for the read-only View page added alongside this comment, same
+// "thin re-export of an existing repo function" shape as questions/
+// admin-queries.ts's getQuestionDetailForAdmin.
 export const NEWS_ADMIN_SORT_COLUMNS = ["createdAt", "status", "category", "qualityGrade"] as const;
 export type NewsAdminSortColumn = (typeof NEWS_ADMIN_SORT_COLUMNS)[number];
+
+// Read-only. Returns a story regardless of status (draft/published/hidden)
+// - staff reviewing the pipeline need to see a draft's full content before
+// publishing it, same reasoning as questions/lessons' own admin detail
+// fetches.
+export { getStoryById as getStoryDetailForAdmin };
 
 const SORT_COLUMN = {
   createdAt: newsStories.createdAt,

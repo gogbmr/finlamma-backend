@@ -32,14 +32,14 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// App asks batch, section C3 - consent.correct_dob (super_admin only).
+// App asks batch, section C3 - consent.edit (super_admin only).
 describe("correctDateOfBirthAction", () => {
-  it("rejects staff without consent.correct_dob, without calling the service", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: consent.correct_dob"));
+  it("rejects staff without consent.edit, without calling the service", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: consent.edit"));
 
     const result = await correctDateOfBirthAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: consent.correct_dob" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: consent.edit" });
     expect(mockCorrectDateOfBirthForAdmin).not.toHaveBeenCalled();
   });
 

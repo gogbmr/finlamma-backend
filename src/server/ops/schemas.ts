@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 // Checkpoint 9 (docs/ARCHITECTURE.md D47/D48) - admin-editable risk-flag
-// thresholds, trading.ops-gated, never hardcoded in the flag computation
+// thresholds, ops.edit-gated, never hardcoded in the flag computation
 // itself (src/server/ops/service.ts's computeRiskFlag). Fat-finger upper
 // bounds, not product limits, same reasoning as every other MAX_* bound in
 // this codebase.

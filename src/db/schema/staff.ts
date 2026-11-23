@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, index, pgEnum, pgTable, text, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { idAndTimestamps } from "./_helpers";
 
 // Fixed catalog of staff roles (super_admin, user_manager, content_uploader,
@@ -46,6 +46,21 @@ export const rolePermissions = pgTable(
 // docs/ARCHITECTURE.md decision D2a); staff never has a row in `users`.
 // `active` lets a super_admin revoke access without deleting the row (keeps
 // activity_logs actor references meaningful).
+//
+// HR-record fields added for the Staff admin page (not identity/auth -
+// Clerk still owns that, D2/D2a unchanged): `email` is a denormalized copy
+// of the address the Clerk invite was actually sent to (captured once at
+// invite/join time, shown in the admin table instead of a raw Clerk user
+// id) - it can drift from Clerk's own copy if someone changes their email
+// there afterward, accepted as a rare, low-stakes case rather than adding a
+// live Clerk API call to every table render. `gender`/`phone`/`address`/
+// `photoKey` have no other source of truth at all (Clerk is authentication
+// identity, not an HR system) - all four nullable, since every existing
+// staff row predates this and nothing requires backfilling them. `photoKey`
+// follows the same S3-object-key + signed-URL pattern as mentor/world art
+// (src/lib/s3.ts), never a public URL stored directly.
+export const staffGenderEnum = pgEnum("staff_gender", ["male", "female", "other", "prefer_not_to_say"]);
+
 export const staffMembers = pgTable(
   "staff_members",
   {
@@ -55,6 +70,11 @@ export const staffMembers = pgTable(
       .notNull()
       .references(() => roles.id, { onDelete: "restrict" }),
     active: boolean("active").default(true).notNull(),
+    email: text("email"),
+    gender: staffGenderEnum("gender"),
+    phone: text("phone"),
+    address: text("address"),
+    photoKey: text("photo_key"),
   },
   (t) => [index("staff_members_role_id_idx").on(t.roleId)],
 ).enableRLS();

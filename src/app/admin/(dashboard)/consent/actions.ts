@@ -37,7 +37,7 @@ type CorrectDateOfBirthResult =
   | { ok: true; dateOfBirth: string; isMinor: boolean }
   | { ok: false; error: string };
 
-// App asks batch, section C3 - consent.correct_dob (super_admin only at
+// App asks batch, section C3 - consent.edit (super_admin only at
 // launch, per design review). No per-row lookup page exists for arbitrary
 // accounts (adult or minor) - staff paste in the account id directly
 // (e.g. from a support ticket or the Clerk dashboard), same reasoning as
@@ -46,7 +46,7 @@ type CorrectDateOfBirthResult =
 // active consent record, not every account).
 export async function correctDateOfBirthAction(input: unknown): Promise<CorrectDateOfBirthResult> {
   try {
-    const actor = await requireStaff("consent.correct_dob");
+    const actor = await requireStaff("consent.edit");
     const parsed = CorrectDateOfBirthFormSchema.parse(input);
     const result = await correctDateOfBirthForAdmin(actor, parsed, requestMeta(await headers()));
     return { ok: true, dateOfBirth: result.dateOfBirth, isMinor: result.isMinor };

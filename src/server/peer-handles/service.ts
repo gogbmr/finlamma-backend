@@ -126,7 +126,7 @@ export async function backfillMissingHandles(): Promise<{ assigned: number; tota
   return { assigned, total: userIds.length };
 }
 
-// --- Staff (admin, settings.manage - same bar as about_me_chips) ---
+// --- Staff (admin, settings.edit - same bar as about_me_chips) ---
 
 export async function listPeerHandlesForAdmin() {
   return listPeerHandles();

@@ -39,7 +39,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createInstrumentAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("instrument.manage");
+    const actor = await requireStaff("instrument.create");
     const parsed = CreateInstrumentSchema.parse(input);
     await createInstrument(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/instruments");
@@ -48,7 +48,7 @@ export async function createInstrumentAction(input: unknown): Promise<ActionResu
 
 export async function updateInstrumentAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("instrument.manage");
+    const actor = await requireStaff("instrument.edit");
     const parsed = UpdateInstrumentSchema.parse(input);
     await updateInstrument(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/instruments");
@@ -57,7 +57,7 @@ export async function updateInstrumentAction(input: unknown): Promise<ActionResu
 
 export async function createMarketHolidayAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("instrument.manage");
+    const actor = await requireStaff("instrument.edit");
     const parsed = CreateMarketHolidaySchema.parse(input);
     await createMarketHoliday(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/instruments");
@@ -66,7 +66,7 @@ export async function createMarketHolidayAction(input: unknown): Promise<ActionR
 
 export async function deleteMarketHolidayAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("instrument.manage");
+    const actor = await requireStaff("instrument.edit");
     const { id } = MarketHolidayIdSchema.parse(input);
     await deleteMarketHoliday(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/instruments");

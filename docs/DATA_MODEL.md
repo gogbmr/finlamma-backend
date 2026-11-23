@@ -30,8 +30,16 @@ Money columns are `bigint` integers. Translatable text uses a `jsonb` `{ en, hi,
   "current lesson" (`GET /api/v1/me/current-lesson`, Phase 2b) is derived from `lesson_progress`,
   not a stored pointer on `users`.
 - `staff_members` — clerk_user_id (own Clerk application, separate from the consumer app's
-  `users` - staff never has a row in `users`), role_id, active
-- `roles`, `permissions` (key like `quiz.create`), `role_permissions`
+  `users` - staff never has a row in `users`), role_id, active. Plus HR-record fields (added
+  D81, `docs/ARCHITECTURE.md`): `email` (denormalized copy of the address a Clerk invite was
+  actually sent to, captured once at invite/accept time - not fetched live from Clerk),
+  `gender` (`staff_gender` enum: male/female/other/prefer_not_to_say), `phone`, `address`
+  (free text), `photo_key` (S3 object key, same signed-URL pattern as mentor/world art). All
+  four nullable - every pre-D81 staff row predates them, no backfill. Self-service or
+  `staff.edit`-gated (`src/server/staff/service.ts`'s `updateStaffProfile`/`uploadStaffPhoto`).
+- `roles`, `permissions` (key like `resource.op` - `view`/`create`/`edit`/`delete`, ~60 keys
+  across 20 resources as of D81), `role_permissions`. Managed via the `/admin/roles` page
+  (create/edit/delete roles, assign permissions) as well as `scripts/seed-roles.ts`.
 - `activity_logs` — actor_type (user|staff|system), actor_id, action, target_type, target_id,
   metadata jsonb, ip, user_agent, created_at. Append-only; partition by month later.
 

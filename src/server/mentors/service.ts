@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { logActivity } from "@/lib/activity-log";
-import { isUniqueViolation } from "@/lib/db-errors";
+import { isForeignKeyViolation, isUniqueViolation } from "@/lib/db-errors";
 import { AppError } from "@/lib/errors";
 import type { requestMeta } from "@/lib/http";
 import {
@@ -14,8 +14,10 @@ import { roleHasPermission } from "@/server/staff/repo";
 import {
   listAllWorlds,
   listPublishedWorldsByMentorId,
+  listWorldsByMentorId,
 } from "@/server/worlds/repo";
 import {
+  deleteMentorRow,
   getMentorById,
   getPublishedMentorByKey,
   hotfixMentorRow,
@@ -189,9 +191,9 @@ export async function updateMentorDraft(
 }
 
 // Same live-content trust tier as D20's hotfix mechanism (docs/ARCHITECTURE.md):
-// replacing a DRAFT mentor's art only needs mentor.manage (the normal editing
+// replacing a DRAFT mentor's art only needs mentor.edit (the normal editing
 // tier), but replacing a PUBLISHED mentor's art - instantly visible to every
-// learner, no review step - needs mentor.publish, exactly like the
+// learner, no review step - needs mentor.delete, exactly like the
 // name/bio hotfix path. Authoritative here (not just at the action layer),
 // since only this function knows the mentor's actual status. The action
 // layer's own requireStaff() call is a cheap early reject (at least one of
@@ -206,13 +208,13 @@ export async function uploadMentorArt(
   if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
 
   const requiredPermission =
-    mentor.status === "published" ? "mentor.publish" : "mentor.manage";
+    mentor.status === "published" ? "mentor.delete" : "mentor.edit";
   if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
     throw new AppError(
       "FORBIDDEN",
       mentor.status === "published"
-        ? "Uploading art for a published mentor requires mentor.publish"
-        : "Missing permission: mentor.manage",
+        ? "Uploading art for a published mentor requires mentor.delete"
+        : "Missing permission: mentor.edit",
     );
   }
 
@@ -290,8 +292,8 @@ export async function publishMentor(
 // D20 (docs/ARCHITECTURE.md): fixes a typo on an already-PUBLISHED mentor's
 // name/bio directly, without the unpublish -> edit draft -> republish cycle
 // - which is impossible here anyway once any published world references the
-// mentor (unpublishMentor above blocks it). Requires mentor.publish (not
-// just mentor.manage), same trust bar as publishing. Re-runs the same
+// mentor (unpublishMentor above blocks it). Requires mentor.delete (not
+// just mentor.edit), same trust bar as publishing. Re-runs the same
 // translation-completeness gate publish itself uses, so a hotfix can never
 // leave a published mentor less complete than publish would have allowed.
 export async function hotfixMentor(
@@ -364,4 +366,60 @@ export async function unpublishMentor(
     userAgent: meta.userAgent,
   });
   return unpublished;
+}
+
+// Draft-only, permanent removal. Unlike lessons/service.ts's deleteLesson
+// or questions/service.ts's deleteQuestion, this DOES need a child-
+// reference check first: worlds.mentorId is a real, mandatory FK (NOT
+// NULL, onDelete: "restrict"), so a draft mentor can just as easily be
+// assigned to a world as a published one - checked against EVERY world
+// (any status), not just published ones, same shape as worlds/service.ts's
+// own deleteWorld checking for child lessons. The isForeignKeyViolation
+// catch below is a backstop for a world being assigned to this mentor in
+// the gap between that check and the delete itself, same reasoning as
+// deleteWorld's own catch.
+export async function deleteMentor(actor: { id: string }, id: string, meta: RequestMeta) {
+  const mentor = await getMentorById(id);
+  if (!mentor) throw new AppError("NOT_FOUND", "Mentor not found");
+
+  const referencingWorlds = await listWorldsByMentorId(id);
+  if (referencingWorlds.length > 0) {
+    const titles = referencingWorlds.map((w) => w.title.en).join(", ");
+    throw new AppError(
+      "CONFLICT",
+      `Cannot delete: still assigned to world(s): ${titles} - reassign them first`,
+      { worldIds: referencingWorlds.map((w) => w.id) },
+    );
+  }
+
+  let deleted;
+  try {
+    deleted = await deleteMentorRow(id);
+  } catch (err) {
+    if (isForeignKeyViolation(err)) {
+      throw new AppError(
+        "CONFLICT",
+        "Cannot delete: a world was just assigned to this mentor - reassign it first",
+      );
+    }
+    throw err;
+  }
+  if (!deleted) {
+    throw new AppError(
+      "CONFLICT",
+      "Mentor not found, or it's currently published - unpublish it first to delete",
+    );
+  }
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "mentor.deleted",
+    targetType: "mentor",
+    targetId: id,
+    metadata: { key: mentor.key },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return deleted;
 }

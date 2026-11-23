@@ -13,7 +13,7 @@ function toNumber(value: string | number): number {
 // because total historical signups/activity grows. No query in this file
 // ever selects a name, email, or any other learner-identifying column -
 // this dashboard shows aggregate patterns, never an individual learner
-// (that's the existing logged-reveal pattern - consent.view/trading.ops -
+// (that's the existing logged-reveal pattern - consent.view/ops.view -
 // not this read-only reporting page).
 
 export async function countTotalActiveUsers(): Promise<number> {

@@ -131,3 +131,24 @@ export async function unpublishQuestionRow(id: string) {
     .returning();
   return row ?? null;
 }
+
+// Only deletes a question that's currently a draft - same opposite-status
+// guard shape as updateDraftQuestion/publishQuestionRow. Deliberately no
+// "does any lesson reference this" check (unlike worlds/service.ts's
+// deleteWorld, which does check for child lessons): a lesson's content
+// holds question ids as a jsonb field, not a real FK, and the founder's
+// call was that a draft question theoretically referenced by a still-
+// draft lesson is an acceptable, recoverable edge case (surfaces as a
+// clear error at that lesson's next publish attempt, not data loss) -
+// same reasoning as lessons/service.ts's deleteLesson. A PUBLISHED
+// question can never have been deleted this way (unpublish first), and
+// unpublishQuestion above already blocks unpublishing while a published
+// lesson references it, so no published question with a live reference
+// can ever reach this guard either.
+export async function deleteQuestionRow(id: string) {
+  const [row] = await db
+    .delete(questions)
+    .where(and(eq(questions.id, id), eq(questions.status, "draft")))
+    .returning();
+  return row ?? null;
+}

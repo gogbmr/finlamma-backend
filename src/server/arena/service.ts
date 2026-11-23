@@ -1104,7 +1104,7 @@ export async function settleArenaLeaguesForWeek(): Promise<{
   return { weekStartDate, scopesSettled, usersSettled };
 }
 
-// Admin editor (`/admin/settings`, settings.manage) for every settlement
+// Admin editor (`/admin/settings`, settings.edit) for every settlement
 // tunable at once - staff see and change these as one form, same as every
 // other grouped settings_kv editor in this codebase.
 export async function getArenaLeagueSettingsForAdmin(): Promise<ArenaLeagueSettingsInput> {

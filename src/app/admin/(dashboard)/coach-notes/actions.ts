@@ -21,10 +21,11 @@ import {
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Same runAction/permission-gate pattern as every other admin actions.ts.
-// Manage and publish are separate permissions here (coach_note.manage /
-// coach_note.publish) because a coach note reaches minors directly on their
-// weekly report card - narrower than the mentor/world/lesson content
-// permissions, which content_uploader/content_publisher also hold.
+// Edit and delete (the publish-tier bundle) are separate permissions here
+// (coach_note.edit / coach_note.delete) because a coach note reaches minors
+// directly on their weekly report card - narrower than the mentor/world/
+// lesson content permissions, which content_uploader/content_publisher also
+// hold.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
     await fn();
@@ -40,7 +41,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function createCoachNoteTemplateAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("coach_note.manage");
+    const actor = await requireStaff("coach_note.create");
     const parsed = CreateCoachNoteTemplateSchema.parse(input);
     await createCoachNoteTemplate(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/coach-notes");
@@ -49,7 +50,7 @@ export async function createCoachNoteTemplateAction(input: unknown): Promise<Act
 
 export async function updateCoachNoteTemplateAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("coach_note.manage");
+    const actor = await requireStaff("coach_note.edit");
     const parsed = UpdateCoachNoteTemplateSchema.parse(input);
     await updateCoachNoteTemplate(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/coach-notes");
@@ -58,7 +59,7 @@ export async function updateCoachNoteTemplateAction(input: unknown): Promise<Act
 
 export async function publishCoachNoteTemplateAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("coach_note.publish");
+    const actor = await requireStaff("coach_note.delete");
     const { id } = CoachNoteTemplateIdSchema.parse(input);
     await publishCoachNoteTemplate(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/coach-notes");
@@ -67,7 +68,7 @@ export async function publishCoachNoteTemplateAction(input: unknown): Promise<Ac
 
 export async function unpublishCoachNoteTemplateAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("coach_note.publish");
+    const actor = await requireStaff("coach_note.delete");
     const { id } = CoachNoteTemplateIdSchema.parse(input);
     await unpublishCoachNoteTemplate(actor, id, requestMeta(await headers()));
     revalidatePath("/admin/coach-notes");

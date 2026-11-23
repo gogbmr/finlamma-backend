@@ -1,10 +1,11 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Eye, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   DataTable,
   DataTablePagination,
@@ -12,20 +13,14 @@ import {
   DataTableSortHeader,
   type AdminListUrlState,
 } from "@/components/admin/data-table";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
-import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/button";
 import type { LocalizedText } from "@/server/shared/schemas";
+import { deleteLessonAction } from "./actions";
 
-type StatusFilter = "draft" | "published" | null;
-
-const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
-  { value: null, label: "All" },
-  { value: "draft", label: "Draft" },
-  { value: "published", label: "Published" },
-];
-
-const KIND_LABELS: Record<string, string> = {
+export const KIND_LABELS: Record<string, string> = {
   video: "Video",
   story: "Story",
   quiz: "Quiz",
@@ -34,35 +29,10 @@ const KIND_LABELS: Record<string, string> = {
   doubt_zone: "Doubt Zone",
 };
 
-const KIND_OPTIONS: { value: string | null; label: string }[] = [
-  { value: null, label: "All kinds" },
-  ...Object.entries(KIND_LABELS).map(([value, label]) => ({ value, label })),
-];
-
-// Every link here must carry ?worldId= too (the world selector lives above
-// this table, see lessons/page.tsx) - built via buildAdminListHref's
-// extraParams, not a bespoke local merge like the small catalogs' status
-// filters use, since q/sort/dir/page ALSO need worldId preserved here.
-function lessonsFilterHref(
-  pathname: string,
-  worldId: string,
-  state: AdminListUrlState,
-  kind: string | null,
-  status: StatusFilter,
-): string {
-  const sp = new URLSearchParams();
-  sp.set("worldId", worldId);
-  if (state.q) sp.set("q", state.q);
-  if (state.sort) sp.set("sort", state.sort);
-  if (state.dir === "desc") sp.set("dir", "desc");
-  if (state.pageSize !== 20) sp.set("pageSize", String(state.pageSize));
-  if (kind) sp.set("kind", kind);
-  if (status) sp.set("status", status);
-  return `${pathname}?${sp.toString()}`;
-}
-
 export type LessonTableRow = {
   id: string;
+  worldId: string;
+  worldTitle?: LocalizedText;
   chapter: number;
   step: number;
   kind: string;
@@ -70,11 +40,15 @@ export type LessonTableRow = {
   status: "draft" | "published";
 };
 
-// Lessons' master list for the currently-selected world (Task 3b). The
-// world selector itself lives in lessons/page.tsx, above this component -
-// switching worlds is a plain navigation that drops q/sort/kind/status,
-// which is the right default (pagination state from one world's lesson
-// list has no meaning in another).
+// Lessons' master list for the currently-selected world filter (view/edit
+// icons navigate to their own pages, Delete opens a confirm dialog right
+// here - same Actions-column pattern as worlds/worlds-table.tsx). The
+// world/status/kind filter controls themselves now live in
+// lessons-filter-bar.tsx, above this table; this component only needs
+// worldId/kind/status to carry them through every sort/search/pager link
+// unchanged. showWorldColumn renders an extra "World" column (only
+// meaningful when the "All worlds" filter is active and rows span more
+// than one world).
 export function LessonsTable({
   worldId,
   rows,
@@ -87,8 +61,9 @@ export function LessonsTable({
   dir,
   kind,
   status,
-  selectedId,
-  onSelect,
+  canEdit,
+  canDelete,
+  showWorldColumn,
 }: {
   worldId: string;
   rows: LessonTableRow[];
@@ -100,13 +75,37 @@ export function LessonsTable({
   sort: string | null;
   dir: "asc" | "desc";
   kind: string | null;
-  status: StatusFilter;
-  selectedId: string | "new" | null;
-  onSelect: (id: string) => void;
+  status: "draft" | "published" | null;
+  canEdit: boolean;
+  canDelete: boolean;
+  showWorldColumn: boolean;
 }) {
   const pathname = usePathname();
   const state: AdminListUrlState = { q, sort, dir, pageSize };
-  const extraParams = { worldId };
+  // Same "always explicit" URL scheme as lessons-filter-bar.tsx - kind/
+  // status are "all" rather than omitted when unset, so every link (sort,
+  // search, pager, filter dropdown) produces the same querystring shape.
+  const extraParams = useMemo(
+    () => ({ worldId, kind: kind ?? "all", status: status ?? "all" }),
+    [worldId, kind, status],
+  );
+
+  const [isPending, startTransition] = useTransition();
+  const [pendingDelete, setPendingDelete] = useState<LessonTableRow | null>(null);
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    const { id, title } = pendingDelete;
+    startTransition(async () => {
+      const result = await deleteLessonAction({ id });
+      setPendingDelete(null);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`"${title.en || id}" deleted`);
+    });
+  }
 
   const columns = useMemo<ColumnDef<LessonTableRow, unknown>[]>(
     () => [
@@ -141,6 +140,19 @@ export function LessonsTable({
         header: "Title",
         cell: ({ row }) => row.original.title.en || "(untitled)",
       },
+      ...(showWorldColumn
+        ? [
+            {
+              id: "world",
+              header: "World",
+              cell: ({ row }: { row: { original: LessonTableRow } }) => (
+                <span className="text-xs text-muted-foreground">
+                  {row.original.worldTitle?.en || "—"}
+                </span>
+              ),
+            } satisfies ColumnDef<LessonTableRow, unknown>,
+          ]
+        : []),
       {
         id: "kind",
         header: () => (
@@ -171,46 +183,54 @@ export function LessonsTable({
           <StatusBadge status={row.original.status}>{row.original.status}</StatusBadge>
         ),
       },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="icon" title="View" asChild>
+              <Link
+                href={`/admin/lessons/${row.original.id}`}
+                aria-label={`View ${row.original.title.en || row.original.id}`}
+              >
+                <Eye className="h-4 w-4" />
+              </Link>
+            </Button>
+            {(canEdit || canDelete) && (
+              <Button variant="ghost" size="icon" title="Edit" asChild>
+                <Link
+                  href={`/admin/lessons/${row.original.id}/edit`}
+                  aria-label={`Edit ${row.original.title.en || row.original.id}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Delete"
+                aria-label={`Delete ${row.original.title.en || row.original.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDelete(row.original);
+                }}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pathname, worldId, q, sort, dir, pageSize],
+    [pathname, worldId, q, sort, dir, pageSize, kind, status, showWorldColumn, canEdit, canDelete],
   );
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <div className="flex gap-3">
-            {STATUS_OPTIONS.map((opt) => (
-              <Link
-                key={opt.label}
-                href={lessonsFilterHref(pathname, worldId, state, kind, opt.value)}
-                className={cn(
-                  status === opt.value
-                    ? "font-semibold text-foreground underline"
-                    : "text-muted-foreground hover:underline",
-                )}
-              >
-                {opt.label}
-              </Link>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-3 border-l border-border pl-4">
-            {KIND_OPTIONS.map((opt) => (
-              <Link
-                key={opt.label}
-                href={lessonsFilterHref(pathname, worldId, state, opt.value, status)}
-                className={cn(
-                  kind === opt.value
-                    ? "font-semibold text-foreground underline"
-                    : "text-muted-foreground hover:underline",
-                )}
-              >
-                {opt.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-3">
         <DataTableSearchForm
           pathname={pathname}
           state={state}
@@ -226,18 +246,12 @@ export function LessonsTable({
           description={
             q
               ? `Nothing matched "${q}" - try a different title.`
-              : "A staff member with lesson.manage can create the first one."
+              : "A staff member with lesson.create can create the first one."
           }
         />
       ) : (
         <>
-          <DataTable
-            columns={columns}
-            data={rows}
-            getRowId={(r) => r.id}
-            selectedRowId={selectedId === "new" ? null : selectedId}
-            onRowClick={(r) => onSelect(r.id)}
-          />
+          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
           <DataTablePagination
             pathname={pathname}
             state={state}
@@ -249,6 +263,21 @@ export function LessonsTable({
           />
         </>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this lesson?"
+        description={
+          <>
+            This permanently removes &quot;{pendingDelete?.title.en || pendingDelete?.id}&quot;.
+            Only possible while it&apos;s a draft - a published lesson must be unpublished first.
+            This cannot be undone.
+          </>
+        }
+        confirmLabel={isPending ? "Deleting…" : "Delete"}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

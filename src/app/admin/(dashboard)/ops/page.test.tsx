@@ -66,18 +66,18 @@ beforeEach(() => {
   mockGetRecentOpsEvents.mockResolvedValue([]);
 });
 
-describe("OpsConsolePage - gated on trading.ops, not instrument.manage or settings.manage", () => {
-  it("shows Forbidden for a viewer without trading.ops", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: trading.ops"));
+describe("OpsConsolePage - gated on ops.view, not instrument.edit or settings.edit", () => {
+  it("shows Forbidden for a viewer without ops.view", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: ops.view"));
 
     const tree = await OpsConsolePage();
 
-    expect(mockRequireStaff).toHaveBeenCalledWith("trading.ops");
+    expect(mockRequireStaff).toHaveBeenCalledWith("ops.view");
     expect(mockGetOpsKpis).not.toHaveBeenCalled();
     expect(containsComponentNamed(tree, "Forbidden")).toBe(true);
   });
 
-  it("renders the console for a viewer who holds trading.ops, without throwing", async () => {
+  it("renders the console for a viewer who holds ops.view, without throwing", async () => {
     const tree = await OpsConsolePage();
 
     expect(tree).toBeTruthy();

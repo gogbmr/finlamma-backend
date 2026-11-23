@@ -1,10 +1,11 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { Users } from "lucide-react";
+import { Eye, Pencil, Trash2, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   DataTable,
   DataTablePagination,
@@ -12,10 +13,13 @@ import {
   DataTableSortHeader,
   type AdminListUrlState,
 } from "@/components/admin/data-table";
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
+import { deleteMentorAction } from "./actions";
 
 type StatusFilter = "draft" | "published" | null;
 
@@ -51,8 +55,9 @@ export type MentorTableRow = {
 };
 
 // Mentors' master list (Task 3a: Worlds' DataTable pattern rolled out to
-// the small catalogs). Selecting a row doesn't navigate; it tells
-// MentorEditor which mentor's form to show below.
+// the small catalogs). View/Edit navigate to their own pages; Delete opens
+// a confirm dialog right here and calls the same deleteMentorAction the
+// old inline form used.
 export function MentorsTable({
   rows,
   total,
@@ -63,8 +68,8 @@ export function MentorsTable({
   sort,
   dir,
   status,
-  selectedId,
-  onSelect,
+  canEdit,
+  canDelete,
 }: {
   rows: MentorTableRow[];
   total: number;
@@ -75,11 +80,27 @@ export function MentorsTable({
   sort: string | null;
   dir: "asc" | "desc";
   status: StatusFilter;
-  selectedId: string | "new" | null;
-  onSelect: (id: string) => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const pathname = usePathname();
   const state: AdminListUrlState = { q, sort, dir, pageSize };
+  const [isPending, startTransition] = useTransition();
+  const [pendingDelete, setPendingDelete] = useState<MentorTableRow | null>(null);
+
+  function confirmDelete() {
+    if (!pendingDelete) return;
+    const { id, name } = pendingDelete;
+    startTransition(async () => {
+      const result = await deleteMentorAction({ id });
+      setPendingDelete(null);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`"${name.en || id}" deleted`);
+    });
+  }
 
   const columns = useMemo<ColumnDef<MentorTableRow, unknown>[]>(
     () => [
@@ -113,9 +134,49 @@ export function MentorsTable({
           <StatusBadge status={row.original.status}>{row.original.status}</StatusBadge>
         ),
       },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="ghost" size="icon" title="View" asChild>
+              <Link
+                href={`/admin/mentors/${row.original.id}`}
+                aria-label={`View ${row.original.name.en || row.original.id}`}
+              >
+                <Eye className="h-4 w-4" />
+              </Link>
+            </Button>
+            {(canEdit || canDelete) && (
+              <Button variant="ghost" size="icon" title="Edit" asChild>
+                <Link
+                  href={`/admin/mentors/${row.original.id}/edit`}
+                  aria-label={`Edit ${row.original.name.en || row.original.id}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Link>
+              </Button>
+            )}
+            {canDelete && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Delete"
+                aria-label={`Delete ${row.original.name.en || row.original.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPendingDelete(row.original);
+                }}
+              >
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            )}
+          </div>
+        ),
+      },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pathname, q, sort, dir, pageSize],
+    [pathname, q, sort, dir, pageSize, canEdit, canDelete],
   );
 
   return (
@@ -146,18 +207,12 @@ export function MentorsTable({
           description={
             q
               ? `Nothing matched "${q}" - try a different key or name.`
-              : "A staff member with mentor.manage can create the first one."
+              : "A staff member with mentor.create can create the first one."
           }
         />
       ) : (
         <>
-          <DataTable
-            columns={columns}
-            data={rows}
-            getRowId={(r) => r.id}
-            selectedRowId={selectedId === "new" ? null : selectedId}
-            onRowClick={(r) => onSelect(r.id)}
-          />
+          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
           <DataTablePagination
             pathname={pathname}
             state={state}
@@ -168,6 +223,21 @@ export function MentorsTable({
           />
         </>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this mentor?"
+        description={
+          <>
+            This permanently removes &quot;{pendingDelete?.name.en || pendingDelete?.id}&quot;.
+            Only possible while it&apos;s a draft with no world assigned to it - a published
+            mentor must be unpublished first. This cannot be undone.
+          </>
+        }
+        confirmLabel={isPending ? "Deleting…" : "Delete"}
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

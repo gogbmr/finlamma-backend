@@ -35,24 +35,24 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   }
 }
 
-// news.publish - the instant publish/hidden toggle (NW-37), the only thing
+// news.delete - the instant publish/hidden toggle (NW-37), the only thing
 // that makes a story visible to (or pulls it from) the feed.
 export async function updateNewsStoryStatusAction(id: string, status: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("news.publish");
+    const actor = await requireStaff("news.delete");
     const parsedStatus = NewsStoryStatusSchema.parse(status);
     await updateNewsStoryStatusForAdmin(actor, id, parsedStatus, requestMeta(await headers()));
     revalidatePath("/admin/news");
   });
 }
 
-// news.manage - editing a draft's fields (quality override, topic tag).
+// news.edit - editing a draft's fields (quality override, topic tag).
 export async function updateNewsStoryQualityOverrideAction(
   id: string,
   qualityGradeOverride: unknown,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("news.manage");
+    const actor = await requireStaff("news.edit");
     const parsed = qualityGradeOverride === null ? null : NewsQualityGradeSchema.parse(qualityGradeOverride);
     await updateNewsStoryQualityOverrideForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/news");
@@ -61,31 +61,31 @@ export async function updateNewsStoryQualityOverrideAction(
 
 export async function updateNewsStoryTopicAction(id: string, topicId: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("news.manage");
+    const actor = await requireStaff("news.edit");
     const parsed = topicId === null ? null : String(topicId);
     await updateNewsStoryTopicForAdmin(actor, id, parsed, requestMeta(await headers()));
     revalidatePath("/admin/news");
   });
 }
 
-// settings.manage, not news.manage - a global Pulse Check knob (question
+// settings.edit, not news.edit - a global Pulse Check knob (question
 // count, timer, base VM), same trust bar as lesson_flow_scoring /
 // vm_issuance_multiplier, not a per-story content edit.
 export async function updateNewsQuizGeneratorSettingsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = NewsQuizGeneratorSettingsSchema.parse(input);
     await updateNewsQuizGeneratorSettings(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/news");
   });
 }
 
-// settings.manage - D51 (docs/ARCHITECTURE.md): the daily VM cap in
+// settings.edit - D51 (docs/ARCHITECTURE.md): the daily VM cap in
 // particular bounds every learner's Pulse Check earnings, same narrow
 // trust bar as every other economy-wide constant.
 export async function updatePulseCheckScoringAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("settings.manage");
+    const actor = await requireStaff("settings.edit");
     const parsed = PulseCheckScoringSchema.parse(input);
     await updatePulseCheckScoring(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/news");

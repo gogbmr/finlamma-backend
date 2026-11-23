@@ -53,7 +53,7 @@ export async function getVmIssuanceMultiplier(): Promise<number> {
   return getSettingNumber(VM_ISSUANCE_MULTIPLIER_SETTINGS_KEY, DEFAULT_VM_ISSUANCE_MULTIPLIER);
 }
 
-// Gated on economy.manage (super_admin only, like settings.manage) - changes
+// Gated on economy.edit (super_admin only, like settings.edit) - changes
 // the VM every learner earns from this moment on, so it gets the same
 // narrow trust bar as Lesson Flow's scoring constants.
 export async function updateVmIssuanceMultiplier(

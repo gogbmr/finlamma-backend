@@ -20,7 +20,7 @@ import type { CreateInstrumentInput, CreateMarketHolidayInput, UpdateInstrumentI
 
 type RequestMeta = ReturnType<typeof requestMeta>;
 
-// --- Instruments (instrument.manage) - no draft/publish split (D25-style
+// --- Instruments (instrument.create/instrument.edit) - no draft/publish split (D25-style
 // content types have one; instruments don't - `active` is the only
 // visibility switch, and edits apply immediately, same trust tier as a D20
 // hotfix rather than a reviewed draft->publish cycle) ---
@@ -80,7 +80,7 @@ export async function updateInstrument(
   return updated;
 }
 
-// --- Market holidays (instrument.manage - same permission, same trust tier
+// --- Market holidays (instrument.edit - same permission, same trust tier
 // as the instrument catalog itself) ---
 
 export async function getMarketHolidayEditorData() {
@@ -131,9 +131,9 @@ export async function deleteMarketHoliday(actor: { id: string }, id: string, met
   return deleted;
 }
 
-// --- Market controls (Checkpoint 9, trading.ops - docs/ARCHITECTURE.md D47) ---
+// --- Market controls (Checkpoint 9, ops.edit - docs/ARCHITECTURE.md D47) ---
 // Every function below is a "dangerous control": it takes effect for every
-// learner immediately, requires the caller to already hold trading.ops
+// learner immediately, requires the caller to already hold ops.edit
 // (checked one level up, in the admin Server Action - these functions
 // trust `actor` was already authorized), and is unconditionally logged
 // with who/when/reason. Halt/unhalt requires a non-empty reason (enforced

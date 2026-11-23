@@ -16,6 +16,7 @@ import { getLessonDefaultDurationSettings, getLessonFlowScoringSettings } from "
 import type { LessonDefaultDuration } from "@/server/settings/schemas";
 import { findMissingLocalizedText } from "@/server/shared/schemas";
 import {
+  deleteLessonRow,
   getLessonById,
   getPublishedLesson,
   hotfixLessonRow,
@@ -691,11 +692,42 @@ export async function unpublishLesson(actor: { id: string }, id: string, meta: R
   return unpublished;
 }
 
+// Draft-only, permanent removal. A published lesson must be unpublished
+// first - the same reasoning as updateDraftLesson/deleteLessonRow: a
+// lesson that was never published can never have real learner data
+// (lesson_progress/quiz_attempts/doubt_zone) attached, so there's nothing
+// else to check here, unlike worlds/service.ts's deleteWorld (which has to
+// check for child lessons first).
+export async function deleteLesson(actor: { id: string }, id: string, meta: RequestMeta) {
+  const lesson = await getLessonById(id);
+  if (!lesson) throw new AppError("NOT_FOUND", "Lesson not found");
+
+  const deleted = await deleteLessonRow(id);
+  if (!deleted) {
+    throw new AppError(
+      "CONFLICT",
+      "Lesson not found, or it's currently published - unpublish it first to delete",
+    );
+  }
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "lesson.deleted",
+    targetType: "lesson",
+    targetId: id,
+    metadata: { title: lesson.title.en, chapter: lesson.chapter, step: lesson.step },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return deleted;
+}
+
 // D20/D23 (docs/ARCHITECTURE.md): direct edit of an already-PUBLISHED
 // lesson's title/blurb/content, without unpublishing - the only fix path
 // left for a boss_quiz lesson (unpublish is hard-blocked above), and a
 // lower-disruption option for any other lesson with learners mid-lesson.
-// Requires lesson.publish (not just lesson.manage), same trust bar as
+// Requires lesson.delete (not just lesson.edit), same trust bar as
 // publishing. Re-runs every check publish itself would: content shape
 // against the lesson's own immutable kind, translation completeness,
 // video cue timing, and D18's question-reference check.

@@ -109,7 +109,7 @@ export async function classifyMessageSafety(messageText: string): Promise<Safety
 // The flagOnAnySignal setting's actual gate (src/server/doubt-zone/schemas.ts).
 // /phase-audit 7 finding: self_harm_or_suicide and abuse_or_neglect ALWAYS
 // flag (and so always get the deterministic crisis redirect), regardless of
-// flagOnAnySignal - a single settings.manage-gated toggle must never be able
+// flagOnAnySignal - a single settings.edit-gated toggle must never be able
 // to switch off a crisis response. The toggle only ever controls the
 // intentionally fuzzier other_wellbeing_concern bucket (true, the default,
 // flags it too with no confidence cutoff - there is no confidence field in

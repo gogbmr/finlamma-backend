@@ -49,21 +49,21 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createCoachNoteTemplateAction requires coach_note.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: coach_note.manage"));
+  it("createCoachNoteTemplateAction requires coach_note.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: coach_note.create"));
 
     const result = await createCoachNoteTemplateAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: coach_note.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: coach_note.create" });
     expect(mockCreateCoachNoteTemplate).not.toHaveBeenCalled();
   });
 
-  it("publishCoachNoteTemplateAction requires coach_note.publish, not coach_note.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: coach_note.publish"));
+  it("publishCoachNoteTemplateAction requires coach_note.delete, not coach_note.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: coach_note.delete"));
 
     const result = await publishCoachNoteTemplateAction({ id: TEMPLATE_ID });
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: coach_note.publish" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: coach_note.delete" });
     expect(mockPublishCoachNoteTemplate).not.toHaveBeenCalled();
   });
 });

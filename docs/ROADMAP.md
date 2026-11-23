@@ -671,6 +671,14 @@ yet - recorded here so the mobile app's Trade tab work doesn't quietly discover 
       Safe to leave alone at zero users; fix before any of these jobs runs against a real,
       growing user base - the news-notification one especially shouldn't wait for a crisis the
       way the admin shell's 22-query check did (docs/ARCHITECTURE.md D72).
+- [ ] **Delete the old pre-D81 permission/role_permission rows** (`scripts/seed-roles.ts`'s
+      28 coarse `resource.manage`/`resource.publish`/`trading.ops`/`doubt_zone.moderate`/
+      `consent.correct_dob`/`settings.manage`/`economy.manage`/`legal.manage`/`instrument.manage`
+      keys) once the D81 permissions rework (`docs/ARCHITECTURE.md`) is confirmed deployed to
+      `main` - every call site was already swapped to the new `resource.op` keys in the same
+      change, so these rows are harmless unused clutter, not a live dependency, but deleting
+      them before `main` has the new code live would break whatever `main` still depends on
+      (CLAUDE.md rule 8's deploy-ordering requirement).
 - [ ] **`vmoney_ledger.reason_localized` covers `trade`/`fund_trade` entries only - every other
       ledger source, and every entry written before this column existed, is English-only.**
       Phase 4 Trade asks (2026-10-20) added `{en, hi, hx}` localization for the wallet-history

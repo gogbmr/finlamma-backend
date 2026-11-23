@@ -3,7 +3,7 @@ import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
-import { roleHasPermission } from "@/server/staff/repo";
+import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getInstrumentEditorData, getMarketHolidayEditorData } from "@/server/trading/service";
 import { HolidayEditor } from "./holiday-editor";
 import { InstrumentEditor } from "./instrument-editor";
@@ -42,9 +42,11 @@ export default async function InstrumentsPage({
     return <Forbidden message="Staff sign-in required." />;
   }
 
-  const canManage = await roleHasPermission(staff.roleId, "instrument.manage");
-  if (!canManage) {
-    return <Forbidden message="You don't have permission to manage instruments." />;
+  const grantedKeys = await getPermissionKeysForRole(staff.roleId);
+  const canCreate = grantedKeys.has("instrument.create");
+  const canEdit = grantedKeys.has("instrument.edit");
+  if (!grantedKeys.has("instrument.view")) {
+    return <Forbidden message="You don't have permission to view instruments." />;
   }
 
   const [instruments, holidays] = await Promise.all([
@@ -81,7 +83,8 @@ export default async function InstrumentsPage({
 
       <InstrumentEditor
         instruments={paged.rows}
-        canManage={canManage}
+        canCreate={canCreate}
+        canEdit={canEdit}
         total={paged.total}
         page={paged.page}
         pageCount={paged.pageCount}
@@ -97,7 +100,7 @@ export default async function InstrumentsPage({
         <p className="text-sm text-muted-foreground">
           NSE trading holidays - drives the market-hours check the order pad uses.
         </p>
-        <HolidayEditor holidays={holidays} canManage={canManage} />
+        <HolidayEditor holidays={holidays} canEdit={canEdit} />
       </div>
     </div>
   );

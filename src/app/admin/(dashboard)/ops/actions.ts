@@ -14,10 +14,11 @@ import { getUserTradingLedgerPage, updateRiskThresholds } from "@/server/ops/ser
 type ActionResult = { ok: true } | { ok: false; error: string };
 
 // Same runAction/permission-gate pattern as every other admin actions.ts.
-// Every action here is gated on trading.ops, not instrument.manage or
-// settings.manage - scripts/seed-roles.ts grants trading.ops to
-// super_admin only, since a global halt or a feed-mode change affects
-// every learner immediately (docs/ARCHITECTURE.md D47/D48).
+// Every control action here is gated on ops.edit, not instrument.edit or
+// settings.edit - scripts/seed-roles.ts grants ops.edit to super_admin
+// only, since a global halt or a feed-mode change affects every learner
+// immediately (docs/ARCHITECTURE.md D47/D48). loadLedgerPageAction is
+// read-only, gated on ops.view instead.
 async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
   try {
     await fn();
@@ -33,7 +34,7 @@ async function runAction(fn: () => Promise<void>): Promise<ActionResult> {
 
 export async function setGlobalHaltAction(halt: boolean, reason: string): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("trading.ops");
+    const actor = await requireStaff("ops.edit");
     const parsedReason = HaltReasonSchema.parse(reason);
     await updateGlobalHalt(actor, halt, parsedReason, requestMeta(await headers()));
     revalidatePath("/admin/ops");
@@ -43,7 +44,7 @@ export async function setGlobalHaltAction(halt: boolean, reason: string): Promis
 
 export async function setFeedModeAction(mode: unknown, reason?: string): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("trading.ops");
+    const actor = await requireStaff("ops.edit");
     const parsedMode = FeedModeSchema.parse(mode);
     await updateFeedMode(actor, parsedMode, requestMeta(await headers()), reason?.trim() || undefined);
     revalidatePath("/admin/ops");
@@ -56,7 +57,7 @@ export async function setSymbolHaltedAction(
   reason: string,
 ): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("trading.ops");
+    const actor = await requireStaff("ops.edit");
     const parsedReason = HaltReasonSchema.parse(reason);
     await updateInstrumentHalted(actor, instrumentId, halted, parsedReason, requestMeta(await headers()));
     revalidatePath("/admin/ops");
@@ -65,7 +66,7 @@ export async function setSymbolHaltedAction(
 
 export async function updateRiskThresholdsAction(input: unknown): Promise<ActionResult> {
   return runAction(async () => {
-    const actor = await requireStaff("trading.ops");
+    const actor = await requireStaff("ops.edit");
     const parsed = RiskThresholdsSchema.parse(input);
     await updateRiskThresholds(actor, parsed, requestMeta(await headers()));
     revalidatePath("/admin/ops");
@@ -78,6 +79,6 @@ export async function updateRiskThresholdsAction(input: unknown): Promise<Action
 // "log every view") with the real request headers, the same way a normal
 // page load does.
 export async function loadLedgerPageAction(cursor: string | null) {
-  const actor = await requireStaff("trading.ops");
+  const actor = await requireStaff("ops.view");
   return getUserTradingLedgerPage(actor, { cursor }, requestMeta(await headers()));
 }

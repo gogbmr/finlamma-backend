@@ -53,51 +53,51 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("updateNewsStoryStatusAction: requires news.publish", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: news.publish"));
+  it("updateNewsStoryStatusAction: requires news.delete", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: news.delete"));
 
     const result = await updateNewsStoryStatusAction("story_1", "published");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: news.publish" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("news.publish");
+    expect(result).toEqual({ ok: false, error: "Missing permission: news.delete" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("news.delete");
     expect(mockUpdateNewsStoryStatusForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateNewsStoryQualityOverrideAction: requires news.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: news.manage"));
+  it("updateNewsStoryQualityOverrideAction: requires news.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: news.edit"));
 
     const result = await updateNewsStoryQualityOverrideAction("story_1", "A");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: news.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: news.edit" });
     expect(mockUpdateNewsStoryQualityOverrideForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateNewsStoryTopicAction: requires news.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: news.manage"));
+  it("updateNewsStoryTopicAction: requires news.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: news.edit"));
 
     const result = await updateNewsStoryTopicAction("story_1", "topic_1");
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: news.manage" });
+    expect(result).toEqual({ ok: false, error: "Missing permission: news.edit" });
     expect(mockUpdateNewsStoryTopicForAdmin).not.toHaveBeenCalled();
   });
 
-  it("updateNewsQuizGeneratorSettingsAction: requires settings.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: settings.manage"));
+  it("updateNewsQuizGeneratorSettingsAction: requires settings.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: settings.edit"));
 
     const result = await updateNewsQuizGeneratorSettingsAction(DEFAULT_NEWS_QUIZ_GENERATOR_SETTINGS);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.edit");
     expect(mockUpdateNewsQuizGeneratorSettings).not.toHaveBeenCalled();
   });
 
-  it("updatePulseCheckScoringAction: requires settings.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: settings.manage"));
+  it("updatePulseCheckScoringAction: requires settings.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: settings.edit"));
 
     const result = await updatePulseCheckScoringAction(DEFAULT_PULSE_CHECK_SCORING);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: settings.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("settings.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: settings.edit" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("settings.edit");
     expect(mockUpdatePulseCheckScoring).not.toHaveBeenCalled();
   });
 });

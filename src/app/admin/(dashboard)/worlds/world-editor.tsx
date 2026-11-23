@@ -250,7 +250,7 @@ function ArtSection({
           <p className="text-xs text-muted-foreground">PNG, JPEG or WebP, up to 2MB.</p>
           {publishedHint && (
             <p className="text-xs text-muted-foreground">
-              This world is published - replacing its art requires world.publish.
+              This world is published - replacing its art requires world.delete.
             </p>
           )}
         </div>
@@ -500,14 +500,14 @@ export function WorldForm({
   world,
   mentors,
   doubtZoneLessons,
-  canManage,
-  canPublish,
+  canEdit,
+  canDelete,
 }: {
   world: WorldRow;
   mentors: MentorOption[];
   doubtZoneLessons: DoubtZoneLessonRef[];
-  canManage: boolean;
-  canPublish: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -516,12 +516,12 @@ export function WorldForm({
   const [confirmMentorChange, setConfirmMentorChange] = useState(false);
 
   const isDraft = world.status === "draft";
-  const editable = canManage && isDraft;
+  const editable = canEdit && isDraft;
   // D20 (docs/ARCHITECTURE.md): a published world's title/tagline can
-  // still be hotfixed directly - requires world.publish, the same trust
+  // still be hotfixed directly - requires world.delete, the same trust
   // bar as publishing. order/code/theme/displayXpTarget/mentorId stay
   // draft-only.
-  const hotfixable = canPublish && !isDraft;
+  const hotfixable = canDelete && !isDraft;
   const titleTaglineEditable = editable || hotfixable;
 
   const modeRef = useRef<"update" | "hotfix">(editable ? "update" : "hotfix");
@@ -697,7 +697,7 @@ export function WorldForm({
           </div>
         )}
 
-        {(canManage || canPublish) && (
+        {(canEdit || canDelete) && (
           <div className="flex items-end gap-2 rounded-md border border-border bg-muted/50 p-3">
             <div className="space-y-1">
               <Label>Move to position</Label>
@@ -714,7 +714,7 @@ export function WorldForm({
             </Button>
             <p className="text-xs text-muted-foreground">
               Works on published worlds too, and shifts everyone between the old and new position -
-              no unpublish needed. Requires world.publish, not just world.manage.
+              no unpublish needed. Requires world.delete, not just world.edit.
             </p>
           </div>
         )}
@@ -771,7 +771,7 @@ export function WorldForm({
 
         <ArtSection
           artUrl={world.artUrl}
-          disabled={!(canManage || canPublish)}
+          disabled={!(canEdit || canDelete)}
           publishedHint={!isDraft}
           onUpload={uploadArt}
           isPending={isPending}
@@ -817,12 +817,12 @@ export function WorldForm({
           >
             Cancel
           </Button>
-          {canPublish && isDraft && (
+          {canDelete && isDraft && (
             <Button type="button" onClick={publish} disabled={isPending}>
               Publish
             </Button>
           )}
-          {canPublish && !isDraft && (
+          {canDelete && !isDraft && (
             <Button type="button" variant="outline" onClick={unpublish} disabled={isPending}>
               Unpublish
             </Button>

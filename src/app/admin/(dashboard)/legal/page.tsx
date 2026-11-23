@@ -7,9 +7,9 @@ import { LegalEditor } from "./legal-editor";
 
 export default async function LegalPage() {
   try {
-    await requireStaff("legal.manage");
+    await requireStaff("legal.view");
   } catch {
-    return <Forbidden message="You don't have permission to manage legal documents." />;
+    return <Forbidden message="You don't have permission to view legal documents." />;
   }
 
   // LEGAL_DOCUMENT_TYPES is a fixed 3-element compile-time constant, not a

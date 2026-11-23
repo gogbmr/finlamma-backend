@@ -68,7 +68,8 @@ function LocalizedFields({
 
 export function BadgeEditor({
   badges,
-  canManage,
+  canCreate,
+  canEdit,
   total,
   page,
   pageCount,
@@ -79,7 +80,8 @@ export function BadgeEditor({
   status,
 }: {
   badges: BadgeRow[];
-  canManage: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
   total: number;
   page: number;
   pageCount: number;
@@ -106,8 +108,8 @@ export function BadgeEditor({
     setSelectedId(id);
   }
 
-  if (total === 0 && !canManage) {
-    return <EmptyState icon={Award} title="No badges yet" description="A staff member with economy.manage can create the first one." />;
+  if (total === 0 && !canCreate) {
+    return <EmptyState icon={Award} title="No badges yet" description="A staff member with badge.create can create the first one." />;
   }
 
   const effectiveId: string | "new" =
@@ -119,7 +121,7 @@ export function BadgeEditor({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Select a badge below to edit it.</p>
-        {canManage && (
+        {canCreate && (
           <Button type="button" size="sm" onClick={() => trySelect("new")}>
             + New badge
           </Button>
@@ -140,14 +142,14 @@ export function BadgeEditor({
         onSelect={trySelect}
       />
 
-      {effectiveId === "new" && canManage ? (
-        <BadgeForm canManage={canManage} onDirtyChange={setIsDirty} />
+      {effectiveId === "new" && canCreate ? (
+        <BadgeForm canManage={canCreate} onDirtyChange={setIsDirty} />
       ) : (
         (() => {
           const badge = badges.find((b) => b.id === effectiveId);
           if (!badge) return null;
           return (
-            <BadgeForm key={badge.id} badge={badge} canManage={canManage} onDirtyChange={setIsDirty} />
+            <BadgeForm key={badge.id} badge={badge} canManage={canEdit} onDirtyChange={setIsDirty} />
           );
         })()
       )}

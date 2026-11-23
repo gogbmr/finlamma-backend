@@ -69,18 +69,18 @@ beforeEach(() => {
 });
 
 describe("wrong role is rejected", () => {
-  it("createWorldDraftAction: requires world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.manage"));
+  it("createWorldDraftAction: requires world.create", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.create"));
 
     const result = await createWorldDraftAction(VALID_INPUT);
 
-    expect(result).toEqual({ ok: false, error: "Missing permission: world.manage" });
-    expect(mockRequireStaff).toHaveBeenCalledWith("world.manage");
+    expect(result).toEqual({ ok: false, error: "Missing permission: world.create" });
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.create");
     expect(mockCreateWorldDraft).not.toHaveBeenCalled();
   });
 
-  it("updateWorldDraftAction: requires world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.manage"));
+  it("updateWorldDraftAction: requires world.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.edit"));
 
     const result = await updateWorldDraftAction({ id: WORLD_ID, ...VALID_INPUT });
 
@@ -88,30 +88,30 @@ describe("wrong role is rejected", () => {
     expect(mockUpdateWorldDraft).not.toHaveBeenCalled();
   });
 
-  it("reorderWorldAction: requires world.manage or world.publish", async () => {
+  it("reorderWorldAction: requires world.edit or world.delete", async () => {
     mockRequireStaffAny.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: one of world.manage, world.publish"),
+      new AppError("FORBIDDEN", "Missing permission: one of world.edit, world.delete"),
     );
 
     const result = await reorderWorldAction({ id: WORLD_ID, newOrder: 2 });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaffAny).toHaveBeenCalledWith(["world.manage", "world.publish"]);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["world.edit", "world.delete"]);
     expect(mockReorderWorld).not.toHaveBeenCalled();
   });
 
-  it("publishWorldAction: requires world.publish, not world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.publish"));
+  it("publishWorldAction: requires world.delete, not world.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.delete"));
 
     const result = await publishWorldAction({ id: WORLD_ID });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("world.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.delete");
     expect(mockPublishWorld).not.toHaveBeenCalled();
   });
 
-  it("unpublishWorldAction: requires world.publish", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.publish"));
+  it("unpublishWorldAction: requires world.delete", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.delete"));
 
     const result = await unpublishWorldAction({ id: WORLD_ID });
 
@@ -119,9 +119,9 @@ describe("wrong role is rejected", () => {
     expect(mockUnpublishWorld).not.toHaveBeenCalled();
   });
 
-  it("uploadWorldArtAction: requires world.manage or world.publish", async () => {
+  it("uploadWorldArtAction: requires world.edit or world.delete", async () => {
     mockRequireStaffAny.mockRejectedValueOnce(
-      new AppError("FORBIDDEN", "Missing permission: one of world.manage, world.publish"),
+      new AppError("FORBIDDEN", "Missing permission: one of world.edit, world.delete"),
     );
     const formData = new FormData();
     formData.set("id", WORLD_ID);
@@ -130,12 +130,12 @@ describe("wrong role is rejected", () => {
     const result = await uploadWorldArtAction(formData);
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaffAny).toHaveBeenCalledWith(["world.manage", "world.publish"]);
+    expect(mockRequireStaffAny).toHaveBeenCalledWith(["world.edit", "world.delete"]);
     expect(mockUploadWorldArt).not.toHaveBeenCalled();
   });
 
-  it("hotfixWorldAction: requires world.publish, not world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.publish"));
+  it("hotfixWorldAction: requires world.delete, not world.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.delete"));
 
     const result = await hotfixWorldAction({
       id: WORLD_ID,
@@ -144,19 +144,19 @@ describe("wrong role is rejected", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("world.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.delete");
     expect(mockHotfixWorld).not.toHaveBeenCalled();
   });
 
-  // Gated on world.publish, not world.manage - deletion is stronger and
+  // Gated on world.delete, not world.edit - deletion is stronger and
   // irreversible, the same trust bar as unpublishing (D25, docs/ARCHITECTURE.md).
-  it("deleteWorldAction: requires world.publish, not world.manage", async () => {
-    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.publish"));
+  it("deleteWorldAction: requires world.delete, not world.edit", async () => {
+    mockRequireStaff.mockRejectedValueOnce(new AppError("FORBIDDEN", "Missing permission: world.delete"));
 
     const result = await deleteWorldAction({ id: WORLD_ID });
 
     expect(result.ok).toBe(false);
-    expect(mockRequireStaff).toHaveBeenCalledWith("world.publish");
+    expect(mockRequireStaff).toHaveBeenCalledWith("world.delete");
     expect(mockDeleteWorld).not.toHaveBeenCalled();
   });
 });
