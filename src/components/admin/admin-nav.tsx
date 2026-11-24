@@ -26,34 +26,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSyncExternalStore } from "react";
 import { cn } from "@/lib/cn";
+import type { AdminNavVisibility } from "@/lib/admin/nav-visibility";
+
+// Re-exported so existing imports of the type from this file (e.g.
+// layout.tsx) keep working - a type-only re-export erases at compile time,
+// so it never hits the "use client" client-reference issue that moved
+// AdminNavVisibility's definition and ADMIN_LANDING_PRIORITY's value to
+// src/lib/admin/nav-visibility.ts in the first place (see that file).
+export type { AdminNavVisibility };
 
 type NavItem = {
   href: string;
   label: string;
   icon: typeof Gauge;
   visible: boolean;
-};
-
-export type AdminNavVisibility = {
-  worlds: boolean;
-  lessons: boolean;
-  questions: boolean;
-  mentors: boolean;
-  consent: boolean;
-  doubtZoneModeration: boolean;
-  staff: boolean;
-  roles: boolean;
-  activityLog: boolean;
-  legal: boolean;
-  settings: boolean;
-  badges: boolean;
-  rewards: boolean;
-  coachNotes: boolean;
-  instruments: boolean;
-  opsConsole: boolean;
-  newsDesk: boolean;
-  competitions: boolean;
-  analytics: boolean;
 };
 
 // One nav config, grouped, consumed by both the desktop sidebar and the
@@ -132,38 +118,6 @@ function navGroups(v: AdminNavVisibility): { label: string; items: NavItem[] }[]
     .map((group) => ({ ...group, items: group.items.filter((item) => item.visible) }))
     .filter((group) => group.items.length > 0);
 }
-
-// Where / admin lands a signed-in staff member, in priority order - the
-// first entry whose visibility flag is true wins. Analytics first (a
-// read-only overview, the closest thing to a "home" page); everything else
-// follows the same order as navGroups above. Kept here, next to
-// AdminNavVisibility, so the landing choice and the sidebar never drift
-// apart - see src/lib/admin/nav-visibility.ts and the root (dashboard)
-// page.tsx.
-export const ADMIN_LANDING_PRIORITY: {
-  key: keyof AdminNavVisibility;
-  href: string;
-}[] = [
-  { key: "analytics", href: "/admin/analytics" },
-  { key: "worlds", href: "/admin/worlds" },
-  { key: "lessons", href: "/admin/lessons" },
-  { key: "questions", href: "/admin/questions" },
-  { key: "mentors", href: "/admin/mentors" },
-  { key: "newsDesk", href: "/admin/news" },
-  { key: "consent", href: "/admin/consent" },
-  { key: "doubtZoneModeration", href: "/admin/doubt-zone" },
-  { key: "staff", href: "/admin/staff" },
-  { key: "roles", href: "/admin/roles" },
-  { key: "activityLog", href: "/admin/activity-log" },
-  { key: "legal", href: "/admin/legal" },
-  { key: "badges", href: "/admin/badges" },
-  { key: "rewards", href: "/admin/rewards" },
-  { key: "competitions", href: "/admin/competitions" },
-  { key: "instruments", href: "/admin/instruments" },
-  { key: "opsConsole", href: "/admin/ops" },
-  { key: "coachNotes", href: "/admin/coach-notes" },
-  { key: "settings", href: "/admin/settings" },
-];
 
 // Shared by NavLink, AdminNavStrip and AdminSidebar's collapse-override
 // logic, so "is this item active" is defined exactly once.
