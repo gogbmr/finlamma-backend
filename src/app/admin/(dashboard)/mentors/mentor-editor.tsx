@@ -300,7 +300,7 @@ export function NewMentorForm() {
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pb-20">
         <SectionCard title="Basics" icon={Info}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Key (slug)</Label>
               <Input {...register("key")} placeholder="baby" />
@@ -515,7 +515,7 @@ export function MentorForm({
         )}
 
         <SectionCard title="Basics" icon={Info}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Key (fixed)</Label>
               <p className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-foreground">

@@ -617,7 +617,7 @@ function SortBucketsSections({ disabled, warnings }: { disabled: boolean; warnin
   return (
     <>
       <SectionCard title="Payload - Bucket labels">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <LocalizedFieldGroup label="Bucket 0 label" name="payload.buckets.0" disabled={disabled} warnings={warnings} multiline={false} />
           <LocalizedFieldGroup label="Bucket 1 label" name="payload.buckets.1" disabled={disabled} warnings={warnings} multiline={false} />
         </div>
@@ -957,7 +957,7 @@ function NumberGuessSections({ disabled, warnings }: { disabled: boolean; warnin
     <>
       <SectionCard title="Payload - Slider range">
         <LocalizedFieldGroup label="Unit label" name="payload.unit" disabled={disabled} warnings={warnings} multiline={false} />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="space-y-1">
             <Label>Min</Label>
             <Input type="number" step="any" disabled={disabled} {...register("payload.min" as FieldPath<QuestionFormValues>, { valueAsNumber: true })} />
@@ -978,7 +978,7 @@ function NumberGuessSections({ disabled, warnings }: { disabled: boolean; warnin
         )}
       </SectionCard>
       <SectionCard title="Answer - Correct value">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>Correct value</Label>
             <Input type="number" step="any" disabled={disabled} {...register("answer.correctValue" as FieldPath<QuestionFormValues>, { valueAsNumber: true })} />

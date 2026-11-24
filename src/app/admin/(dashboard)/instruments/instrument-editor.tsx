@@ -251,7 +251,7 @@ function NewInstrumentForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) 
 
   return (
     <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Symbol</Label>
           <Input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="RELIANCE" />
@@ -375,7 +375,7 @@ function InstrumentForm({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Name</Label>
           <Input value={name} disabled={!canManage} onChange={(e) => setName(e.target.value)} />

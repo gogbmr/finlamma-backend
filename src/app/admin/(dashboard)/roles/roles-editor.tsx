@@ -207,7 +207,7 @@ function NewRoleForm({
         <GlassIconChip icon={KeyRound} className="h-6 w-6 rounded-md" />
         New role
       </p>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Key</Label>
           <Input
@@ -295,7 +295,7 @@ function RoleDetail({
             Delete role
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={isPending} />

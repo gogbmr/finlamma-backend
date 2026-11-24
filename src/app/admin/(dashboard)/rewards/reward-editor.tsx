@@ -286,7 +286,7 @@ function RewardForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Category</Label>
           <Select value={category} onValueChange={setCategory} disabled={!editable}>

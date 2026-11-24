@@ -266,7 +266,7 @@ function CompetitionForm({
         </Select>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Virtual capital (₹)</Label>
           <Input type="number" value={capitalRupees} onChange={(e) => setCapitalRupees(Number(e.target.value))} />
@@ -345,7 +345,7 @@ function SettingsPanel({ initial }: { initial: SettingsValue }) {
           needs at least the minimum trades to qualify for ranking/prizes at settlement.
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Min qualifying trades</Label>
           <Input

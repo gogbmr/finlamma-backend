@@ -385,7 +385,7 @@ export function NewWorldForm({ mentors }: { mentors: MentorOption[] }) {
     <FormProvider {...methods}>
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 pb-20">
         <SectionCard title="Basics" icon={Info}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Display order</Label>
               <Input type="number" {...register("order", { valueAsNumber: true })} />
@@ -718,7 +718,7 @@ export function WorldForm({
         )}
 
         <SectionCard title="Basics" icon={Info}>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Display order</Label>
               <Input type="number" disabled={!editable} {...register("order", { valueAsNumber: true })} />

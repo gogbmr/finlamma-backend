@@ -94,7 +94,7 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
         bonus, combo and fever mode are shared.
       </p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <NumberField
           label="Pop quiz - correct XP"
           value={form.popQuiz.correctXp}
