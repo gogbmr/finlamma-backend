@@ -12,6 +12,8 @@ import {
 import { toast } from "sonner";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { EmptyState } from "@/components/admin/empty-state";
+import { GLASS_PANEL, GLASS_PANEL_SUBTLE } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -88,7 +90,7 @@ function parseTemplateError(message: string): { fieldErrors: Warning[]; summary:
 
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
       <h3 className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">{title}</h3>
       {children}
     </div>
@@ -133,11 +135,11 @@ function LocalizedFieldGroup({
 
 function StoredJsonPanel({ data }: { data: unknown }) {
   return (
-    <details className="rounded-lg border border-border bg-card">
+    <details className={GLASS_PANEL}>
       <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
         Advanced: view stored JSON
       </summary>
-      <pre className="overflow-x-auto border-t border-border bg-muted/30 p-4 text-xs text-foreground">
+      <pre className="overflow-x-auto border-t border-white/50 p-4 text-xs text-foreground">
         {JSON.stringify(data, null, 2)}
       </pre>
     </details>
@@ -340,7 +342,7 @@ function NewTemplateForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
           <LocalizedFieldGroup label="Template" name="template" disabled={false} warnings={warnings} />
         </SectionCard>
 
-        <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className={cn(GLASS_PANEL_SUBTLE, "sticky bottom-0 z-10 flex items-center gap-2 p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]")}>
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
@@ -502,7 +504,7 @@ function TemplateForm({
 
         <StoredJsonPanel data={{ id: template.id, category: template.category, status: template.status, template: template.template }} />
 
-        <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className={cn(GLASS_PANEL_SUBTLE, "sticky bottom-0 z-10 flex flex-wrap items-center gap-2 p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]")}>
           {editable && (
             <Button type="submit" variant="outline" disabled={isPending}>
               Save draft

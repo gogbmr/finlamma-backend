@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { createMarketHolidayAction, deleteMarketHolidayAction } from "./actions";
 
 type HolidayRow = { id: string; date: string; name: string };
@@ -39,7 +41,7 @@ export function HolidayEditor({ holidays, canEdit }: { holidays: HolidayRow[]; c
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
       {holidays.length === 0 ? (
         <p className="text-sm text-muted-foreground">No holidays recorded yet.</p>
       ) : (

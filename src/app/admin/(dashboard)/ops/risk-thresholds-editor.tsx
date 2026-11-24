@@ -15,6 +15,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { updateRiskThresholdsAction } from "./actions";
 
 type RiskThresholds = { newAccountDays: number; concentrationPct: number; dailyOrderCount: number };
@@ -50,7 +52,7 @@ export function RiskThresholdsEditor({ thresholds }: { thresholds: RiskThreshold
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Risk-flag thresholds</h2>
         <p className="text-xs text-muted-foreground">

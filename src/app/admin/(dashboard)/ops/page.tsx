@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { Forbidden } from "@/components/admin/forbidden";
 import { KpiTileGrid } from "@/components/admin/kpi-tile";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requestMeta } from "@/lib/http";
 import { requireStaff } from "@/lib/auth";
 import {
@@ -64,16 +65,18 @@ export default async function OpsConsolePage() {
     );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Ops Console" },
-        ]}
-        icon={Siren}
-        title="Exchange Ops Console"
-        description="Feed control, halts, risk monitoring and the audit trail for paper trading. Every control here is ops.edit-gated and every change is logged with who, when and why."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Ops Console" },
+            ]}
+            icon={Siren}
+            title="Exchange Ops Console"
+          />
+        </div>
 
       <KpiTileGrid
         tiles={[
@@ -176,6 +179,7 @@ export default async function OpsConsolePage() {
           View full activity log
         </Link>
       </div>
-    </div>
+      </div>
+    </AdminGlassBackground>
   );
 }

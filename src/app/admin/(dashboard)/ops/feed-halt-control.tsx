@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { GLASS_PANEL } from "@/components/admin/glass";
 import { MAX_HALT_REASON_LENGTH } from "@/server/trading/schemas";
 import { setFeedModeAction, setGlobalHaltAction } from "./actions";
 
@@ -92,7 +93,7 @@ export function FeedHaltControl({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Price feed control</h2>
         <p className="text-xs text-muted-foreground">
