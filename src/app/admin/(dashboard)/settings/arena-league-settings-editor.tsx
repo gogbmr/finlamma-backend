@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { updateArenaLeagueSettingsAction } from "./actions";
 
@@ -75,7 +77,7 @@ export function ArenaLeagueSettingsEditor({
   }
 
   return (
-    <div className="max-w-3xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-3xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Arena league settings</h2>
         <p className="text-xs text-muted-foreground">

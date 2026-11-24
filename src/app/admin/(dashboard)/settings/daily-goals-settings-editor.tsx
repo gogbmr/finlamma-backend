@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { DailyGoalsSettings } from "@/server/daily-goals/schemas";
 import { updateDailyGoalsSettingsAction } from "./actions";
 
@@ -30,7 +32,7 @@ export function DailyGoalsSettingsEditor({ settings }: { settings: DailyGoalsSet
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-2xl space-y-4 p-4")}>
       <h2 className="text-sm font-semibold text-foreground">Daily goals</h2>
       <p className="text-xs text-muted-foreground">
         Which goals show on the Profile Overview&apos;s daily goal meter, and their targets.

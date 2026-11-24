@@ -2,6 +2,7 @@ import { Activity, BarChart3, BookOpen, LineChart, Newspaper, Users, Wallet } fr
 import { Forbidden } from "@/components/admin/forbidden";
 import { KpiTileGrid } from "@/components/admin/kpi-tile";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getAdminAnalyticsSummary } from "@/server/analytics/service";
@@ -24,13 +25,15 @@ export default async function AnalyticsDashboardPage() {
   const summary = await getAdminAnalyticsSummary();
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Analytics" }]}
-        icon={BarChart3}
-        title="Analytics"
-        description="Aggregate business patterns only - never an individual learner's activity. Computed directly from our own database (cached briefly), refreshed every few minutes. For behavioural/funnel analysis, see the PostHog dashboard directly."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Analytics" }]}
+            icon={BarChart3}
+            title="Analytics"
+          />
+        </div>
 
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -119,6 +122,7 @@ export default async function AnalyticsDashboardPage() {
           ]}
         />
       </section>
-    </div>
+      </div>
+    </AdminGlassBackground>
   );
 }

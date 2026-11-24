@@ -15,6 +15,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { createAboutMeChipAction, deleteAboutMeChipAction, updateAboutMeChipAction } from "./actions";
 
@@ -168,7 +170,7 @@ function NewChipRow() {
 
 export function AboutMeChipsEditor({ chips }: { chips: ChipRow[] }) {
   return (
-    <div className="max-w-3xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-3xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">About-me chips (Arena, AR-20)</h2>
         <p className="text-xs text-muted-foreground">

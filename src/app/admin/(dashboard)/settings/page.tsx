@@ -1,5 +1,6 @@
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requireStaff } from "@/lib/auth";
 import { getArenaLeagueSettingsForAdmin, listAboutMeChipsForAdmin } from "@/server/arena/service";
 import { getBadgeEditorData } from "@/server/badges/service";
@@ -51,23 +52,26 @@ export default async function SettingsPage() {
   const peerHandles = await listPeerHandlesForAdmin();
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Settings" }]}
-        title="Settings"
-        description="Admin-tunable constants that affect every learner immediately. Every change is logged."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Settings" }]}
+            title="Settings"
+          />
+        </div>
 
-      <ScoringSettingsEditor scoring={scoring} />
-      {canManageEconomy && <EconomyManagedSettings />}
-      <StreaksSettingsEditor settings={streaksSettings} />
-      <DailyGoalsSettingsEditor settings={dailyGoalsSettings} />
-      <LevelCurveSettingsEditor settings={levelCurveSettings} />
-      <RankTitlesEditor rankTitles={rankTitles} />
-      <AboutMeChipsEditor chips={aboutMeChips} />
-      <PeerHandlesEditor handles={peerHandles} />
-      <TopicsEditor topics={topics} />
-    </div>
+        <ScoringSettingsEditor scoring={scoring} />
+        {canManageEconomy && <EconomyManagedSettings />}
+        <StreaksSettingsEditor settings={streaksSettings} />
+        <DailyGoalsSettingsEditor settings={dailyGoalsSettings} />
+        <LevelCurveSettingsEditor settings={levelCurveSettings} />
+        <RankTitlesEditor rankTitles={rankTitles} />
+        <AboutMeChipsEditor chips={aboutMeChips} />
+        <PeerHandlesEditor handles={peerHandles} />
+        <TopicsEditor topics={topics} />
+      </div>
+    </AdminGlassBackground>
   );
 }
 

@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { RewardActivityKind } from "@/server/economy/repo";
 import {
   MAX_REWARD_AMOUNT,
@@ -172,7 +174,7 @@ export function EconomySettingsEditor({
   }
 
   return (
-    <div className="max-w-3xl space-y-6 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-3xl space-y-6 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Reward rules</h2>
         <p className="text-xs text-muted-foreground">

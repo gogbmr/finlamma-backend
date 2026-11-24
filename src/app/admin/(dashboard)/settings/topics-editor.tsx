@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { createTopicAction, updateTopicAction } from "./actions";
 
@@ -147,7 +149,7 @@ function NewTopicRow({ nextOrder }: { nextOrder: number }) {
 export function TopicsEditor({ topics }: { topics: TopicRow[] }) {
   const nextOrder = topics.reduce((max, t) => Math.max(max, t.order), 0) + 1;
   return (
-    <div className="max-w-3xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-3xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Topics</h2>
         <p className="text-xs text-muted-foreground">
