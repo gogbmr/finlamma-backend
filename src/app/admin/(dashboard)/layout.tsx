@@ -145,7 +145,17 @@ export default async function DashboardLayout({
 
   return (
     <div className={cn(ADMIN_GLASS_FONT_CLASS, "bg-background min-h-screen")}>
-      <Toaster richColors position="top-right" />
+      {/* Shape/border/blur only - richColors' own per-type (success/error/
+          warning) background colors are semantic and stay exactly as they
+          are, same "don't glassify a color that's carrying meaning" rule
+          as every status badge/warning box elsewhere in admin. */}
+      <Toaster
+        richColors
+        position="top-right"
+        toastOptions={{
+          classNames: { toast: "rounded-xl border border-white/40 shadow-lg backdrop-blur-xl" },
+        }}
+      />
       <div className="flex min-h-screen">
         <aside
           className={cn(

@@ -12,6 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
+import { GLASS_PANEL } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 
 // A controlled confirmation dialog for a destructive/impactful action
@@ -42,7 +43,11 @@ export function ConfirmDialog({
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      {/* The confirm/alert-dialog overlay already dims the backdrop ~40% -
+          that's what makes the standard GLASS_PANEL translucency (not the
+          more opaque chrome level the sidebar/top bar use) still read
+          clearly here, the same way it does over any content card. */}
+      <AlertDialogContent className={GLASS_PANEL}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

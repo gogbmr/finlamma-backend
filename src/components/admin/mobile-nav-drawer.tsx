@@ -38,7 +38,7 @@ export function MobileNavDrawer({ visibility }: { visibility: AdminNavVisibility
         <button
           type="button"
           aria-label="Open navigation menu"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent lg:hidden"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 lg:hidden"
         >
           <Menu className="h-5 w-5" aria-hidden />
         </button>

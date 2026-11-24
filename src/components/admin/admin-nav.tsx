@@ -149,7 +149,7 @@ function NavLink({
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex items-center gap-2.5 rounded-md text-sm font-medium transition-colors",
+        "group relative flex items-center gap-2.5 rounded-md text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         rail ? "justify-center px-2 py-2" : "px-3 py-2",
         active
           ? "bg-primary text-primary-foreground"
@@ -343,7 +343,7 @@ export function AdminSidebar({
                   type="button"
                   onClick={() => toggle(group.label)}
                   aria-expanded={!isCollapsed}
-                  className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
+                  className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   {group.label}
                   <ChevronDown
@@ -373,7 +373,7 @@ export function AdminSidebar({
           onClick={() => setRailCollapsed(!railCollapsedStored)}
           aria-label={railCollapsedStored ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
-            "mt-auto flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+            "mt-auto flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             rail && "justify-center",
           )}
         >
