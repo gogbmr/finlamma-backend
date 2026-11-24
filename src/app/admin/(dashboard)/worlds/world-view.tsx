@@ -2,6 +2,7 @@ import { Images, Info, Link2, Type } from "lucide-react";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { LocalizedText } from "@/server/shared/schemas";
+import { GLASS_PANEL, GlassIconChip } from "@/components/admin/glass";
 import type { MentorOption, WorldRow } from "./world-editor";
 
 const LANGUAGES = [
@@ -25,7 +26,7 @@ function InfoTile({ label, value }: { label: string; value: React.ReactNode }) {
 
 function LocalizedTextCard({ label, value }: { label: string; value: LocalizedText }) {
   return (
-    <Card>
+    <Card className={GLASS_PANEL}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{label}</CardTitle>
       </CardHeader>
@@ -46,7 +47,7 @@ function LocalizedTextCard({ label, value }: { label: string; value: LocalizedTe
 export function WorldView({ world, mentor }: { world: WorldRow; mentor: MentorOption | null }) {
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-start justify-between gap-3 pb-3">
           <div className="space-y-1">
             <CardTitle className="flex items-center gap-2 text-base">
@@ -81,9 +82,9 @@ export function WorldView({ world, mentor }: { world: WorldRow; mentor: MentorOp
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-center gap-2 pb-2">
-          <Images className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <GlassIconChip icon={Images} className="h-7 w-7 rounded-md" />
           <CardTitle className="text-sm">Art</CardTitle>
         </CardHeader>
         <CardContent>
@@ -102,9 +103,9 @@ export function WorldView({ world, mentor }: { world: WorldRow; mentor: MentorOp
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-center gap-2 pb-2">
-          <Link2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <GlassIconChip icon={Link2} className="h-7 w-7 rounded-md" />
           <CardTitle className="text-sm">Relations</CardTitle>
         </CardHeader>
         <CardContent>
@@ -126,12 +127,12 @@ export function WorldView({ world, mentor }: { world: WorldRow; mentor: MentorOp
       <LocalizedTextCard label="Title" value={world.title} />
       <LocalizedTextCard label="Tagline" value={world.tagline} />
 
-      <details className="rounded-xl border border-border bg-card">
+      <details className={GLASS_PANEL}>
         <summary className="flex cursor-pointer select-none items-center gap-2 px-5 py-3 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
           <Info className="h-3.5 w-3.5" aria-hidden />
           Advanced: view stored JSON
         </summary>
-        <pre className="overflow-x-auto border-t border-border bg-muted/30 p-4 text-xs text-foreground">
+        <pre className="overflow-x-auto border-t border-white/50 p-4 text-xs text-foreground">
           {JSON.stringify(world, null, 2)}
         </pre>
       </details>

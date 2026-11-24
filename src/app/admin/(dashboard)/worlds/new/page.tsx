@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/admin/page-header";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { NewWorldForm } from "../world-editor";
 
 export default async function NewWorldPage() {
@@ -20,21 +21,24 @@ export default async function NewWorldPage() {
   const mentors = await getMentorEditorData();
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Worlds", href: "/admin/worlds" },
-          { label: "New" },
-        ]}
-        icon={Globe2}
-        title="New world"
-        description="Created as a draft - fill in title/tagline/mentor and publish once it's ready."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Worlds", href: "/admin/worlds" },
+              { label: "New" },
+            ]}
+            icon={Globe2}
+            title="New world"
+          />
+        </div>
 
-      <NewWorldForm
-        mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
-      />
-    </div>
+        <NewWorldForm
+          mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }
