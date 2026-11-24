@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { glassPanel } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 import { revealParentContactAction } from "./actions";
 
@@ -151,7 +152,7 @@ export function ConsentReviewTable({
   const state: ConsentQueryState = { status, includeDeleted, from, to };
 
   return (
-    <div className="space-y-3">
+    <div className={glassPanel("space-y-4 p-5")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-3 text-sm">
           {STATUS_OPTIONS.map((opt) => (

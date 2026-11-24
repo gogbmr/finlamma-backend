@@ -24,6 +24,7 @@ import {
 } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { glassPanel } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 import { setStaffActiveAction, updateStaffRoleAction } from "./actions";
 import { StaffProfilePanel } from "./staff-profile-panel";
@@ -218,48 +219,50 @@ export function StaffTable({
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-4 text-sm">
-          {ACTIVE_OPTIONS.map((opt) => (
-            <Link
-              key={opt.label}
-              href={activeFilterHref(pathname, state, opt.value)}
-              className={cn(
-                active === opt.value
-                  ? "font-semibold text-foreground underline"
-                  : "text-muted-foreground hover:underline",
-              )}
-            >
-              {opt.label}
-            </Link>
-          ))}
+      <div className={glassPanel("space-y-4 p-5")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-4 text-sm">
+            {ACTIVE_OPTIONS.map((opt) => (
+              <Link
+                key={opt.label}
+                href={activeFilterHref(pathname, state, opt.value)}
+                className={cn(
+                  active === opt.value
+                    ? "font-semibold text-foreground underline"
+                    : "text-muted-foreground hover:underline",
+                )}
+              >
+                {opt.label}
+              </Link>
+            ))}
+          </div>
+          <DataTableSearchForm pathname={pathname} state={state} placeholder="Search Clerk ID or role…" />
         </div>
-        <DataTableSearchForm pathname={pathname} state={state} placeholder="Search Clerk ID or role…" />
-      </div>
 
-      <DataTable
-        columns={columns}
-        data={staff}
-        emptyState={
-          <EmptyState
-            icon={Users}
-            title={q ? "No staff match your search" : "No staff members yet"}
-            description={
-              q
-                ? `Nothing matched "${q}" - try a different Clerk ID or role.`
-                : "Invite your first staff member above."
-            }
-          />
-        }
-      />
-      <DataTablePagination
-        pathname={pathname}
-        state={state}
-        page={page}
-        pageCount={pageCount}
-        total={total}
-        noun="staff members"
-      />
+        <DataTable
+          columns={columns}
+          data={staff}
+          emptyState={
+            <EmptyState
+              icon={Users}
+              title={q ? "No staff match your search" : "No staff members yet"}
+              description={
+                q
+                  ? `Nothing matched "${q}" - try a different Clerk ID or role.`
+                  : "Invite your first staff member above."
+              }
+            />
+          }
+        />
+        <DataTablePagination
+          pathname={pathname}
+          state={state}
+          page={page}
+          pageCount={pageCount}
+          total={total}
+          noun="staff members"
+        />
+      </div>
 
       <ConfirmDialog
         open={confirmDeactivate !== null}

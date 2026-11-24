@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { InviteStaffMemberSchema, type InviteStaffMemberInput } from "@/server/staff/schemas";
+import { glassPanel } from "@/components/admin/glass";
 import { inviteStaffMemberAction } from "./actions";
 
 export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] }) {
@@ -45,7 +46,7 @@ export function AddStaffForm({ roles }: { roles: { id: string; name: string }[] 
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-card p-4"
+      className={glassPanel("flex flex-wrap items-end gap-3 p-4")}
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="email">Email</Label>

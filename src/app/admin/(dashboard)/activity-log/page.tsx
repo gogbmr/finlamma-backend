@@ -2,6 +2,7 @@ import { ScrollText } from "lucide-react";
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { listActivityLogs, type ActivityLogCursor, type ActorTypeFilter } from "@/lib/activity-log";
 import { requireStaff } from "@/lib/auth";
 import { decodeCursor, DEFAULT_PAGE_LIMIT } from "@/lib/http";
@@ -38,60 +39,65 @@ export default async function ActivityLogPage({
     type ? `/admin/activity-log?actorType=${type}` : "/admin/activity-log";
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Activity Log" }]}
-        icon={ScrollText}
-        title="Activity Log"
-        description="Append-only record of staff and user actions. Nothing here can be edited or deleted."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Activity Log" }]}
+            icon={ScrollText}
+            title="Activity Log"
+          />
+        </div>
 
-      <div className="flex gap-4 text-sm">
-        <Link
-          href={filterHref()}
-          className={
-            !actorType
-              ? "font-semibold text-foreground underline"
-              : "text-muted-foreground hover:underline"
-          }
-        >
-          All
-        </Link>
-        {ACTOR_TYPES.map((type) => (
-          <Link
-            key={type}
-            href={filterHref(type)}
-            className={
-              actorType === type
-                ? "font-semibold text-foreground underline"
-                : "text-muted-foreground hover:underline"
-            }
-          >
-            {type}
-          </Link>
-        ))}
+        <div className={glassPanel("space-y-4 p-5")}>
+          <div className="flex gap-4 text-sm">
+            <Link
+              href={filterHref()}
+              className={
+                !actorType
+                  ? "font-semibold text-foreground underline"
+                  : "text-muted-foreground hover:underline"
+              }
+            >
+              All
+            </Link>
+            {ACTOR_TYPES.map((type) => (
+              <Link
+                key={type}
+                href={filterHref(type)}
+                className={
+                  actorType === type
+                    ? "font-semibold text-foreground underline"
+                    : "text-muted-foreground hover:underline"
+                }
+              >
+                {type}
+              </Link>
+            ))}
+          </div>
+
+          <ActivityLogTable
+            rows={data.map((log) => ({
+              id: log.id,
+              createdAt: log.createdAt.toISOString(),
+              actorType: log.actorType,
+              actorId: log.actorId,
+              action: log.action,
+              targetType: log.targetType,
+              targetId: log.targetId,
+            }))}
+          />
+
+          {nextCursor && (
+            <Link
+              href={`/admin/activity-log?${actorType ? `actorType=${actorType}&` : ""}cursor=${nextCursor}`}
+              className="text-sm font-medium underline"
+            >
+              Load more
+            </Link>
+          )}
+        </div>
       </div>
-
-      <ActivityLogTable
-        rows={data.map((log) => ({
-          id: log.id,
-          createdAt: log.createdAt.toISOString(),
-          actorType: log.actorType,
-          actorId: log.actorId,
-          action: log.action,
-          targetType: log.targetType,
-          targetId: log.targetId,
-        }))}
-      />
-
-      {nextCursor && (
-        <Link
-          href={`/admin/activity-log?${actorType ? `actorType=${actorType}&` : ""}cursor=${nextCursor}`}
-          className="text-sm font-medium underline"
-        >
-          Load more
-        </Link>
-      )}
-    </div>
+    </AdminGlassBackground>
   );
 }
