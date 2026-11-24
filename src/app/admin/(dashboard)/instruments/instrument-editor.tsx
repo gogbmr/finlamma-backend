@@ -4,6 +4,8 @@ import { TrendingUp } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/admin/empty-state";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -248,8 +250,8 @@ function NewInstrumentForm({ onDirtyChange }: { onDirtyChange: (dirty: boolean) 
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-      <div className="grid grid-cols-2 gap-3">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Symbol</Label>
           <Input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="RELIANCE" />
@@ -362,7 +364,7 @@ function InstrumentForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <span className="font-mono font-medium text-foreground">{instrument.symbol}</span>
         <span>{instrument.exchange}</span>
@@ -373,7 +375,7 @@ function InstrumentForm({
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Name</Label>
           <Input value={name} disabled={!canManage} onChange={(e) => setName(e.target.value)} />

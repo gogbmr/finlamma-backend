@@ -148,3 +148,81 @@ body {
     animation: none;
   }
 }
+
+/* Admin liquid-glass surfaces - ADDITIVE ONLY, nothing above this point is
+   edited or removed. Reuses the same --brand-violet-* / --card tokens
+   defined in :root above (never a new color), for the admin dashboard's
+   glassmorphism redesign (phase 1: shell chrome; the page-content panels
+   already use the .admin-glass-panel/.admin-glass-panel-subtle recipe via
+   src/components/admin/glass.tsx's GLASS_PANEL/GLASS_PANEL_SUBTLE).
+   Real CSS classes rather than inline Tailwind utility strings specifically
+   so they can carry the prefers-reduced-transparency/no-backdrop-filter
+   fallbacks below - Tailwind v4 has no built-in variant for either. */
+.admin-glass-panel {
+  border-radius: 1rem; /* matches Tailwind's rounded-2xl, the panel's original radius */
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.16) 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    rgba(157, 92, 255, 0.14) 100%
+  );
+  box-shadow:
+    0 8px 32px rgba(76, 34, 187, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+.admin-glass-panel-subtle {
+  border-radius: 0.75rem; /* matches Tailwind's rounded-xl, the subtle panel's original radius */
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.1) 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(157, 92, 255, 0.08) 100%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+/* Chrome level - the sidebar and top bar (new in phase 1). Deliberately
+   more opaque than the content panels above: permanent navigation needs to
+   stay legible regardless of what's scrolling behind it, so this trades
+   some transparency for reliability rather than reusing .admin-glass-panel
+   as-is. */
+.admin-glass-chrome {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.82) 0%,
+    rgba(237, 233, 254, 0.6) 100%
+  );
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+}
+
+/* No backdrop-filter support: fall back to a solid, already-accessible
+   surface rather than a half-transparent one with no blur (which would
+   fail the "readable regardless of what's behind it" requirement). */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .admin-glass-panel,
+  .admin-glass-panel-subtle,
+  .admin-glass-chrome {
+    background: var(--card);
+  }
+}
+
+/* Respect a user's reduced-transparency preference (distinct from
+   reduced-motion above) with the same solid fallback. */
+@media (prefers-reduced-transparency: reduce) {
+  .admin-glass-panel,
+  .admin-glass-panel-subtle,
+  .admin-glass-chrome {
+    background: var(--card);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}

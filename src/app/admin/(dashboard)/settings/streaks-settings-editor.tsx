@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { StreaksSettings } from "@/server/streaks/schemas";
 import { updateStreaksSettingsAction } from "./actions";
 
@@ -24,7 +26,7 @@ export function StreaksSettingsEditor({ settings }: { settings: StreaksSettings 
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-2xl space-y-4 p-4")}>
       <h2 className="text-sm font-semibold text-foreground">Streaks</h2>
       <p className="text-xs text-muted-foreground">
         How many missed IST calendar days per month a learner can have auto-covered without

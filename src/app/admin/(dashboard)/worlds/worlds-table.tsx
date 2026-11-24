@@ -19,6 +19,7 @@ import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
+import { glassPanel } from "@/components/admin/glass";
 import { deleteWorldAction } from "./actions";
 
 type StatusFilter = "draft" | "published" | null;
@@ -205,48 +206,50 @@ export function WorldsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-4 text-sm">
-          {STATUS_OPTIONS.map((opt) => (
-            <Link
-              key={opt.label}
-              href={statusFilterHref(pathname, state, opt.value)}
-              className={cn(
-                status === opt.value
-                  ? "font-semibold text-foreground underline"
-                  : "text-muted-foreground hover:underline",
-              )}
-            >
-              {opt.label}
-            </Link>
-          ))}
+      <div className={glassPanel("space-y-4 p-5")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-4 text-sm">
+            {STATUS_OPTIONS.map((opt) => (
+              <Link
+                key={opt.label}
+                href={statusFilterHref(pathname, state, opt.value)}
+                className={cn(
+                  status === opt.value
+                    ? "font-semibold text-foreground underline"
+                    : "text-muted-foreground hover:underline",
+                )}
+              >
+                {opt.label}
+              </Link>
+            ))}
+          </div>
+          <DataTableSearchForm pathname={pathname} state={state} placeholder="Search title or code…" />
         </div>
-        <DataTableSearchForm pathname={pathname} state={state} placeholder="Search title or code…" />
-      </div>
 
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={Globe2}
-          title={q ? "No worlds match your search" : "No worlds yet"}
-          description={
-            q
-              ? `Nothing matched "${q}" - try a different title or code.`
-              : "A staff member with world.create or world.edit can create the first one."
-          }
-        />
-      ) : (
-        <>
-          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
-          <DataTablePagination
-            pathname={pathname}
-            state={state}
-            page={page}
-            pageCount={pageCount}
-            total={total}
-            noun="worlds"
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={Globe2}
+            title={q ? "No worlds match your search" : "No worlds yet"}
+            description={
+              q
+                ? `Nothing matched "${q}" - try a different title or code.`
+                : "A staff member with world.create or world.edit can create the first one."
+            }
           />
-        </>
-      )}
+        ) : (
+          <>
+            <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
+            <DataTablePagination
+              pathname={pathname}
+              state={state}
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              noun="worlds"
+            />
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}

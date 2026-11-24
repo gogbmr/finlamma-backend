@@ -27,6 +27,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/cn";
+import { GLASS_PANEL, GLASS_PANEL_SUBTLE, GlassIconChip } from "@/components/admin/glass";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   QUESTION_ANSWER_TEMPLATES,
@@ -291,13 +293,9 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-5")}>
       <h3 className="flex items-center gap-2 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
-        {Icon && (
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-        )}
+        {Icon && <GlassIconChip icon={Icon} className="h-6 w-6 rounded-md" />}
         {title}
       </h3>
       {children}
@@ -355,11 +353,11 @@ function LocalizedFieldGroup({
 // mid-edit.
 function StoredJsonPanel({ data }: { data: unknown }) {
   return (
-    <details className="rounded-lg border border-border bg-card">
+    <details className={GLASS_PANEL}>
       <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
         Advanced: view stored JSON
       </summary>
-      <pre className="overflow-x-auto border-t border-border bg-muted/30 p-4 text-xs text-foreground">
+      <pre className="overflow-x-auto border-t border-white/50 p-4 text-xs text-foreground">
         {JSON.stringify(data, null, 2)}
       </pre>
     </details>
@@ -619,14 +617,14 @@ function SortBucketsSections({ disabled, warnings }: { disabled: boolean; warnin
   return (
     <>
       <SectionCard title="Payload - Bucket labels">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <LocalizedFieldGroup label="Bucket 0 label" name="payload.buckets.0" disabled={disabled} warnings={warnings} multiline={false} />
           <LocalizedFieldGroup label="Bucket 1 label" name="payload.buckets.1" disabled={disabled} warnings={warnings} multiline={false} />
         </div>
       </SectionCard>
       <SectionCard title="Payload - Items & Answer">
         {items.fields.map((field, i) => (
-          <div key={field.id} className="flex items-start gap-2 rounded-md border border-border p-2">
+          <div key={field.id} className={cn(GLASS_PANEL_SUBTLE, "flex items-start gap-2 p-2")}>
             <div className="flex-1">
               <LocalizedFieldGroup label={`Item ${i + 1}`} name={`payload.items.${i}`} disabled={disabled} warnings={warnings} multiline={false} />
             </div>
@@ -824,7 +822,7 @@ function MatchPairsSections({ disabled, warnings }: { disabled: boolean; warning
       </SectionCard>
       <SectionCard title="Payload - Left column & Answer">
         {left.fields.map((field, i) => (
-          <div key={field.id} className="flex items-start gap-2 rounded-md border border-border p-2">
+          <div key={field.id} className={cn(GLASS_PANEL_SUBTLE, "flex items-start gap-2 p-2")}>
             <div className="flex-1">
               <LocalizedFieldGroup label={`Left ${i + 1}`} name={`payload.left.${i}`} disabled={disabled} warnings={warnings} multiline={false} />
             </div>
@@ -959,7 +957,7 @@ function NumberGuessSections({ disabled, warnings }: { disabled: boolean; warnin
     <>
       <SectionCard title="Payload - Slider range">
         <LocalizedFieldGroup label="Unit label" name="payload.unit" disabled={disabled} warnings={warnings} multiline={false} />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="space-y-1">
             <Label>Min</Label>
             <Input type="number" step="any" disabled={disabled} {...register("payload.min" as FieldPath<QuestionFormValues>, { valueAsNumber: true })} />
@@ -980,7 +978,7 @@ function NumberGuessSections({ disabled, warnings }: { disabled: boolean; warnin
         )}
       </SectionCard>
       <SectionCard title="Answer - Correct value">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>Correct value</Label>
             <Input type="number" step="any" disabled={disabled} {...register("answer.correctValue" as FieldPath<QuestionFormValues>, { valueAsNumber: true })} />
@@ -1108,7 +1106,7 @@ export function NewQuestionForm({ topics }: { topics: TopicOption[] }) {
           <LocalizedFieldGroup label="Explanation" name="explanation" disabled={false} warnings={warnings} />
         </SectionCard>
 
-        <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className={cn(GLASS_PANEL_SUBTLE, "sticky bottom-0 z-10 flex items-center gap-2 p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]")}>
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
@@ -1317,7 +1315,7 @@ export function QuestionForm({
           }}
         />
 
-        <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className={cn(GLASS_PANEL_SUBTLE, "sticky bottom-0 z-10 flex flex-wrap items-center gap-2 p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]")}>
           {(editable || hotfixable) && (
             <Button type="submit" variant="outline" disabled={isPending}>
               {editable ? "Save draft" : "Save fix"}

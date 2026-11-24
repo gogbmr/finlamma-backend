@@ -12,6 +12,7 @@ import {
   type AdminListUrlState,
 } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/admin/empty-state";
+import { glassPanel } from "@/components/admin/glass";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -255,7 +256,7 @@ export function PipelineTable({
   const state: AdminListUrlState = { q, sort, dir, pageSize };
 
   return (
-    <div className="space-y-2 rounded-lg border border-border bg-card p-4">
+    <div className={glassPanel("space-y-2 p-4")}>
       <h2 className="text-sm font-semibold text-foreground">Today&apos;s pipeline</h2>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -1,6 +1,7 @@
 import { Users } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requireStaff } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
@@ -69,42 +70,45 @@ export default async function StaffPage({
   });
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Staff" }]}
-        icon={Users}
-        title="Staff"
-        description="Manage who has access to this admin dashboard. Inviting someone sends them a Clerk invite email - they appear here automatically once they accept and sign up."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Staff" }]}
+            icon={Users}
+            title="Staff"
+          />
+        </div>
 
-      {canCreate && <AddStaffForm roles={roleOptions} />}
+        {canCreate && <AddStaffForm roles={roleOptions} />}
 
-      <StaffTable
-        staff={paged.rows.map((s) => ({
-          id: s.id,
-          clerkUserId: s.clerkUserId,
-          active: s.active,
-          roleId: s.roleId,
-          roleName: s.roleName,
-          email: s.email,
-          gender: s.gender,
-          phone: s.phone,
-          address: s.address,
-          photoUrl: s.photoUrl,
-        }))}
-        roles={roleOptions}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        active={activeFilter}
-        viewerId={viewer.id}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <StaffTable
+          staff={paged.rows.map((s) => ({
+            id: s.id,
+            clerkUserId: s.clerkUserId,
+            active: s.active,
+            roleId: s.roleId,
+            roleName: s.roleName,
+            email: s.email,
+            gender: s.gender,
+            phone: s.phone,
+            address: s.address,
+            photoUrl: s.photoUrl,
+          }))}
+          roles={roleOptions}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          active={activeFilter}
+          viewerId={viewer.id}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

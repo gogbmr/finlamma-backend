@@ -1,6 +1,7 @@
 import { Award } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
@@ -66,27 +67,30 @@ export default async function BadgesPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Badges" }]}
-        icon={Award}
-        title="Badges"
-        description="Badges pay V Money on unlock, once per learner, automatically evaluated after every real lesson credit. Publish is blocked until every en/hi/hx field is filled."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Badges" }]}
+            icon={Award}
+            title="Badges"
+          />
+        </div>
 
-      <BadgeEditor
-        badges={paged.rows}
-        canCreate={canCreate}
-        canEdit={canEdit}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        status={statusFilter}
-      />
-    </div>
+        <BadgeEditor
+          badges={paged.rows}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          status={statusFilter}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

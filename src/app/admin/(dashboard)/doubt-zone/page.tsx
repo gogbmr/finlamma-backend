@@ -1,6 +1,7 @@
 import { Flag } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requireStaff } from "@/lib/auth";
 import { readDateRangeFilter } from "@/lib/admin/date-range";
 import {
@@ -67,33 +68,36 @@ export default async function DoubtZoneModerationPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Doubt Zone" }]}
-        icon={Flag}
-        title="Doubt Zone moderation"
-        description="Flagged Doubt Zone AI messages only - either the safety classifier tripped on a learner message, or a learner reported a reply. Full, unflagged conversations are never browsable here, by anyone. Viewing a flagged message's content is logged."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Doubt Zone" }]}
+            icon={Flag}
+            title="Doubt Zone moderation"
+          />
+        </div>
 
-      <DoubtZoneModerationTable
-        rows={paged.rows.map((r) => ({
-          id: r.id,
-          threadId: r.threadId,
-          role: r.role,
-          flaggedCategory: r.flaggedCategory,
-          createdAt: r.createdAt.toISOString(),
-          reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
-          displayName: r.lastInitial ? `${r.firstName ?? "—"} ${r.lastInitial}.` : (r.firstName ?? "—"),
-          mentorName: r.mentorName.en,
-        }))}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        flaggedCategory={flaggedCategoryFilter}
-        includeReviewed={includeReviewed}
-        from={params.from && !Array.isArray(params.from) ? params.from : ""}
-        to={params.to && !Array.isArray(params.to) ? params.to : ""}
-      />
-    </div>
+        <DoubtZoneModerationTable
+          rows={paged.rows.map((r) => ({
+            id: r.id,
+            threadId: r.threadId,
+            role: r.role,
+            flaggedCategory: r.flaggedCategory,
+            createdAt: r.createdAt.toISOString(),
+            reviewedAt: r.reviewedAt ? r.reviewedAt.toISOString() : null,
+            displayName: r.lastInitial ? `${r.firstName ?? "—"} ${r.lastInitial}.` : (r.firstName ?? "—"),
+            mentorName: r.mentorName.en,
+          }))}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          flaggedCategory={flaggedCategoryFilter}
+          includeReviewed={includeReviewed}
+          from={params.from && !Array.isArray(params.from) ? params.from : ""}
+          to={params.to && !Array.isArray(params.to) ? params.to : ""}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

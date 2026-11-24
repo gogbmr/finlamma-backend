@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { GLASS_PANEL } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 import { MAX_HALT_REASON_LENGTH } from "@/server/trading/schemas";
 import { setSymbolHaltedAction } from "./actions";
@@ -54,7 +55,7 @@ export function SymbolMasterTable({ rows }: { rows: SymbolRow[] }) {
   }
 
   return (
-    <div className="space-y-2 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-2 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Symbol master</h2>
         <p className="text-xs text-muted-foreground">
@@ -96,7 +97,7 @@ export function SymbolMasterTable({ rows }: { rows: SymbolRow[] }) {
       </Table>
 
       <AlertDialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {target?.halted ? `Resume trading in ${target?.symbol}?` : `Halt trading in ${target?.symbol}?`}

@@ -15,6 +15,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { createPeerHandleAction, deletePeerHandleAction, updatePeerHandleAction } from "./actions";
 
@@ -91,7 +93,7 @@ function PeerHandleRowEditor({ handle }: { handle: PeerHandleRow }) {
       </TableRow>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this handle?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -164,7 +166,7 @@ function NewPeerHandleRow() {
 
 export function PeerHandlesEditor({ handles }: { handles: PeerHandleRow[] }) {
   return (
-    <div className="max-w-3xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-3xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Peer-visible handles (D73)</h2>
         <p className="text-xs text-muted-foreground">

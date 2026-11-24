@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { GLASS_PANEL, GLASS_PANEL_SUBTLE } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 import {
   createCompetitionDraftAction,
@@ -245,7 +247,7 @@ function CompetitionForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL_SUBTLE, "space-y-4 p-4")}>
       <TextInputs label="Name" value={name} onChange={setName} />
 
       <div className="space-y-1">
@@ -264,7 +266,7 @@ function CompetitionForm({
         </Select>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Virtual capital (₹)</Label>
           <Input type="number" value={capitalRupees} onChange={(e) => setCapitalRupees(Number(e.target.value))} />
@@ -335,7 +337,7 @@ function SettingsPanel({ initial }: { initial: SettingsValue }) {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Settings</h2>
         <p className="text-xs text-muted-foreground">
@@ -343,7 +345,7 @@ function SettingsPanel({ initial }: { initial: SettingsValue }) {
           needs at least the minimum trades to qualify for ranking/prizes at settlement.
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Min qualifying trades</Label>
           <Input
@@ -422,8 +424,8 @@ export function CompetitionsEditor({
   }
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className="space-y-3">
+      <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
         <div className="space-y-1">
           <h2 className="text-sm font-semibold text-foreground">Monthly Competition</h2>
           <p className="text-xs text-muted-foreground">

@@ -13,6 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { updateStaffProfileAction, uploadStaffPhotoAction } from "./actions";
 import type { StaffRow } from "./staff-table";
 
@@ -71,7 +73,7 @@ export function StaffProfilePanel({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-semibold text-foreground">
           Profile - {staff.email ?? staff.clerkUserId}
@@ -108,7 +110,7 @@ export function StaffProfilePanel({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Gender</Label>
           <Select value={gender} onValueChange={setGender} disabled={isPending}>

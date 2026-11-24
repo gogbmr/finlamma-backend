@@ -5,6 +5,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LevelCurveSettings } from "@/server/leveling/schemas";
 import { updateLevelCurveSettingsAction } from "./actions";
 
@@ -31,7 +33,7 @@ export function LevelCurveSettingsEditor({ settings }: { settings: LevelCurveSet
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-2xl space-y-4 p-4")}>
       <h2 className="text-sm font-semibold text-foreground">Level curve</h2>
       <p className="text-xs text-muted-foreground">
         XP required to advance from level L to L+1 = base + step × (L−1). A learner&apos;s level is

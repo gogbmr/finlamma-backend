@@ -7,6 +7,7 @@ import { formatChangedValue } from "@/components/admin/confirm-changes-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { glassPanel } from "@/components/admin/glass";
 import { refundRewardClaimAction } from "./actions";
 
 type ClaimRow = {
@@ -54,7 +55,7 @@ export function RecentClaims({ claims }: { claims: ClaimRow[] }) {
   const confirmClaim = claims.find((c) => c.id === confirmClaimId) ?? null;
 
   return (
-    <div className="space-y-3">
+    <div className={glassPanel("space-y-3 p-5")}>
       <h2 className="text-sm font-semibold text-foreground">Recent claims</h2>
       <p className="text-xs text-muted-foreground">
         Refunding credits the exact price paid back to the learner as a new ledger entry - it never

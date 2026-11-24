@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { glassPanel } from "@/components/admin/glass";
 import { markReviewedAction, revealFlaggedMessageAction } from "./actions";
 
 type FlaggedCategory =
@@ -184,7 +185,7 @@ export function DoubtZoneModerationTable({
   const state: DoubtZoneQueryState = { flaggedCategory, includeReviewed, from, to };
 
   return (
-    <div className="space-y-3">
+    <div className={glassPanel("space-y-4 p-5")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Select
           value={flaggedCategory ?? ALL_CATEGORIES}

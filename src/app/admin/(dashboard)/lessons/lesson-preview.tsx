@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 
 const LANGUAGES = ["en", "hi", "hx"] as const;
 type Lang = (typeof LANGUAGES)[number];
@@ -47,7 +49,7 @@ export function LessonPreview({
   };
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4 shadow-sm">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-foreground">
           Preview - this is the exact answer-free shape the app receives (see

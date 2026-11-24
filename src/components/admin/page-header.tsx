@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
+import { GlassIconChip } from "@/components/admin/glass";
 
 // One consistent header for every admin page: breadcrumbs, an optional icon
 // chip, title + description on the left, a primary action slot on the
@@ -46,16 +47,14 @@ export function PageHeader({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
           {Icon && (
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-secondary text-secondary-foreground">
-              <Icon className="h-5 w-5" />
-            </div>
+            <GlassIconChip icon={Icon} className="h-10 w-10 rounded-xl" iconClassName="h-5 w-5" />
           )}
           <div>
             <h1 className="text-xl font-semibold text-foreground">{title}</h1>
             {description && <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>}
           </div>
         </div>
-        {action && <div className="flex shrink-0 items-center gap-2">{action}</div>}
+        {action && <div className="flex shrink-0 flex-wrap items-center gap-2">{action}</div>}
       </div>
     </div>
   );

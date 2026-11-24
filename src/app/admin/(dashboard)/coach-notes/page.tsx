@@ -1,6 +1,7 @@
 import { MessageSquareText } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
@@ -70,38 +71,41 @@ export default async function CoachNotesPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Coach Notes" }]}
-        icon={MessageSquareText}
-        title="Coach note templates"
-        description="One published template per category is picked at random to fill in a learner's weekly report card, with their own numbers substituted for the {{placeholders}}."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Coach Notes" }]}
+            icon={MessageSquareText}
+            title="Coach note templates"
+          />
+        </div>
 
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
-        <p className="font-medium">Tone rule (docs/ARCHITECTURE.md D34)</p>
-        <p className="mt-1">
-          Every template must be encouraging and age-appropriate. Never shaming, never
-          pressuring, and never comparative - a coach note must never read as a rank or a
-          comparison against other learners, only this learner&apos;s own progress. This applies
-          to en, hi and hx wording alike.
-        </p>
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">Tone rule (docs/ARCHITECTURE.md D34)</p>
+          <p className="mt-1">
+            Every template must be encouraging and age-appropriate. Never shaming, never
+            pressuring, and never comparative - a coach note must never read as a rank or a
+            comparison against other learners, only this learner&apos;s own progress. This applies
+            to en, hi and hx wording alike.
+          </p>
+        </div>
+
+        <CoachNoteEditor
+          templates={paged.rows}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          status={statusFilter}
+        />
       </div>
-
-      <CoachNoteEditor
-        templates={paged.rows}
-        canCreate={canCreate}
-        canEdit={canEdit}
-        canDelete={canDelete}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        status={statusFilter}
-      />
-    </div>
+    </AdminGlassBackground>
   );
 }

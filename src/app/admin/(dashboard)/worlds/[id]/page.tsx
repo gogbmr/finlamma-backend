@@ -8,6 +8,7 @@ import { getStaffMember } from "@/lib/auth";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getWorldEditorData } from "@/server/worlds/service";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { WorldView } from "../world-view";
 
 export default async function WorldViewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -31,42 +32,45 @@ export default async function WorldViewPage({ params }: { params: Promise<{ id: 
   const mentor = mentors.find((m) => m.id === world.mentorId) ?? null;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Worlds", href: "/admin/worlds" },
-          { label: world.title.en || "(untitled)" },
-        ]}
-        icon={Globe2}
-        title={world.title.en || "(untitled)"}
-        description="Read-only view. Use Edit to change this world."
-        action={
-          (canEdit || canDelete) && (
-            <Button asChild size="sm">
-              <Link href={`/admin/worlds/${world.id}/edit`}>
-                <Pencil className="h-4 w-4" /> Edit
-              </Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Worlds", href: "/admin/worlds" },
+              { label: world.title.en || "(untitled)" },
+            ]}
+            icon={Globe2}
+            title={world.title.en || "(untitled)"}
+            action={
+              (canEdit || canDelete) && (
+                <Button asChild size="sm">
+                  <Link href={`/admin/worlds/${world.id}/edit`}>
+                    <Pencil className="h-4 w-4" /> Edit
+                  </Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <WorldView
-        world={{
-          id: world.id,
-          order: world.order,
-          code: world.code,
-          title: world.title,
-          tagline: world.tagline,
-          theme: world.theme,
-          displayXpTarget: world.displayXpTarget,
-          mentorId: world.mentorId,
-          status: world.status,
-          artUrl: world.artUrl,
-        }}
-        mentor={mentor ? { id: mentor.id, key: mentor.key, name: mentor.name, status: mentor.status } : null}
-      />
-    </div>
+        <WorldView
+          world={{
+            id: world.id,
+            order: world.order,
+            code: world.code,
+            title: world.title,
+            tagline: world.tagline,
+            theme: world.theme,
+            displayXpTarget: world.displayXpTarget,
+            mentorId: world.mentorId,
+            status: world.status,
+            artUrl: world.artUrl,
+          }}
+          mentor={mentor ? { id: mentor.id, key: mentor.key, name: mentor.name, status: mentor.status } : null}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

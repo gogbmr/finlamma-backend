@@ -1,5 +1,6 @@
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requireStaff } from "@/lib/auth";
 import { LEGAL_DOCUMENT_TYPES } from "@/server/legal/repo";
 import { getLegalEditorData } from "@/server/legal/service";
@@ -34,14 +35,17 @@ export default async function LegalPage() {
   );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Legal" }]}
-        title="Legal documents"
-        description="Terms, Privacy and Risk-disclosure text - staff-editable, versioned. Only super_admin can publish. Publishing a new version prompts every user (and every consenting parent) to re-accept it. v1 seeds these as DRAFT placeholders until the outside legal review in docs/ROADMAP.md's pre-launch checklist - never publish real text without that review."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Legal" }]}
+            title="Legal documents"
+          />
+        </div>
 
-      <LegalEditor documents={documents} />
-    </div>
+        <LegalEditor documents={documents} />
+      </div>
+    </AdminGlassBackground>
   );
 }

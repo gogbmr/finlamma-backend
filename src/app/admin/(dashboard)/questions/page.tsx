@@ -2,6 +2,7 @@ import { HelpCircle } from "lucide-react";
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { readPageParams } from "@/lib/admin/paginate";
@@ -73,37 +74,40 @@ export default async function QuestionsPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Questions" }]}
-        icon={HelpCircle}
-        title="Questions"
-        description="Every question a lesson can reference (video pop-quiz cues, quiz/boss_quiz/role_play question lists) - single source of truth, never duplicated into lesson content. Publish is blocked until every en/hi/hx field is filled. A lesson can't be published while it references a missing or unpublished question."
-        action={
-          canCreate && (
-            <Button asChild size="sm">
-              <Link href="/admin/questions/new">+ New question</Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Questions" }]}
+            icon={HelpCircle}
+            title="Questions"
+            action={
+              canCreate && (
+                <Button asChild size="sm">
+                  <Link href="/admin/questions/new">+ New question</Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <QuestionsTable
-        rows={paged.rows}
-        topics={topics.map((t) => ({ id: t.id, name: t.name }))}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={pageState.pageSize}
-        q={pageState.q}
-        sort={pageState.sort ?? "createdAt"}
-        dir={pageState.dir}
-        format={formatFilter}
-        status={statusFilter}
-        topicId={topicIdFilter}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <QuestionsTable
+          rows={paged.rows}
+          topics={topics.map((t) => ({ id: t.id, name: t.name }))}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={pageState.pageSize}
+          q={pageState.q}
+          sort={pageState.sort ?? "createdAt"}
+          dir={pageState.dir}
+          format={formatFilter}
+          status={statusFilter}
+          topicId={topicIdFilter}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

@@ -15,6 +15,7 @@ import {
 } from "@/components/admin/data-table";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
+import { glassPanel } from "@/components/admin/glass";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import type { LocalizedText } from "@/server/shared/schemas";
@@ -230,39 +231,41 @@ export function LessonsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        <DataTableSearchForm
-          pathname={pathname}
-          state={state}
-          placeholder="Search title…"
-          extraParams={extraParams}
-        />
-      </div>
-
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={BookOpen}
-          title={q ? "No lessons match your search" : "No lessons in this world yet"}
-          description={
-            q
-              ? `Nothing matched "${q}" - try a different title.`
-              : "A staff member with lesson.create can create the first one."
-          }
-        />
-      ) : (
-        <>
-          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
-          <DataTablePagination
+      <div className={glassPanel("space-y-4 p-5")}>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <DataTableSearchForm
             pathname={pathname}
             state={state}
-            page={page}
-            pageCount={pageCount}
-            total={total}
-            noun="lessons"
+            placeholder="Search title…"
             extraParams={extraParams}
           />
-        </>
-      )}
+        </div>
+
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title={q ? "No lessons match your search" : "No lessons in this world yet"}
+            description={
+              q
+                ? `Nothing matched "${q}" - try a different title.`
+                : "A staff member with lesson.create can create the first one."
+            }
+          />
+        ) : (
+          <>
+            <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
+            <DataTablePagination
+              pathname={pathname}
+              state={state}
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              noun="lessons"
+              extraParams={extraParams}
+            />
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}

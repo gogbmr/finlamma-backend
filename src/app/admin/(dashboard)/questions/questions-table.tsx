@@ -15,6 +15,7 @@ import {
 } from "@/components/admin/data-table";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
+import { glassPanel } from "@/components/admin/glass";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -231,90 +232,92 @@ export function QuestionsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Select
-            value={status ?? ALL_STATUSES}
-            onValueChange={(value) => {
-              const nextStatus = value === ALL_STATUSES ? null : (value as "draft" | "published");
-              router.push(questionsFilterHref(pathname, state, format, nextStatus, topicId));
-            }}
-          >
-            <SelectTrigger className="h-8 w-36 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((opt) => (
-                <SelectItem key={opt.label} value={opt.value ?? ALL_STATUSES}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={format ?? ALL_FORMATS}
-            onValueChange={(value) => {
-              const nextFormat = value === ALL_FORMATS ? null : (value as QuestionFormat);
-              router.push(questionsFilterHref(pathname, state, nextFormat, status, topicId));
-            }}
-          >
-            <SelectTrigger className="h-8 w-40 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FORMAT_OPTIONS.map((opt) => (
-                <SelectItem key={opt.label} value={opt.value ?? ALL_FORMATS}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={topicId ?? ALL_TOPICS}
-            onValueChange={(value) => {
-              const nextTopicId = value === ALL_TOPICS ? null : value;
-              router.push(questionsFilterHref(pathname, state, format, status, nextTopicId));
-            }}
-          >
-            <SelectTrigger className="h-8 w-40 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL_TOPICS}>All topics</SelectItem>
-              {topics.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  {t.name.en}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <div className={glassPanel("space-y-4 p-5")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <Select
+              value={status ?? ALL_STATUSES}
+              onValueChange={(value) => {
+                const nextStatus = value === ALL_STATUSES ? null : (value as "draft" | "published");
+                router.push(questionsFilterHref(pathname, state, format, nextStatus, topicId));
+              }}
+            >
+              <SelectTrigger className="h-8 w-36 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.label} value={opt.value ?? ALL_STATUSES}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={format ?? ALL_FORMATS}
+              onValueChange={(value) => {
+                const nextFormat = value === ALL_FORMATS ? null : (value as QuestionFormat);
+                router.push(questionsFilterHref(pathname, state, nextFormat, status, topicId));
+              }}
+            >
+              <SelectTrigger className="h-8 w-40 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FORMAT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.label} value={opt.value ?? ALL_FORMATS}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={topicId ?? ALL_TOPICS}
+              onValueChange={(value) => {
+                const nextTopicId = value === ALL_TOPICS ? null : value;
+                router.push(questionsFilterHref(pathname, state, format, status, nextTopicId));
+              }}
+            >
+              <SelectTrigger className="h-8 w-40 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_TOPICS}>All topics</SelectItem>
+                {topics.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name.en}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DataTableSearchForm pathname={pathname} state={state} placeholder="Search prompt…" />
         </div>
-        <DataTableSearchForm pathname={pathname} state={state} placeholder="Search prompt…" />
-      </div>
 
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={HelpCircle}
-          title={q ? "No questions match your search" : "No questions yet"}
-          description={
-            q
-              ? `Nothing matched "${q}" - try a different prompt.`
-              : "A staff member with question.create can create the first one."
-          }
-        />
-      ) : (
-        <>
-          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
-          <DataTablePagination
-            pathname={pathname}
-            state={state}
-            page={page}
-            pageCount={pageCount}
-            total={total}
-            noun="questions"
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={HelpCircle}
+            title={q ? "No questions match your search" : "No questions yet"}
+            description={
+              q
+                ? `Nothing matched "${q}" - try a different prompt.`
+                : "A staff member with question.create can create the first one."
+            }
           />
-        </>
-      )}
+        ) : (
+          <>
+            <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
+            <DataTablePagination
+              pathname={pathname}
+              state={state}
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              noun="questions"
+            />
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}

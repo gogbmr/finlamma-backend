@@ -2,6 +2,7 @@ import { Newspaper } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { getStoryDetailForAdmin } from "@/server/news/admin-queries";
@@ -29,36 +30,39 @@ export default async function NewsStoryViewPage({ params }: { params: Promise<{ 
   const topicName = topics.find((t) => t.id === story.topicId)?.name.en ?? "No topic";
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "News Desk", href: "/admin/news" },
-          { label: story.content.headline.en || "(untitled)" },
-        ]}
-        icon={Newspaper}
-        title={story.content.headline.en || "(untitled)"}
-        description="Read-only view. Status, topic and quality-grade override are edited inline from the News Desk pipeline table."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "News Desk", href: "/admin/news" },
+              { label: story.content.headline.en || "(untitled)" },
+            ]}
+            icon={Newspaper}
+            title={story.content.headline.en || "(untitled)"}
+          />
+        </div>
 
-      <NewsView
-        story={{
-          id: story.id,
-          category: story.category,
-          impact: story.impact,
-          content: story.content,
-          jargon: story.jargon ?? null,
-          outlet: story.outlet,
-          sourceUrl: story.sourceUrl,
-          qualityGrade: story.qualityGrade,
-          qualityGradeOverride: story.qualityGradeOverride,
-          featured: story.featured,
-          adviceLikeWarnings: story.adviceLikeWarnings,
-          status: story.status,
-          topicName,
-          publishedAt: story.publishedAt,
-        }}
-      />
-    </div>
+        <NewsView
+          story={{
+            id: story.id,
+            category: story.category,
+            impact: story.impact,
+            content: story.content,
+            jargon: story.jargon ?? null,
+            outlet: story.outlet,
+            sourceUrl: story.sourceUrl,
+            qualityGrade: story.qualityGrade,
+            qualityGradeOverride: story.qualityGradeOverride,
+            featured: story.featured,
+            adviceLikeWarnings: story.adviceLikeWarnings,
+            status: story.status,
+            topicName,
+            publishedAt: story.publishedAt,
+          }}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

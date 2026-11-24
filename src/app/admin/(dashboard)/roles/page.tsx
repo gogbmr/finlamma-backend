@@ -1,6 +1,7 @@
 import { KeyRound } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requireStaff } from "@/lib/auth";
 import { getRolesPageData } from "@/server/staff/service";
 import { RolesEditor } from "./roles-editor";
@@ -29,20 +30,23 @@ export default async function RolesPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Roles" }]}
-        icon={KeyRound}
-        title="Roles & Permissions"
-        description="Every job role staff can be assigned, and exactly which admin sections each one can view, create, edit or delete. A role can't be deleted while a staff member still holds it."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Roles" }]}
+            icon={KeyRound}
+            title="Roles & Permissions"
+          />
+        </div>
 
-      <RolesEditor
-        roles={roles.map((r) => ({ id: r.id, key: r.key, name: r.name, description: r.description }))}
-        permissions={permissions.map((p) => ({ id: p.id, key: p.key, description: p.description }))}
-        permissionKeysByRole={permissionKeysByRole}
-        viewerRoleId={viewer.roleId}
-      />
-    </div>
+        <RolesEditor
+          roles={roles.map((r) => ({ id: r.id, key: r.key, name: r.name, description: r.description }))}
+          permissions={permissions.map((p) => ({ id: p.id, key: p.key, description: p.description }))}
+          permissionKeysByRole={permissionKeysByRole}
+          viewerRoleId={viewer.roleId}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

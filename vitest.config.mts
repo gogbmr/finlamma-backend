@@ -6,6 +6,11 @@ export default defineConfig({
   plugins: [tsconfigPaths({ projects: ["./tsconfig.json"] }), react()],
   test: {
     environment: "node",
+    // Mocks next/font/google globally - its real exports only work inside
+    // Next's own build pipeline, so any test that transitively imports a
+    // module calling one (first: src/app/admin/(dashboard)/worlds/glass.tsx)
+    // would otherwise crash with "X is not a function". See src/test/setup.ts.
+    setupFiles: ["./src/test/setup.ts"],
     // Belt-and-braces: exclude any stray worktrees or tool state nested
     // inside the repo (e.g. .kilo/) in addition to vitest's own defaults
     // (node_modules, dist, .git, ...), so a leftover checkout there never

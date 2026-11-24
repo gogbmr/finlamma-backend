@@ -8,6 +8,7 @@ import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getWorldEditorData } from "@/server/worlds/service";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { WorldsTable } from "./worlds-table";
 
 type WorldRow = Awaited<ReturnType<typeof getWorldEditorData>>[number];
@@ -80,49 +81,52 @@ export default async function WorldsPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Worlds" },
-        ]}
-        icon={Globe2}
-        title="Worlds"
-        description="Worlds a learner clears in sequential order - staff decide how many exist. Publish is blocked until every en/hi/hx field is filled, and until the world's mentor is itself published. A mentor can't be unpublished while a published world still references it. A world can only be deleted once it has no lessons."
-        action={
-          canCreate && (
-            <Button asChild size="sm">
-              <Link href="/admin/worlds/new">+ New world</Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Worlds" },
+            ]}
+            icon={Globe2}
+            title="Worlds"
+            action={
+              canCreate && (
+                <Button asChild size="sm">
+                  <Link href="/admin/worlds/new">+ New world</Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <WorldsTable
-        rows={paged.rows.map((w) => ({
-          id: w.id,
-          order: w.order,
-          code: w.code,
-          title: w.title,
-          status: w.status,
-          mentorId: w.mentorId,
-        }))}
-        mentors={mentors.map((m) => ({
-          id: m.id,
-          key: m.key,
-          name: m.name,
-        }))}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        status={statusFilter}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <WorldsTable
+          rows={paged.rows.map((w) => ({
+            id: w.id,
+            order: w.order,
+            code: w.code,
+            title: w.title,
+            status: w.status,
+            mentorId: w.mentorId,
+          }))}
+          mentors={mentors.map((m) => ({
+            id: m.id,
+            key: m.key,
+            name: m.name,
+          }))}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          status={statusFilter}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

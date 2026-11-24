@@ -14,6 +14,7 @@ import {
 } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { glassPanel } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 import type { LocalizedText } from "@/server/shared/schemas";
 
@@ -109,7 +110,7 @@ export function CoachNotesTable({
   );
 
   return (
-    <div className="space-y-3">
+    <div className={glassPanel("space-y-4 p-5")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-4 text-sm">
           {STATUS_OPTIONS.map((opt) => (

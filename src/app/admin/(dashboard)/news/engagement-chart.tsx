@@ -6,6 +6,8 @@
 // admin widget. Values are always direct-labeled (not hover-only) since
 // staff read this as a KPI table as much as a shape, and 7 points is few
 // enough that labeling every one doesn't clutter.
+import { glassPanel } from "@/components/admin/glass";
+
 const CHART_HEIGHT = 96;
 const BAR_WIDTH = 28;
 const BAR_GAP = 12;
@@ -22,7 +24,7 @@ export function EngagementChart({ daily, averagePct }: { daily: EngagementDay[];
   const avgY = CHART_HEIGHT - (averagePct / 100) * CHART_HEIGHT;
 
   return (
-    <div className="space-y-2 rounded-lg border border-border bg-card p-4">
+    <div className={glassPanel("space-y-2 p-4")}>
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-foreground">7-day Pulse Check engagement</h2>
         <span className="text-xs text-muted-foreground">

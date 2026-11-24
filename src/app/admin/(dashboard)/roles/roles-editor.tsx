@@ -8,7 +8,9 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { KeyRound } from "lucide-react";
+import { Info, KeyRound, ShieldCheck } from "lucide-react";
+import { GLASS_PANEL, GlassIconChip } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import {
   createRoleAction,
   deleteRoleAction,
@@ -200,9 +202,12 @@ function NewRoleForm({
   const [description, setDescription] = useState("");
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
-      <p className="text-sm font-semibold text-foreground">New role</p>
-      <div className="grid grid-cols-2 gap-3">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
+      <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+        <GlassIconChip icon={KeyRound} className="h-6 w-6 rounded-md" />
+        New role
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Label>Key</Label>
           <Input
@@ -280,16 +285,17 @@ function RoleDetail({
 
   return (
     <div className="space-y-6">
-      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <GlassIconChip icon={Info} className="h-6 w-6 rounded-md" />
             {role.name} <span className="font-mono text-xs text-muted-foreground">({role.key})</span>
           </p>
           <Button type="button" variant="outline" size="sm" disabled={isPending} onClick={onRequestDelete}>
             Delete role
           </Button>
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
             <Label>Name</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} disabled={isPending} />
@@ -309,9 +315,12 @@ function RoleDetail({
         </Button>
       </div>
 
-      <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
         <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">Permissions</p>
+          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <GlassIconChip icon={ShieldCheck} className="h-6 w-6 rounded-md" />
+            Permissions
+          </p>
           <Button type="button" size="sm" disabled={isPending || !isDirty} onClick={savePermissions}>
             {isPending ? "Saving…" : "Save permissions"}
           </Button>

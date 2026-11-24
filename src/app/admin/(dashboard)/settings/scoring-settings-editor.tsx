@@ -10,6 +10,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LessonFlowScoring } from "@/server/settings/schemas";
 import { updateLessonFlowScoringAction } from "./actions";
 
@@ -85,14 +87,14 @@ export function ScoringSettingsEditor({ scoring }: { scoring: LessonFlowScoring 
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "max-w-2xl space-y-4 p-4")}>
       <h2 className="text-sm font-semibold text-foreground">Lesson Flow scoring</h2>
       <p className="text-xs text-muted-foreground">
         Video pop quiz (LF-12) and lesson practice quiz (LF-22) each have their own base XP; speed
         bonus, combo and fever mode are shared.
       </p>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <NumberField
           label="Pop quiz - correct XP"
           value={form.popQuiz.correctXp}

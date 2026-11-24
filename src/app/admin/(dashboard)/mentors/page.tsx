@@ -2,6 +2,7 @@ import { Users } from "lucide-react";
 import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
@@ -71,34 +72,37 @@ export default async function MentorsPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Mentors" }]}
-        icon={Users}
-        title="Mentors"
-        description="Any number of Lamma mentors, assigned to worlds from the World editor (mentorId) - one mentor can cover many worlds. Publish is blocked until every en/hi/hx field is filled."
-        action={
-          canCreate && (
-            <Button asChild size="sm">
-              <Link href="/admin/mentors/new">+ New mentor</Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Mentors" }]}
+            icon={Users}
+            title="Mentors"
+            action={
+              canCreate && (
+                <Button asChild size="sm">
+                  <Link href="/admin/mentors/new">+ New mentor</Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <MentorsTable
-        rows={paged.rows.map((m) => ({ id: m.id, key: m.key, order: m.order, name: m.name, status: m.status }))}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        status={statusFilter}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <MentorsTable
+          rows={paged.rows.map((m) => ({ id: m.id, key: m.key, order: m.order, name: m.name, status: m.status }))}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          status={statusFilter}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

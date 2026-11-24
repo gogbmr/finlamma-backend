@@ -14,6 +14,7 @@ import {
 } from "@/components/admin/data-table";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { glassPanel } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 
 type ActiveFilter = "active" | "inactive" | null;
@@ -124,7 +125,7 @@ export function InstrumentsTable({
   );
 
   return (
-    <div className="space-y-3">
+    <div className={glassPanel("space-y-4 p-5")}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-4 text-sm">
           {ACTIVE_OPTIONS.map((opt) => (

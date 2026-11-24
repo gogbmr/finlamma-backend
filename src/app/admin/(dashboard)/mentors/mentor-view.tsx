@@ -1,6 +1,7 @@
 import { Link2, MessageSquareText } from "lucide-react";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GLASS_PANEL, GlassIconChip } from "@/components/admin/glass";
 import type { LocalizedText } from "@/server/shared/schemas";
 import type { MentorRow, UsedByWorld } from "./mentor-editor";
 
@@ -23,7 +24,7 @@ function InfoTile({ label, value }: { label: string; value: React.ReactNode }) {
 
 function LocalizedTextCard({ label, value }: { label: string; value: LocalizedText }) {
   return (
-    <Card>
+    <Card className={GLASS_PANEL}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{label}</CardTitle>
       </CardHeader>
@@ -44,7 +45,7 @@ function LocalizedTextCard({ label, value }: { label: string; value: LocalizedTe
 export function MentorView({ mentor }: { mentor: MentorRow }) {
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-start justify-between gap-3 pb-3">
           <div className="flex items-start gap-3">
             {mentor.artUrl ? (
@@ -72,9 +73,9 @@ export function MentorView({ mentor }: { mentor: MentorRow }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-center gap-2 pb-2">
-          <MessageSquareText className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <GlassIconChip icon={MessageSquareText} className="h-7 w-7 rounded-md" />
           <CardTitle className="text-sm">Persona / voice notes (Doubt Zone AI chat)</CardTitle>
         </CardHeader>
         <CardContent>
@@ -84,9 +85,9 @@ export function MentorView({ mentor }: { mentor: MentorRow }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-center gap-2 pb-2">
-          <Link2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+          <GlassIconChip icon={Link2} className="h-7 w-7 rounded-md" />
           <CardTitle className="text-sm">Relations</CardTitle>
         </CardHeader>
         <CardContent>

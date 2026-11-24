@@ -1,6 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { requireStaff } from "@/lib/auth";
 import { readDateRangeFilter } from "@/lib/admin/date-range";
 import { roleHasPermission } from "@/server/staff/repo";
@@ -63,33 +64,36 @@ export default async function ConsentReviewPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Consent" }]}
-        icon={ShieldCheck}
-        title="Parental consent"
-        description="Read-only status for every under-18 account's parental-consent request. This view cannot approve, deny or bypass consent - only the parent can, via their emailed link. Parent contact details are hidden by default; viewing them is logged. Deleted accounts are hidden by default and their contact details are never revealable."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Consent" }]}
+            icon={ShieldCheck}
+            title="Parental consent"
+          />
+        </div>
 
-      {canCorrectDob && <DobCorrectionForm />}
+        {canCorrectDob && <DobCorrectionForm />}
 
-      <ConsentReviewTable
-        rows={paged.rows.map((r) => ({
-          userId: r.userId,
-          displayName: r.lastInitial ? `${r.firstName ?? "—"} ${r.lastInitial}.` : (r.firstName ?? "—"),
-          status: r.status,
-          requestedAt: r.createdAt.toISOString(),
-          actedAt: r.actedAt ? r.actedAt.toISOString() : null,
-          deleted: r.deletedAt !== null,
-        }))}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        status={statusFilter}
-        includeDeleted={includeDeleted}
-        from={params.from && !Array.isArray(params.from) ? params.from : ""}
-        to={params.to && !Array.isArray(params.to) ? params.to : ""}
-      />
-    </div>
+        <ConsentReviewTable
+          rows={paged.rows.map((r) => ({
+            userId: r.userId,
+            displayName: r.lastInitial ? `${r.firstName ?? "—"} ${r.lastInitial}.` : (r.firstName ?? "—"),
+            status: r.status,
+            requestedAt: r.createdAt.toISOString(),
+            actedAt: r.actedAt ? r.actedAt.toISOString() : null,
+            deleted: r.deletedAt !== null,
+          }))}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          status={statusFilter}
+          includeDeleted={includeDeleted}
+          from={params.from && !Array.isArray(params.from) ? params.from : ""}
+          to={params.to && !Array.isArray(params.to) ? params.to : ""}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

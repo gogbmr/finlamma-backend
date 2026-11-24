@@ -1,10 +1,13 @@
 "use client";
 
+import { CalendarClock } from "lucide-react";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { GLASS_PANEL, GlassIconChip } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { correctDateOfBirthAction } from "./actions";
 
 // App asks batch, section C3 - consent.edit (super_admin only).
@@ -32,17 +35,20 @@ export function DobCorrectionForm() {
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
-      <div>
-        <p className="text-sm font-medium text-foreground">Correct a learner&apos;s date of birth</p>
-        <p className="text-xs text-muted-foreground">
-          For a genuine mistake only - a date resulting in an under-13 account is rejected and that
-          account is immediately queued for deletion, the same as a brand-new under-13 signup.
-          Every correction is logged with a required reason.
-        </p>
+    <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
+      <div className="flex items-start gap-2">
+        <GlassIconChip icon={CalendarClock} className="h-6 w-6 rounded-md" />
+        <div>
+          <p className="text-sm font-medium text-foreground">Correct a learner&apos;s date of birth</p>
+          <p className="text-xs text-muted-foreground">
+            For a genuine mistake only - a date resulting in an under-13 account is rejected and that
+            account is immediately queued for deletion, the same as a brand-new under-13 signup.
+            Every correction is logged with a required reason.
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Account id</Label>
           <Input value={userId} onChange={(e) => setUserId(e.target.value)} disabled={isPending} placeholder="uuid" />

@@ -7,6 +7,7 @@ import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
 import { getLessonEditorData } from "@/server/lessons/service";
 import { getWorldEditorData } from "@/server/worlds/service";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { WorldForm } from "../../world-editor";
 
 export default async function EditWorldPage({ params }: { params: Promise<{ id: string }> }) {
@@ -45,36 +46,40 @@ export default async function EditWorldPage({ params }: { params: Promise<{ id: 
     }));
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Worlds", href: "/admin/worlds" },
-          { label: world.title.en || "(untitled)", href: `/admin/worlds/${world.id}` },
-          { label: "Edit" },
-        ]}
-        icon={Globe2}
-        title={`Edit ${world.title.en || "(untitled)"}`}
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Worlds", href: "/admin/worlds" },
+              { label: world.title.en || "(untitled)", href: `/admin/worlds/${world.id}` },
+              { label: "Edit" },
+            ]}
+            icon={Globe2}
+            title={`Edit ${world.title.en || "(untitled)"}`}
+          />
+        </div>
 
-      <WorldForm
-        world={{
-          id: world.id,
-          order: world.order,
-          code: world.code,
-          title: world.title,
-          tagline: world.tagline,
-          theme: world.theme,
-          displayXpTarget: world.displayXpTarget,
-          mentorId: world.mentorId,
-          status: world.status,
-          artUrl: world.artUrl,
-        }}
-        mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
-        doubtZoneLessons={doubtZoneLessons}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <WorldForm
+          world={{
+            id: world.id,
+            order: world.order,
+            code: world.code,
+            title: world.title,
+            tagline: world.tagline,
+            theme: world.theme,
+            displayXpTarget: world.displayXpTarget,
+            mentorId: world.mentorId,
+            status: world.status,
+            artUrl: world.artUrl,
+          }}
+          mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
+          doubtZoneLessons={doubtZoneLessons}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

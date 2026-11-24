@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/cn";
+import { GLASS_PANEL } from "@/components/admin/glass";
 import { MAX_HALT_REASON_LENGTH } from "@/server/trading/schemas";
 import { setFeedModeAction, setGlobalHaltAction } from "./actions";
 
@@ -92,7 +93,7 @@ export function FeedHaltControl({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Price feed control</h2>
         <p className="text-xs text-muted-foreground">
@@ -101,7 +102,7 @@ export function FeedHaltControl({
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {FEED_MODES.map((mode) => (
           <Button
             key={mode}
@@ -116,7 +117,7 @@ export function FeedHaltControl({
         ))}
       </div>
 
-      <div className="flex items-center justify-between gap-4 border-t border-border pt-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-4">
         <div>
           <p className="text-sm font-medium text-foreground">Global trading halt</p>
           <p className="text-xs text-muted-foreground">
@@ -134,7 +135,7 @@ export function FeedHaltControl({
       </div>
 
       <AlertDialog open={pendingFeedMode !== null} onOpenChange={(open) => !open && setPendingFeedMode(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               Change feed mode to {pendingFeedMode ? FEED_MODE_LABEL[pendingFeedMode] : ""}?
@@ -158,7 +159,7 @@ export function FeedHaltControl({
       </AlertDialog>
 
       <AlertDialog open={haltConfirmOpen} onOpenChange={setHaltConfirmOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>{globalHalt ? "Resume trading for every learner?" : "Halt all trading for every learner?"}</AlertDialogTitle>
             <AlertDialogDescription>

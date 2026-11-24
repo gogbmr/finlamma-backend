@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { ADMIN_LANDING_PRIORITY } from "@/components/admin/admin-nav";
 import { getStaffMember } from "@/lib/auth";
-import { computeAdminNavVisibility } from "@/lib/admin/nav-visibility";
+import { ADMIN_LANDING_PRIORITY, computeAdminNavVisibility } from "@/lib/admin/nav-visibility";
 
 // Lands a signed-in staff member on the first section their role can
 // actually see, instead of a hardcoded page they might not have permission

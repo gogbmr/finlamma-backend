@@ -12,6 +12,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { GLASS_PANEL, GLASS_PANEL_SUBTLE } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import type { LegalDocumentContent } from "@/server/legal/schemas";
 import { publishLegalDocumentAction, saveLegalDraftAction } from "./actions";
 
@@ -107,7 +109,7 @@ function DocumentEditor({ document }: { document: DocumentState }) {
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         {document.published ? (
           <span>
@@ -135,7 +137,7 @@ function DocumentEditor({ document }: { document: DocumentState }) {
       ))}
 
       {document.draft && (
-        <div className="space-y-2 rounded-md border border-border bg-muted/50 p-3">
+        <div className={cn(GLASS_PANEL_SUBTLE, "space-y-2 p-3")}>
           <p className="text-sm font-medium text-foreground">
             Does this change require every already-consented minor&apos;s parent to re-approve?
           </p>

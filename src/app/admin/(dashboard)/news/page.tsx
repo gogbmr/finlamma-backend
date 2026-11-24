@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/admin/empty-state";
 import { Forbidden } from "@/components/admin/forbidden";
 import { KpiTileGrid } from "@/components/admin/kpi-tile";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { readPageParams } from "@/lib/admin/paginate";
@@ -143,16 +144,18 @@ export default async function NewsDeskPage({
       : "PARTIAL";
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "News Desk" },
-        ]}
-        icon={Newspaper}
-        title="News Desk"
-        description="ingest → simplify → quiz → publish. Every AI-drafted story is a draft until a staff member with news.delete toggles it live - nothing here reaches a learner automatically."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "News Desk" },
+            ]}
+            icon={Newspaper}
+            title="News Desk"
+          />
+        </div>
 
       <div className="flex items-center gap-2">
         <Badge
@@ -259,6 +262,7 @@ export default async function NewsDeskPage({
           View full activity log
         </Link>
       </div>
-    </div>
+      </div>
+    </AdminGlassBackground>
   );
 }

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { glassPanel } from "@/components/admin/glass";
 import { updateNewsQuizGeneratorSettingsAction } from "./actions";
 
 type Format =
@@ -75,7 +76,7 @@ export function QuizGeneratorSettingsEditor({ settings }: { settings: QuizGenera
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={glassPanel("max-w-2xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Pulse Check quiz generator</h2>
         <p className="text-xs text-muted-foreground">
@@ -84,7 +85,7 @@ export function QuizGeneratorSettingsEditor({ settings }: { settings: QuizGenera
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="space-y-1">
           <Label>Question count (4-20)</Label>
           <Input
@@ -113,7 +114,7 @@ export function QuizGeneratorSettingsEditor({ settings }: { settings: QuizGenera
 
       <div className="space-y-1.5">
         <Label>Enabled formats</Label>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {ALL_FORMATS.map((format) => (
             <label key={format} className="flex items-center gap-2 text-sm text-foreground">
               <input

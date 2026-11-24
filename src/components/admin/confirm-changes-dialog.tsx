@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { buttonVariants } from "@/components/ui/button";
+import { GLASS_PANEL } from "@/components/admin/glass";
 import { cn } from "@/lib/cn";
 
 // Task 7: a single shared "review before you save" dialog for every money
@@ -79,7 +80,7 @@ export function ConfirmChangesDialog({
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent className={GLASS_PANEL}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           {/* asChild + a <div> here, not the default <p> - AlertDialogDescription

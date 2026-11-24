@@ -1,6 +1,7 @@
 import { TrendingUp } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
@@ -73,35 +74,38 @@ export default async function InstrumentsPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Instruments" }]}
-        icon={TrendingUp}
-        title="Instruments"
-        description="The NSE stocks learners can paper-trade. No draft/publish split - edits apply immediately, same trust tier as a content hotfix. Halting a symbol lives in the Ops console (Phase 4 Checkpoint 9), not here."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Instruments" }]}
+            icon={TrendingUp}
+            title="Instruments"
+          />
+        </div>
 
-      <InstrumentEditor
-        instruments={paged.rows}
-        canCreate={canCreate}
-        canEdit={canEdit}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        active={activeFilter}
-      />
+        <InstrumentEditor
+          instruments={paged.rows}
+          canCreate={canCreate}
+          canEdit={canEdit}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          active={activeFilter}
+        />
 
-      <div className="space-y-3 border-t border-border pt-6">
-        <p className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Market holidays</p>
-        <p className="text-sm text-muted-foreground">
-          NSE trading holidays - drives the market-hours check the order pad uses.
-        </p>
-        <HolidayEditor holidays={holidays} canEdit={canEdit} />
+        <div className="space-y-3 border-t border-border pt-6">
+          <p className="text-xs font-semibold tracking-widest text-muted-foreground uppercase">Market holidays</p>
+          <p className="text-sm text-muted-foreground">
+            NSE trading holidays - drives the market-hours check the order pad uses.
+          </p>
+          <HolidayEditor holidays={holidays} canEdit={canEdit} />
+        </div>
       </div>
-    </div>
+    </AdminGlassBackground>
   );
 }

@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { loadLedgerPageAction } from "./actions";
 
 type LedgerRow = {
@@ -46,7 +48,7 @@ export function UserLedgerTable({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">User trading ledger</h2>
         <p className="text-xs text-muted-foreground">
