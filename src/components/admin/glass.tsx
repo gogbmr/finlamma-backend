@@ -22,15 +22,27 @@ import { cn } from "@/lib/cn";
 // glass edge" look a single shadow can't give. backdrop-saturate-150 (not
 // the reference's 180%) and modest opacity stops - kept tasteful for a
 // fintech admin tool, not a flashy consumer showcase.
-export const GLASS_PANEL =
-  "rounded-2xl border border-white/35 bg-gradient-to-br from-brand-violet-600/16 via-white/20 to-brand-violet-400/14 shadow-[0_8px_32px_rgba(76,34,187,0.18),inset_0_1px_0_rgba(255,255,255,0.4)] backdrop-blur-xl backdrop-saturate-150";
+//
+// As of the shell/responsive redesign (phase 1), these point at real CSS
+// classes in src/app/globals.css (.admin-glass-panel/-subtle) instead of an
+// inline Tailwind utility string - same visual recipe, byte-for-byte, just
+// moved so it can carry prefers-reduced-transparency and
+// no-backdrop-filter-support fallbacks, which Tailwind v4 has no built-in
+// variant for. Every page already using GLASS_PANEL/glassPanel(...) picks
+// up those fallbacks automatically, with no per-page change needed.
+export const GLASS_PANEL = "admin-glass-panel";
 
 // A slightly less prominent variant for panels nested inside another glass
 // panel (a sticky save bar, a reorder box, a KPI tile inside a console) -
 // same recipe, lower opacity stops so two stacked blurred/tinted layers
 // don't double up into mud.
-export const GLASS_PANEL_SUBTLE =
-  "rounded-xl border border-white/30 bg-gradient-to-br from-brand-violet-600/10 via-white/30 to-brand-violet-400/8 shadow-[inset_0_1px_0_rgba(255,255,255,0.35)] backdrop-blur-lg backdrop-saturate-150";
+export const GLASS_PANEL_SUBTLE = "admin-glass-panel-subtle";
+
+// Chrome level - the sidebar and top bar (phase 1, new). More opaque than
+// GLASS_PANEL above: permanent navigation needs to stay legible regardless
+// of what's scrolling behind it, so this trades some transparency for
+// reliability rather than reusing the content-panel recipe as-is.
+export const GLASS_CHROME = "admin-glass-chrome";
 
 export function glassPanel(className?: string) {
   return cn(GLASS_PANEL, className);
@@ -38,6 +50,10 @@ export function glassPanel(className?: string) {
 
 export function glassPanelSubtle(className?: string) {
   return cn(GLASS_PANEL_SUBTLE, className);
+}
+
+export function glassChrome(className?: string) {
+  return cn(GLASS_CHROME, className);
 }
 
 // Font for the whole admin dashboard, scoped the same way it was during

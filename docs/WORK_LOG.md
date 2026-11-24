@@ -180,3 +180,58 @@ files / 3010 tests passing, `pnpm build` clean (the new route shows up as dynami
 other admin page).
 
 **Status:** done, not yet committed - waiting for your browser check and "push".
+
+## 2026-11-24 — Admin glassmorphism redesign, Phase 1: shell (sidebar/top bar) + responsive nav
+
+**Asked:** Redesign the admin UI with a modern glassmorphism style (Finlamma's own palette only),
+fully responsive. Phase 1 scope: the admin shell (sidebar + top bar + page background) and the
+`/admin` landing/Analytics dashboard, using the `frontend-design` skill. Page content itself
+(worlds/lessons/analytics/etc.) already got a liquid-glass treatment in an earlier session - this
+phase extends the same system to the shell, which was deliberately left untouched before, and adds
+real responsiveness (icon-only rail collapse on desktop, a slide-in drawer below `lg`) that didn't
+exist before either. One new package approved: `@radix-ui/react-dialog` (same Radix family as the
+existing `react-alert-dialog`), used to build a small shadcn-style `Sheet` for the drawer so its
+focus trap/Esc/overlay/scroll-lock didn't need hand-rolling.
+
+**Files changed:**
+- `src/app/globals.css` — additive only: new `.admin-glass-panel`/`.admin-glass-panel-subtle`/
+  `.admin-glass-chrome` classes (same recipe already live via `glass.tsx`, now real CSS classes
+  so they can carry `prefers-reduced-transparency`/no-`backdrop-filter`-support fallbacks, which
+  Tailwind v4 has no built-in variant for) - no existing token or rule touched.
+- `src/components/admin/glass.tsx` — `GLASS_PANEL`/`GLASS_PANEL_SUBTLE` now point at the new CSS
+  classes instead of inline Tailwind utility strings (every already-converted admin page picks up
+  the fallbacks automatically, no per-page change); added `GLASS_CHROME`/`glassChrome()` for the
+  shell.
+- `src/components/admin/sheet.tsx` (new) — shadcn-style Sheet on `@radix-ui/react-dialog`,
+  admin-scoped (not `src/components/ui/`); hand-written slide/fade transitions keyed off Radix's
+  `data-state` (no `tailwindcss-animate` plugin is installed).
+- `src/components/admin/mobile-nav-drawer.tsx` (new) — the nav drawer (hamburger trigger + Sheet),
+  closes on navigation via React's render-time "reset state on prop change" pattern (not a
+  `useEffect`, to avoid the same cascading-render lint rule `admin-nav.tsx`'s own comments
+  reference) - this was caught and fixed after a first attempt tripped that exact rule.
+- `src/components/admin/admin-nav.tsx` — desktop icon-only rail collapse, own localStorage key
+  (`finlamma-admin-nav-rail-collapsed`), same hydration-safe `useSyncExternalStore` pattern as the
+  existing per-group collapse (fixed server snapshot, cached client snapshot); CSS-only
+  hover/focus tooltips on rail items (no tooltip primitive existed, none was approved to add);
+  `AdminNavStrip` (the old horizontal mobile strip) removed, replaced by the drawer reusing
+  `AdminSidebar` itself (`allowRailCollapse={false}` there, so the drawer always shows full labels
+  regardless of the desktop rail preference, and the active item's group is always force-expanded
+  the same way it already was on desktop).
+- `src/app/admin/(dashboard)/layout.tsx` — sidebar/top bar now `GLASS_CHROME`; header + the
+  trading-halt banner wrapped in one `sticky top-0 z-30` unit (so their combined height is always
+  what content scrolls under, no hardcoded offset to keep in sync); hamburger button
+  (`aria-label="Open navigation menu"`) wired to the new drawer; admin-wide Inter font class now
+  applied at the shell root too (previously only inside each page's own content wrapper).
+- `package.json`/`pnpm-lock.yaml` — added `@radix-ui/react-dialog` (approved).
+
+**Not touched:** `src/components/ui/*` (shared with the parent-facing `/consent/*` pages and the
+homepage - confirmed by grep before starting, zero files there in the diff), nav visibility/
+permission logic (purely visual), any existing `globals.css` rule or token.
+
+**Verified:** `pnpm typecheck` clean; `pnpm lint` at the same pre-existing baseline (1 unrelated
+error, 14 warnings) - one new error did appear mid-way (`set-state-in-effect` on the drawer's
+close-on-navigate logic) and was fixed before finishing, not left for later; `pnpm vitest run`
+scoped to `src/app/admin/(dashboard)` + `src/components/admin` (51 files / 364 tests) and the full
+suite (291 files / 3049 tests, `check-test-count` floor OK); `pnpm build` clean.
+
+**Status:** done, not yet committed - waiting for your browser check.

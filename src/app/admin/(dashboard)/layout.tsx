@@ -9,11 +9,10 @@ import { withTimingAndTimeout } from "@/lib/admin-diagnostics";
 import { computeAdminNavVisibility } from "@/lib/admin/nav-visibility";
 import { getRoleById } from "@/server/staff/repo";
 import { getMarketControls } from "@/server/trading/service";
-import {
-  AdminNavStrip,
-  AdminSidebar,
-  type AdminNavVisibility,
-} from "@/components/admin/admin-nav";
+import { AdminSidebar, type AdminNavVisibility } from "@/components/admin/admin-nav";
+import { MobileNavDrawer } from "@/components/admin/mobile-nav-drawer";
+import { ADMIN_GLASS_FONT_CLASS, GLASS_CHROME } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 
 // Deliberate, permanent safety net - not left over from the D72 incident
 // investigation (docs/STATUS.md 2026-10-06/07 has the full account). A
@@ -145,10 +144,15 @@ export default async function DashboardLayout({
     .catch(() => false);
 
   return (
-    <div className="bg-background min-h-screen">
+    <div className={cn(ADMIN_GLASS_FONT_CLASS, "bg-background min-h-screen")}>
       <Toaster richColors position="top-right" />
       <div className="flex min-h-screen">
-        <aside className="border-border bg-card hidden w-60 shrink-0 border-r px-4 py-6 lg:flex lg:flex-col">
+        <aside
+          className={cn(
+            GLASS_CHROME,
+            "hidden w-60 shrink-0 flex-col px-4 py-6 lg:flex",
+          )}
+        >
           <div className="mb-6 flex items-center gap-2 px-3">
             <span className="text-brand-violet-900 text-lg font-bold">
               FinLamma
@@ -160,37 +164,52 @@ export default async function DashboardLayout({
           <AdminSidebar visibility={visibility} />
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="border-border bg-card flex items-center justify-between gap-4 border-b px-4 py-3 lg:px-6">
-            <span className="text-brand-violet-900 text-base font-bold lg:hidden">
-              FinLamma
-            </span>
-            <div className="ml-auto flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-foreground font-mono text-xs">
-                  {staff.clerkUserId}
-                </p>
-                <p className="text-muted-foreground text-xs">
-                  {role?.name ?? "Staff"}
-                </p>
-              </div>
-              <UserButton />
-            </div>
-          </header>
-          <AdminNavStrip visibility={visibility} />
-          {globalHalt && (
-            <div className="bg-destructive text-destructive-foreground flex items-center justify-center gap-2 px-4 py-2 text-center text-sm font-semibold">
-              GLOBAL TRADING HALT ACTIVE — no learner can place an order right
-              now.
-              {visibility.opsConsole && (
-                <Link
-                  href="/admin/ops"
-                  className="underline underline-offset-2"
-                >
-                  Resolve in Ops Console
-                </Link>
+          {/* Header + halt banner stick together as one unit (sticky on
+              this wrapper, not each element separately) so their combined
+              height is always what content scrolls under - no hardcoded
+              pixel offset to keep in sync if either one's height changes
+              at a given breakpoint. z-30 keeps it above page content but
+              below the mobile drawer's overlay/content (z-50). */}
+          <div className="sticky top-0 z-30">
+            <header
+              className={cn(
+                GLASS_CHROME,
+                "flex items-center justify-between gap-4 px-4 py-3 lg:px-6",
               )}
-            </div>
-          )}
+            >
+              <div className="flex items-center gap-2">
+                <MobileNavDrawer visibility={visibility} />
+                <span className="text-brand-violet-900 text-base font-bold lg:hidden">
+                  FinLamma
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-3">
+                <div className="hidden text-right sm:block">
+                  <p className="text-foreground font-mono text-xs">
+                    {staff.clerkUserId}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    {role?.name ?? "Staff"}
+                  </p>
+                </div>
+                <UserButton />
+              </div>
+            </header>
+            {globalHalt && (
+              <div className="bg-destructive text-destructive-foreground flex items-center justify-center gap-2 px-4 py-2 text-center text-sm font-semibold">
+                GLOBAL TRADING HALT ACTIVE — no learner can place an order right
+                now.
+                {visibility.opsConsole && (
+                  <Link
+                    href="/admin/ops"
+                    className="underline underline-offset-2"
+                  >
+                    Resolve in Ops Console
+                  </Link>
+                )}
+              </div>
+            )}
+          </div>
           <main className="flex-1 p-4 lg:p-6">{children}</main>
         </div>
       </div>

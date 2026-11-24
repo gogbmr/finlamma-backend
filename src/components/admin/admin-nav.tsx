@@ -5,6 +5,8 @@ import {
   BarChart3,
   BookOpen,
   ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
   FileText,
   Flag,
   Gauge,
@@ -125,7 +127,21 @@ function isItemActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(href + "/");
 }
 
-function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
+// `rail` renders an icon-only link with a CSS-only hover/focus tooltip
+// (no tooltip primitive exists in this codebase yet, and none was approved
+// to add one - group-hover/group-focus-visible on a plain absolutely-
+// positioned span does the whole job without a dependency). Only the
+// desktop sidebar ever passes `rail` - the mobile drawer always renders
+// full labeled links, same as before.
+function NavLink({
+  item,
+  pathname,
+  rail = false,
+}: {
+  item: NavItem;
+  pathname: string;
+  rail?: boolean;
+}) {
   const active = isItemActive(pathname, item.href);
   const Icon = item.icon;
   return (
@@ -133,14 +149,24 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+        "group relative flex items-center gap-2.5 rounded-md text-sm font-medium transition-colors",
+        rail ? "justify-center px-2 py-2" : "px-3 py-2",
         active
           ? "bg-primary text-primary-foreground"
           : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
       )}
     >
       <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      {item.label}
+      {rail ? (
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute left-full z-50 ml-2 rounded-md border border-border bg-popover px-2 py-1 text-xs whitespace-nowrap text-popover-foreground opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 motion-reduce:transition-none"
+        >
+          {item.label}
+        </span>
+      ) : (
+        item.label
+      )}
     </Link>
   );
 }
@@ -224,82 +250,141 @@ function useCollapsedGroups() {
   return { collapsed, toggle: toggleCollapsedGroup };
 }
 
-export function AdminSidebar({ visibility }: { visibility: AdminNavVisibility }) {
+// Desktop-only "icon rail" collapse for the whole sidebar width (distinct
+// from the per-group collapse above - its own localStorage key, its own
+// cache) - same hydration-safe useSyncExternalStore shape as
+// useCollapsedGroups: getServerSnapshot always returns the fixed "not
+// collapsed" default, so SSR/hydration never touches localStorage and the
+// server-rendered markup always matches the client's first paint; the
+// stored preference is only applied as a second, client-only read. Never
+// used by the mobile drawer (AdminSidebar's `allowRailCollapse={false}`
+// there) - a drawer is already as narrow as it'll get, collapsing it
+// further to icons would just make a cramped drawer worse.
+const NAV_RAIL_STORAGE_KEY = "finlamma-admin-nav-rail-collapsed";
+
+let cachedRailRaw: string | null = null;
+let cachedRailSnapshot = false;
+const railListeners = new Set<() => void>();
+
+function readRawRailCollapsed(): string | null {
+  try {
+    return window.localStorage.getItem(NAV_RAIL_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function getRailCollapsedSnapshot(): boolean {
+  const raw = readRawRailCollapsed();
+  if (raw !== cachedRailRaw) {
+    cachedRailRaw = raw;
+    cachedRailSnapshot = raw === "1";
+  }
+  return cachedRailSnapshot;
+}
+
+function getServerRailCollapsedSnapshot(): boolean {
+  return false;
+}
+
+function subscribeToRailCollapsed(onStoreChange: () => void) {
+  railListeners.add(onStoreChange);
+  return () => railListeners.delete(onStoreChange);
+}
+
+function setRailCollapsed(next: boolean) {
+  const raw = next ? "1" : "0";
+  try {
+    window.localStorage.setItem(NAV_RAIL_STORAGE_KEY, raw);
+  } catch {
+    // Nothing to persist to - the toggle still works for this render.
+  }
+  cachedRailRaw = raw;
+  cachedRailSnapshot = next;
+  for (const listener of railListeners) listener();
+}
+
+function useRailCollapsed() {
+  const collapsed = useSyncExternalStore(
+    subscribeToRailCollapsed,
+    getRailCollapsedSnapshot,
+    getServerRailCollapsedSnapshot,
+  );
+  return { collapsed, setCollapsed: setRailCollapsed };
+}
+
+// `allowRailCollapse` defaults to true (the desktop `<aside>`'s own use);
+// the mobile drawer passes false so it always renders the full labeled nav
+// regardless of the desktop-only rail preference stored in localStorage.
+export function AdminSidebar({
+  visibility,
+  allowRailCollapse = true,
+}: {
+  visibility: AdminNavVisibility;
+  allowRailCollapse?: boolean;
+}) {
   const pathname = usePathname();
   const groups = navGroups(visibility);
   const { collapsed, toggle } = useCollapsedGroups();
+  const { collapsed: railCollapsedStored, setCollapsed: setRailCollapsed } = useRailCollapsed();
+  const rail = allowRailCollapse && railCollapsedStored;
 
   return (
-    <nav className="flex flex-col gap-1" aria-label="Admin">
-      {groups.map((group) => {
-        const hasActiveItem = group.items.some((item) =>
-          isItemActive(pathname, item.href),
-        );
-        const isCollapsed = collapsed.has(group.label) && !hasActiveItem;
+    <nav className="flex h-full flex-col gap-1" aria-label="Admin">
+      <div className={cn("flex flex-col gap-1", rail && "items-center")}>
+        {groups.map((group) => {
+          const hasActiveItem = group.items.some((item) => isItemActive(pathname, item.href));
+          const isCollapsed = !rail && collapsed.has(group.label) && !hasActiveItem;
 
-        return (
-          <div key={group.label} className="space-y-1">
-            <button
-              type="button"
-              onClick={() => toggle(group.label)}
-              aria-expanded={!isCollapsed}
-              className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
-            >
-              {group.label}
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 shrink-0 transition-transform",
-                  isCollapsed && "-rotate-90",
-                )}
-                aria-hidden
-              />
-            </button>
-            {!isCollapsed && (
-              <div className="space-y-1">
-                {group.items.map((item) => (
-                  <NavLink key={item.href} item={item} pathname={pathname} />
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </nav>
-  );
-}
+          return (
+            <div key={group.label} className={cn("space-y-1", rail ? "w-full" : undefined)}>
+              {!rail && (
+                <button
+                  type="button"
+                  onClick={() => toggle(group.label)}
+                  aria-expanded={!isCollapsed}
+                  className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
+                >
+                  {group.label}
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 transition-transform",
+                      isCollapsed && "-rotate-90",
+                    )}
+                    aria-hidden
+                  />
+                </button>
+              )}
+              {(rail || !isCollapsed) && (
+                <div className={cn("space-y-1", rail && "flex flex-col items-center")}>
+                  {group.items.map((item) => (
+                    <NavLink key={item.href} item={item} pathname={pathname} rail={rail} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
-// Flattened, horizontal, no group labels - used below the `lg` breakpoint
-// where the full labeled sidebar is hidden, so navigation stays reachable
-// down to tablet width without needing a drawer/toggle.
-export function AdminNavStrip({ visibility }: { visibility: AdminNavVisibility }) {
-  const pathname = usePathname();
-  const items = navGroups(visibility).flatMap((group) => group.items);
-
-  return (
-    <nav
-      aria-label="Admin"
-      className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card px-3 py-2 lg:hidden"
-    >
-      {items.map((item) => {
-        const active = isItemActive(pathname, item.href);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            className={cn(
-              "flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap transition-colors",
-              active
-                ? "bg-primary text-primary-foreground"
-                : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
-            )}
-          >
-            <Icon className="h-4 w-4 shrink-0" aria-hidden />
-            {item.label}
-          </Link>
-        );
-      })}
+      {allowRailCollapse && (
+        <button
+          type="button"
+          onClick={() => setRailCollapsed(!railCollapsedStored)}
+          aria-label={railCollapsedStored ? "Expand sidebar" : "Collapse sidebar"}
+          className={cn(
+            "mt-auto flex items-center gap-2 rounded-md px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+            rail && "justify-center",
+          )}
+        >
+          {railCollapsedStored ? (
+            <ChevronsRight className="h-4 w-4 shrink-0" aria-hidden />
+          ) : (
+            <ChevronsLeft className="h-4 w-4 shrink-0" aria-hidden />
+          )}
+          {!rail && "Collapse"}
+        </button>
+      )}
     </nav>
   );
 }
