@@ -10,6 +10,8 @@ import {
 } from "@/components/admin/confirm-changes-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
 import { StatusBadge } from "@/components/admin/status-badge";
+import { GLASS_PANEL } from "@/components/admin/glass";
+import { cn } from "@/lib/cn";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -277,7 +279,7 @@ function RewardForm({
   }
 
   return (
-    <div className="space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={cn(GLASS_PANEL, "space-y-4 p-4")}>
       {reward && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <StatusBadge status={reward.status}>{reward.status}</StatusBadge>

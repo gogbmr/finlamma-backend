@@ -1,5 +1,6 @@
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
 import { roleHasPermission } from "@/server/staff/repo";
@@ -94,27 +95,30 @@ export default async function CompetitionsPage({
   });
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Competitions" }]}
-        title="Monthly Competition"
-        description="A single isolated sandbox portfolio per competition - the starting capital is never V Money and never touches vmoney_ledger (docs/ARCHITECTURE.md D57). Only the prizes paid at settlement create real VM."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Competitions" }]}
+            title="Monthly Competition"
+          />
+        </div>
 
-      <CompetitionsEditor
-        competitions={paged.rows}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        status={statusFilter}
-        instruments={instruments.map((i) => ({ id: i.id, symbol: i.symbol, name: i.name }))}
-        badges={badges.map((b) => ({ id: b.id, name: b.name }))}
-        settings={settings}
-      />
-    </div>
+        <CompetitionsEditor
+          competitions={paged.rows}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          status={statusFilter}
+          instruments={instruments.map((i) => ({ id: i.id, symbol: i.symbol, name: i.name }))}
+          badges={badges.map((b) => ({ id: b.id, name: b.name }))}
+          settings={settings}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }
