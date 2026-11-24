@@ -2,6 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { buildAdminListHref, type AdminListUrlState } from "@/components/admin/data-table";
+import { glassPanelSubtle } from "@/components/admin/glass";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -63,7 +64,7 @@ export function LessonsFilterBar({
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-4 rounded-lg border border-border bg-card p-4">
+    <div className={glassPanelSubtle("flex flex-wrap items-end gap-4 p-4")}>
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">World</Label>
         <Select

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
 import { Button } from "@/components/ui/button";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { DB_CONCURRENCY_LIMIT, runWithConcurrencyLimit } from "@/lib/concurrency-limit";
 import { paginateRows, readPageParams } from "@/lib/admin/paginate";
@@ -67,20 +68,24 @@ export default async function LessonsPage({
   const worlds = await getWorldEditorData();
   if (worlds.length === 0) {
     return (
-      <div className="space-y-4">
-        <PageHeader
-          breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Lessons" }]}
-          icon={BookOpen}
-          title="Lessons"
-        />
-        <p className="text-sm text-muted-foreground">
-          No worlds exist yet - create one at{" "}
-          <Link href="/admin/worlds" className="underline">
-            Worlds
-          </Link>{" "}
-          first.
-        </p>
-      </div>
+      <AdminGlassBackground>
+        <div className="space-y-3">
+          <div className={glassPanel("px-5 py-4")}>
+            <PageHeader
+              breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Lessons" }]}
+              icon={BookOpen}
+              title="Lessons"
+            />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            No worlds exist yet - create one at{" "}
+            <Link href="/admin/worlds" className="underline">
+              Worlds
+            </Link>{" "}
+            first.
+          </p>
+        </div>
+      </AdminGlassBackground>
     );
   }
 
@@ -125,60 +130,63 @@ export default async function LessonsPage({
   const effectiveWorldId = isAllWorlds ? ALL_WORLDS : selectedWorld!.id;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Lessons" }]}
-        icon={BookOpen}
-        title="Lessons"
-        description="Each world is a trail of up to 8 chapters x 5 steps. Publish is blocked until every en/hi/hx field (title, blurb, every localized field inside content) is filled, and until the lesson's world is itself published."
-        action={
-          // Creating a lesson needs one specific world to belong to - hidden
-          // under "All worlds" rather than guessing which one you meant.
-          !isAllWorlds &&
-          canCreate && (
-            <Button asChild size="sm">
-              <Link href={`/admin/lessons/new?worldId=${selectedWorld!.id}`}>+ New lesson</Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[{ label: "Admin", href: "/admin" }, { label: "Lessons" }]}
+            icon={BookOpen}
+            title="Lessons"
+            action={
+              // Creating a lesson needs one specific world to belong to - hidden
+              // under "All worlds" rather than guessing which one you meant.
+              !isAllWorlds &&
+              canCreate && (
+                <Button asChild size="sm">
+                  <Link href={`/admin/lessons/new?worldId=${selectedWorld!.id}`}>+ New lesson</Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <LessonsFilterBar
-        worlds={worlds.map((w) => ({ id: w.id, order: w.order, title: w.title }))}
-        worldId={effectiveWorldId}
-        kind={kindFilter}
-        status={statusFilter}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        pageSize={pageState.pageSize}
-      />
+        <LessonsFilterBar
+          worlds={worlds.map((w) => ({ id: w.id, order: w.order, title: w.title }))}
+          worldId={effectiveWorldId}
+          kind={kindFilter}
+          status={statusFilter}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          pageSize={pageState.pageSize}
+        />
 
-      <LessonsTable
-        worldId={effectiveWorldId}
-        rows={paged.rows.map((l) => ({
-          id: l.id,
-          worldId: l.worldId,
-          worldTitle: worldTitleById.get(l.worldId),
-          chapter: l.chapter,
-          step: l.step,
-          kind: l.kind,
-          title: l.title,
-          status: l.status,
-        }))}
-        total={paged.total}
-        page={paged.page}
-        pageCount={paged.pageCount}
-        pageSize={paged.pageSize}
-        q={pageState.q}
-        sort={pageState.sort}
-        dir={pageState.dir}
-        kind={kindFilter}
-        status={statusFilter}
-        canEdit={canEdit}
-        canDelete={canDelete}
-        showWorldColumn={isAllWorlds}
-      />
-    </div>
+        <LessonsTable
+          worldId={effectiveWorldId}
+          rows={paged.rows.map((l) => ({
+            id: l.id,
+            worldId: l.worldId,
+            worldTitle: worldTitleById.get(l.worldId),
+            chapter: l.chapter,
+            step: l.step,
+            kind: l.kind,
+            title: l.title,
+            status: l.status,
+          }))}
+          total={paged.total}
+          page={paged.page}
+          pageCount={paged.pageCount}
+          pageSize={paged.pageSize}
+          q={pageState.q}
+          sort={pageState.sort}
+          dir={pageState.dir}
+          kind={kindFilter}
+          status={statusFilter}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          showWorldColumn={isAllWorlds}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

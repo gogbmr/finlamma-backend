@@ -1,6 +1,7 @@
 import { Info, MessageSquareText } from "lucide-react";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { GLASS_PANEL } from "@/components/admin/glass";
 import type { LocalizedText } from "@/server/shared/schemas";
 import { FORMAT_LABELS, type QuestionRow } from "./question-editor";
 
@@ -29,7 +30,7 @@ function InfoTile({ label, value }: { label: string; value: React.ReactNode }) {
 
 function LocalizedTextCard({ label, value }: { label: string; value: LocalizedText }) {
   return (
-    <Card>
+    <Card className={GLASS_PANEL}>
       <CardHeader className="pb-2">
         <CardTitle className="text-sm">{label}</CardTitle>
       </CardHeader>
@@ -50,7 +51,7 @@ function LocalizedTextCard({ label, value }: { label: string; value: LocalizedTe
 export function QuestionView({ question, topicName }: { question: QuestionRow; topicName: string }) {
   return (
     <div className="space-y-4">
-      <Card>
+      <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-start justify-between gap-3 pb-3">
           <div className="space-y-1">
             <CardTitle className="text-base">{question.prompt.en || "(untitled)"}</CardTitle>
@@ -72,12 +73,12 @@ export function QuestionView({ question, topicName }: { question: QuestionRow; t
       <LocalizedTextCard label="Prompt" value={question.prompt} />
       <LocalizedTextCard label="Explanation" value={question.explanation} />
 
-      <details className="rounded-xl border border-border bg-card">
+      <details className={GLASS_PANEL}>
         <summary className="flex cursor-pointer select-none items-center gap-2 px-5 py-3 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
           <Info className="h-3.5 w-3.5" aria-hidden />
           Payload &amp; answer ({FORMAT_LABELS[question.format]})
         </summary>
-        <pre className="overflow-x-auto border-t border-border bg-muted/30 p-4 text-xs text-foreground">
+        <pre className="overflow-x-auto border-t border-white/50 p-4 text-xs text-foreground">
           {JSON.stringify({ payload: question.payload, answer: question.answer }, null, 2)}
         </pre>
       </details>

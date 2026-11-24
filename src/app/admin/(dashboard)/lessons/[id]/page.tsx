@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
@@ -28,28 +29,31 @@ export default async function LessonViewPage({ params }: { params: Promise<{ id:
   const { lesson, world } = found;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Lessons", href: `/admin/lessons?worldId=${world.id}` },
-          { label: lesson.title.en || "(untitled)" },
-        ]}
-        icon={BookOpen}
-        title={lesson.title.en || "(untitled)"}
-        description="Read-only view. Use Edit to change this lesson."
-        action={
-          (canEdit || canDelete) && (
-            <Button asChild size="sm">
-              <Link href={`/admin/lessons/${lesson.id}/edit`}>
-                <Pencil className="h-4 w-4" /> Edit
-              </Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Lessons", href: `/admin/lessons?worldId=${world.id}` },
+              { label: lesson.title.en || "(untitled)" },
+            ]}
+            icon={BookOpen}
+            title={lesson.title.en || "(untitled)"}
+            action={
+              (canEdit || canDelete) && (
+                <Button asChild size="sm">
+                  <Link href={`/admin/lessons/${lesson.id}/edit`}>
+                    <Pencil className="h-4 w-4" /> Edit
+                  </Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <LessonView lesson={lesson} worldTitle={world.title} />
-    </div>
+        <LessonView lesson={lesson} worldTitle={world.title} />
+      </div>
+    </AdminGlassBackground>
   );
 }

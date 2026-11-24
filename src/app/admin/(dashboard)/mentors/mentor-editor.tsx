@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/cn";
+import { GLASS_PANEL, GLASS_PANEL_SUBTLE, GlassIconChip } from "@/components/admin/glass";
 import type { LocalizedText } from "@/server/mentors/schemas";
 import { CreateMentorDraftSchema, HotfixMentorSchema, UpdateMentorDraftSchema } from "@/server/mentors/schemas";
 import {
@@ -109,13 +111,9 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-card p-5 shadow-sm">
+    <div className={cn(GLASS_PANEL, "space-y-3 p-5")}>
       <h3 className="flex items-center gap-2 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
-        {Icon && (
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-secondary text-secondary-foreground">
-            <Icon className="h-3.5 w-3.5" />
-          </span>
-        )}
+        {Icon && <GlassIconChip icon={Icon} className="h-6 w-6 rounded-md" />}
         {title}
       </h3>
       {children}
@@ -164,11 +162,11 @@ function LocalizedFieldGroup({
 // Read-only escape hatch, same as lessons'/questions' StoredJsonPanel.
 function StoredJsonPanel({ data }: { data: unknown }) {
   return (
-    <details className="rounded-lg border border-border bg-card">
+    <details className={GLASS_PANEL}>
       <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold tracking-widest text-muted-foreground uppercase">
         Advanced: view stored JSON
       </summary>
-      <pre className="overflow-x-auto border-t border-border bg-muted/30 p-4 text-xs text-foreground">
+      <pre className="overflow-x-auto border-t border-white/50 p-4 text-xs text-foreground">
         {JSON.stringify(data, null, 2)}
       </pre>
     </details>
@@ -332,7 +330,7 @@ export function NewMentorForm() {
           </div>
         </SectionCard>
 
-        <div className="sticky bottom-0 z-10 flex items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className={cn(GLASS_PANEL_SUBTLE, "sticky bottom-0 z-10 flex items-center gap-2 p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]")}>
           <Button type="submit" disabled={isPending}>
             {isPending ? "Creating..." : "Create draft"}
           </Button>
@@ -584,7 +582,7 @@ export function MentorForm({
           }}
         />
 
-        <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-border bg-card p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+        <div className={cn(GLASS_PANEL_SUBTLE, "sticky bottom-0 z-10 flex flex-wrap items-center gap-2 p-4 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]")}>
           {(editable || hotfixable) && (
             <Button type="submit" variant="outline" disabled={isPending}>
               {editable ? "Save draft" : "Save fix"}

@@ -2,6 +2,7 @@ import { BookOpen } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getMentorEditorData } from "@/server/mentors/service";
@@ -34,25 +35,29 @@ export default async function EditLessonPage({ params }: { params: Promise<{ id:
   const worldMentorKey = mentors.find((m) => m.id === world.mentorId)?.key ?? null;
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Lessons", href: `/admin/lessons?worldId=${world.id}` },
-          { label: lesson.title.en || "(untitled)", href: `/admin/lessons/${lesson.id}` },
-          { label: "Edit" },
-        ]}
-        icon={BookOpen}
-        title={`Edit ${lesson.title.en || "(untitled)"}`}
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Lessons", href: `/admin/lessons?worldId=${world.id}` },
+              { label: lesson.title.en || "(untitled)", href: `/admin/lessons/${lesson.id}` },
+              { label: "Edit" },
+            ]}
+            icon={BookOpen}
+            title={`Edit ${lesson.title.en || "(untitled)"}`}
+          />
+        </div>
 
-      <LessonForm
-        worldTitle={world.title}
-        worldMentorKey={worldMentorKey}
-        lesson={lesson}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <LessonForm
+          worldTitle={world.title}
+          worldMentorKey={worldMentorKey}
+          lesson={lesson}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

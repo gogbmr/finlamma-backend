@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { glassPanel } from "@/components/admin/glass";
 import { updatePulseCheckScoringAction } from "./actions";
 
 export type PulseCheckScoring = {
@@ -56,7 +57,7 @@ export function PulseCheckScoringEditor({ scoring }: { scoring: PulseCheckScorin
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={glassPanel("max-w-2xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Pulse Check scoring</h2>
         <p className="text-xs text-muted-foreground">

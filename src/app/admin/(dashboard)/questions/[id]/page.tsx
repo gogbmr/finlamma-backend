@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { Button } from "@/components/ui/button";
 import { getStaffMember } from "@/lib/auth";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
@@ -33,40 +34,43 @@ export default async function QuestionViewPage({ params }: { params: Promise<{ i
   const topicName = topics.find((t) => t.id === question.topicId)?.name.en ?? "No topic";
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Questions", href: "/admin/questions" },
-          { label: question.prompt.en || "(untitled)" },
-        ]}
-        icon={HelpCircle}
-        title={question.prompt.en || "(untitled)"}
-        description="Read-only view. Use Edit to change this question."
-        action={
-          (canEdit || canDelete) && (
-            <Button asChild size="sm">
-              <Link href={`/admin/questions/${question.id}/edit`}>
-                <Pencil className="h-4 w-4" /> Edit
-              </Link>
-            </Button>
-          )
-        }
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Questions", href: "/admin/questions" },
+              { label: question.prompt.en || "(untitled)" },
+            ]}
+            icon={HelpCircle}
+            title={question.prompt.en || "(untitled)"}
+            action={
+              (canEdit || canDelete) && (
+                <Button asChild size="sm">
+                  <Link href={`/admin/questions/${question.id}/edit`}>
+                    <Pencil className="h-4 w-4" /> Edit
+                  </Link>
+                </Button>
+              )
+            }
+          />
+        </div>
 
-      <QuestionView
-        question={{
-          id: question.id,
-          format: question.format,
-          topicId: question.topicId,
-          prompt: question.prompt,
-          explanation: question.explanation,
-          payload: question.payload,
-          answer: question.answer,
-          status: question.status,
-        }}
-        topicName={topicName}
-      />
-    </div>
+        <QuestionView
+          question={{
+            id: question.id,
+            format: question.format,
+            topicId: question.topicId,
+            prompt: question.prompt,
+            explanation: question.explanation,
+            payload: question.payload,
+            answer: question.answer,
+            status: question.status,
+          }}
+          topicName={topicName}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

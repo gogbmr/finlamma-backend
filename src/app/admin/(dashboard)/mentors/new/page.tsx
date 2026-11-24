@@ -1,6 +1,7 @@
 import { Users } from "lucide-react";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { roleHasPermission } from "@/server/staff/repo";
 import { NewMentorForm } from "../mentor-editor";
@@ -17,19 +18,22 @@ export default async function NewMentorPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Mentors", href: "/admin/mentors" },
-          { label: "New" },
-        ]}
-        icon={Users}
-        title="New mentor"
-        description="Created as a draft - fill in name/bio/persona and publish once it's ready."
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Mentors", href: "/admin/mentors" },
+              { label: "New" },
+            ]}
+            icon={Users}
+            title="New mentor"
+          />
+        </div>
 
-      <NewMentorForm />
-    </div>
+        <NewMentorForm />
+      </div>
+    </AdminGlassBackground>
   );
 }

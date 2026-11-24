@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { cn } from "@/lib/cn";
+import { GLASS_PANEL, GLASS_PANEL_SUBTLE } from "@/components/admin/glass";
 
 // Shared KPI tile for every admin console that shows a grid of numbers
 // (Ops, Analytics, News Desk) - replaces each page's own copy-pasted
@@ -26,12 +27,7 @@ export function KpiTile({
 }) {
   const isPrimary = emphasis === "primary";
   return (
-    <div
-      className={cn(
-        "rounded-lg border p-4",
-        isPrimary ? "border-primary/20 bg-primary/5" : "border-border bg-card",
-      )}
-    >
+    <div className={cn(isPrimary ? GLASS_PANEL : GLASS_PANEL_SUBTLE, "p-4")}>
       <div className="flex items-center gap-2">
         {Icon && (
           <Icon className={cn("h-4 w-4", isPrimary ? "text-primary" : "text-muted-foreground")} />

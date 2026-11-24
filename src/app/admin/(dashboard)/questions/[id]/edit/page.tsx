@@ -2,6 +2,7 @@ import { HelpCircle } from "lucide-react";
 import { notFound } from "next/navigation";
 import { Forbidden } from "@/components/admin/forbidden";
 import { PageHeader } from "@/components/admin/page-header";
+import { AdminGlassBackground, glassPanel } from "@/components/admin/glass";
 import { getStaffMember } from "@/lib/auth";
 import { getPermissionKeysForRole } from "@/server/staff/repo";
 import { getQuestionDetailForAdmin } from "@/server/questions/admin-queries";
@@ -29,33 +30,37 @@ export default async function EditQuestionPage({ params }: { params: Promise<{ i
   if (!question) notFound();
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        breadcrumbs={[
-          { label: "Admin", href: "/admin" },
-          { label: "Questions", href: "/admin/questions" },
-          { label: question.prompt.en || "(untitled)", href: `/admin/questions/${question.id}` },
-          { label: "Edit" },
-        ]}
-        icon={HelpCircle}
-        title={`Edit ${question.prompt.en || "(untitled)"}`}
-      />
+    <AdminGlassBackground>
+      <div className="space-y-3">
+        <div className={glassPanel("px-5 py-4")}>
+          <PageHeader
+            breadcrumbs={[
+              { label: "Admin", href: "/admin" },
+              { label: "Questions", href: "/admin/questions" },
+              { label: question.prompt.en || "(untitled)", href: `/admin/questions/${question.id}` },
+              { label: "Edit" },
+            ]}
+            icon={HelpCircle}
+            title={`Edit ${question.prompt.en || "(untitled)"}`}
+          />
+        </div>
 
-      <QuestionForm
-        question={{
-          id: question.id,
-          format: question.format,
-          topicId: question.topicId,
-          prompt: question.prompt,
-          explanation: question.explanation,
-          payload: question.payload,
-          answer: question.answer,
-          status: question.status,
-        }}
-        topics={topics.map((t) => ({ id: t.id, name: t.name }))}
-        canEdit={canEdit}
-        canDelete={canDelete}
-      />
-    </div>
+        <QuestionForm
+          question={{
+            id: question.id,
+            format: question.format,
+            topicId: question.topicId,
+            prompt: question.prompt,
+            explanation: question.explanation,
+            payload: question.payload,
+            answer: question.answer,
+            status: question.status,
+          }}
+          topics={topics.map((t) => ({ id: t.id, name: t.name }))}
+          canEdit={canEdit}
+          canDelete={canDelete}
+        />
+      </div>
+    </AdminGlassBackground>
   );
 }

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { glassPanel } from "@/components/admin/glass";
 import { updateNewsQuizGeneratorSettingsAction } from "./actions";
 
 type Format =
@@ -75,7 +76,7 @@ export function QuizGeneratorSettingsEditor({ settings }: { settings: QuizGenera
   }
 
   return (
-    <div className="max-w-2xl space-y-4 rounded-lg border border-border bg-card p-4">
+    <div className={glassPanel("max-w-2xl space-y-4 p-4")}>
       <div className="space-y-1">
         <h2 className="text-sm font-semibold text-foreground">Pulse Check quiz generator</h2>
         <p className="text-xs text-muted-foreground">

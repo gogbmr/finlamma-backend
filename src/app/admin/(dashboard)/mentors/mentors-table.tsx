@@ -15,6 +15,7 @@ import {
 } from "@/components/admin/data-table";
 import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EmptyState } from "@/components/admin/empty-state";
+import { glassPanel } from "@/components/admin/glass";
 import { StatusBadge } from "@/components/admin/status-badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
@@ -181,48 +182,50 @@ export function MentorsTable({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex gap-4 text-sm">
-          {STATUS_OPTIONS.map((opt) => (
-            <Link
-              key={opt.label}
-              href={statusFilterHref(pathname, state, opt.value)}
-              className={cn(
-                status === opt.value
-                  ? "font-semibold text-foreground underline"
-                  : "text-muted-foreground hover:underline",
-              )}
-            >
-              {opt.label}
-            </Link>
-          ))}
+      <div className={glassPanel("space-y-4 p-5")}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-4 text-sm">
+            {STATUS_OPTIONS.map((opt) => (
+              <Link
+                key={opt.label}
+                href={statusFilterHref(pathname, state, opt.value)}
+                className={cn(
+                  status === opt.value
+                    ? "font-semibold text-foreground underline"
+                    : "text-muted-foreground hover:underline",
+                )}
+              >
+                {opt.label}
+              </Link>
+            ))}
+          </div>
+          <DataTableSearchForm pathname={pathname} state={state} placeholder="Search key or name…" />
         </div>
-        <DataTableSearchForm pathname={pathname} state={state} placeholder="Search key or name…" />
-      </div>
 
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title={q ? "No mentors match your search" : "No mentors yet"}
-          description={
-            q
-              ? `Nothing matched "${q}" - try a different key or name.`
-              : "A staff member with mentor.create can create the first one."
-          }
-        />
-      ) : (
-        <>
-          <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
-          <DataTablePagination
-            pathname={pathname}
-            state={state}
-            page={page}
-            pageCount={pageCount}
-            total={total}
-            noun="mentors"
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={q ? "No mentors match your search" : "No mentors yet"}
+            description={
+              q
+                ? `Nothing matched "${q}" - try a different key or name.`
+                : "A staff member with mentor.create can create the first one."
+            }
           />
-        </>
-      )}
+        ) : (
+          <>
+            <DataTable columns={columns} data={rows} getRowId={(r) => r.id} />
+            <DataTablePagination
+              pathname={pathname}
+              state={state}
+              page={page}
+              pageCount={pageCount}
+              total={total}
+              noun="mentors"
+            />
+          </>
+        )}
+      </div>
 
       <ConfirmDialog
         open={pendingDelete !== null}
