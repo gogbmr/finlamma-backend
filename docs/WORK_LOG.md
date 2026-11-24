@@ -294,3 +294,61 @@ consistency, `<Toaster>` theming.
 scoped to `src/app/admin/(dashboard)` + `src/components/admin` - all passing.
 
 **Status:** committed locally (`4ffe610`), not pushed.
+
+## 2026-11-24 — Admin glassmorphism redesign, Phase 2c: form grids, status badges
+
+**Asked:** Group c: `status-badge.tsx` (stays flat/opaque, as planned), SectionCard/form layouts,
+sticky action bars.
+
+**Findings and files changed:**
+- `src/components/admin/status-badge.tsx` — **not touched**, as planned: its draft/published/
+  warning/destructive colors are semantic, same "never glassify a color that's carrying meaning"
+  rule as every other status/warning box this redesign has left alone throughout.
+- SectionCard's own shape was already glass (the earlier site-wide rollout) - what was actually
+  missing was mobile responsiveness. Found 24 bare `grid-cols-2`/`grid-cols-3` form grids with no
+  responsive fallback, across 15 files: `worlds/world-editor.tsx` (×2), `lessons/lesson-editor.tsx`
+  (×2), `questions/question-editor.tsx` (×3), `mentors/mentor-editor.tsx` (×2),
+  `badges/badge-editor.tsx`, `rewards/reward-editor.tsx`, `competitions/competitions-editor.tsx`
+  (×2), `instruments/instrument-editor.tsx` (×2), `roles/roles-editor.tsx` (×2),
+  `staff/staff-profile-panel.tsx`, `consent/dob-correction-form.tsx`,
+  `news/quiz-generator-settings-editor.tsx` (×2), `news/pulse-check-scoring-editor.tsx`,
+  `settings/scoring-settings-editor.tsx`, `settings/arena-league-settings-editor.tsx` - these would
+  squeeze a 2-3 column field grid into a 390px phone, unlike their already-responsive siblings
+  (e.g. every "Basics" section already does `grid-cols-1 sm:grid-cols-3`). All given the same
+  `grid-cols-1 sm:grid-cols-N` treatment.
+- Sticky action bars (10 occurrences across 5 editor files) checked, left unchanged - they sit
+  inside `<main>`'s own padding, not flush to the viewport edge, so the rounded `GLASS_PANEL_SUBTLE`
+  corners already read fine at any width; no fix needed.
+
+**Verified:** `pnpm typecheck` clean; `pnpm lint` at the pre-existing baseline; `pnpm vitest run`
+scoped to `src/app/admin/(dashboard)` + `src/components/admin` - all passing.
+
+**Status:** committed locally (`67a5fe9`), not pushed.
+
+## 2026-11-24 — Admin glassmorphism redesign, Phase 2d: final consistency pass
+
+**Asked:** A final consistency pass across every admin page at 390/768/1280: spacing, overlaps,
+readable text, no layout breaks.
+
+**Approach:** No way to actually render a browser here, so this was a bounded static-analysis
+pass (grepping for non-wrapping flex rows, raw dialog usages, fixed-width elements) rather than a
+literal pixel check - the founder's own browser check still covers what this can't.
+
+**Found and fixed:**
+- 9 raw `<AlertDialogContent>` usages across 7 files (`ops/feed-halt-control.tsx` ×2,
+  `ops/risk-thresholds-editor.tsx`, `ops/symbol-master-table.tsx`,
+  `settings/rank-titles-editor.tsx`, `settings/peer-handles-editor.tsx`,
+  `settings/about-me-chips-editor.tsx`, `settings/economy-settings-editor.tsx` ×2) built their own
+  dialog directly instead of going through the shared `ConfirmDialog`/`ConfirmChangesDialog`, so
+  they missed group 2b's glass treatment entirely. All given `className={GLASS_PANEL}` too.
+- `feed-halt-control.tsx` had two non-wrapping flex rows (the 3-button feed-mode switcher, and the
+  halt-toggle's label+button row) that could get tight at 390px - both now `flex-wrap`.
+
+**Checked, already fine:** `KpiTileGrid` (already `sm:grid-cols-2 lg:grid-cols-4`), every filter
+bar, the two "Audit log" heading rows (news/ops), the 10 sticky save bars (sit inside `<main>`'s
+own padding, not flush to the edge), Select-heavy filter rows (already `flex-wrap`).
+
+**Verified:** `pnpm typecheck` clean; `pnpm lint` at the pre-existing baseline; `pnpm vitest run`
+scoped to `src/app/admin/(dashboard)` + `src/components/admin` - all passing.
+
+**Status:** committed locally (`cdf8f16`), not pushed.
