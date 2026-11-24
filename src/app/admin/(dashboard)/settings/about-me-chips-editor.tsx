@@ -100,7 +100,7 @@ function ChipRowEditor({ chip }: { chip: ChipRow }) {
       </TableRow>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this chip?</AlertDialogTitle>
             <AlertDialogDescription>

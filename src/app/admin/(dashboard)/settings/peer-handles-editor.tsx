@@ -93,7 +93,7 @@ function PeerHandleRowEditor({ handle }: { handle: PeerHandleRow }) {
       </TableRow>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this handle?</AlertDialogTitle>
             <AlertDialogDescription>

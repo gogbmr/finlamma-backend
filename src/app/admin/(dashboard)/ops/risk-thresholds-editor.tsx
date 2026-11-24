@@ -96,7 +96,7 @@ export function RiskThresholdsEditor({ thresholds }: { thresholds: RiskThreshold
       </Button>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Change risk-flag thresholds?</AlertDialogTitle>
             <AlertDialogDescription>

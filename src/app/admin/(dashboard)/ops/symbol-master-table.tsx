@@ -97,7 +97,7 @@ export function SymbolMasterTable({ rows }: { rows: SymbolRow[] }) {
       </Table>
 
       <AlertDialog open={target !== null} onOpenChange={(open) => !open && setTarget(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>
               {target?.halted ? `Resume trading in ${target?.symbol}?` : `Halt trading in ${target?.symbol}?`}

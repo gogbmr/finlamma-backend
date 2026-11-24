@@ -121,7 +121,7 @@ function RankTitleRowEditor({ rank }: { rank: RankTitleRow }) {
       </TableRow>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this rank title?</AlertDialogTitle>
             <AlertDialogDescription>

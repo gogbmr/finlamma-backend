@@ -121,7 +121,7 @@ function RewardRuleRowEditor({ rule }: { rule: RewardRuleRow }) {
       </TableRow>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Change {ACTIVITY_KIND_LABEL[rule.activityKind]} reward?</AlertDialogTitle>
             <AlertDialogDescription>
@@ -230,7 +230,7 @@ export function EconomySettingsEditor({
       </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className={GLASS_PANEL}>
           <AlertDialogHeader>
             <AlertDialogTitle>Change the VM issuance multiplier?</AlertDialogTitle>
             <AlertDialogDescription>
