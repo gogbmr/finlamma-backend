@@ -235,3 +235,62 @@ scoped to `src/app/admin/(dashboard)` + `src/components/admin` (51 files / 364 t
 suite (291 files / 3049 tests, `check-test-count` floor OK); `pnpm build` clean.
 
 **Status:** done, not yet committed - waiting for your browser check.
+
+## 2026-11-24 — Admin glassmorphism redesign, Phase 2a: tables, page header, empty/skeleton states
+
+**Asked:** Continue straight through Phase 2 without stopping for a browser check between groups
+(changed from the earlier per-group-approval plan). Group a: `data-table.tsx`, `page-header.tsx`,
+`empty-state.tsx`, `page-error.tsx`, `page-skeleton.tsx`.
+
+**Files changed:**
+- `src/components/admin/data-table.tsx` — pager Prev/Next and sort-header links get bigger tap
+  targets (`px-2 py-1` → `px-3 py-2`-equivalent padding); pager row and search form wrap on narrow
+  screens; search input goes full-width below `sm`. The "horizontal scroll for wide tables on
+  mobile" ask turned out to already be satisfied by `src/components/ui/table.tsx`'s own
+  `overflow-x-auto` wrapper - confirmed by reading it, no change needed/made there.
+- `src/components/admin/page-header.tsx` — icon chip now uses the shared `GlassIconChip`.
+- `src/components/admin/glass.tsx` — `GlassIconChip` gets an optional `iconClassName` prop
+  (defaults to the existing `h-4 w-4`) so `page-header`'s noticeably bigger chip (`h-10 w-10`) can
+  keep its original `h-5 w-5` icon proportions instead of looking undersized.
+- `src/components/admin/empty-state.tsx` — icon circle: `bg-muted` → `bg-secondary` (existing
+  light-violet token), matching the icon-chip language used everywhere else now.
+- `src/components/admin/page-skeleton.tsx` — `PageSkeleton`/`AdminListSkeleton` now wrap
+  themselves in `AdminGlassBackground` + `glassPanel(...)`, so every per-route `loading.tsx` (each
+  just `return <PageSkeleton />`/`<AdminListSkeleton />`, none of them touched) automatically shows
+  the glass backdrop instead of a flash of the old flat background before the real page mounts.
+- `src/components/admin/page-error.tsx` — **not touched**. Its destructive icon color is semantic
+  (an error state), same "don't glassify a color that's carrying meaning" rule as every other
+  status/warning box - and it's a full-page centered message, not a card, so there was no panel to
+  convert either.
+
+**Verified:** `pnpm typecheck` clean; `pnpm lint` at the pre-existing baseline (1 error, 14
+warnings); `pnpm vitest run` scoped to `src/app/admin/(dashboard)` + `src/components/admin` - all
+passing.
+
+**Status:** committed locally (`8326ca0`), not pushed.
+
+## 2026-11-24 — Admin glassmorphism redesign, Phase 2b: dialogs, drawer, toasts
+
+**Asked:** Group b: `confirm-dialog.tsx`, `confirm-changes-dialog.tsx`, Sheet/drawer styling
+consistency, `<Toaster>` theming.
+
+**Files changed:**
+- `src/components/admin/confirm-dialog.tsx`, `confirm-changes-dialog.tsx` — their shared
+  `AlertDialogContent` (from `src/components/ui/alert-dialog.tsx`, untouched) now gets
+  `className={GLASS_PANEL}`. The overlay already dims the backdrop ~40%, same reasoning as why the
+  standard content-panel translucency (not the chrome level) is right here too.
+- `src/components/admin/mobile-nav-drawer.tsx` — hamburger trigger was missing a focus-visible
+  ring; added, matching every other interactive control's style.
+- `src/components/admin/admin-nav.tsx` — same fix for the nav links, the per-group collapse
+  button, and the rail-collapse button - all three had no focus ring before this pass (pre-existing
+  gaps, not something Phase 1 introduced, fixed now while already touching this file for the
+  "visible focus rings everywhere" design rule).
+- `src/app/admin/(dashboard)/layout.tsx` — `<Toaster>` gets `toastOptions.classNames.toast` with
+  shape only (`rounded-xl border border-white/40 shadow-lg backdrop-blur-xl`) - deliberately never
+  touching `richColors`' own success/error/warning background colors, which stay exactly as they
+  are (semantic, same rule as every status badge).
+
+**Verified:** `pnpm typecheck` clean; `pnpm lint` at the pre-existing baseline; `pnpm vitest run`
+scoped to `src/app/admin/(dashboard)` + `src/components/admin` - all passing.
+
+**Status:** committed locally (`4ffe610`), not pushed.
