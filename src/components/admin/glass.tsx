@@ -76,9 +76,14 @@ export const ADMIN_GLASS_FONT_CLASS = inter.className;
 export function GlassIconChip({
   icon: Icon,
   className,
+  iconClassName = "h-4 w-4",
 }: {
   icon: ComponentType<{ className?: string }>;
   className?: string;
+  // Every existing call site uses the h-4 w-4 default - only page-header's
+  // noticeably bigger chip (h-10 w-10, matching its pre-glass size) needs
+  // a proportionally bigger icon to match.
+  iconClassName?: string;
 }) {
   return (
     <span
@@ -87,7 +92,7 @@ export function GlassIconChip({
         className,
       )}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className={iconClassName} />
     </span>
   );
 }

@@ -166,7 +166,7 @@ export function DataTableSortHeader({
   return (
     <Link
       href={buildAdminListHref(pathname, state, { sort: field, dir: nextDir }, extraParams)}
-      className="inline-flex items-center gap-1 hover:text-foreground"
+      className="-my-1.5 inline-flex items-center gap-1 py-1.5 hover:text-foreground"
     >
       {label}
       {active && <span aria-hidden>{state.dir === "asc" ? "▲" : "▼"}</span>}
@@ -200,7 +200,7 @@ export function DataTableSearchForm({
 
   return (
     <form onSubmit={onSubmit} className="flex flex-wrap items-center gap-2">
-      <div className="relative">
+      <div className="relative w-full sm:w-56">
         <Search
           className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -209,7 +209,7 @@ export function DataTableSearchForm({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
-          className="w-56 pl-8"
+          className="w-full pl-8"
         />
       </div>
       <Button type="submit" variant="outline" size="sm">
@@ -249,11 +249,13 @@ export function DataTablePagination({
 }) {
   if (total === 0) return null;
 
+  // px-3 py-2 (not the old px-2 py-1) so Prev/Next stay comfortable tap
+  // targets on a touch screen, not just a mouse-hover affordance.
   const pagerButton =
-    "inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-sm";
+    "inline-flex items-center gap-1 rounded-md border border-border px-3 py-2 text-sm";
 
   return (
-    <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
       <p>
         Page {page} of {pageCount} · {total.toLocaleString("en-IN")} {noun}
       </p>
