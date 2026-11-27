@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Finlamma API",
-    "version": "2.9.0",
+    "version": "2.10.0",
     "description": "REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints."
   },
   "components": {
@@ -2435,7 +2435,7 @@
                             "icon": {
                               "type": "string",
                               "maxLength": 16,
-                              "pattern": "^\\p{Extended_Pictographic}️?(?:‍\\p{Extended_Pictographic}️?)*$/u",
+                              "pattern": "^\\p{Extended_Pictographic}️?(?:‍\\p{Extended_Pictographic}️?)*$",
                               "description": "A single emoji shown alongside this option (most useful in the 'tiles' layout) - optional.",
                               "example": "🏦"
                             }

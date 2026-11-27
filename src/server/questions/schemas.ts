@@ -92,9 +92,15 @@ export const OptionIconSchema = z
   .regex(EMOJI_ONLY_PATTERN, "icon must be a single emoji");
 
 export const SingleSelectOptionSchema = LocalizedTextSchema.extend({
+  // zod-to-openapi derives `pattern` from the regex's .toString(), stripping
+  // only the leading slash - for a flagged regex (EMOJI_ONLY_PATTERN needs
+  // /u for \p{Extended_Pictographic}) that leaves a trailing "/u" baked into
+  // the JSON Schema pattern string, which no regex engine accepts. Override
+  // with the bare source so the contract carries a valid pattern.
   icon: OptionIconSchema.optional().openapi({
     description: "A single emoji shown alongside this option (most useful in the 'tiles' layout) - optional.",
     example: "🏦",
+    pattern: EMOJI_ONLY_PATTERN.source,
   }),
 });
 
