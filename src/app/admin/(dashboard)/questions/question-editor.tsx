@@ -469,25 +469,65 @@ function OptionRow({
   );
 }
 
+// Layout is purely a rendering hint (src/server/questions/schemas.ts's
+// SingleSelectLayoutSchema comment) - grading is identical either way, so
+// this picker only ever touches `payload.layout`, never `answer`.
+const LAYOUT_LABELS: Record<"list" | "tiles", string> = {
+  list: "List",
+  tiles: "Tiles (2x2 icon grid)",
+};
+
 function SingleSelectSections({ disabled, warnings }: { disabled: boolean; warnings: Warning[] }) {
-  const { control, watch, setValue } = useFormContext();
+  const { control, register, watch, setValue } = useFormContext();
   const options = useFieldArray({ control, name: "payload.options" });
   const liveOptions = useWatch({ control, name: "payload.options" }) as LocalizedText[] | undefined;
   const correctIndex = watch("answer.correctIndex" as FieldPath<QuestionFormValues>) as unknown as number;
+  const layout = (watch("payload.layout" as FieldPath<QuestionFormValues>) as unknown as string) || "list";
 
   return (
     <>
       <SectionCard title="Payload - Options">
-        {options.fields.map((field, i) => (
-          <OptionRow
-            key={field.id}
-            index={i}
-            name={`payload.options.${i}`}
+        <div className="space-y-1">
+          <Label>Layout</Label>
+          <Select
+            value={layout}
+            onValueChange={(v) => setValue("payload.layout" as FieldPath<QuestionFormValues>, v as never, { shouldValidate: true })}
             disabled={disabled}
-            warnings={warnings}
-            removable={options.fields.length > 2}
-            onRemove={() => options.remove(i)}
-          />
+          >
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(LAYOUT_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {options.fields.map((field, i) => (
+          <div key={field.id} className="flex items-start gap-2">
+            <div className="flex-1">
+              <OptionRow
+                index={i}
+                name={`payload.options.${i}`}
+                disabled={disabled}
+                warnings={warnings}
+                removable={options.fields.length > 2}
+                onRemove={() => options.remove(i)}
+              />
+            </div>
+            <div className="mt-6 w-16 space-y-1">
+              <Label className="text-xs text-muted-foreground">Icon</Label>
+              <Input
+                disabled={disabled}
+                placeholder="🏦"
+                maxLength={16}
+                {...register(`payload.options.${i}.icon` as FieldPath<QuestionFormValues>)}
+              />
+            </div>
+          </div>
         ))}
         {!disabled && (
           <Button type="button" variant="outline" size="sm" onClick={() => options.append(EMPTY_LOCALIZED)}>

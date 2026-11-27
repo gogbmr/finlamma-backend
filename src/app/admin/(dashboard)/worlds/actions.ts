@@ -22,6 +22,7 @@ import {
   unpublishWorld,
   updateWorldDraft,
   uploadWorldArt,
+  uploadWorldCardMedia,
 } from "@/server/worlds/service";
 
 type ActionResult = { ok: true } | { ok: false; error: string };
@@ -148,6 +149,27 @@ export async function uploadWorldArtAction(formData: FormData): Promise<ActionRe
     }
     const body = Buffer.from(await file.arrayBuffer());
     await uploadWorldArt(actor, id, { body }, requestMeta(await headers()));
+    revalidatePath("/admin/worlds");
+    revalidatePath(`/admin/worlds/${id}`);
+    revalidatePath(`/admin/worlds/${id}/edit`);
+  });
+}
+
+// Mirrors uploadWorldArtAction exactly - a second, independent upload
+// control for cardMediaKey (the animated card background), never
+// confused with artKey's static-art upload above. No size/format check
+// here either, same reasoning: uploadWorldCardMedia's own byte-level sniff
+// (with GIF allowed) and 1.5MB cap are the real, authoritative checks.
+export async function uploadWorldCardMediaAction(formData: FormData): Promise<ActionResult> {
+  return runAction(async () => {
+    const actor = await requireStaffAny(["world.edit", "world.delete"]);
+    const id = WorldIdSchema.parse({ id: formData.get("id") }).id;
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      throw new AppError("VALIDATION_FAILED", "No file provided");
+    }
+    const body = Buffer.from(await file.arrayBuffer());
+    await uploadWorldCardMedia(actor, id, { body }, requestMeta(await headers()));
     revalidatePath("/admin/worlds");
     revalidatePath(`/admin/worlds/${id}`);
     revalidatePath(`/admin/worlds/${id}/edit`);

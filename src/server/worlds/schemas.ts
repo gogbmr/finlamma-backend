@@ -50,7 +50,13 @@ export const WorldPublicSchema = registry.register(
         "unlock gate. The real rule is sequential (clearing the previous world's Boss Quiz).",
     }),
     artUrl: z.string().url().nullable().openapi({
-      description: "Short-lived signed URL to the world's art, or null if none uploaded yet.",
+      description: "Short-lived signed URL to the world's static art, or null if none uploaded yet.",
+    }),
+    cardMediaUrl: z.string().url().nullable().openapi({
+      description:
+        "Short-lived signed URL to the world's animated card background (GIF or animated WebP), " +
+        "or null if none uploaded yet - the app should fall back to artUrl whenever this is null " +
+        "or fails to load, never leave the card blank.",
     }),
     mentorKey: MentorKeySchema.openapi({
       description: "The mentor covering this world (see GET /api/v1/mentors for their details).",

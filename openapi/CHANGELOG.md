@@ -2,6 +2,25 @@
 
 Plain-English record of what changed in `openapi/openapi.json`, published via `/publish-contract`.
 
+## 2026-11-27 — v2.10.0
+
+Minor bump: no operations added or removed, additive fields only - every existing field stays as
+it was, so an old app build keeps working unchanged. Branch `lesson-world-updates`.
+
+**World responses** (`GET /api/v1/worlds`, admin world editor data) gain `cardMediaUrl` - a
+short-lived signed URL to an optional animated GIF/WebP world-card background, or `null` if none
+has been uploaded. The app should keep using the existing `artUrl` (now described as the "static"
+art) whenever `cardMediaUrl` is `null` or fails to load - never leave the card blank. Both
+`artUrl` and `cardMediaUrl` are now cached for ~5h server-side, so repeated requests for the same
+world get the same signed URL instead of a fresh one every time.
+
+**`single_select` question payloads** (quiz/boss_quiz steps, admin question editor) gain 2
+optional fields, both backward compatible with every existing question:
+- `layout` - `"list"` (default, unchanged rendering) or `"tiles"` (a 2x2 icon-grid layout, e.g.
+  for an "odd one out" question). Purely a rendering hint - grading is identical either way.
+- per-option `icon` - a single emoji shown alongside that option, most useful in the `"tiles"`
+  layout. Neither field is answer-bearing.
+
 ## 2026-11-17 — v2.9.0
 
 Minor bump: no operations added or removed, additive fields only - every existing field stays as

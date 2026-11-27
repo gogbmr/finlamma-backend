@@ -18,11 +18,12 @@ const FIXTURES: Record<QuestionFormat, { payload: Record<string, unknown>; answe
   single_select: {
     payload: {
       options: [
-        { en: "Spend everything as soon as it arrives", hi: "जैसे ही पैसा आए, पूरा खर्च कर दें", hx: "Jaise hi paisa aaye, pura kharch kar do" },
+        { en: "Spend everything as soon as it arrives", hi: "जैसे ही पैसा आए, पूरा खर्च कर दें", hx: "Jaise hi paisa aaye, pura kharch kar do", icon: "💸" },
         { en: "Set aside a fixed % of income every month", hi: "हर महीने आय का एक तय % अलग रखें", hx: "Har mahine income ka ek fix % alag rakho" },
         { en: "Borrow money to buy stocks", hi: "स्टॉक खरीदने के लिए पैसे उधार लें", hx: "Stock kharidne ke liye paise udhaar lo" },
         { en: "Never check your bank balance", hi: "कभी भी बैंक बैलेंस न देखें", hx: "Kabhi bhi bank balance na dekho" },
       ],
+      layout: "list",
     },
     answer: { correctIndex: 1 },
   },

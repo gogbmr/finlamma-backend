@@ -15,7 +15,7 @@ import {
   MAX_IMAGE_BYTES,
   sniffImageType,
 } from "@/lib/image";
-import { getSignedDownloadUrl, uploadObject } from "@/lib/s3";
+import { getCachedSignedDownloadUrl, uploadObject } from "@/lib/s3";
 import { getMentorById, listAllMentors } from "@/server/mentors/repo";
 import {
   countPublishedLessonsByWorldId,
@@ -38,6 +38,7 @@ import {
   moveWorldToPosition,
   publishWorldRow,
   setWorldArtKey,
+  setWorldCardMediaKey,
   unpublishWorldRow,
   updateDraftWorld,
   WorldOrderConflictError,
@@ -74,7 +75,8 @@ async function toPublicWorld(
     tagline: row.tagline,
     theme: row.theme,
     displayXpTarget: row.displayXpTarget,
-    artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
+    artUrl: row.artKey ? await getCachedSignedDownloadUrl(row.artKey) : null,
+    cardMediaUrl: row.cardMediaKey ? await getCachedSignedDownloadUrl(row.cardMediaKey) : null,
     mentorKey: mentorKeysById.get(row.mentorId) ?? "",
     locked,
     completedLessons: completedLessonsByWorldId.get(row.id) ?? 0,
@@ -146,12 +148,14 @@ function validateWorldForPublish(world: WorldRow): void {
 
 export async function getWorldEditorData() {
   const rows = await listAllWorlds();
-  // The only async work per row is getSignedDownloadUrl (S3), never Postgres.
-  // promise-all-db-concurrency-ok: S3-backed, not a Postgres query
+  // The only async work per row is getCachedSignedDownloadUrl (S3/Redis),
+  // never Postgres.
+  // promise-all-db-concurrency-ok: S3/Redis-backed, not a Postgres query
   return Promise.all(
     rows.map(async (row) => ({
       ...row,
-      artUrl: row.artKey ? await getSignedDownloadUrl(row.artKey) : null,
+      artUrl: row.artKey ? await getCachedSignedDownloadUrl(row.artKey) : null,
+      cardMediaUrl: row.cardMediaKey ? await getCachedSignedDownloadUrl(row.cardMediaKey) : null,
     })),
   );
 }
@@ -374,6 +378,72 @@ export async function uploadWorldArt(
       title: world.title.en,
       previousArtKey: world.artKey,
       newArtKey: artKey,
+    },
+    ip: meta.ip,
+    userAgent: meta.userAgent,
+  });
+  return updated;
+}
+
+// Founder decision (2026-11-27): an animated card background, stored in
+// cardMediaKey - a second, independent S3 key from uploadWorldArt's
+// artKey above (the static fallback), never a shared slot. Mirrors
+// uploadWorldArt almost exactly (same permission tiering, same "unique
+// key per upload" reasoning) with two differences: a smaller size cap
+// (animated assets this small still render fine on a world card, and a
+// hard 1.5MB ceiling keeps the app's download/cache cost bounded), and
+// GIF accepted alongside PNG/JPEG/WebP (sniffImageType's `allowGif`,
+// opt-in specifically so this doesn't also loosen uploadWorldArt or any
+// other image-upload path in the app - see src/lib/image.ts).
+const MAX_CARD_MEDIA_BYTES = 1.5 * 1024 * 1024; // 1.5MB
+
+export async function uploadWorldCardMedia(
+  actor: { id: string; roleId: string },
+  id: string,
+  file: { body: Buffer },
+  meta: RequestMeta,
+) {
+  const world = await getWorldById(id);
+  if (!world) throw new AppError("NOT_FOUND", "World not found");
+
+  const requiredPermission =
+    world.status === "published" ? "world.delete" : "world.edit";
+  if (!(await roleHasPermission(actor.roleId, requiredPermission))) {
+    throw new AppError(
+      "FORBIDDEN",
+      world.status === "published"
+        ? "Uploading card media for a published world requires world.delete"
+        : "Missing permission: world.edit",
+    );
+  }
+
+  if (file.body.byteLength > MAX_CARD_MEDIA_BYTES) {
+    throw new AppError("VALIDATION_FAILED", "Card media must be 1.5MB or smaller");
+  }
+
+  const detectedType = sniffImageType(file.body, { allowGif: true });
+  if (!detectedType) {
+    throw new AppError(
+      "VALIDATION_FAILED",
+      "Card media must be a valid PNG, JPEG, WebP or GIF image",
+    );
+  }
+
+  const cardMediaKey = `worlds/${id}/card-media/${randomUUID()}.${imageExtension(detectedType)}`;
+  await uploadObject(cardMediaKey, file.body, imageContentType(detectedType));
+  const updated = await setWorldCardMediaKey(id, cardMediaKey);
+  if (!updated) throw new AppError("NOT_FOUND", "World not found");
+
+  await logActivity({
+    actorType: "staff",
+    actorId: actor.id,
+    action: "world.card_media_uploaded",
+    targetType: "world",
+    targetId: id,
+    metadata: {
+      title: world.title.en,
+      previousCardMediaKey: world.cardMediaKey,
+      newCardMediaKey: cardMediaKey,
     },
     ip: meta.ip,
     userAgent: meta.userAgent,

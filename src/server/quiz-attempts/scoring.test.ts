@@ -113,13 +113,16 @@ describe("computeScore", () => {
   });
 
   it("subtracts the documented latency allowance before comparing against the timer (server-timed, not client-timed)", () => {
-    // 10s timer -> 10_000ms budget. Measured elapsed is 10_200ms, which
-    // would time out on a raw comparison, but 10_200 - LATENCY_ALLOWANCE_MS
-    // (300) = 9_900ms, inside budget.
+    // 10s timer -> 10_000ms budget. Measured elapsed is 10_000 + (allowance
+    // - 1)ms - just inside the grace window on a raw comparison, so this
+    // would time out WITHOUT the allowance subtracted, but stays inside
+    // budget once it is. Uses the constant rather than a hardcoded number
+    // so this keeps testing the same real behavior (the allowance being
+    // genuinely applied) regardless of what the allowance's value is.
     const result = computeScore({
       quizKind: "popQuiz",
       answerMatches: true,
-      elapsedMs: 10_000 + 200,
+      elapsedMs: 10_000 + LATENCY_ALLOWANCE_MS - 1,
       timerSeconds: 10,
       comboBefore: 0,
       settings: SETTINGS,

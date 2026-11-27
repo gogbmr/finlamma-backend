@@ -73,6 +73,7 @@ export default async function EditWorldPage({ params }: { params: Promise<{ id: 
             mentorId: world.mentorId,
             status: world.status,
             artUrl: world.artUrl,
+            cardMediaUrl: world.cardMediaUrl,
           }}
           mentors={mentors.map((m) => ({ id: m.id, key: m.key, name: m.name, status: m.status }))}
           doubtZoneLessons={doubtZoneLessons}

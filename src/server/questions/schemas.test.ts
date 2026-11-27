@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   APP_RENDERABLE_QUESTION_FORMATS,
   isFormatAppRenderable,
+  OptionIconSchema,
   QuestionFormatSchema,
+  SingleSelectPayloadSchema,
   validateAnswerBounds,
 } from "./schemas";
 
@@ -192,5 +194,46 @@ describe("APP_RENDERABLE_QUESTION_FORMATS / isFormatAppRenderable", () => {
   // become "anything goes" (e.g. via a typo'd includes check).
   it("isFormatAppRenderable returns false for a format outside the known enum", () => {
     expect(isFormatAppRenderable("not_a_real_format")).toBe(false);
+  });
+});
+
+// Founder decision (2026-11-27): single_select-only style upgrade, entirely
+// optional/additive so every already-published question (with neither key)
+// keeps parsing exactly as before.
+describe("SingleSelectPayloadSchema - layout/icon (2026-11-27 style upgrade)", () => {
+  it("defaults layout to 'list' when omitted, for an old-shaped payload with no layout/icon at all", () => {
+    const result = SingleSelectPayloadSchema.parse({ options: [T, T] });
+    expect(result.layout).toBe("list");
+    expect(result.options[0]).not.toHaveProperty("icon");
+  });
+
+  it("accepts an explicit layout of 'tiles'", () => {
+    const result = SingleSelectPayloadSchema.parse({ options: [T, T], layout: "tiles" });
+    expect(result.layout).toBe("tiles");
+  });
+
+  it("rejects a layout value outside the known enum", () => {
+    expect(() => SingleSelectPayloadSchema.parse({ options: [T, T], layout: "grid" })).toThrow();
+  });
+
+  it("accepts a per-option icon that is a single emoji", () => {
+    const result = SingleSelectPayloadSchema.parse({ options: [{ ...T, icon: "🏦" }, T] });
+    expect(result.options[0]!.icon).toBe("🏦");
+  });
+
+  it("accepts a ZWJ-joined compound emoji as an icon", () => {
+    expect(() => OptionIconSchema.parse("👨‍👩‍👧")).not.toThrow();
+  });
+
+  it("rejects plain text as an icon", () => {
+    expect(() => OptionIconSchema.parse("bank")).toThrow();
+  });
+
+  it("rejects multiple unrelated emoji as a single icon", () => {
+    expect(() => OptionIconSchema.parse("🏦💸")).toThrow();
+  });
+
+  it("rejects an icon that's too long", () => {
+    expect(() => OptionIconSchema.parse("🏦".repeat(20))).toThrow();
   });
 });

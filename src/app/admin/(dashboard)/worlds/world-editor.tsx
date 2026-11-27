@@ -42,6 +42,7 @@ import {
   unpublishWorldAction,
   updateWorldDraftAction,
   uploadWorldArtAction,
+  uploadWorldCardMediaAction,
 } from "./actions";
 import { cn } from "@/lib/cn";
 import { GLASS_PANEL, GLASS_PANEL_SUBTLE, GlassIconChip } from "@/components/admin/glass";
@@ -57,6 +58,7 @@ export type WorldRow = {
   mentorId: string;
   status: "draft" | "published";
   artUrl: string | null;
+  cardMediaUrl: string | null;
 };
 
 export type MentorOption = { id: string; key: string; name: LocalizedText; status: "draft" | "published" };
@@ -249,6 +251,60 @@ function ArtSection({
           {publishedHint && (
             <p className="text-xs text-muted-foreground">
               This world is published - replacing its art requires world.delete.
+            </p>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+// Second, independent upload control - mirrors ArtSection above exactly,
+// just pointed at cardMediaUrl/cardMediaKey instead of artUrl/artKey (the
+// static fallback ArtSection manages stays completely separate). The real
+// checks (byte-sniffed format including GIF, 1.5MB cap) live in
+// uploadWorldCardMedia (src/server/worlds/service.ts) - this is UI-only.
+function CardMediaSection({
+  cardMediaUrl,
+  disabled,
+  publishedHint,
+  onUpload,
+  isPending,
+}: {
+  cardMediaUrl: string | null;
+  disabled: boolean;
+  publishedHint: boolean;
+  onUpload: (file: File) => void;
+  isPending: boolean;
+}) {
+  return (
+    <SectionCard title="Card background (animated)" icon={Images}>
+      {cardMediaUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
+        <img src={cardMediaUrl} alt="" className="h-24 w-40 rounded-lg border border-border object-cover shadow-sm" />
+      ) : (
+        <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-xs text-muted-foreground">
+          No card background yet
+        </div>
+      )}
+      {!disabled && (
+        <div className="space-y-1">
+          <Input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            disabled={isPending}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onUpload(file);
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            PNG, JPEG, WebP or GIF, up to 1.5MB - shown instead of the static art above when set; the
+            static art is always kept as the fallback if this fails to load.
+          </p>
+          {publishedHint && (
+            <p className="text-xs text-muted-foreground">
+              This world is published - replacing its card background requires world.delete.
             </p>
           )}
         </div>
@@ -644,6 +700,20 @@ export function WorldForm({
     });
   }
 
+  function uploadCardMedia(file: File) {
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.append("id", world.id);
+      formData.append("file", file);
+      const result = await uploadWorldCardMediaAction(formData);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Card background uploaded");
+    });
+  }
+
   function reorder() {
     const target = Number(reorderTarget);
     if (!target) return;
@@ -772,6 +842,14 @@ export function WorldForm({
           disabled={!(canEdit || canDelete)}
           publishedHint={!isDraft}
           onUpload={uploadArt}
+          isPending={isPending}
+        />
+
+        <CardMediaSection
+          cardMediaUrl={world.cardMediaUrl}
+          disabled={!(canEdit || canDelete)}
+          publishedHint={!isDraft}
+          onUpload={uploadCardMedia}
           isPending={isPending}
         />
 
