@@ -59,8 +59,47 @@ export function isFormatAppRenderable(format: string): boolean {
 // --- single_select: pick one of N options (covers MCQ, "options", and a
 // tile-grid-style pick-the-odd-one-out, per FEATURE_MAP LF-08/09/16 - all
 // three are structurally "a set of choices + one correct index"). ---
+
+// Founder decision (2026-11-27): a style/icon upgrade for single_select
+// ONLY, entirely inside this existing JSON payload - no new question
+// format, no migration. Both new keys are optional specifically so every
+// already-published single_select question (which has neither) keeps
+// parsing exactly as before - `layout` defaults to "list" (the current,
+// only rendering this format has ever had) and a missing `icon` just means
+// "no icon for this option", never a validation failure. Deliberately
+// never answer-bearing: both live only in the payload, which was already
+// safe to serve pre-answer (src/db/schema/questions.ts's own comment, D21)
+// - adding non-answer display metadata here doesn't change that.
+export const SingleSelectLayoutSchema = z.enum(["list", "tiles"]).openapi({
+  description:
+    "How the app should render this question's options - 'list' (default, the only layout this " +
+    "format has had until now) or 'tiles' (a 2x2 icon-grid layout, e.g. for an 'odd one out' " +
+    "question). Purely a rendering hint - grading is identical either way.",
+  example: "list",
+});
+
+// Deliberately NOT a general "is this exactly one Unicode grapheme"
+// validator (that's a much deeper rabbit hole than this needs) - tight
+// enough to accept a single emoji, a single emoji + variation selector, or
+// a short ZWJ-joined compound emoji (e.g. a family/profession emoji), while
+// rejecting plain text, multiple unrelated emoji, or arbitrary unicode
+// pasted by mistake.
+const EMOJI_ONLY_PATTERN =
+  /^\p{Extended_Pictographic}️?(?:‍\p{Extended_Pictographic}️?)*$/u;
+export const OptionIconSchema = z
+  .string()
+  .max(16)
+  .regex(EMOJI_ONLY_PATTERN, "icon must be a single emoji");
+
+export const SingleSelectOptionSchema = LocalizedTextSchema.extend({
+  icon: OptionIconSchema.optional().openapi({
+    description: "A single emoji shown alongside this option (most useful in the 'tiles' layout) - optional.",
+    example: "🏦",
+  }),
+});
+
 export const SingleSelectPayloadSchema = z.object({
-  options: z.array(LocalizedTextSchema).min(2).openapi({
+  options: z.array(SingleSelectOptionSchema).min(2).openapi({
     description: "The choices to render, in order. The correct one (never sent here - see POST .../answer) is an index into this array.",
     example: [
       { en: "Spend everything as soon as it arrives", hi: "जैसे ही पैसा आए, पूरा खर्च कर दें", hx: "Jaise hi paisa aaye, pura kharch kar do" },
@@ -69,6 +108,7 @@ export const SingleSelectPayloadSchema = z.object({
       { en: "Never check your bank balance", hi: "कभी भी बैंक बैलेंस न देखें", hx: "Kabhi bhi bank balance na dekho" },
     ],
   }),
+  layout: SingleSelectLayoutSchema.default("list"),
 });
 export const SingleSelectAnswerSchema = z.object({
   correctIndex: z.number().int().nonnegative().openapi({
@@ -416,6 +456,7 @@ export const QUESTION_PAYLOAD_TEMPLATES: Record<QuestionFormat, unknown> = {
       { en: "", hi: "", hx: "" },
       { en: "", hi: "", hx: "" },
     ],
+    layout: "list",
   } satisfies SingleSelectPayload,
   ordering: {
     pool: [

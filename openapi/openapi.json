@@ -1689,7 +1689,15 @@
               "null"
             ],
             "format": "uri",
-            "description": "Short-lived signed URL to the world's art, or null if none uploaded yet."
+            "description": "Short-lived signed URL to the world's static art, or null if none uploaded yet."
+          },
+          "cardMediaUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri",
+            "description": "Short-lived signed URL to the world's animated card background (GIF or animated WebP), or null if none uploaded yet - the app should fall back to artUrl whenever this is null or fails to load, never leave the card blank."
           },
           "mentorKey": {
             "type": "string",
@@ -1723,6 +1731,7 @@
           "theme",
           "displayXpTarget",
           "artUrl",
+          "cardMediaUrl",
           "mentorKey",
           "locked",
           "completedLessons",
@@ -2422,6 +2431,13 @@
                             },
                             "hx": {
                               "type": "string"
+                            },
+                            "icon": {
+                              "type": "string",
+                              "maxLength": 16,
+                              "pattern": "^\\p{Extended_Pictographic}️?(?:‍\\p{Extended_Pictographic}️?)*$/u",
+                              "description": "A single emoji shown alongside this option (most useful in the 'tiles' layout) - optional.",
+                              "example": "🏦"
                             }
                           },
                           "required": [
@@ -2454,6 +2470,16 @@
                             "hx": "Kabhi bhi bank balance na dekho"
                           }
                         ]
+                      },
+                      "layout": {
+                        "type": "string",
+                        "enum": [
+                          "list",
+                          "tiles"
+                        ],
+                        "default": "list",
+                        "description": "How the app should render this question's options - 'list' (default, the only layout this format has had until now) or 'tiles' (a 2x2 icon-grid layout, e.g. for an 'odd one out' question). Purely a rendering hint - grading is identical either way.",
+                        "example": "list"
                       }
                     },
                     "required": [

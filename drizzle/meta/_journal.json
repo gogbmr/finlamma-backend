@@ -414,6 +414,13 @@
       "when": 1795147569384,
       "tag": "0058_nosy_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1795767194126,
+      "tag": "0059_omniscient_magdalene",
+      "breakpoints": true
     }
   ]
 }

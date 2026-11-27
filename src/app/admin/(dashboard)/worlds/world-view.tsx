@@ -105,6 +105,27 @@ export function WorldView({ world, mentor }: { world: WorldRow; mentor: MentorOp
 
       <Card className={GLASS_PANEL}>
         <CardHeader className="flex-row items-center gap-2 pb-2">
+          <GlassIconChip icon={Images} className="h-7 w-7 rounded-md" />
+          <CardTitle className="text-sm">Card background (animated)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {world.cardMediaUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element -- signed URL, not a static asset
+            <img
+              src={world.cardMediaUrl}
+              alt=""
+              className="h-32 w-56 rounded-lg border border-border object-cover shadow-sm"
+            />
+          ) : (
+            <div className="flex h-32 w-56 items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-xs text-muted-foreground">
+              No card background yet
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className={GLASS_PANEL}>
+        <CardHeader className="flex-row items-center gap-2 pb-2">
           <GlassIconChip icon={Link2} className="h-7 w-7 rounded-md" />
           <CardTitle className="text-sm">Relations</CardTitle>
         </CardHeader>

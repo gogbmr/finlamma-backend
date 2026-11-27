@@ -1,6 +1,6 @@
 # Finlamma API — Endpoint Reference
 
-> Generated from `openapi/openapi.json` (version 2.9.0) on 2026-11-23.
+> Generated from `openapi/openapi.json` (version 2.9.0) on 2026-11-27.
 > Do not edit by hand. Regenerate with the contract script.
 
 REST API for the Finlamma mobile app (/api/v1) and the internal admin/relay endpoints.
@@ -1093,6 +1093,7 @@ The published worlds, ordered - staff decide how many exist, no fixed count. Eac
       "theme": "#7C3AED",
       "displayXpTarget": 5,
       "artUrl": "https://example.com",
+      "cardMediaUrl": "https://example.com",
       "mentorKey": "baby",
       "locked": false,
       "completedLessons": 3,
@@ -1526,7 +1527,8 @@ Server-timed (docs/ARCHITECTURE.md D21): the returned `servedAt` is what this st
           "hi": "कभी भी बैंक बैलेंस न देखें",
           "hx": "Kabhi bhi bank balance na dekho"
         }
-      ]
+      ],
+      "layout": "list"
     }
   }
 }

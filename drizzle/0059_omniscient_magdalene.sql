@@ -1,0 +1,1 @@
+ALTER TABLE "worlds" ADD COLUMN "card_media_key" text;

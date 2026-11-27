@@ -152,6 +152,16 @@ export async function setWorldArtKey(id: string, artKey: string) {
   return row ?? null;
 }
 
+// Mirrors setWorldArtKey exactly - a second, independent S3-key column
+// (card_media_key, D82-adjacent founder decision 2026-11-27), never the
+// same key artKey uses. See src/db/schema/worlds.ts's comment on
+// cardMediaKey for why this is deliberately separate from artKey rather
+// than a shared "which art slot" parameter.
+export async function setWorldCardMediaKey(id: string, cardMediaKey: string) {
+  const [row] = await db.update(worlds).set({ cardMediaKey }).where(eq(worlds.id, id)).returning();
+  return row ?? null;
+}
+
 export async function publishWorldRow(id: string, staffId: string) {
   const [row] = await db
     .update(worlds)

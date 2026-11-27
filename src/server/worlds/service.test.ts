@@ -9,6 +9,7 @@ const mockListPublishedWorlds = vi.fn();
 const mockMoveWorldToPosition = vi.fn();
 const mockPublishWorldRow = vi.fn();
 const mockSetWorldArtKey = vi.fn();
+const mockSetWorldCardMediaKey = vi.fn();
 const mockUnpublishWorldRow = vi.fn();
 const mockUpdateDraftWorld = vi.fn();
 // A real class (not a mock fn) so `err instanceof WorldOrderConflictError`
@@ -29,6 +30,7 @@ vi.mock("./repo", () => ({
   moveWorldToPosition: (id: unknown, newOrder: unknown) => mockMoveWorldToPosition(id, newOrder),
   publishWorldRow: (id: unknown, staffId: unknown) => mockPublishWorldRow(id, staffId),
   setWorldArtKey: (id: unknown, artKey: unknown) => mockSetWorldArtKey(id, artKey),
+  setWorldCardMediaKey: (id: unknown, cardMediaKey: unknown) => mockSetWorldCardMediaKey(id, cardMediaKey),
   unpublishWorldRow: (id: unknown) => mockUnpublishWorldRow(id),
   updateDraftWorld: (input: unknown) => mockUpdateDraftWorld(input),
   WorldOrderConflictError: MockWorldOrderConflictError,
@@ -74,10 +76,10 @@ vi.mock("@/lib/activity-log", () => ({
   logActivity: (input: unknown) => mockLogActivity(input),
 }));
 
-const mockGetSignedDownloadUrl = vi.fn();
+const mockGetCachedSignedDownloadUrl = vi.fn();
 const mockUploadObject = vi.fn();
 vi.mock("@/lib/s3", () => ({
-  getSignedDownloadUrl: (key: unknown) => mockGetSignedDownloadUrl(key),
+  getCachedSignedDownloadUrl: (key: unknown) => mockGetCachedSignedDownloadUrl(key),
   uploadObject: (key: unknown, body: unknown, contentType: unknown) =>
     mockUploadObject(key, body, contentType),
 }));
@@ -101,6 +103,7 @@ import {
   unpublishWorld,
   updateWorldDraft,
   uploadWorldArt,
+  uploadWorldCardMedia,
 } from "./service";
 
 const META = { ip: "1.2.3.4", userAgent: "test-agent" };
@@ -118,6 +121,7 @@ function worldRow(overrides: Partial<Record<string, unknown>> = {}) {
     theme: "#7C3AED",
     displayXpTarget: 5,
     artKey: null,
+    cardMediaKey: null,
     mentorId: MENTOR_ID,
     status: "draft" as const,
     publishedAt: null,
@@ -167,10 +171,14 @@ beforeEach(() => {
 });
 
 describe("getPublicWorlds", () => {
-  it("maps published worlds to the public shape, resolving art and mentor key", async () => {
-    mockListPublishedWorlds.mockResolvedValueOnce([worldRow({ artKey: "worlds/1/art.png" })]);
+  it("maps published worlds to the public shape, resolving art, card media and mentor key", async () => {
+    mockListPublishedWorlds.mockResolvedValueOnce([
+      worldRow({ artKey: "worlds/1/art.png", cardMediaKey: "worlds/1/card-media/x.gif" }),
+    ]);
     mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
-    mockGetSignedDownloadUrl.mockResolvedValueOnce("https://signed.example/art.png");
+    mockGetCachedSignedDownloadUrl
+      .mockResolvedValueOnce("https://signed.example/art.png")
+      .mockResolvedValueOnce("https://signed.example/x.gif");
 
     const result = await getPublicWorlds(USER_ID);
 
@@ -183,6 +191,7 @@ describe("getPublicWorlds", () => {
         theme: "#7C3AED",
         displayXpTarget: 5,
         artUrl: "https://signed.example/art.png",
+        cardMediaUrl: "https://signed.example/x.gif",
         mentorKey: "baby",
         locked: false,
         completedLessons: 0,
@@ -223,14 +232,15 @@ describe("getPublicWorlds", () => {
     expect(result[0]).toMatchObject({ completedLessons: 0, totalLessons: 0 });
   });
 
-  it("returns artUrl: null when no art has been uploaded", async () => {
+  it("returns artUrl/cardMediaUrl: null when neither has been uploaded", async () => {
     mockListPublishedWorlds.mockResolvedValueOnce([worldRow()]);
     mockListAllMentors.mockResolvedValueOnce([mentorRow()]);
 
     const result = await getPublicWorlds(USER_ID);
 
     expect(result[0]!.artUrl).toBeNull();
-    expect(mockGetSignedDownloadUrl).not.toHaveBeenCalled();
+    expect(result[0]!.cardMediaUrl).toBeNull();
+    expect(mockGetCachedSignedDownloadUrl).not.toHaveBeenCalled();
   });
 
   // Sequential unlock only (docs/ARCHITECTURE.md D23) - never an XP/level
@@ -859,18 +869,130 @@ describe("uploadWorldArt", () => {
   });
 });
 
+// GIF87a header - a minimal valid GIF, same byte-level approach as
+// PNG_BYTES above.
+const GIF_BYTES = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x37, 0x61, 0, 0, 0, 0]);
+
+describe("uploadWorldCardMedia", () => {
+  it("uploads to storage under a server-generated key in its own card-media/ namespace, distinct from artKey, and logs it", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow({ cardMediaKey: "worlds/world_1/card-media/old.gif" }));
+    mockSetWorldCardMediaKey.mockResolvedValueOnce(worldRow({ cardMediaKey: "worlds/world_1/card-media/new.gif" }));
+
+    const result = await uploadWorldCardMedia(ACTOR, "world_1", { body: GIF_BYTES }, META);
+
+    expect(mockUploadObject).toHaveBeenCalledWith(
+      expect.stringMatching(/^worlds\/world_1\/card-media\/[0-9a-f-]+\.gif$/),
+      GIF_BYTES,
+      "image/gif",
+    );
+    expect(result.cardMediaKey).toBe("worlds/world_1/card-media/new.gif");
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "world.card_media_uploaded",
+        metadata: expect.objectContaining({
+          previousCardMediaKey: "worlds/world_1/card-media/old.gif",
+          newCardMediaKey: expect.stringMatching(/^worlds\/world_1\/card-media\/[0-9a-f-]+\.gif$/),
+        }),
+      }),
+    );
+  });
+
+  it("accepts PNG/JPEG/WebP too, same as uploadWorldArt", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockSetWorldCardMediaKey.mockResolvedValueOnce(worldRow());
+
+    await expect(
+      uploadWorldCardMedia(ACTOR, "world_1", { body: PNG_BYTES }, META),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects a file whose bytes aren't a real PNG/JPEG/WebP/GIF", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    const svgDisguisedAsImage = Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+      "utf8",
+    );
+
+    await expect(
+      uploadWorldCardMedia(ACTOR, "world_1", { body: svgDisguisedAsImage }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file over the 1.5MB cap, tighter than uploadWorldArt's 2MB", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    const oversized = Buffer.concat([GIF_BYTES, Buffer.alloc(1.5 * 1024 * 1024)]);
+
+    await expect(
+      uploadWorldCardMedia(ACTOR, "world_1", { body: oversized }, META),
+    ).rejects.toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  it("accepts a file right at the 1.5MB cap", async () => {
+    mockGetWorldById.mockResolvedValueOnce(worldRow());
+    mockSetWorldCardMediaKey.mockResolvedValueOnce(worldRow());
+    const atCap = Buffer.concat([GIF_BYTES, Buffer.alloc(1.5 * 1024 * 1024 - GIF_BYTES.length)]);
+
+    await expect(
+      uploadWorldCardMedia(ACTOR, "world_1", { body: atCap }, META),
+    ).resolves.toBeDefined();
+  });
+
+  it("throws NOT_FOUND for an unknown world", async () => {
+    mockGetWorldById.mockResolvedValueOnce(null);
+
+    await expect(
+      uploadWorldCardMedia(ACTOR, "nope", { body: GIF_BYTES }, META),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(mockUploadObject).not.toHaveBeenCalled();
+  });
+
+  describe("permission tier depends on the world's status, same as uploadWorldArt", () => {
+    it("blocks a published-world upload for an actor with only world.edit", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.edit"),
+      );
+
+      await expect(
+        uploadWorldCardMedia(ACTOR, "world_1", { body: GIF_BYTES }, META),
+      ).rejects.toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/world\.delete/) });
+      expect(mockUploadObject).not.toHaveBeenCalled();
+    });
+
+    it("allows a published-world upload for an actor with world.delete", async () => {
+      mockGetWorldById.mockResolvedValueOnce(worldRow({ status: "published" }));
+      mockRoleHasPermission.mockImplementation((_roleId: string, perm: string) =>
+        Promise.resolve(perm === "world.delete"),
+      );
+      mockSetWorldCardMediaKey.mockResolvedValueOnce(worldRow({ status: "published" }));
+
+      await expect(
+        uploadWorldCardMedia(ACTOR, "world_1", { body: GIF_BYTES }, META),
+      ).resolves.toBeDefined();
+    });
+  });
+});
+
 describe("getWorldEditorData", () => {
-  it("resolves an artUrl per world that has art", async () => {
+  it("resolves an artUrl/cardMediaUrl per world that has them", async () => {
     mockListAllWorlds.mockResolvedValueOnce([
-      worldRow({ id: "w1", artKey: "worlds/w1/art.png" }),
-      worldRow({ id: "w2", artKey: null }),
+      worldRow({ id: "w1", artKey: "worlds/w1/art.png", cardMediaKey: "worlds/w1/card-media/x.gif" }),
+      worldRow({ id: "w2", artKey: null, cardMediaKey: null }),
     ]);
-    mockGetSignedDownloadUrl.mockResolvedValueOnce("https://signed.example/w1.png");
+    mockGetCachedSignedDownloadUrl
+      .mockResolvedValueOnce("https://signed.example/w1.png")
+      .mockResolvedValueOnce("https://signed.example/w1.gif");
 
     const result = await getWorldEditorData();
 
-    expect(result[0]).toMatchObject({ id: "w1", artUrl: "https://signed.example/w1.png" });
-    expect(result[1]).toMatchObject({ id: "w2", artUrl: null });
+    expect(result[0]).toMatchObject({
+      id: "w1",
+      artUrl: "https://signed.example/w1.png",
+      cardMediaUrl: "https://signed.example/w1.gif",
+    });
+    expect(result[1]).toMatchObject({ id: "w2", artUrl: null, cardMediaUrl: null });
   });
 });
 

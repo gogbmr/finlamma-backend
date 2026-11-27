@@ -67,6 +67,7 @@ export default async function WorldViewPage({ params }: { params: Promise<{ id: 
             mentorId: world.mentorId,
             status: world.status,
             artUrl: world.artUrl,
+            cardMediaUrl: world.cardMediaUrl,
           }}
           mentor={mentor ? { id: mentor.id, key: mentor.key, name: mentor.name, status: mentor.status } : null}
         />

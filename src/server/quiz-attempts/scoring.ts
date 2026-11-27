@@ -15,10 +15,15 @@ import type {
 // the network round-trip between serveStep stamping `servedAt` and the
 // submit request actually landing at the server, so a learner who genuinely
 // answered in time isn't timed out (or denied the speed bonus) purely
-// because of network latency on the way back. Deliberately small: this is
-// slack for transport time, not an invitation to answer slower than the
-// timer allows. docs/ARCHITECTURE.md D21.
-export const LATENCY_ALLOWANCE_MS = 300;
+// because of network latency on the way back. This is slack for transport
+// time, not an invitation to answer slower than the timer allows - raised
+// 300 -> 2000 (founder decision, 2026-11-27, docs/ARCHITECTURE.md D21) once
+// a 1-2s Vercel cold start on the answer request was confirmed able to push
+// `effectiveElapsedMs` past the timeout even for a genuinely in-time answer
+// (the submit handler's `Date.now()` isn't read until the function has
+// already finished cold-starting, so a cold start sits entirely inside the
+// measured gap) - 300ms covered ordinary network jitter but never that.
+export const LATENCY_ALLOWANCE_MS = 2000;
 
 // Structural equality between a learner's submitted answer and
 // `questions.answer`, per format - both are assumed already validated by

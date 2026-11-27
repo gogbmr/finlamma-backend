@@ -38,7 +38,13 @@ export const worlds = pgTable(
     tagline: jsonb("tagline").$type<LocalizedText>().notNull(),
     theme: text("theme").notNull(), // cosmetic accent color/key, e.g. "#7C3AED"
     displayXpTarget: integer("display_xp_target").notNull(),
-    artKey: text("art_key"), // S3 object key (src/lib/s3.ts), null until uploaded
+    artKey: text("art_key"), // S3 object key (src/lib/s3.ts), null until uploaded - static fallback image
+    // Founder decision (2026-11-27): an animated card background (GIF or
+    // animated WebP), additive and independent of artKey above - artKey
+    // stays the static fallback the app shows while cardMediaKey is
+    // missing or fails to load, never replaced by it. Same S3-object-key +
+    // signed-URL pattern as artKey, just a second, optional asset.
+    cardMediaKey: text("card_media_key"),
     mentorId: uuid("mentor_id")
       .notNull()
       .references(() => mentors.id, { onDelete: "restrict" }),
